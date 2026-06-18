@@ -17,8 +17,204 @@ const isWindows = process.platform === 'win32';
 const projectRoot = path.resolve(__dirname, '../../..');
 const backupDir = path.join(projectRoot, 'backups');
 
+// Auto-update state
+let autoUpdateState = {
+  checking: false,
+  hasUpdate: false,
+  latestVersion: null,
+  releaseBody: null,
+  releaseName: null,
+  publishedAt: null,
+  downloadUrl: null,
+  lastChecked: null,
+  updateInstalled: false,
+  notifiedUsers: new Set()
+};
+
 // Scheduled backup task
 let scheduledBackupTask = null;
+
+// Initialize scheduled backup from settings
+function initScheduledBackup(db) {
+  if (scheduledBackupTask) {
+    scheduledBackupTask.stop();
+    scheduledBackupTask = null;
+  }
+
+  const enabled = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_enabled'");
+  const cronExpr = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_cron'");
+  const backupType = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_type'");
+  const notifyEmail = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_notify_email'");
+
+  if (enabled?.setting_value === 'true' && cronExpr?.settingValue) {
+    try {
+      scheduledBackupTask = cron.schedule(cronExpr.setting_value, async () => {
+        console.log('[scheduled-backup] Starting scheduled backup...');
+        await performScheduledBackup(db, backupType?.setting_value || 'database', notifyEmail?.setting_value);
+      });
+      console.log('[scheduled-backup] Scheduled backup initialized:', cronExpr.setting_value);
+    } catch (err) {
+      console.error('[scheduled-backup] Failed to initialize:', err.message);
+    }
+  }
+}
+
+// Check for updates automatically
+async function checkForUpdates() {
+  if (autoUpdateState.checking) return;
+  autoUpdateState.checking = true;
+
+  try {
+    const githubOwner = process.env.GITHUB_OWNER || 'wgg223';
+    const githubRepo = process.env.GITHUB_REPO || 'wangzhan';
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+    let currentVersion = '2.2.0';
+    try {
+      if (fs.existsSync(packageJsonPath)) {
+        const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+        currentVersion = pkg.version || currentVersion;
+      }
+    } catch (e) { /* ignore */ }
+
+    const githubApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
+
+    const response = await fetch(githubApiUrl, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'RP-Hub-Update-Checker'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      console.log('[auto-update] Failed to check updates:', response.status);
+      return;
+    }
+
+    const releaseData = await response.json();
+    const latestVersion = releaseData.tag_name?.replace(/^v/, '') || currentVersion;
+    const hasUpdate = latestVersion !== currentVersion;
+
+    autoUpdateState = {
+      ...autoUpdateState,
+      hasUpdate,
+      latestVersion,
+      releaseBody: releaseData.body || '',
+      releaseName: releaseData.name || '',
+      publishedAt: releaseData.published_at || '',
+      downloadUrl: releaseData.zipball_url || '',
+      lastChecked: new Date().toISOString(),
+      checking: false
+    };
+
+    if (hasUpdate) {
+      console.log(`[auto-update] New version available: v${latestVersion} (current: v${currentVersion})`);
+    } else {
+      console.log('[auto-update] Already up to date');
+    }
+  } catch (err) {
+    console.error('[auto-update] Check failed:', err.message);
+    autoUpdateState.checking = false;
+  }
+}
+
+// Perform auto-update
+async function performAutoUpdate() {
+  if (!autoUpdateState.hasUpdate || !autoUpdateState.downloadUrl) return false;
+
+  try {
+    console.log('[auto-update] Starting auto-update to v' + autoUpdateState.latestVersion);
+
+    const tempDir = path.join(projectRoot, 'temp_update');
+    const backupUpdateDir = path.join(projectRoot, 'backup_auto_' + Date.now());
+
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const zipPath = path.join(tempDir, 'update.zip');
+
+    // Download
+    await new Promise((resolve, reject) => {
+      const downloadFile = (url) => {
+        const protocol = url.startsWith('https') ? https : http;
+        const request = protocol.get(url, {
+          headers: { 'User-Agent': 'RP-Hub-Updater', 'Accept': 'application/zip, application/octet-stream, */*' }
+        }, (response) => {
+          if (response.statusCode === 302 || response.statusCode === 301 || response.statusCode === 307) {
+            downloadFile(response.headers.location);
+            return;
+          }
+          if (response.statusCode !== 200) {
+            reject(new Error(`Download failed, status: ${response.statusCode}`));
+            return;
+          }
+          const file = fs.createWriteStream(zipPath);
+          response.pipe(file);
+          file.on('finish', () => { file.close(); resolve(); });
+          file.on('error', (err) => { fs.unlink(zipPath, () => {}); reject(err); });
+        });
+        request.on('error', reject);
+        request.setTimeout(60000, () => { request.destroy(); reject(new Error('Download timeout')); });
+      };
+      downloadFile(autoUpdateState.downloadUrl);
+    });
+
+    // Unzip
+    const AdmZip = require('adm-zip');
+    try {
+      const zip = new AdmZip(zipPath);
+      zip.extractAllTo(tempDir, true);
+    } catch (zipError) {
+      throw new Error('Unzip failed: ' + zipError.message);
+    }
+
+    const files = fs.readdirSync(tempDir).filter(f => f !== 'update.zip');
+    const extractedDir = files.find(f => fs.statSync(path.join(tempDir, f)).isDirectory());
+    const sourceDir = extractedDir ? path.join(tempDir, extractedDir) : tempDir;
+
+    // Backup current files
+    if (!fs.existsSync(backupUpdateDir)) fs.mkdirSync(backupUpdateDir, { recursive: true });
+    const backupFiles = ['package.json', 'server', 'public', 'views'];
+    for (const item of backupFiles) {
+      const src = path.join(projectRoot, item);
+      if (fs.existsSync(src)) {
+        const stat = fs.statSync(src);
+        if (stat.isDirectory()) {
+          await copyDir(src, path.join(backupUpdateDir, item));
+        } else {
+          fs.copyFileSync(src, path.join(backupUpdateDir, item));
+        }
+      }
+    }
+
+    // Copy update files
+    const updateItems = fs.readdirSync(sourceDir);
+    for (const item of updateItems) {
+      if (item === 'node_modules' || item === '.git' || item === 'temp_update') continue;
+      const src = path.join(sourceDir, item);
+      const dest = path.join(projectRoot, item);
+      const stat = fs.statSync(src);
+      if (stat.isDirectory()) {
+        await copyDir(src, dest);
+      } else {
+        const destDir = path.dirname(dest);
+        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+        fs.copyFileSync(src, dest);
+      }
+    }
+
+    // Cleanup
+    fs.rmSync(tempDir, { recursive: true, force: true });
+
+    autoUpdateState.updateInstalled = true;
+    console.log('[auto-update] Update installed successfully');
+    return true;
+  } catch (err) {
+    console.error('[auto-update] Update failed:', err.message);
+    return false;
+  }
+}
 
 // Initialize scheduled backup from settings
 function initScheduledBackup(db) {
@@ -690,6 +886,67 @@ router.post('/maintenance/backup-now', isAuthenticated, isSuperAdmin, async (req
 
 // ==================== Server Update ====================
 
+// GET - Get auto-update status (for admin dashboard notification)
+router.get('/maintenance/update-status', isAuthenticated, isSuperAdmin, (req, res) => {
+  const userId = req.session.user.id;
+  const alreadyNotified = autoUpdateState.notifiedUsers.has(userId);
+
+  res.json({
+    success: true,
+    data: {
+      hasUpdate: autoUpdateState.hasUpdate,
+      latestVersion: autoUpdateState.latestVersion,
+      releaseName: autoUpdateState.releaseName,
+      releaseBody: autoUpdateState.releaseBody,
+      publishedAt: autoUpdateState.publishedAt,
+      lastChecked: autoUpdateState.lastChecked,
+      updateInstalled: autoUpdateState.updateInstalled,
+      alreadyNotified
+    }
+  });
+});
+
+// POST - Mark update as notified for current user
+router.post('/maintenance/mark-notified', isAuthenticated, isSuperAdmin, (req, res) => {
+  autoUpdateState.notifiedUsers.add(req.session.user.id);
+  res.json({ success: true });
+});
+
+// POST - Trigger auto-update
+router.post('/maintenance/auto-update', isAuthenticated, isSuperAdmin, async (req, res) => {
+  try {
+    if (!autoUpdateState.hasUpdate) {
+      return res.json({ success: true, message: '没有可用更新' });
+    }
+
+    const result = await performAutoUpdate();
+
+    if (result) {
+      try {
+        logActivity(req.db, {
+          user_id: req.session.user.id,
+          username: req.session.user.username,
+          action: 'auto_update',
+          target_type: 'system',
+          target_title: '自动更新',
+          detail: `用户 ${req.session.user.username} 触发自动更新到 v${autoUpdateState.latestVersion}`,
+          ip: req.ip
+        });
+      } catch (logErr) { /* ignore */ }
+
+      res.json({
+        success: true,
+        message: `更新已安装到 v${autoUpdateState.latestVersion}，建议重启服务器`
+      });
+    } else {
+      res.status(500).json({ success: false, error: '自动更新失败' });
+    }
+  } catch (err) {
+    console.error('[maintenance] Auto-update error:', err);
+    res.status(500).json({ success: false, error: '自动更新失败: ' + err.message });
+  }
+});
+
 // GET - Check for updates
 router.get('/maintenance/check-update', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
@@ -958,3 +1215,4 @@ async function copyDir(src, dest) {
 
 module.exports = router;
 module.exports.initScheduledBackup = initScheduledBackup;
+module.exports.checkForUpdates = checkForUpdates;

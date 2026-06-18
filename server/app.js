@@ -302,11 +302,17 @@ async function start() {
 
     // Initialize scheduled backup
     try {
-      const { initScheduledBackup } = require('./routes/admin/maintenance');
+      const { initScheduledBackup, checkForUpdates } = require('./routes/admin/maintenance');
       const db = getDb();
       if (db) {
         initScheduledBackup(db);
       }
+      // Check for updates on startup
+      setTimeout(() => {
+        checkForUpdates().catch(err => {
+          console.error('[app] Auto-update check failed:', err.message);
+        });
+      }, 5000);
     } catch (err) {
       console.error('[app] Failed to initialize scheduled backup:', err.message);
     }
