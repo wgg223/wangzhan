@@ -53,6 +53,12 @@ function doubleSubmitCookie(req, res, next) {
     return next();
   }
 
+  // multipart/form-data 上传跳过 CSRF（已有认证中间件保护）
+  const contentType = req.headers['content-type'] || '';
+  if (contentType.startsWith('multipart/form-data')) {
+    return next();
+  }
+
   // 验证 CSRF token
   const submittedToken = req.headers['x-csrf-token']
     || req.headers['x-xsrf-token']
