@@ -272,7 +272,15 @@ const actionLabels = {
   clear_cache: '清除缓存',
   clean_temp: '清理临时文件',
   optimize_db: '优化数据库',
-  clean_logs: '清理活动日志'
+  clean_logs: '清理活动日志',
+  // ===== 新增：备份操作 =====
+  scheduled_backup: '定时备份',
+  manual_backup: '手动备份',
+  update_scheduled_backup: '更新定时备份设置',
+  // ===== 新增：更新操作 =====
+  start_update: '开始更新',
+  complete_update: '完成更新',
+  restart_server: '重启服务器'
 };
 
 // 操作对象类型对应的中文描述

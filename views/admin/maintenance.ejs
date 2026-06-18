@@ -121,6 +121,109 @@
   </div>
 
   <div class="settings-section">
+    <h2>备份管理</h2>
+    <div class="update-info-card">
+      <div class="form-group">
+        <label>手动备份</label>
+        <div class="backup-options">
+          <div class="backup-type-selector">
+            <select id="backupType" class="form-control">
+              <option value="database">数据库备份</option>
+              <option value="uploads">上传文件备份</option>
+              <option value="config">配置文件备份</option>
+              <option value="full">完整备份</option>
+            </select>
+            <label class="checkbox-label">
+              <input type="checkbox" id="backupSendEmail"> 备份后发送邮件通知
+            </label>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="backupNow()">
+            <span class="btn-text">立即备份</span>
+            <span class="btn-loading" style="display: none;">备份中...</span>
+          </button>
+        </div>
+        <div id="backupStatus" style="display: none; margin-top: 12px;"></div>
+      </div>
+
+      <div class="form-group" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
+        <label>定时备份</label>
+        <div class="toggle-switch-container">
+          <label class="toggle-switch">
+            <input type="checkbox" id="scheduledBackupEnabled">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label" id="scheduledToggleLabel">已关闭</span>
+        </div>
+        <div class="scheduled-backup-settings" style="margin-top: 16px;">
+          <div class="form-group">
+            <label for="scheduledCron">Cron 表达式</label>
+            <input type="text" id="scheduledCron" class="form-control" value="0 3 * * *" placeholder="0 3 * * *">
+            <p class="help-text">默认每天凌晨3点执行。格式：分 时 日 月 周</p>
+          </div>
+          <div class="form-group">
+            <label for="scheduledType">备份类型</label>
+            <select id="scheduledType" class="form-control">
+              <option value="database">数据库备份</option>
+              <option value="uploads">上传文件备份</option>
+              <option value="config">配置文件备份</option>
+              <option value="full">完整备份</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="scheduledNotifyEmail">通知邮箱</label>
+            <input type="email" id="scheduledNotifyEmail" class="form-control" placeholder="admin@example.com">
+            <p class="help-text">备份完成后发送通知邮件到此邮箱（需配置SMTP）</p>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="saveScheduledBackup()">
+            <span class="btn-text">保存定时备份设置</span>
+            <span class="btn-loading" style="display: none;">保存中...</span>
+          </button>
+        </div>
+        <div id="scheduledStatus" style="display: none; margin-top: 12px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <h2>系统更新</h2>
+    <div class="update-info-card">
+      <div class="version-display">
+        <div class="current-version">
+          <span class="label">当前版本</span>
+          <span class="version" id="currentVersion">加载中...</span>
+        </div>
+        <div class="latest-version" id="latestVersionContainer" style="display: none;">
+          <span class="label">最新版本</span>
+          <span class="version" id="latestVersion">-</span>
+        </div>
+      </div>
+      <div class="update-status" id="updateStatus">
+        <div class="status-message">点击下方按钮检查更新</div>
+      </div>
+      <div class="release-info" id="releaseInfo" style="display: none;">
+        <h4 id="releaseName"></h4>
+        <div class="release-meta"><span id="publishedAt"></span></div>
+        <div class="release-body" id="releaseBody"></div>
+      </div>
+      <div class="update-actions" style="margin-top: 16px;">
+        <button type="button" class="btn btn-primary" id="checkUpdateBtn" onclick="checkUpdate()">
+          <span class="btn-text">检查更新</span>
+          <span class="btn-loading" style="display: none;">检查中...</span>
+        </button>
+        <button type="button" class="btn btn-success" id="downloadBtn" onclick="downloadUpdate()" style="display: none;">
+          <span class="btn-text">下载并安装更新</span>
+          <span class="btn-loading" style="display: none;">下载中...</span>
+        </button>
+        <button type="button" class="btn btn-warning" id="restartBtn" onclick="restartServer()">
+          <span class="btn-text">重启服务器</span>
+          <span class="btn-loading" style="display: none;">重启中...</span>
+        </button>
+      </div>
+      <div id="updateActionResult" style="display: none; margin-top: 12px;"></div>
+    </div>
+  </div>
+
+  <div class="settings-section">
     <h2>系统信息</h2>
     <div class="update-info-card">
       <button type="button" class="btn btn-info" onclick="loadSystemInfo()" style="margin-bottom: 16px;">
@@ -343,6 +446,90 @@ input:checked + .toggle-slider:before {
   text-align: center;
   padding: 20px;
   color: #6b7280;
+}
+.backup-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.backup-type-selector {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.backup-type-selector .form-control {
+  width: auto;
+  min-width: 180px;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+.version-display {
+  display: flex;
+  gap: 40px;
+  margin-bottom: 16px;
+}
+.current-version, .latest-version {
+  display: flex;
+  flex-direction: column;
+}
+.version-display .label {
+  font-size: 12px;
+  color: #6c757d;
+  margin-bottom: 4px;
+}
+.version-display .version {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.update-status {
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  background: #f8f9fa;
+}
+.update-status.has-update {
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+}
+.update-status.no-update {
+  background: #d1fae5;
+  border: 1px solid #a7f3d0;
+}
+.release-info {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.release-info h4 {
+  margin: 0 0 8px 0;
+}
+.release-meta {
+  font-size: 13px;
+  color: #6c757d;
+  margin-bottom: 12px;
+}
+.release-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  white-space: pre-wrap;
+}
+.update-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 </style>
 
@@ -716,4 +903,276 @@ function formatUptime(seconds) {
   
   return result;
 }
+
+// ==================== Backup Functions ====================
+
+async function backupNow() {
+  const btn = event.target.closest('button');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('backupStatus');
+  const type = document.getElementById('backupType').value;
+  const sendEmail = document.getElementById('backupSendEmail').checked;
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">备份中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/backup-now', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ type, sendNotification: sendEmail })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      status.innerHTML = '<div class="alert alert-success">' + result.message + ' (大小: ' + result.size + ')</div>';
+    } else {
+      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+// Load scheduled backup settings
+async function loadScheduledBackup() {
+  try {
+    const response = await fetch('/admin/maintenance/scheduled-backup', {
+      headers: {
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      document.getElementById('scheduledBackupEnabled').checked = result.data.enabled;
+      document.getElementById('scheduledToggleLabel').textContent = result.data.enabled ? '已开启' : '已关闭';
+      document.getElementById('scheduledCron').value = result.data.cron;
+      document.getElementById('scheduledType').value = result.data.type;
+      document.getElementById('scheduledNotifyEmail').value = result.data.notifyEmail;
+    }
+  } catch (err) {
+    console.error('Load scheduled backup error:', err);
+  }
+}
+
+document.getElementById('scheduledBackupEnabled').addEventListener('change', function() {
+  document.getElementById('scheduledToggleLabel').textContent = this.checked ? '已开启' : '已关闭';
+});
+
+async function saveScheduledBackup() {
+  const btn = event.target.closest('button');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('scheduledStatus');
+
+  const enabled = document.getElementById('scheduledBackupEnabled').checked;
+  const cronExpr = document.getElementById('scheduledCron').value;
+  const type = document.getElementById('scheduledType').value;
+  const notifyEmail = document.getElementById('scheduledNotifyEmail').value;
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">保存中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/scheduled-backup', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ enabled, cron: cronExpr, type, notifyEmail })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+    } else {
+      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+// ==================== Update Functions ====================
+
+let updateData = null;
+
+async function checkUpdate() {
+  const btn = document.getElementById('checkUpdateBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('updateStatus');
+  const releaseInfo = document.getElementById('releaseInfo');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.innerHTML = '<div class="status-message">检查更新中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/check-update', {
+      headers: {
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      updateData = result.data;
+      document.getElementById('currentVersion').textContent = 'v' + result.data.currentVersion;
+
+      if (result.data.hasUpdate) {
+        document.getElementById('latestVersionContainer').style.display = 'flex';
+        document.getElementById('latestVersion').textContent = 'v' + result.data.latestVersion;
+        status.className = 'update-status has-update';
+        status.innerHTML = '<div class="status-message">发现新版本 v' + result.data.latestVersion + '</div>';
+        downloadBtn.style.display = 'inline-flex';
+
+        if (result.data.releaseName) {
+          releaseInfo.style.display = 'block';
+          document.getElementById('releaseName').textContent = result.data.releaseName;
+          document.getElementById('publishedAt').textContent = '发布时间: ' + new Date(result.data.publishedAt).toLocaleString('zh-CN');
+          document.getElementById('releaseBody').textContent = result.data.releaseBody;
+        }
+      } else {
+        document.getElementById('latestVersionContainer').style.display = 'none';
+        status.className = 'update-status no-update';
+        status.innerHTML = '<div class="status-message">当前已是最新版本</div>';
+        downloadBtn.style.display = 'none';
+        releaseInfo.style.display = 'none';
+      }
+    } else {
+      status.innerHTML = '<div class="status-message">检查失败: ' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="status-message">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+async function downloadUpdate() {
+  if (!updateData || !updateData.downloadUrl) {
+    alert('请先检查更新');
+    return;
+  }
+
+  if (!confirm('确定要下载并安装更新吗？建议先备份数据。')) return;
+
+  const btn = document.getElementById('downloadBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const resultDiv = document.getElementById('updateActionResult');
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<div class="alert alert-info">下载并安装更新中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/download-update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
+        downloadUrl: updateData.downloadUrl,
+        version: updateData.latestVersion
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      resultDiv.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+      document.getElementById('currentVersion').textContent = 'v' + updateData.latestVersion;
+      btn.style.display = 'none';
+    } else {
+      resultDiv.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    resultDiv.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+async function restartServer() {
+  if (!confirm('确定要重启服务器吗？')) return;
+
+  const btn = document.getElementById('restartBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const resultDiv = document.getElementById('updateActionResult');
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<div class="alert alert-info">重启中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/restart', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      resultDiv.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+    } else {
+      resultDiv.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    resultDiv.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+// Initialize
+loadScheduledBackup();
 </script>

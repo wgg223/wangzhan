@@ -300,6 +300,17 @@ async function start() {
 
     console.log('数据库初始化成功');
 
+    // Initialize scheduled backup
+    try {
+      const { initScheduledBackup } = require('./routes/admin/maintenance');
+      const db = getDb();
+      if (db) {
+        initScheduledBackup(db);
+      }
+    } catch (err) {
+      console.error('[app] Failed to initialize scheduled backup:', err.message);
+    }
+
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`服务器运行在 http://0.0.0.0:${PORT}`);
       console.log(`环境: ${process.env.NODE_ENV || 'development'}`);

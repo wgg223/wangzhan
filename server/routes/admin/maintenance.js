@@ -3,10 +3,177 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const https = require('https');
+const http = require('http');
+const { exec, spawn } = require('child_process');
+const cron = require('node-cron');
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne, getDb } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { settingsCache, queryCache, pageCache } = require('../../config/cache');
+const { sendMail } = require('../../config/mailer');
+
+const isWindows = process.platform === 'win32';
+const projectRoot = path.resolve(__dirname, '../../..');
+const backupDir = path.join(projectRoot, 'backups');
+
+// Scheduled backup task
+let scheduledBackupTask = null;
+
+// Initialize scheduled backup from settings
+function initScheduledBackup(db) {
+  if (scheduledBackupTask) {
+    scheduledBackupTask.stop();
+    scheduledBackupTask = null;
+  }
+
+  const enabled = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_enabled'");
+  const cronExpr = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_cron'");
+  const backupType = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_type'");
+  const notifyEmail = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_notify_email'");
+
+  if (enabled?.setting_value === 'true' && cronExpr?.setting_value) {
+    try {
+      scheduledBackupTask = cron.schedule(cronExpr.setting_value, async () => {
+        console.log('[scheduled-backup] Starting scheduled backup...');
+        await performScheduledBackup(db, backupType?.setting_value || 'database', notifyEmail?.setting_value);
+      });
+      console.log('[scheduled-backup] Scheduled backup initialized:', cronExpr.setting_value);
+    } catch (err) {
+      console.error('[scheduled-backup] Failed to initialize:', err.message);
+    }
+  }
+}
+
+// Perform scheduled backup
+async function performScheduledBackup(db, type, notifyEmail) {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const backupName = `scheduled-${type}-${timestamp}`;
+    const backupPath = path.join(backupDir, backupName);
+
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    fs.mkdirSync(backupPath, { recursive: true });
+
+    const itemsToBackup = [];
+
+    if (type === 'full' || type === 'database') {
+      const dbSrc = path.join(projectRoot, 'database.sqlite');
+      if (fs.existsSync(dbSrc)) {
+        fs.copyFileSync(dbSrc, path.join(backupPath, 'database.sqlite'));
+        itemsToBackup.push('database.sqlite');
+      }
+    }
+
+    if (type === 'full' || type === 'uploads') {
+      const uploadsDir = path.join(projectRoot, 'public', 'uploads');
+      if (fs.existsSync(uploadsDir)) {
+        await copyDir(uploadsDir, path.join(backupPath, 'uploads'));
+        itemsToBackup.push('uploads/');
+      }
+    }
+
+    if (type === 'full' || type === 'config') {
+      const configFiles = ['package.json', 'ecosystem.config.js', '.env'];
+      for (const file of configFiles) {
+        const src = path.join(projectRoot, file);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, path.join(backupPath, file));
+          itemsToBackup.push(file);
+        }
+      }
+    }
+
+    // Create metadata
+    const meta = {
+      name: backupName,
+      type: `scheduled-${type}`,
+      createdAt: new Date().toISOString(),
+      createdBy: '系统定时任务',
+      items: itemsToBackup
+    };
+    fs.writeFileSync(path.join(backupPath, 'backup-meta.json'), JSON.stringify(meta, null, 2));
+
+    // Calculate size
+    const backupSize = getDirSize(backupPath);
+
+    // Log activity
+    try {
+      logActivity(db, {
+        user_id: 0,
+        username: '系统',
+        action: 'scheduled_backup',
+        target_type: 'system',
+        target_title: '定时备份',
+        detail: `定时备份完成: ${backupName}，类型: ${type}，大小: ${formatSize(backupSize)}`,
+        ip: ''
+      });
+    } catch (logErr) {
+      console.error('[scheduled-backup] logActivity error:', logErr.message);
+    }
+
+    // Send email notification
+    if (notifyEmail) {
+      try {
+        const siteName = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'site_name'")?.setting_value || '网站系统';
+        await sendMail(db, {
+          to: notifyEmail,
+          subject: `[${siteName}] 定时备份成功通知`,
+          html: buildBackupNotifyEmail(backupName, type, itemsToBackup, backupSize, siteName)
+        });
+        console.log('[scheduled-backup] Notification email sent to:', notifyEmail);
+      } catch (emailErr) {
+        console.error('[scheduled-backup] Failed to send notification email:', emailErr.message);
+      }
+    }
+
+    console.log('[scheduled-backup] Backup completed:', backupName);
+    return { success: true, backupName, size: backupSize };
+  } catch (err) {
+    console.error('[scheduled-backup] Backup failed:', err.message);
+
+    // Send failure notification
+    if (notifyEmail) {
+      try {
+        const siteName = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'site_name'")?.setting_value || '网站系统';
+        await sendMail(db, {
+          to: notifyEmail,
+          subject: `[${siteName}] 定时备份失败通知`,
+          html: `<div style="max-width:600px;margin:0 auto;padding:20px;font-family:Arial,sans-serif;">
+            <h2 style="color:#dc3545;">定时备份失败</h2>
+            <p>备份类型: ${type}</p>
+            <p>错误信息: ${err.message}</p>
+            <p>时间: ${new Date().toLocaleString('zh-CN')}</p>
+          </div>`
+        });
+      } catch (emailErr) {
+        console.error('[scheduled-backup] Failed to send failure email:', emailErr.message);
+      }
+    }
+
+    return { success: false, error: err.message };
+  }
+}
+
+// Build backup notification email
+function buildBackupNotifyEmail(backupName, type, items, size, siteName) {
+  const typeNames = { full: '完整备份', database: '数据库备份', uploads: '上传文件备份', config: '配置备份' };
+  const year = new Date().getFullYear();
+  return `<div style="max-width:600px;margin:0 auto;padding:20px;font-family:Arial,sans-serif;">
+    <h2 style="color:#28a745;">定时备份成功</h2>
+    <div style="background:#f8f9fa;padding:16px;border-radius:8px;margin:16px 0;">
+      <p style="margin:8px 0;"><strong>备份名称：</strong>${backupName}</p>
+      <p style="margin:8px 0;"><strong>备份类型：</strong>${typeNames[type] || type}</p>
+      <p style="margin:8px 0;"><strong>备份大小：</strong>${formatSize(size)}</p>
+      <p style="margin:8px 0;"><strong>包含内容：</strong>${items.join(', ')}</p>
+      <p style="margin:8px 0;"><strong>完成时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
+    </div>
+    <p style="color:#6c757d;font-size:13px;">此邮件由系统自动发送，请勿回复。</p>
+    <p style="color:#6c757d;font-size:12px;">&copy; ${year} ${siteName}</p>
+  </div>`;
+}
 
 // Auto-initialize maintenance settings on first access
 function ensureMaintenanceSettings(db) {
@@ -401,6 +568,350 @@ router.post('/maintenance/optimize-db', isAuthenticated, isSuperAdmin, (req, res
   }
 });
 
+// GET - Scheduled backup settings
+router.get('/maintenance/scheduled-backup', isAuthenticated, isSuperAdmin, (req, res) => {
+  try {
+    const db = req.db;
+    const settings = {};
+    const keys = ['scheduled_backup_enabled', 'scheduled_backup_cron', 'scheduled_backup_type', 'scheduled_backup_notify_email'];
+    for (const key of keys) {
+      const row = queryOne(db, `SELECT setting_value FROM settings WHERE setting_key = '${key}'`);
+      settings[key] = row?.setting_value || '';
+    }
+
+    res.json({
+      success: true,
+      data: {
+        enabled: settings.scheduled_backup_enabled === 'true',
+        cron: settings.scheduled_backup_cron || '0 3 * * *',
+        type: settings.scheduled_backup_type || 'database',
+        notifyEmail: settings.scheduled_backup_notify_email || ''
+      }
+    });
+  } catch (err) {
+    console.error('[maintenance] Get scheduled backup error:', err);
+    res.status(500).json({ success: false, error: '获取定时备份设置失败: ' + err.message });
+  }
+});
+
+// POST - Update scheduled backup settings
+router.post('/maintenance/scheduled-backup', isAuthenticated, isSuperAdmin, (req, res) => {
+  try {
+    const db = req.db;
+    const { enabled, cron: cronExpr, type, notifyEmail } = req.body;
+
+    // Validate cron expression
+    if (enabled && !cron.validate(cronExpr)) {
+      return res.status(400).json({ success: false, error: '无效的 Cron 表达式' });
+    }
+
+    const settingsToUpdate = [
+      { key: 'scheduled_backup_enabled', value: enabled ? 'true' : 'false' },
+      { key: 'scheduled_backup_cron', value: cronExpr || '0 3 * * *' },
+      { key: 'scheduled_backup_type', value: type || 'database' },
+      { key: 'scheduled_backup_notify_email', value: notifyEmail || '' }
+    ];
+
+    for (const { key, value } of settingsToUpdate) {
+      const existing = queryOne(db, `SELECT id FROM settings WHERE setting_key = '${key}'`);
+      if (existing) {
+        db.run(`UPDATE settings SET setting_value = ? WHERE setting_key = ?`, [value, key]);
+      } else {
+        db.run(`INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)`, [key, value]);
+      }
+    }
+    saveDatabase();
+    settingsCache.delete('settings');
+
+    // Reinitialize scheduled backup
+    initScheduledBackup(db);
+
+    try {
+      logActivity(db, {
+        user_id: req.session.user.id,
+        username: req.session.user.username,
+        action: 'update_scheduled_backup',
+        target_type: 'system',
+        target_title: '定时备份',
+        detail: `用户 ${req.session.user.username} ${enabled ? '启用' : '禁用'}了定时备份，类型: ${type}，Cron: ${cronExpr}`,
+        ip: req.ip
+      });
+    } catch (logErr) {
+      console.error('[maintenance] logActivity error:', logErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: enabled ? '定时备份已启用' : '定时备份已禁用'
+    });
+  } catch (err) {
+    console.error('[maintenance] Update scheduled backup error:', err);
+    res.status(500).json({ success: false, error: '更新定时备份设置失败: ' + err.message });
+  }
+});
+
+// POST - Manual backup with options
+router.post('/maintenance/backup-now', isAuthenticated, isSuperAdmin, async (req, res) => {
+  try {
+    const db = req.db;
+    const { type = 'database', sendNotification = false } = req.body;
+
+    const result = await performScheduledBackup(db, type, sendNotification ? (req.body.notifyEmail || '') : '');
+
+    try {
+      logActivity(db, {
+        user_id: req.session.user.id,
+        username: req.session.user.username,
+        action: 'manual_backup',
+        target_type: 'system',
+        target_title: '手动备份',
+        detail: `用户 ${req.session.user.username} 执行了手动备份，类型: ${type}`,
+        ip: req.ip
+      });
+    } catch (logErr) {
+      console.error('[maintenance] logActivity error:', logErr.message);
+    }
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `备份创建成功: ${result.backupName}`,
+        backupName: result.backupName,
+        size: formatSize(result.size)
+      });
+    } else {
+      res.status(500).json({ success: false, error: '备份失败: ' + result.error });
+    }
+  } catch (err) {
+    console.error('[maintenance] Backup now error:', err);
+    res.status(500).json({ success: false, error: '备份失败: ' + err.message });
+  }
+});
+
+// ==================== Server Update ====================
+
+// GET - Check for updates
+router.get('/maintenance/check-update', isAuthenticated, isSuperAdmin, async (req, res) => {
+  try {
+    const githubOwner = process.env.GITHUB_OWNER || 'STA1N156';
+    const githubRepo = process.env.GITHUB_REPO || 'RP-Hub';
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+    let currentVersion = '2.1.0';
+    try {
+      if (fs.existsSync(packageJsonPath)) {
+        const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+        currentVersion = pkg.version || currentVersion;
+      }
+    } catch (e) { /* ignore */ }
+
+    const githubApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
+
+    const response = await fetch(githubApiUrl, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'RP-Hub-Update-Checker'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      return res.json({
+        success: true,
+        data: {
+          hasUpdate: false,
+          currentVersion,
+          latestVersion: currentVersion,
+          message: '无法连接到 GitHub'
+        }
+      });
+    }
+
+    const releaseData = await response.json();
+    const latestVersion = releaseData.tag_name?.replace(/^v/, '') || currentVersion;
+    const hasUpdate = latestVersion !== currentVersion;
+
+    res.json({
+      success: true,
+      data: {
+        hasUpdate,
+        currentVersion,
+        latestVersion,
+        releaseName: releaseData.name || '',
+        releaseBody: releaseData.body || '',
+        releaseUrl: releaseData.html_url || '',
+        publishedAt: releaseData.published_at || '',
+        downloadUrl: releaseData.zipball_url || ''
+      }
+    });
+  } catch (err) {
+    console.error('[maintenance] Check update error:', err);
+    res.status(500).json({ success: false, error: '检查更新失败: ' + err.message });
+  }
+});
+
+// POST - Download and install update
+router.post('/maintenance/download-update', isAuthenticated, isSuperAdmin, async (req, res) => {
+  try {
+    const { downloadUrl, version } = req.body;
+    if (!downloadUrl) {
+      return res.status(400).json({ success: false, error: '缺少下载链接' });
+    }
+
+    const tempDir = path.join(projectRoot, 'temp_update');
+    const backupUpdateDir = path.join(projectRoot, 'backup_' + Date.now());
+
+    // Log
+    try {
+      logActivity(req.db, {
+        user_id: req.session.user.id,
+        username: req.session.user.username,
+        action: 'start_update',
+        target_type: 'system',
+        target_title: '系统更新',
+        detail: `用户 ${req.session.user.username} 开始下载更新版本 ${version}`,
+        ip: req.ip
+      });
+    } catch (logErr) { /* ignore */ }
+
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const zipPath = path.join(tempDir, 'update.zip');
+
+    // Download
+    await new Promise((resolve, reject) => {
+      const downloadFile = (url) => {
+        const protocol = url.startsWith('https') ? https : http;
+        const request = protocol.get(url, {
+          headers: { 'User-Agent': 'RP-Hub-Updater', 'Accept': 'application/zip, application/octet-stream, */*' }
+        }, (response) => {
+          if (response.statusCode === 302 || response.statusCode === 301 || response.statusCode === 307) {
+            downloadFile(response.headers.location);
+            return;
+          }
+          if (response.statusCode !== 200) {
+            reject(new Error(`下载失败，状态码: ${response.statusCode}`));
+            return;
+          }
+          const file = fs.createWriteStream(zipPath);
+          response.pipe(file);
+          file.on('finish', () => { file.close(); resolve(); });
+          file.on('error', (err) => { fs.unlink(zipPath, () => {}); reject(err); });
+        });
+        request.on('error', reject);
+        request.setTimeout(30000, () => { request.destroy(); reject(new Error('下载超时')); });
+      };
+      downloadFile(downloadUrl);
+    });
+
+    // Unzip
+    const AdmZip = require('adm-zip');
+    try {
+      const zip = new AdmZip(zipPath);
+      zip.extractAllTo(tempDir, true);
+    } catch (zipError) {
+      throw new Error('解压失败: ' + zipError.message);
+    }
+
+    const files = fs.readdirSync(tempDir).filter(f => f !== 'update.zip');
+    const extractedDir = files.find(f => fs.statSync(path.join(tempDir, f)).isDirectory());
+    const sourceDir = extractedDir ? path.join(tempDir, extractedDir) : tempDir;
+
+    // Backup current
+    if (!fs.existsSync(backupUpdateDir)) fs.mkdirSync(backupUpdateDir, { recursive: true });
+    const backupFiles = ['package.json', 'server', 'public', 'views'];
+    for (const item of backupFiles) {
+      const src = path.join(projectRoot, item);
+      if (fs.existsSync(src)) {
+        const stat = fs.statSync(src);
+        if (stat.isDirectory()) {
+          await copyDir(src, path.join(backupUpdateDir, item));
+        } else {
+          fs.copyFileSync(src, path.join(backupUpdateDir, item));
+        }
+      }
+    }
+
+    // Copy update files
+    const updateItems = fs.readdirSync(sourceDir);
+    for (const item of updateItems) {
+      if (item === 'node_modules' || item === '.git' || item === 'temp_update') continue;
+      const src = path.join(sourceDir, item);
+      const dest = path.join(projectRoot, item);
+      const stat = fs.statSync(src);
+      if (stat.isDirectory()) {
+        await copyDir(src, dest);
+      } else {
+        const destDir = path.dirname(dest);
+        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+        fs.copyFileSync(src, dest);
+      }
+    }
+
+    // Cleanup
+    fs.rmSync(tempDir, { recursive: true, force: true });
+
+    try {
+      logActivity(req.db, {
+        user_id: req.session.user.id,
+        username: req.session.user.username,
+        action: 'complete_update',
+        target_type: 'system',
+        target_title: '系统更新',
+        detail: `用户 ${req.session.user.username} 完成更新到版本 ${version}`,
+        ip: req.ip
+      });
+    } catch (logErr) { /* ignore */ }
+
+    res.json({
+      success: true,
+      message: '更新安装成功，建议重启服务器',
+      backupPath: backupUpdateDir
+    });
+  } catch (err) {
+    console.error('[maintenance] Download update error:', err);
+    res.status(500).json({ success: false, error: '更新失败: ' + err.message });
+  }
+});
+
+// POST - Restart server
+router.post('/maintenance/restart', isAuthenticated, isSuperAdmin, (req, res) => {
+  try {
+    try {
+      logActivity(req.db, {
+        user_id: req.session.user.id,
+        username: req.session.user.username,
+        action: 'restart_server',
+        target_type: 'system',
+        target_title: '系统重启',
+        detail: `用户 ${req.session.user.username} 重启了服务器`,
+        ip: req.ip
+      });
+    } catch (logErr) { /* ignore */ }
+
+    res.json({ success: true, message: '服务器将在3秒后重启...' });
+
+    setTimeout(() => {
+      if (process.env.PM2_HOME || process.env.pm_id) {
+        exec('pm2 restart all', (error) => {
+          if (error) {
+            const child = spawn('npm', ['run', 'start'], { cwd: projectRoot, detached: true, stdio: 'ignore' });
+            child.unref();
+            process.exit(0);
+          }
+        });
+      } else {
+        const child = spawn('npm', ['run', 'start'], { cwd: projectRoot, detached: true, stdio: 'ignore' });
+        child.unref();
+        process.exit(0);
+      }
+    }, 3000);
+  } catch (err) {
+    res.status(500).json({ success: false, error: '重启失败: ' + err.message });
+  }
+});
+
 // Helper functions
 function getDirSize(dirPath) {
   let size = 0;
@@ -427,4 +938,23 @@ function formatSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+// Async copy directory helper
+async function copyDir(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+  const items = fs.readdirSync(src);
+  for (const item of items) {
+    const srcPath = path.join(src, item);
+    const destPath = path.join(dest, item);
+    const stat = fs.statSync(srcPath);
+    if (stat.isDirectory()) {
+      await copyDir(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 module.exports = router;
+module.exports.initScheduledBackup = initScheduledBackup;
