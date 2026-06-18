@@ -157,6 +157,19 @@ router.post('/check', async (req, res) => {
   }
 });
 
+// 版本号比较：返回 1(a>b)、0(a=b)、-1(a<b)
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
 // POST - 下载并安装更新
 router.post('/download', async (req, res) => {
   try {
@@ -167,6 +180,23 @@ router.post('/download', async (req, res) => {
     }
     
     const projectRoot = path.resolve(__dirname, '../../..');
+
+    // 读取当前版本，禁止降级
+    let currentVersion = '0.0.0';
+    try {
+      const pkgPath = path.join(projectRoot, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        currentVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version || currentVersion;
+      }
+    } catch (e) { /* ignore */ }
+
+    if (version && compareVersions(version, currentVersion) < 0) {
+      return res.status(400).json({
+        success: false,
+        error: `不允许降级：目标版本 v${version} 低于当前版本 v${currentVersion}`
+      });
+    }
+
     const tempDir = path.join(projectRoot, 'temp_update');
     const backupDir = path.join(projectRoot, 'backup_' + Date.now());
     
