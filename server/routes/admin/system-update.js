@@ -10,10 +10,9 @@ const AdmZip = require('adm-zip');
 
 const isWindows = process.platform === 'win32';
 
-// GitHub repo config
-const GITHUB_REPOS = {
-  main: { owner: process.env.GITHUB_OWNER || 'wgg223', repo: process.env.GITHUB_REPO || 'wangzhan' }
-};
+// GitHub repo config（固定地址，不可修改）
+const GITHUB_OWNER = 'wgg223';
+const GITHUB_REPO = 'wangzhan';
 
 function copyDirCrossPlatform(src, dest) {
   return new Promise((resolve) => {
@@ -68,7 +67,7 @@ router.get('/', (req, res) => {
 // POST - 检查GitHub更新
 router.post('/check', async (req, res) => {
   try {
-    const { owner: githubOwner, repo: githubRepo } = GITHUB_REPOS.main;
+
 
     const projectRoot = path.resolve(__dirname, '../../..');
     const packageJsonPath = path.join(projectRoot, 'package.json');
@@ -88,7 +87,7 @@ router.post('/check', async (req, res) => {
     let releasesData = [];
     let latestRelease = null;
     try {
-      const releasesUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases?per_page=10`;
+      const releasesUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=10`;
       const releasesRes = await fetch(releasesUrl, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
@@ -145,7 +144,7 @@ router.post('/check', async (req, res) => {
         latestVersion: latestVersion,
         releaseName: latestRelease.name || '',
         releaseBody: latestRelease.body || '',
-        releaseUrl: latestRelease.html_url || '',
+        releaseUrl: latestRelease.html_url || `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`,
         publishedAt: latestRelease.published_at || '',
         downloadUrl: latestRelease.zipball_url || '',
         changelog: changelog
@@ -394,7 +393,21 @@ router.post('/download', async (req, res) => {
     
     // 清理临时文件
     await removeDirCrossPlatform(tempDir);
-    
+
+    // 安装依赖
+    console.log('[system-update] 开始执行 npm install...');
+    await new Promise((resolve, reject) => {
+      exec('npm install --production', { cwd: projectRoot, timeout: 120000 }, (error, stdout, stderr) => {
+        if (error) {
+          console.error('[system-update] npm install 失败:', error.message);
+          reject(new Error('npm install 失败: ' + error.message));
+        } else {
+          console.log('[system-update] npm install 完成');
+          resolve();
+        }
+      });
+    });
+
     // 记录更新完成
     try {
       const db = req.db;
@@ -410,13 +423,33 @@ router.post('/download', async (req, res) => {
     } catch (logErr) {
       console.error('[system-update] logActivity 错误:', logErr.message);
     }
-    
+
     res.json({
       success: true,
-      message: '更新下载并安装成功，建议重启服务器以应用更改',
-      backupPath: backupDir
+      message: '更新安装成功，服务器将在3秒后自动重启',
+      backupPath: backupDir,
+      autoRestart: true
     });
-    
+
+    // 延迟3秒后自动重启
+    setTimeout(() => {
+      console.log('[system-update] 更新完成，正在重启服务器...');
+      if (process.env.PM2_HOME || process.env.pm_id) {
+        exec('pm2 restart all', (error) => {
+          if (error) {
+            console.error('[system-update] PM2重启失败:', error.message);
+            const child = spawn('npm', ['run', 'start'], { cwd: projectRoot, detached: true, stdio: 'ignore' });
+            child.unref();
+            process.exit(0);
+          }
+        });
+      } else {
+        const child = spawn('npm', ['run', 'start'], { cwd: projectRoot, detached: true, stdio: 'ignore' });
+        child.unref();
+        process.exit(0);
+      }
+    }, 3000);
+
   } catch (err) {
     console.error('[Admin] 下载更新失败:', err);
     res.status(500).json({ success: false, error: '下载更新失败: ' + err.message });

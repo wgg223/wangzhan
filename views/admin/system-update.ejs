@@ -38,6 +38,12 @@
       <div class="update-status" id="updateStatus">
         <div class="status-message">点击下方按钮检查更新</div>
       </div>
+
+      <div class="github-link-section">
+        <a href="https://github.com/wgg223/wangzhan" target="_blank" rel="noopener noreferrer" class="github-repo-link">
+          在 GitHub 上查看仓库
+        </a>
+      </div>
       
       <div class="release-info" id="releaseInfo" style="display: none;">
         <h3 id="releaseName"></h3>
@@ -45,6 +51,9 @@
           <span id="publishedAt"></span>
         </div>
         <div class="release-body" id="releaseBody"></div>
+        <div class="release-link">
+          <a id="releaseUrl" href="#" target="_blank" rel="noopener noreferrer">在 GitHub 上查看此版本</a>
+        </div>
       </div>
 
       <div class="update-actions">
@@ -56,7 +65,7 @@
           <span class="btn-text">下载并安装更新</span>
           <span class="btn-loading" style="display: none;">下载中...</span>
         </button>
-        <button type="button" class="btn btn-danger" id="forceUpdateBtn" onclick="forceUpdate()" style="display: none;">
+        <button type="button" class="btn btn-danger" id="forceUpdateBtn" onclick="forceUpdate()">
           <span class="btn-text">强制更新到最新版</span>
           <span class="btn-loading" style="display: none;">更新中...</span>
         </button>
@@ -369,6 +378,41 @@
   width: 0%;
   transition: width 0.3s ease;
 }
+
+.github-link-section {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.github-repo-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.github-repo-link:hover {
+  text-decoration: underline;
+}
+
+.release-link {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.release-link a {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.release-link a:hover {
+  text-decoration: underline;
+}
 </style>
 
 <script>
@@ -444,6 +488,10 @@ async function checkUpdate() {
         document.getElementById('releaseName').textContent = result.data.releaseName || '新版本可用';
         document.getElementById('publishedAt').textContent = result.data.publishedAt ? '发布时间: ' + new Date(result.data.publishedAt).toLocaleString() : '';
         document.getElementById('releaseBody').innerHTML = renderMarkdown(result.data.releaseBody || '暂无更新说明');
+
+        if (result.data.releaseUrl) {
+          document.getElementById('releaseUrl').href = result.data.releaseUrl;
+        }
 
         document.getElementById('downloadBtn').style.display = 'inline-block';
         document.getElementById('forceUpdateBtn').style.display = 'inline-block';
@@ -522,16 +570,31 @@ async function downloadUpdate() {
     if (result.success) {
       updateStatus.className = 'update-status success';
       updateStatus.innerHTML = `<div class="status-message">更新安装成功！${result.message}</div>`;
-      
+
       addUpdateLog(`版本 ${updateData.latestVersion} 安装成功`, 'success');
       addUpdateLog(`备份已保存到: ${result.backupPath}`, 'info');
-      
+
       // 隐藏下载按钮
       btn.style.display = 'none';
-      
-      // 提示用户重启
-      if (confirm('更新已安装完成，是否立即重启服务器以应用更改？')) {
-        restartServer();
+
+      if (result.autoRestart) {
+        // 自动重启倒计时
+        addUpdateLog('服务器将在3秒后自动重启...', 'info');
+        let countdown = 3;
+        const countdownInterval = setInterval(() => {
+          updateStatus.innerHTML = `<div class="status-message">服务器将在 ${countdown} 秒后自动重启...</div>`;
+          countdown--;
+          if (countdown < 0) {
+            clearInterval(countdownInterval);
+            updateStatus.innerHTML = '<div class="status-message">正在重启，请稍后刷新页面...</div>';
+            setTimeout(() => { window.location.reload(); }, 5000);
+          }
+        }, 1000);
+      } else {
+        // 提示用户手动重启
+        if (confirm('更新已安装完成，是否立即重启服务器以应用更改？')) {
+          restartServer();
+        }
       }
     } else {
       throw new Error(result.error || '下载更新失败');
@@ -681,19 +744,50 @@ function renderChangelog(changelog) {
 }
 
 async function forceUpdate() {
-  if (!updateData || !updateData.downloadUrl) {
-    alert('请先检查更新');
-    return;
-  }
-
-  if (!confirm('⚠️ 强制更新将直接下载并覆盖安装最新版本 v' + updateData.latestVersion + '，无论当前版本是否已是最新。\n\n更新前会自动备份，是否继续？')) {
-    return;
-  }
-
   var btn = document.getElementById('forceUpdateBtn');
   var btnText = btn.querySelector('.btn-text');
   var btnLoading = btn.querySelector('.btn-loading');
   var updateStatus = document.getElementById('updateStatus');
+
+  if (!updateData || !updateData.downloadUrl) {
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'inline';
+    updateStatus.className = 'update-status downloading';
+    updateStatus.innerHTML = '<div class="status-message">正在获取最新版本信息...</div>';
+
+    try {
+      var checkRes = await fetch('/admin/system-update/check', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'CSRF-Token': getCsrfToken(),
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      var checkResult = await checkRes.json();
+      if (!checkResult.success || !checkResult.data || !checkResult.data.downloadUrl) {
+        throw new Error(checkResult.error || '无法获取最新版本信息');
+      }
+      updateData = checkResult.data;
+      addUpdateLog('获取到最新版本 v' + updateData.latestVersion, 'info');
+    } catch (err) {
+      updateStatus.className = 'update-status error';
+      updateStatus.innerHTML = '<div class="status-message">获取最新版本失败: ' + err.message + '</div>';
+      addUpdateLog('获取最新版本失败: ' + err.message, 'error');
+      btn.disabled = false;
+      btnText.style.display = 'inline';
+      btnLoading.style.display = 'none';
+      return;
+    }
+  }
+
+  if (!confirm('⚠️ 强制更新将直接下载并覆盖安装最新版本 v' + updateData.latestVersion + '，无论当前版本是否已是最新。\n\n更新前会自动备份，是否继续？')) {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+    return;
+  }
 
   btn.disabled = true;
   btnText.style.display = 'none';
@@ -729,8 +823,22 @@ async function forceUpdate() {
       btn.style.display = 'none';
       document.getElementById('downloadBtn').style.display = 'none';
 
-      if (confirm('更新已完成，是否立即重启服务器以应用更改？')) {
-        restartServer();
+      if (result.autoRestart) {
+        addUpdateLog('服务器将在3秒后自动重启...', 'info');
+        let countdown = 3;
+        const countdownInterval = setInterval(() => {
+          updateStatus.innerHTML = '<div class="status-message">服务器将在 ' + countdown + ' 秒后自动重启...</div>';
+          countdown--;
+          if (countdown < 0) {
+            clearInterval(countdownInterval);
+            updateStatus.innerHTML = '<div class="status-message">正在重启，请稍后刷新页面...</div>';
+            setTimeout(function() { window.location.reload(); }, 5000);
+          }
+        }, 1000);
+      } else {
+        if (confirm('更新已完成，是否立即重启服务器以应用更改？')) {
+          restartServer();
+        }
       }
     } else {
       throw new Error(result.error || '更新失败');
