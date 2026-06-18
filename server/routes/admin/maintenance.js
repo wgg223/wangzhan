@@ -31,6 +31,22 @@ let autoUpdateState = {
   notifiedUsers: new Set()
 };
 
+// Compare version numbers (returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal)
+function compareVersions(v1, v2) {
+  const parts1 = v1.split('.').map(Number);
+  const parts2 = v2.split('.').map(Number);
+  
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const num1 = parts1[i] || 0;
+    const num2 = parts2[i] || 0;
+    
+    if (num1 > num2) return 1;
+    if (num1 < num2) return -1;
+  }
+  
+  return 0;
+}
+
 // Scheduled backup task
 let scheduledBackupTask = null;
 
@@ -93,7 +109,8 @@ async function checkForUpdates() {
 
     const releaseData = await response.json();
     const latestVersion = releaseData.tag_name?.replace(/^v/, '') || currentVersion;
-    const hasUpdate = latestVersion !== currentVersion;
+    // Only consider it an update if latest version is greater than current version
+    const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
 
     autoUpdateState = {
       ...autoUpdateState,
@@ -985,7 +1002,8 @@ router.get('/maintenance/check-update', isAuthenticated, isSuperAdmin, async (re
 
     const releaseData = await response.json();
     const latestVersion = releaseData.tag_name?.replace(/^v/, '') || currentVersion;
-    const hasUpdate = latestVersion !== currentVersion;
+    // Only consider it an update if latest version is greater than current version
+    const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
 
     res.json({
       success: true,
@@ -1012,6 +1030,23 @@ router.post('/maintenance/download-update', isAuthenticated, isSuperAdmin, async
     const { downloadUrl, version } = req.body;
     if (!downloadUrl) {
       return res.status(400).json({ success: false, error: '缺少下载链接' });
+    }
+
+    // Check if target version is higher than current version
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+    let currentVersion = '2.4.0';
+    try {
+      if (fs.existsSync(packageJsonPath)) {
+        const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+        currentVersion = pkg.version || currentVersion;
+      }
+    } catch (e) { /* ignore */ }
+
+    if (compareVersions(version, currentVersion) <= 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `无法降级：目标版本 v${version} 不高于当前版本 v${currentVersion}` 
+      });
     }
 
     const tempDir = path.join(projectRoot, 'temp_update');
