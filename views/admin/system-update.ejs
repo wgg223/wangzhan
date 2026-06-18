@@ -46,7 +46,7 @@
         </div>
         <div class="release-body" id="releaseBody"></div>
       </div>
-      
+
       <div class="update-actions">
         <button type="button" class="btn btn-primary" id="checkUpdateBtn" onclick="checkUpdate()">
           <span class="btn-text">检查更新</span>
@@ -56,6 +56,10 @@
           <span class="btn-text">下载并安装更新</span>
           <span class="btn-loading" style="display: none;">下载中...</span>
         </button>
+        <button type="button" class="btn btn-danger" id="forceUpdateBtn" onclick="forceUpdate()" style="display: none;">
+          <span class="btn-text">强制更新到最新版</span>
+          <span class="btn-loading" style="display: none;">更新中...</span>
+        </button>
         <button type="button" class="btn btn-warning" id="restartBtn" onclick="restartServer()">
           <span class="btn-text">重启服务器</span>
           <span class="btn-loading" style="display: none;">重启中...</span>
@@ -63,9 +67,14 @@
       </div>
     </div>
   </div>
-  
-  <div class="settings-section">
+
+  <div class="settings-section" id="changelogSection" style="display: none;">
     <h2>更新日志</h2>
+    <div class="changelog-list" id="changelogList"></div>
+  </div>
+
+  <div class="settings-section">
+    <h2>操作日志</h2>
     <div class="update-log" id="updateLog">
       <p class="text-muted">暂无更新记录</p>
     </div>
@@ -220,6 +229,91 @@
   border-color: var(--warning-dark);
 }
 
+.update-actions .btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.update-actions .btn-danger:hover {
+  background: var(--danger-dark, #c0392b);
+  border-color: var(--danger-dark, #c0392b);
+}
+
+.changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.changelog-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  transition: border-color 0.2s;
+}
+
+.changelog-item.current {
+  border-color: var(--success);
+  background: var(--success-bg);
+}
+
+.changelog-item.latest {
+  border-color: var(--primary);
+}
+
+.changelog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.changelog-version {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--text-primary);
+}
+
+.changelog-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.changelog-badge.current {
+  background: var(--success);
+  color: #fff;
+}
+
+.changelog-badge.latest {
+  background: var(--primary);
+  color: #fff;
+}
+
+.changelog-date {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.changelog-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.changelog-body ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+
+.changelog-body li {
+  margin-bottom: 4px;
+}
+
 .update-log {
   background: var(--gray-50);
   border-radius: 6px;
@@ -337,30 +431,36 @@ async function checkUpdate() {
     
     if (result.success && result.data) {
       updateData = result.data;
-      
+
       document.getElementById('currentVersion').textContent = result.data.currentVersion;
       document.getElementById('latestVersion').textContent = result.data.latestVersion;
       document.getElementById('latestVersionContainer').style.display = 'flex';
-      
+
       if (result.data.hasUpdate) {
         updateStatus.className = 'update-status has-update';
         updateStatus.innerHTML = `<div class="status-message">发现新版本 ${result.data.latestVersion}！</div>`;
-        
+
         document.getElementById('releaseInfo').style.display = 'block';
         document.getElementById('releaseName').textContent = result.data.releaseName || '新版本可用';
         document.getElementById('publishedAt').textContent = result.data.publishedAt ? '发布时间: ' + new Date(result.data.publishedAt).toLocaleString() : '';
-        document.getElementById('releaseBody').textContent = result.data.releaseBody || '暂无更新说明';
-        
+        document.getElementById('releaseBody').innerHTML = renderMarkdown(result.data.releaseBody || '暂无更新说明');
+
         document.getElementById('downloadBtn').style.display = 'inline-block';
-        
+        document.getElementById('forceUpdateBtn').style.display = 'inline-block';
+
         addUpdateLog(`发现新版本 ${result.data.latestVersion}`, 'info');
       } else {
         updateStatus.className = 'update-status no-update';
         updateStatus.innerHTML = '<div class="status-message">当前已是最新版本</div>';
         document.getElementById('releaseInfo').style.display = 'none';
         document.getElementById('downloadBtn').style.display = 'none';
-        
+        document.getElementById('forceUpdateBtn').style.display = 'none';
+
         addUpdateLog('检查完成，当前已是最新版本', 'success');
+      }
+
+      if (result.data.changelog && result.data.changelog.length > 0) {
+        renderChangelog(result.data.changelog);
       }
     } else {
       throw new Error(result.error || '检查更新失败');
@@ -535,4 +635,114 @@ function addUpdateLog(message, type) {
 document.addEventListener('DOMContentLoaded', function() {
   loadSystemInfo();
 });
+
+function renderMarkdown(text) {
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^### (.*$)/gm, '<h4>$1</h4>')
+    .replace(/^## (.*$)/gm, '<h3>$1</h3>')
+    .replace(/^# (.*$)/gm, '<h2>$1</h2>')
+    .replace(/^- (.*$)/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+    .replace(/\n/g, '<br>');
+}
+
+function renderChangelog(changelog) {
+  var section = document.getElementById('changelogSection');
+  var list = document.getElementById('changelogList');
+  list.innerHTML = '';
+  section.style.display = 'block';
+
+  changelog.forEach(function(item) {
+    var div = document.createElement('div');
+    var cls = 'changelog-item';
+    if (item.isCurrent) cls += ' current';
+    div.className = cls;
+
+    var badge = '';
+    if (item.isCurrent) badge = '<span class="changelog-badge current">当前版本</span>';
+    else if (item === changelog[0]) badge = '<span class="changelog-badge latest">最新版本</span>';
+
+    var dateStr = item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : '';
+
+    div.innerHTML =
+      '<div class="changelog-header">' +
+        '<span class="changelog-version">v' + item.version + '</span>' +
+        badge +
+        '<span class="changelog-date">' + dateStr + '</span>' +
+      '</div>' +
+      '<div class="changelog-body">' + renderMarkdown(item.body || '暂无更新说明') + '</div>';
+
+    list.appendChild(div);
+  });
+}
+
+async function forceUpdate() {
+  if (!updateData || !updateData.downloadUrl) {
+    alert('请先检查更新');
+    return;
+  }
+
+  if (!confirm('⚠️ 强制更新将直接下载并覆盖安装最新版本 v' + updateData.latestVersion + '，无论当前版本是否已是最新。\n\n更新前会自动备份，是否继续？')) {
+    return;
+  }
+
+  var btn = document.getElementById('forceUpdateBtn');
+  var btnText = btn.querySelector('.btn-text');
+  var btnLoading = btn.querySelector('.btn-loading');
+  var updateStatus = document.getElementById('updateStatus');
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+
+  updateStatus.className = 'update-status downloading';
+  updateStatus.innerHTML = '<div class="status-message">正在强制更新到 v' + updateData.latestVersion + '，请稍候...</div>';
+
+  addUpdateLog('开始强制更新到 v' + updateData.latestVersion, 'info');
+
+  try {
+    var response = await fetch('/admin/system-update/download', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
+        downloadUrl: updateData.downloadUrl,
+        version: updateData.latestVersion
+      })
+    });
+
+    var result = await response.json();
+
+    if (result.success) {
+      updateStatus.className = 'update-status success';
+      updateStatus.innerHTML = '<div class="status-message">强制更新成功！已安装 v' + updateData.latestVersion + '</div>';
+      addUpdateLog('强制更新成功，已安装 v' + updateData.latestVersion, 'success');
+
+      document.getElementById('currentVersion').textContent = updateData.latestVersion;
+      btn.style.display = 'none';
+      document.getElementById('downloadBtn').style.display = 'none';
+
+      if (confirm('更新已完成，是否立即重启服务器以应用更改？')) {
+        restartServer();
+      }
+    } else {
+      throw new Error(result.error || '更新失败');
+    }
+  } catch (error) {
+    updateStatus.className = 'update-status error';
+    updateStatus.innerHTML = '<div class="status-message">强制更新失败: ' + error.message + '</div>';
+    addUpdateLog('强制更新失败: ' + error.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
 </script>

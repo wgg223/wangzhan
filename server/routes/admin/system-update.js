@@ -70,7 +70,6 @@ router.post('/check', async (req, res) => {
   try {
     const { owner: githubOwner, repo: githubRepo } = GITHUB_REPOS.main;
 
-    // 从 package.json 读取当前版本
     const projectRoot = path.resolve(__dirname, '../../..');
     const packageJsonPath = path.join(projectRoot, 'package.json');
     let currentVersion = '0.0.0';
@@ -83,36 +82,46 @@ router.post('/check', async (req, res) => {
       console.error('[system-update] 读取package.json失败:', e.message);
     }
 
-    const githubApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    let response;
+    let releasesData = [];
+    let latestRelease = null;
     try {
-      response = await fetch(githubApiUrl, {
+      const releasesUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases?per_page=10`;
+      const releasesRes = await fetch(releasesUrl, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'RP-Hub-Update-Checker'
+          'User-Agent': 'Website-Update-Checker'
         },
         signal: controller.signal
       });
+      if (releasesRes.ok) {
+        releasesData = await releasesRes.json();
+        latestRelease = releasesData[0] || null;
+      }
     } finally {
       clearTimeout(timeoutId);
     }
 
-    if (!response.ok) {
+    if (!latestRelease) {
       return res.status(502).json({
         success: false,
-        error: `GitHub API 请求失败 (${response.status})，请检查网络连接或稍后重试`
+        error: '无法获取 GitHub Release 信息，请检查网络连接或稍后重试'
       });
     }
-    
-    const releaseData = await response.json();
-    const latestVersion = releaseData.tag_name?.replace(/^v/, '') || currentVersion;
+
+    const latestVersion = latestRelease.tag_name?.replace(/^v/, '') || currentVersion;
     const hasUpdate = latestVersion !== currentVersion;
-    
-    // 记录检查更新操作
+
+    const changelog = releasesData.map(r => ({
+      version: r.tag_name?.replace(/^v/, '') || '',
+      name: r.name || '',
+      body: r.body || '',
+      publishedAt: r.published_at || '',
+      isCurrent: (r.tag_name?.replace(/^v/, '') || '') === currentVersion
+    }));
+
     try {
       const db = req.db;
       logActivity(db, {
@@ -127,18 +136,19 @@ router.post('/check', async (req, res) => {
     } catch (logErr) {
       console.error('[system-update] logActivity 错误:', logErr.message);
     }
-    
+
     res.json({
       success: true,
       data: {
         hasUpdate: hasUpdate,
         currentVersion: currentVersion,
         latestVersion: latestVersion,
-        releaseName: releaseData.name || '',
-        releaseBody: releaseData.body || '',
-        releaseUrl: releaseData.html_url || '',
-        publishedAt: releaseData.published_at || '',
-        downloadUrl: releaseData.zipball_url || ''
+        releaseName: latestRelease.name || '',
+        releaseBody: latestRelease.body || '',
+        releaseUrl: latestRelease.html_url || '',
+        publishedAt: latestRelease.published_at || '',
+        downloadUrl: latestRelease.zipball_url || '',
+        changelog: changelog
       }
     });
   } catch (err) {
