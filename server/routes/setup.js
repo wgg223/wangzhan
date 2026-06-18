@@ -8,9 +8,13 @@ const {
   markSetupCompleted,
   applyPragmaSettings,
   saveDatabase,
+  closeDatabase,
+  getDbPath,
   insertDefaultDataIfNeeded,
   generateUid
 } = require('../config/database');
+const { dbUpload } = require('./admin/upload');
+const fs = require('fs');
 
 // 数据库模式预设
 const PRAGMA_PRESETS = {
@@ -163,6 +167,48 @@ router.post('/', (req, res) => {
       formData: { username, email, db_mode, ...req.body }
     });
   }
+});
+
+/**
+ * POST /setup/restore - 上传数据库文件恢复
+ */
+router.post('/restore', (req, res) => {
+  dbUpload.single('dbfile')(req, res, function (err) {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ success: false, message: '文件大小超出限制（最大200MB）' });
+      }
+      return res.status(400).json({ success: false, message: err.message });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: '请选择数据库文件' });
+    }
+
+    try {
+      const uploadedPath = req.file.path;
+      const dbPath = getDbPath();
+
+      // 关闭当前数据库连接
+      closeDatabase();
+
+      // 替换数据库文件
+      fs.copyFileSync(uploadedPath, dbPath);
+
+      // 清理临时文件
+      try { fs.unlinkSync(uploadedPath); } catch (e) { /* ignore */ }
+      const tmpDir = require('path').dirname(uploadedPath);
+      try { fs.rmdirSync(tmpDir); } catch (e) { /* ignore */ }
+
+      // 标记安装完成
+      markSetupCompleted();
+
+      res.json({ success: true, redirect: '/admin' });
+    } catch (err) {
+      console.error('数据库恢复失败:', err);
+      res.status(500).json({ success: false, message: '数据库恢复失败: ' + err.message });
+    }
+  });
 });
 
 /**

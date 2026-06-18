@@ -414,6 +414,96 @@
 
   // ====== Init ======
 
+  // Mode switch (new install vs restore)
+  window.switchMode = function (mode) {
+    var newBtn = document.getElementById('mode-new');
+    var restoreBtn = document.getElementById('mode-restore');
+    var restorePanel = document.getElementById('restore-panel');
+    var setupForm = document.getElementById('setup-form');
+    var stepIndicator = document.querySelector('.step-indicator');
+
+    if (mode === 'restore') {
+      newBtn.classList.remove('active');
+      restoreBtn.classList.add('active');
+      restorePanel.style.display = 'block';
+      setupForm.style.display = 'none';
+      if (stepIndicator) stepIndicator.style.display = 'none';
+    } else {
+      newBtn.classList.add('active');
+      restoreBtn.classList.remove('active');
+      restorePanel.style.display = 'none';
+      setupForm.style.display = 'block';
+      if (stepIndicator) stepIndicator.style.display = 'flex';
+    }
+    hideAlert();
+  };
+
+  window.uploadRestore = function () {
+    var fileInput = document.getElementById('dbfile');
+    var status = document.getElementById('restore-status');
+    var btn = document.getElementById('restoreBtn');
+    var btnText = btn.querySelector('.btn-text');
+    var btnLoading = btn.querySelector('.btn-loading');
+
+    if (!fileInput.files || !fileInput.files[0]) {
+      status.style.display = 'block';
+      status.innerHTML = '<div class="alert alert-error"><span class="alert-icon">⚠️</span><span>请选择数据库文件</span></div>';
+      return;
+    }
+
+    var formData = new FormData();
+    formData.append('dbfile', fileInput.files[0]);
+
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'inline';
+    status.style.display = 'block';
+    status.innerHTML = '<div class="alert"><span class="alert-icon">⏳</span><span>正在上传并恢复数据库...</span></div>';
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/setup/restore', true);
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4) {
+        if (xhr.status === 200) {
+          var data;
+          try { data = JSON.parse(xhr.responseText); } catch (e) { data = {}; }
+          if (data.success) {
+            status.innerHTML = '<div class="alert alert-success"><span class="alert-icon">✅</span><span>数据库恢复成功，正在跳转...</span></div>';
+            setTimeout(function () {
+              window.location.href = data.redirect || '/admin';
+            }, 1500);
+          } else {
+            status.innerHTML = '<div class="alert alert-error"><span class="alert-icon">⚠️</span><span>' + escapeHtml(data.message || '恢复失败') + '</span></div>';
+            btn.disabled = false;
+            btnText.style.display = 'inline';
+            btnLoading.style.display = 'none';
+          }
+        } else {
+          var errMsg = '服务器错误 (' + xhr.status + ')';
+          try {
+            var errData = JSON.parse(xhr.responseText);
+            if (errData.message) errMsg = errData.message;
+          } catch (e) { /* ignore */ }
+          status.innerHTML = '<div class="alert alert-error"><span class="alert-icon">⚠️</span><span>' + escapeHtml(errMsg) + '</span></div>';
+          btn.disabled = false;
+          btnText.style.display = 'inline';
+          btnLoading.style.display = 'none';
+        }
+      }
+    };
+
+    xhr.onerror = function () {
+      status.innerHTML = '<div class="alert alert-error"><span class="alert-icon">⚠️</span><span>网络错误，请检查连接后重试</span></div>';
+      btn.disabled = false;
+      btnText.style.display = 'inline';
+      btnLoading.style.display = 'none';
+    };
+
+    xhr.send(formData);
+  };
+
   showStep(1);
   checkPasswordStrength('');
 

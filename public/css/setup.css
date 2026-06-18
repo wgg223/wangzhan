@@ -481,6 +481,77 @@ body {
   font-weight: var(--font-medium);
 }
 
+/* Setup Mode Switch */
+.setup-mode-switch {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.mode-btn {
+  flex: 1;
+  padding: var(--space-4);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  background: var(--bg-primary);
+  cursor: pointer;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition: var(--transition-fast);
+}
+
+.mode-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.mode-btn.active {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+
+.mode-icon {
+  font-size: var(--text-lg);
+}
+
+/* Restore Panel */
+.restore-card {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+}
+
+.restore-card h2 {
+  font-size: var(--text-xl);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.restore-desc {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-5);
+}
+
+.restore-card .form-control {
+  width: 100%;
+  padding: var(--space-3);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
+}
+
+.restore-card .form-control:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .setup-container {

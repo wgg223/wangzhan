@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
+const { dbUpload } = require('./upload');
+const { closeDatabase, getDbPath } = require('../../config/database');
 
 const isWindows = process.platform === 'win32';
 const projectRoot = path.resolve(__dirname, '../../..');
@@ -181,6 +183,68 @@ router.post('/backup/restore', isAuthenticated, isSuperAdmin, async (req, res) =
     console.error('[backup] Restore backup error:', err);
     res.status(500).json({ success: false, error: '备份恢复失败: ' + err.message });
   }
+});
+
+// POST - Upload and restore database from local file
+router.post('/backup/upload-restore', isAuthenticated, isSuperAdmin, (req, res) => {
+  dbUpload.single('dbfile')(req, res, function (err) {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ success: false, error: '文件大小超出限制（最大200MB）' });
+      }
+      return res.status(400).json({ success: false, error: err.message });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: '请选择数据库文件' });
+    }
+
+    try {
+      const uploadedPath = req.file.path;
+      const dbPath = getDbPath();
+      const backupCurrentPath = dbPath + '.bak.' + Date.now();
+
+      // 备份当前数据库
+      if (fs.existsSync(dbPath)) {
+        fs.copyFileSync(dbPath, backupCurrentPath);
+      }
+
+      // 关闭当前数据库连接
+      closeDatabase();
+
+      // 替换数据库文件
+      fs.copyFileSync(uploadedPath, dbPath);
+
+      // 清理临时文件
+      try { fs.unlinkSync(uploadedPath); } catch (e) { /* ignore */ }
+      // 清理 tmp 目录（如果为空）
+      const tmpDir = path.dirname(uploadedPath);
+      try { fs.rmdirSync(tmpDir); } catch (e) { /* ignore */ }
+
+      // 记录日志
+      try {
+        logActivity(req.db, {
+          user_id: req.session.user.id,
+          username: req.session.user.username,
+          action: 'restore_backup',
+          target_type: 'system',
+          target_title: '上传恢复数据库',
+          detail: `从本地上传文件恢复数据库: ${req.file.originalname}，已备份为 ${path.basename(backupCurrentPath)}`,
+          ip: req.ip
+        });
+      } catch (logErr) {
+        console.error('[backup] logActivity error:', logErr.message);
+      }
+
+      res.json({
+        success: true,
+        message: '数据库已替换成功，请重启服务器以加载新数据。当前数据库已备份为 ' + path.basename(backupCurrentPath)
+      });
+    } catch (err) {
+      console.error('[backup] Upload restore error:', err);
+      res.status(500).json({ success: false, error: '上传恢复失败: ' + err.message });
+    }
+  });
 });
 
 // DELETE - Delete backup

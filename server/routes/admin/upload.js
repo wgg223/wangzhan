@@ -171,4 +171,30 @@ const novelUpload = multer({
   }
 });
 
-module.exports = { upload, imageUpload, novelUpload };
+// 数据库文件上传（仅允许 .sqlite）
+const dbStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const tmpDir = path.join(__dirname, '../../../backups/tmp');
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+    cb(null, tmpDir);
+  },
+  filename: function (req, file, cb) {
+    cb(null, 'restore-' + Date.now() + '.sqlite');
+  }
+});
+
+const dbUpload = multer({
+  storage: dbStorage,
+  limits: { fileSize: 200 * 1024 * 1024 },
+  fileFilter: function (req, file, cb) {
+    const ext = getFileExtension(file.originalname);
+    if (ext !== '.sqlite' && ext !== '.db') {
+      return cb(new Error('只允许上传 .sqlite 或 .db 文件'), false);
+    }
+    cb(null, true);
+  }
+});
+
+module.exports = { upload, imageUpload, novelUpload, dbUpload };
