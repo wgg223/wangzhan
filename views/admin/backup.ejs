@@ -1,0 +1,220 @@
+<% var active = 'backup' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>💾 备份管理</h1>
+    <p class="page-desc">创建、恢复和管理系统备份</p>
+  </div>
+
+  <!-- Create Backup -->
+  <div class="settings-section">
+    <h2>创建备份</h2>
+    <div class="update-info-card">
+      <div class="form-group">
+        <label for="backup-name">备份名称（可选）</label>
+        <input type="text" id="backup-name" placeholder="自动生成" class="form-control">
+      </div>
+      <div class="form-group">
+        <label>备份类型</label>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <label class="backup-type-option">
+            <input type="radio" name="backup-type" value="full" checked> 完整备份
+            <span class="backup-type-desc">数据库 + 上传文件 + 配置 + 代码</span>
+          </label>
+          <label class="backup-type-option">
+            <input type="radio" name="backup-type" value="database"> 仅数据库
+            <span class="backup-type-desc">仅备份 database.sqlite</span>
+          </label>
+          <label class="backup-type-option">
+            <input type="radio" name="backup-type" value="uploads"> 仅上传文件
+            <span class="backup-type-desc">仅备份 public/uploads/</span>
+          </label>
+          <label class="backup-type-option">
+            <input type="radio" name="backup-type" value="config"> 仅配置
+            <span class="backup-type-desc">package.json + ecosystem.config.js</span>
+          </label>
+        </div>
+      </div>
+      <div class="update-actions">
+        <button type="button" class="btn btn-primary" id="createBackupBtn" onclick="createBackup()">
+          <span class="btn-text">创建备份</span>
+          <span class="btn-loading" style="display: none;">创建中...</span>
+        </button>
+      </div>
+      <div id="createStatus" style="display: none; margin-top: 12px;"></div>
+    </div>
+  </div>
+
+  <!-- Backup List -->
+  <div class="settings-section">
+    <h2>备份列表</h2>
+    <div id="backupList">
+      <% if (backups.length === 0) { %>
+        <p class="text-muted">暂无备份</p>
+      <% } else { %>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>类型</th>
+              <th>大小</th>
+              <th>创建时间</th>
+              <th>创建者</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% backups.forEach(function(backup) { %>
+            <tr>
+              <td><strong><%= backup.name %></strong></td>
+              <td><span class="badge badge-<%= backup.type === 'full' ? 'primary' : 'info' %>"><%= backup.type === 'full' ? '完整' : backup.type === 'database' ? '数据库' : backup.type === 'uploads' ? '上传文件' : '配置' %></span></td>
+              <td><%= backup.sizeFormatted %></td>
+              <td><%= new Date(backup.createdAt).toLocaleString('zh-CN') %></td>
+              <td><%= backup.createdBy || '-' %></td>
+              <td>
+                <div class="actions">
+                  <button class="btn btn-small btn-primary" onclick="restoreBackup('<%= backup.name %>')">恢复</button>
+                  <button class="btn btn-small btn-success" onclick="downloadBackup('<%= backup.name %>')">下载</button>
+                  <button class="btn btn-small btn-danger" onclick="deleteBackup('<%= backup.name %>')">删除</button>
+                </div>
+              </td>
+            </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<style>
+.backup-type-option {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+  border: 2px solid var(--gray-200);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 180px;
+}
+.backup-type-option:hover {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+.backup-type-option input[type="radio"] {
+  margin-bottom: 4px;
+}
+.backup-type-desc {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-top: 4px;
+}
+.text-muted {
+  color: var(--gray-400);
+  font-style: italic;
+  padding: 20px;
+  text-align: center;
+}
+</style>
+
+<script>
+function getCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+async function createBackup() {
+  const btn = document.getElementById('createBackupBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('createStatus');
+  const name = document.getElementById('backup-name').value;
+  const type = document.querySelector('input[name="backup-type"]:checked').value;
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">正在创建备份...</div>';
+
+  try {
+    const response = await fetch('/admin/backup/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ type, name })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      status.innerHTML = `<div class="alert alert-success">${result.message}</div>`;
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      status.innerHTML = `<div class="alert alert-error">${result.error}</div>`;
+    }
+  } catch (err) {
+    status.innerHTML = `<div class="alert alert-error">请求失败: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+async function restoreBackup(name) {
+  if (!confirm(`确定要从备份 "${name}" 恢复吗？\n\n这将覆盖当前数据，建议先创建备份。`)) return;
+
+  try {
+    const response = await fetch('/admin/backup/restore', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ backupName: name })
+    });
+
+    const result = await response.json();
+    if (result.success) {
+      alert(result.message + '\n建议重启服务器以应用更改。');
+    } else {
+      alert('恢复失败: ' + result.error);
+    }
+  } catch (err) {
+    alert('请求失败: ' + err.message);
+  }
+}
+
+async function deleteBackup(name) {
+  if (!confirm(`确定要删除备份 "${name}" 吗？\n\n此操作不可撤销！`)) return;
+
+  try {
+    const response = await fetch(`/admin/backup/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      headers: {
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+    if (result.success) {
+      alert(result.message);
+      location.reload();
+    } else {
+      alert('删除失败: ' + result.error);
+    }
+  } catch (err) {
+    alert('请求失败: ' + err.message);
+  }
+}
+
+function downloadBackup(name) {
+  window.location.href = `/admin/backup/${encodeURIComponent(name)}/download`;
+}
+</script>

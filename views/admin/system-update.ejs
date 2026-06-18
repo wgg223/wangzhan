@@ -1,0 +1,538 @@
+<% var active = 'system-update' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>系统更新</h1>
+    <p class="page-desc">检查并管理系统更新，支持自动下载和重启</p>
+  </div>
+
+  <div class="settings-section">
+    <h2>版本信息</h2>
+    
+    <div class="update-info-card">
+      <div class="version-display">
+        <div class="current-version">
+          <span class="label">当前版本</span>
+          <span class="version" id="currentVersion">加载中...</span>
+        </div>
+        <div class="latest-version" id="latestVersionContainer" style="display: none;">
+          <span class="label">最新版本</span>
+          <span class="version" id="latestVersion">-</span>
+        </div>
+      </div>
+      
+      <div class="system-info" id="systemInfo">
+        <div class="info-item">
+          <span class="label">Node.js版本</span>
+          <span class="value" id="nodeVersion">-</span>
+        </div>
+        <div class="info-item">
+          <span class="label">运行平台</span>
+          <span class="value" id="platform">-</span>
+        </div>
+        <div class="info-item">
+          <span class="label">运行时间</span>
+          <span class="value" id="uptime">-</span>
+        </div>
+      </div>
+      
+      <div class="update-status" id="updateStatus">
+        <div class="status-message">点击下方按钮检查更新</div>
+      </div>
+      
+      <div class="release-info" id="releaseInfo" style="display: none;">
+        <h3 id="releaseName"></h3>
+        <div class="release-meta">
+          <span id="publishedAt"></span>
+        </div>
+        <div class="release-body" id="releaseBody"></div>
+      </div>
+      
+      <div class="update-actions">
+        <button type="button" class="btn btn-primary" id="checkUpdateBtn" onclick="checkUpdate()">
+          <span class="btn-text">检查更新</span>
+          <span class="btn-loading" style="display: none;">检查中...</span>
+        </button>
+        <button type="button" class="btn btn-success" id="downloadBtn" onclick="downloadUpdate()" style="display: none;">
+          <span class="btn-text">下载并安装更新</span>
+          <span class="btn-loading" style="display: none;">下载中...</span>
+        </button>
+        <button type="button" class="btn btn-warning" id="restartBtn" onclick="restartServer()">
+          <span class="btn-text">重启服务器</span>
+          <span class="btn-loading" style="display: none;">重启中...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <div class="settings-section">
+    <h2>更新日志</h2>
+    <div class="update-log" id="updateLog">
+      <p class="text-muted">暂无更新记录</p>
+    </div>
+  </div>
+</div>
+
+<style>
+.update-info-card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.version-display {
+  display: flex;
+  gap: 40px;
+  margin-bottom: 20px;
+}
+
+.current-version, .latest-version {
+  display: flex;
+  flex-direction: column;
+}
+
+.version-display .label {
+  font-size: 12px;
+  color: #6c757d;
+  margin-bottom: 4px;
+}
+
+.version-display .version {
+  font-size: 24px;
+  font-weight: bold;
+  color: #212529;
+}
+
+.latest-version .version {
+  color: #0d6efd;
+}
+
+.system-info {
+  display: flex;
+  gap: 30px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+}
+
+.system-info .info-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.system-info .label {
+  font-size: 11px;
+  color: #6c757d;
+  margin-bottom: 2px;
+}
+
+.system-info .value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #212529;
+}
+
+.update-status {
+  padding: 16px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+
+.update-status.has-update {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+}
+
+.update-status.no-update {
+  background: #d1e7dd;
+  border: 1px solid #198754;
+}
+
+.update-status.error {
+  background: #f8d7da;
+  border: 1px solid #dc3545;
+}
+
+.update-status.downloading {
+  background: #cff4fc;
+  border: 1px solid #0dcaf0;
+}
+
+.update-status.success {
+  background: #d1e7dd;
+  border: 1px solid #198754;
+}
+
+.status-message {
+  font-size: 14px;
+}
+
+.release-info {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.release-info h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+
+.release-meta {
+  font-size: 12px;
+  color: #6c757d;
+  margin-bottom: 15px;
+}
+
+.release-body {
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.update-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.update-actions .btn {
+  padding: 10px 20px;
+  font-size: 14px;
+  min-width: 140px;
+}
+
+.update-actions .btn-warning {
+  background: #ffc107;
+  border-color: #ffc107;
+  color: #212529;
+}
+
+.update-actions .btn-warning:hover {
+  background: #ffca2c;
+  border-color: #ffc720;
+}
+
+.update-log {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 16px;
+  min-height: 100px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.text-muted {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.log-entry {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.log-info {
+  background: #cff4fc;
+  border-left: 3px solid #0dcaf0;
+}
+
+.log-success {
+  background: #d1e7dd;
+  border-left: 3px solid #198754;
+}
+
+.log-error {
+  background: #f8d7da;
+  border-left: 3px solid #dc3545;
+}
+
+.log-time {
+  color: #6c757d;
+  margin-right: 8px;
+}
+
+.progress-bar {
+  height: 4px;
+  background: #e9ecef;
+  border-radius: 2px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #0dcaf0;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+</style>
+
+<script>
+function getCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+// 加载系统信息
+async function loadSystemInfo() {
+  try {
+    const response = await fetch('/admin/system-update/status', {
+      headers: {
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (result.success && result.data) {
+      document.getElementById('currentVersion').textContent = result.data.currentVersion;
+      document.getElementById('nodeVersion').textContent = result.data.nodeVersion;
+      document.getElementById('platform').textContent = result.data.platform;
+      
+      const uptimeSeconds = Math.floor(result.data.uptime);
+      const hours = Math.floor(uptimeSeconds / 3600);
+      const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+      document.getElementById('uptime').textContent = `${hours}小时${minutes}分钟`;
+    }
+  } catch (error) {
+    console.error('加载系统信息失败:', error);
+  }
+}
+
+// 检查更新
+let updateData = null;
+
+async function checkUpdate() {
+  const btn = document.getElementById('checkUpdateBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const updateStatus = document.getElementById('updateStatus');
+  
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  
+  try {
+    const response = await fetch('/admin/system-update/check', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (result.success && result.data) {
+      updateData = result.data;
+      
+      document.getElementById('currentVersion').textContent = result.data.currentVersion;
+      document.getElementById('latestVersion').textContent = result.data.latestVersion;
+      document.getElementById('latestVersionContainer').style.display = 'flex';
+      
+      if (result.data.hasUpdate) {
+        updateStatus.className = 'update-status has-update';
+        updateStatus.innerHTML = `<div class="status-message">发现新版本 ${result.data.latestVersion}！</div>`;
+        
+        document.getElementById('releaseInfo').style.display = 'block';
+        document.getElementById('releaseName').textContent = result.data.releaseName || '新版本可用';
+        document.getElementById('publishedAt').textContent = result.data.publishedAt ? '发布时间: ' + new Date(result.data.publishedAt).toLocaleString() : '';
+        document.getElementById('releaseBody').textContent = result.data.releaseBody || '暂无更新说明';
+        
+        document.getElementById('downloadBtn').style.display = 'inline-block';
+        
+        addUpdateLog(`发现新版本 ${result.data.latestVersion}`, 'info');
+      } else {
+        updateStatus.className = 'update-status no-update';
+        updateStatus.innerHTML = '<div class="status-message">当前已是最新版本</div>';
+        document.getElementById('releaseInfo').style.display = 'none';
+        document.getElementById('downloadBtn').style.display = 'none';
+        
+        addUpdateLog('检查完成，当前已是最新版本', 'success');
+      }
+    } else {
+      throw new Error(result.error || '检查更新失败');
+    }
+  } catch (error) {
+    console.error('检查更新失败:', error);
+    updateStatus.className = 'update-status error';
+    updateStatus.innerHTML = `<div class="status-message">检查更新失败: ${error.message}</div>`;
+    
+    addUpdateLog(`检查更新失败: ${error.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+// 下载并安装更新
+async function downloadUpdate() {
+  if (!updateData || !updateData.downloadUrl) {
+    alert('请先检查更新');
+    return;
+  }
+  
+  if (!confirm(`确定要下载并安装版本 ${updateData.latestVersion} 吗？\n\n更新前会自动备份当前项目。`)) {
+    return;
+  }
+  
+  const btn = document.getElementById('downloadBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const updateStatus = document.getElementById('updateStatus');
+  
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  
+  updateStatus.className = 'update-status downloading';
+  updateStatus.innerHTML = '<div class="status-message">正在下载并安装更新，请稍候...</div>';
+  
+  addUpdateLog(`开始下载版本 ${updateData.latestVersion}`, 'info');
+  
+  try {
+    const response = await fetch('/admin/system-update/download', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
+        downloadUrl: updateData.downloadUrl,
+        version: updateData.latestVersion
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      updateStatus.className = 'update-status success';
+      updateStatus.innerHTML = `<div class="status-message">更新安装成功！${result.message}</div>`;
+      
+      addUpdateLog(`版本 ${updateData.latestVersion} 安装成功`, 'success');
+      addUpdateLog(`备份已保存到: ${result.backupPath}`, 'info');
+      
+      // 隐藏下载按钮
+      btn.style.display = 'none';
+      
+      // 提示用户重启
+      if (confirm('更新已安装完成，是否立即重启服务器以应用更改？')) {
+        restartServer();
+      }
+    } else {
+      throw new Error(result.error || '下载更新失败');
+    }
+  } catch (error) {
+    console.error('下载更新失败:', error);
+    updateStatus.className = 'update-status error';
+    updateStatus.innerHTML = `<div class="status-message">下载更新失败: ${error.message}</div>`;
+    
+    addUpdateLog(`下载更新失败: ${error.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+// 重启服务器
+async function restartServer() {
+  if (!confirm('确定要重启服务器吗？\n\n服务器将在3秒后重启，所有连接将断开。')) {
+    return;
+  }
+  
+  const btn = document.getElementById('restartBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const updateStatus = document.getElementById('updateStatus');
+  
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  
+  updateStatus.className = 'update-status downloading';
+  updateStatus.innerHTML = '<div class="status-message">服务器正在重启，请稍候...</div>';
+  
+  addUpdateLog('服务器即将重启...', 'info');
+  
+  try {
+    const response = await fetch('/admin/system-update/restart', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      addUpdateLog('服务器重启指令已发送', 'success');
+      
+      // 显示倒计时
+      let countdown = 3;
+      const countdownInterval = setInterval(() => {
+        updateStatus.innerHTML = `<div class="status-message">服务器将在 ${countdown} 秒后重启...</div>`;
+        countdown--;
+        
+        if (countdown < 0) {
+          clearInterval(countdownInterval);
+          updateStatus.innerHTML = '<div class="status-message">正在重启，请稍后刷新页面...</div>';
+          
+          // 5秒后尝试刷新页面
+          setTimeout(() => {
+            window.location.reload();
+          }, 5000);
+        }
+      }, 1000);
+    } else {
+      throw new Error(result.error || '重启服务器失败');
+    }
+  } catch (error) {
+    console.error('重启服务器失败:', error);
+    updateStatus.className = 'update-status error';
+    updateStatus.innerHTML = `<div class="status-message">重启服务器失败: ${error.message}</div>`;
+    
+    addUpdateLog(`重启服务器失败: ${error.message}`, 'error');
+    
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+function addUpdateLog(message, type) {
+  const logContainer = document.getElementById('updateLog');
+  const timestamp = new Date().toLocaleString();
+  
+  const logEntry = document.createElement('div');
+  logEntry.className = `log-entry log-${type}`;
+  logEntry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${message}`;
+  
+  if (logContainer.querySelector('.text-muted')) {
+    logContainer.innerHTML = '';
+  }
+  
+  logContainer.insertBefore(logEntry, logContainer.firstChild);
+}
+
+// 页面加载时自动加载系统信息
+document.addEventListener('DOMContentLoaded', function() {
+  loadSystemInfo();
+});
+</script>

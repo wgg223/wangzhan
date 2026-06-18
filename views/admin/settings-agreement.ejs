@@ -1,0 +1,87 @@
+<% var active = 'settings-agreement' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>用户协议与隐私政策</h1>
+    <p class="page-desc">编辑注册页面的用户协议、隐私政策和账户注销协议内容</p>
+  </div>
+
+  <% if (typeof success !== 'undefined' && success) { %>
+    <div class="alert alert-success">协议设置已保存</div>
+  <% } %>
+
+  <form action="/admin/settings/agreement" method="POST" class="admin-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+    <div class="settings-section">
+      <h2>用户协议</h2>
+      <p class="section-desc">用户在注册时必须阅读并同意的服务条款</p>
+
+      <div class="form-group">
+        <label for="user_agreement">用户协议内容（支持HTML）</label>
+        <textarea id="user_agreement" name="user_agreement" rows="15" class="policy-editor"><%= settings.user_agreement || '' %></textarea>
+        <p class="field-hint">支持HTML标签，建议使用 h3 / p / ul / li 等标签排版</p>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>隐私政策</h2>
+      <p class="section-desc">说明网站如何收集、使用和保护用户个人信息</p>
+
+      <div class="form-group">
+        <label for="privacy_policy">隐私政策内容（支持HTML）</label>
+        <textarea id="privacy_policy" name="privacy_policy" rows="15" class="policy-editor"><%= settings.privacy_policy || '' %></textarea>
+        <p class="field-hint">支持HTML标签，建议使用 h3 / p / ul 等标签排版</p>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>账户注销协议</h2>
+      <p class="section-desc">用户在注销账户时需要查看并同意的协议内容</p>
+
+      <div class="form-group">
+        <label for="delete_account_agreement">注销协议内容（支持HTML）</label>
+        <textarea id="delete_account_agreement" name="delete_account_agreement" rows="15" class="policy-editor"><%= settings.delete_account_agreement || '' %></textarea>
+        <p class="field-hint">支持HTML标签，建议使用 h3 / h4 / p 等标签排版。用户注销前必须查看并同意此协议</p>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存设置</button>
+    </div>
+  </form>
+</div>
+
+<style>
+.settings-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px solid #eee;
+}
+.settings-section h2 {
+  font-size: 18px;
+  margin-bottom: 5px;
+}
+.section-desc {
+  color: #888;
+  font-size: 13px;
+  margin-bottom: 15px;
+}
+.policy-editor {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 300px;
+  tab-size: 2;
+}
+.page-desc {
+  color: #888;
+  font-size: 13px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+}
+.field-hint {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+</style>

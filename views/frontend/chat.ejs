@@ -1,0 +1,333 @@
+<div class="chat-container">
+  <div class="chat-topbar">
+    <a href="/chat" class="back-btn">← 返回</a>
+    <div class="chat-user-info">
+      <img src="<%= otherUser.avatar || '/assets/images/default-avatar.png' %>" alt="" class="chat-avatar">
+      <span class="chat-username"><%= otherUser.nickname || otherUser.username %></span>
+    </div>
+    <div class="chat-actions">
+      <a href="/user/<%= otherUser.uid || otherUser.id %>" class="profile-link">主页</a>
+    </div>
+  </div>
+
+  <div class="messages-container" id="messagesContainer">
+    <div class="loading">加载中...</div>
+  </div>
+
+  <div class="message-input-area">
+    <form id="messageForm" class="message-form">
+      <input type="text" id="messageInput" placeholder="输入消息..." maxlength="2000" autocomplete="off">
+      <button type="submit" class="send-btn">发送</button>
+    </form>
+  </div>
+</div>
+
+<style>
+.chat-container {
+  max-width: 800px;
+  margin: 0 auto;
+  height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+}
+
+.chat-topbar {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #eee;
+}
+
+.back-btn {
+  color: #333;
+  text-decoration: none;
+  margin-right: 16px;
+  font-size: 14px;
+}
+
+.back-btn:hover {
+  color: #3498db;
+}
+
+.chat-user-info {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.chat-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-right: 10px;
+}
+
+.chat-username {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.profile-link {
+  color: #3498db;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.message-bubble {
+  display: flex;
+  max-width: 70%;
+}
+
+.message-bubble.sent {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message-bubble.received {
+  align-self: flex-start;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.message-bubble.sent .message-avatar {
+  margin-left: 8px;
+}
+
+.message-bubble.received .message-avatar {
+  margin-right: 8px;
+}
+
+.message-content {
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.message-bubble.sent .message-content {
+  background: #3498db;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.message-bubble.received .message-content {
+  background: #f0f0f0;
+  color: #333;
+  border-bottom-left-radius: 4px;
+}
+
+.message-time {
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
+  text-align: right;
+}
+
+.message-bubble.sent .message-time {
+  text-align: right;
+}
+
+.message-bubble.received .message-time {
+  text-align: left;
+}
+
+.message-input-area {
+  padding: 16px 20px;
+  border-top: 1px solid #eee;
+  background: #f8f9fa;
+}
+
+.message-form {
+  display: flex;
+  gap: 12px;
+}
+
+.message-form input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid #ddd;
+  border-radius: 24px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.message-form input:focus {
+  border-color: #3498db;
+}
+
+.send-btn {
+  padding: 12px 24px;
+  background: #3498db;
+  color: #fff;
+  border: none;
+  border-radius: 24px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.send-btn:hover {
+  background: #2980b9;
+}
+
+.loading {
+  padding: 40px;
+  text-align: center;
+  color: #999;
+}
+
+.date-divider {
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+  padding: 10px 0;
+}
+</style>
+
+<script>
+var currentUserId = <%= user.id %>;
+var conversationId = <%= conversation.id %>;
+var otherUser = {
+  id: <%= otherUser.id %>,
+  avatar: '<%= otherUser.avatar || "/assets/images/default-avatar.png" %>'
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadMessages();
+  
+  var form = document.getElementById('messageForm');
+  var input = document.getElementById('messageInput');
+  
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var content = input.value.trim();
+    if (!content) return;
+    
+    try {
+      var res = await fetch('/api/messages/conversations/' + conversationId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: content })
+      });
+      var data = await res.json();
+      
+      if (data.success) {
+        input.value = '';
+        appendMessage(data.data);
+        scrollToBottom();
+      } else {
+        alert(data.error || '发送失败');
+      }
+    } catch (err) {
+      alert('发送失败');
+    }
+  });
+  
+  // 标记已读
+  markAsRead();
+});
+
+async function loadMessages() {
+  try {
+    var res = await fetch('/api/messages/conversations/' + conversationId);
+    var data = await res.json();
+    var container = document.getElementById('messagesContainer');
+    
+    if (data.success && data.data && data.data.messages) {
+      var messages = data.data.messages;
+      if (messages.length === 0) {
+        container.innerHTML = '<div class="loading">暂无消息，开始聊天吧</div>';
+      } else {
+        container.innerHTML = messages.map(function(msg) {
+          var isSent = msg.sender_id === currentUserId;
+          return '<div class="message-bubble ' + (isSent ? 'sent' : 'received') + '">' +
+            '<img src="' + (isSent ? '<%= user.avatar || "/assets/images/default-avatar.png" %>' : otherUser.avatar) + '" alt="" class="message-avatar">' +
+            '<div>' +
+              '<div class="message-content">' + escapeHtml(msg.content) + '</div>' +
+              '<div class="message-time">' + formatTime(msg.created_at) + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+        scrollToBottom();
+      }
+    }
+  } catch (err) {
+    console.error('加载消息失败:', err);
+  }
+}
+
+function appendMessage(msg) {
+  var container = document.getElementById('messagesContainer');
+  var loading = container.querySelector('.loading');
+  if (loading) loading.remove();
+  
+  var isSent = msg.sender_id === currentUserId;
+  var html = '<div class="message-bubble ' + (isSent ? 'sent' : 'received') + '">' +
+    '<img src="' + (isSent ? '<%= user.avatar || "/assets/images/default-avatar.png" %>' : otherUser.avatar) + '" alt="" class="message-avatar">' +
+    '<div>' +
+      '<div class="message-content">' + escapeHtml(msg.content) + '</div>' +
+      '<div class="message-time">' + formatTime(msg.created_at) + '</div>' +
+    '</div>' +
+  '</div>';
+  
+  container.insertAdjacentHTML('beforeend', html);
+}
+
+function scrollToBottom() {
+  var container = document.getElementById('messagesContainer');
+  container.scrollTop = container.scrollHeight;
+}
+
+async function markAsRead() {
+  try {
+    await fetch('/api/messages/conversations/' + conversationId + '/read', { method: 'PATCH' });
+  } catch (err) {}
+}
+
+function formatTime(timeStr) {
+  if (!timeStr) return '';
+  var date = new Date(timeStr);
+  var now = new Date();
+  var isToday = date.toDateString() === now.toDateString();
+  
+  var hours = date.getHours().toString().padStart(2, '0');
+  var minutes = date.getMinutes().toString().padStart(2, '0');
+  var time = hours + ':' + minutes;
+  
+  if (isToday) return time;
+  
+  var month = (date.getMonth() + 1).toString().padStart(2, '0');
+  var day = date.getDate().toString().padStart(2, '0');
+  return month + '/' + day + ' ' + time;
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+</script>

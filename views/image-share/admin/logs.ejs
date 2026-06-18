@@ -1,0 +1,36 @@
+<%- include('../header') %>
+
+<div style="margin-bottom: 20px;">
+  <a href="/image-share/admin" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回管理首页</a>
+</div>
+
+<h2 style="margin-bottom: 20px;"><i class="fas fa-history"></i> 操作日志</h2>
+
+<div class="card">
+  <% if (logs.length > 0) { %>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>管理员?/th>
+          <th>操作内容</th>
+          <th>时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% logs.forEach(function(log) { %>
+          <tr>
+            <td><%= log.id %></td>
+            <td><%= log.admin_name || '未知' %></td>
+            <td><%= log.content %></td>
+            <td style="color: #999; font-size: 12px;"><%= log.created_at %></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } else { %>
+    <p style="color: #999; text-align: center;">暂无操作日志</p>
+  <% } %>
+</div>
+
+<%- include('../footer') %>

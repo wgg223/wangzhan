@@ -1,0 +1,96 @@
+<div class="container">
+  <h1>文章列表</h1>
+  
+  <% if (typeof user !== 'undefined' && user) { %>
+    <div class="article-actions">
+      <a href="/articles/new" class="btn btn-primary">新建文章</a>
+    </div>
+  <% } %>
+  
+  <!-- 我的文章（登录用户专属） -->
+  <% if (typeof myArticles !== 'undefined' && myArticles && myArticles.length > 0) { %>
+    <div class="my-articles-section">
+      <h2>我的文章</h2>
+      <div class="article-grid">
+        <% myArticles.forEach(article => { %>
+          <div class="article-card my-article">
+            <% if (article.cover_image) { %>
+              <div class="article-cover">
+                <img src="<%= article.cover_image %>" alt="<%= article.title %>">
+              </div>
+            <% } %>
+            <div class="article-content">
+              <h3><a href="/articles/<%= article.id %>"><%= article.title %></a></h3>
+              <p class="meta">
+                发布时间：<%= new Date(article.created_at).toLocaleDateString('zh-CN') %>
+                <% if (article.category) { %>
+                  | 分类：<%= article.category %>
+                <% } %>
+                | 状态：<%= article.status === 'published' ? '已发布' : '草稿' %>
+              </p>
+              <div class="article-card-actions">
+                <a href="/articles/<%= article.id %>" class="btn btn-small">阅读</a>
+                <a href="/articles/<%= article.id %>/edit" class="btn btn-small btn-primary">编辑</a>
+              </div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+  <% } %>
+  
+  <!-- 全部文章 -->
+  <h2>全部文章</h2>
+  <% if (articles.length > 0) { %>
+    <div class="article-grid">
+      <% articles.forEach(article => { %>
+        <div class="article-card">
+          <% if (article.cover_image) { %>
+            <div class="article-cover">
+              <img src="<%= article.cover_image %>" alt="<%= article.title %>">
+            </div>
+          <% } %>
+          <div class="article-content">
+            <h3><a href="/articles/<%= article.id %>"><%= article.title %></a></h3>
+            <p class="meta">
+              发布时间：<%= new Date(article.created_at).toLocaleDateString('zh-CN') %>
+              <% if (article.author_name) { %>
+                | 作者：<%= article.author_name %>
+              <% } %>
+              <% if (article.category) { %>
+                | 分类：<%= article.category %>
+              <% } %>
+            </p>
+            <a href="/articles/<%= article.id %>" class="btn btn-small">阅读全文</a>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  <% } else { %>
+    <p class="empty-message">暂无文章</p>
+  <% } %>
+</div>
+
+<style>
+.article-actions {
+  margin-bottom: 20px;
+}
+.my-articles-section {
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid #e8e8e8;
+}
+.my-articles-section h2 {
+  color: #007bff;
+  margin-bottom: 15px;
+  font-size: 20px;
+}
+.my-article {
+  border-left: 3px solid #007bff !important;
+}
+.article-card-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+</style>

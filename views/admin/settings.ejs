@@ -1,0 +1,385 @@
+<% var active = 'settings' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>网站设置</h1>
+  </div>
+  
+  <% const perms = typeof userPermissions !== "undefined" ? userPermissions : []; %>
+  <% const hasPerm = (key) => perms.indexOf(key) !== -1; %>
+  
+  <% if (typeof success !== 'undefined' && success) { %>
+    <div class="alert alert-success">设置已保存</div>
+  <% } %>
+  
+  <form action="/admin/settings" method="POST" class="admin-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    
+    <!-- ============ 基本设置（需 settings.manage 权限） ============ -->
+    <% if (hasPerm("settings.manage")) { %>
+    <div class="settings-section">
+      <h2>基本设置</h2>
+      
+      <div class="form-group">
+        <label for="site_name">网站名称</label>
+        <input type="text" id="site_name" name="site_name" value="<%= settings.site_name || '' %>" required>
+      </div>
+      
+      <div class="form-group">
+        <label for="site_description">网站描述</label>
+        <textarea id="site_description" name="site_description" rows="3"><%= settings.site_description || '' %></textarea>
+      </div>
+      
+      <div class="form-group">
+        <label for="footer_text">底部自定义文字</label>
+        <input type="text" id="footer_text" name="footer_text" value="<%= settings.footer_text || '' %>" placeholder="显示在底部的自定义文字">
+      </div>
+      
+      <div class="form-group">
+        <label for="icp_number">ICP备案号</label>
+        <input type="text" id="icp_number" name="icp_number" value="<%= settings.icp_number || '' %>" placeholder="例如：京ICP备12345678号">
+      </div>
+      
+      <div class="form-group">
+        <label for="icp_link">备案号链接</label>
+        <input type="url" id="icp_link" name="icp_link" value="<%= settings.icp_link || 'https://beian.miit.gov.cn/' %>" placeholder="https://beian.miit.gov.cn/">
+      </div>
+      
+      <div class="form-group">
+        <label>网站Logo</label>
+        <div class="logo-preview">
+          <% if (settings.logo) { %>
+            <img src="<%= settings.logo %>" alt="网站Logo" id="logo-preview" style="max-width:200px;max-height:60px;">
+          <% } else { %>
+            <div class="no-logo" id="logo-preview" style="padding:20px;background:#f5f5f5;text-align:center;border:1px dashed #ddd;">未设置Logo</div>
+          <% } %>
+        </div>
+        <input type="file" id="logo-upload" accept="image/*">
+        <button type="button" class="btn btn-small" onclick="uploadLogo()">上传Logo</button>
+        <input type="hidden" id="logo" name="logo" value="<%= settings.logo || '' %>">
+      </div>
+      
+      <div class="form-group">
+        <label>背景图片</label>
+        <div class="background-preview">
+          <% if (settings.background_image) { %>
+            <img src="<%= settings.background_image %>" alt="背景图片" id="bg-preview">
+          <% } else { %>
+            <div class="no-bg" id="bg-preview">未设置背景图片</div>
+          <% } %>
+        </div>
+        <input type="file" id="bg-upload" accept="image/*">
+        <button type="button" class="btn btn-small" onclick="uploadBackground()">上传背景图片</button>
+        <% if (settings.background_image) { %>
+          <button type="button" class="btn btn-small btn-danger" onclick="removeBackground()">移除背景图片</button>
+        <% } %>
+        <input type="hidden" id="background_image" name="background_image" value="<%= settings.background_image || '' %>">
+      </div>
+    </div>
+    <% } %>
+
+    <!-- ============ SMTP 邮件配置 ============ -->
+    <div class="settings-section">
+      <h2>SMTP 邮件配置</h2>
+      <p class="section-desc">配置邮件发送功能，用于密码重置等操作</p>
+      
+      <div class="form-group">
+        <label for="smtp_host">SMTP 服务器地址</label>
+        <input type="text" id="smtp_host" name="smtp_host" value="<%= settings.smtp_host || '' %>" placeholder="例如：smtp.qq.com">
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group half">
+          <label for="smtp_port">端口</label>
+          <input type="number" id="smtp_port" name="smtp_port" value="<%= settings.smtp_port || '465' %>" placeholder="465">
+        </div>
+        <div class="form-group half">
+          <label for="smtp_secure">SSL 加密</label>
+          <select id="smtp_secure" name="smtp_secure">
+            <option value="true" <%= settings.smtp_secure === 'true' ? 'selected' : '' %>>启用 SSL（端口 465）</option>
+            <option value="false" <%= settings.smtp_secure === 'false' ? 'selected' : '' %>>禁用 SSL（端口 25/587）</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label for="smtp_user">邮箱账号</label>
+        <input type="text" id="smtp_user" name="smtp_user" value="<%= settings.smtp_user || '' %>" placeholder="完整的邮箱地址">
+      </div>
+      
+      <div class="form-group">
+        <label for="smtp_pass">邮箱密码 / 授权码</label>
+        <input type="password" id="smtp_pass" name="smtp_pass" value="<%= settings.smtp_pass || '' %>" placeholder="邮箱密码或SMTP授权码">
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group half">
+          <label for="smtp_from_name">发件人名称</label>
+          <input type="text" id="smtp_from_name" name="smtp_from_name" value="<%= settings.smtp_from_name || settings.site_name || '' %>" placeholder="发件人显示名称">
+        </div>
+        <div class="form-group half">
+          <label for="smtp_from_email">发件人邮箱</label>
+          <input type="email" id="smtp_from_email" name="smtp_from_email" value="<%= settings.smtp_from_email || settings.smtp_user || '' %>" placeholder="留空则使用邮箱账号">
+        </div>
+      </div>
+      
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="testSmtpConnection()" id="test-smtp-btn">测试 SMTP 连接</button>
+        <span id="test-smtp-result" style="margin-left: 10px;"></span>
+      </div>
+    </div>
+    
+    <!-- ============ 站内信弹窗设置 ============ -->
+    <div class="settings-section">
+      <h2>站内信弹窗设置</h2>
+      <p class="section-desc">控制站内信是否以弹窗方式通知用户</p>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="message_popup_enabled" value="1" <%= settings.message_popup_enabled === '1' ? 'checked' : '' %>>
+          启用站内信弹窗通知
+        </label>
+        <p class="field-hint">启用后，发送站内信时勾选"弹窗通知"，用户访问网站时将看到弹窗提示</p>
+      </div>
+    </div>
+
+    <!-- ============ 欢迎弹窗设置 ============ -->
+    <div class="settings-section">
+      <h2>欢迎弹窗设置</h2>
+      <p class="section-desc">设置网站首页的自动欢迎/通知弹窗，所有访客均可看到</p>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="welcome_popup_enabled" value="1" <%= settings.welcome_popup_enabled === '1' ? 'checked' : '' %>>
+          启用欢迎弹窗
+        </label>
+        <p class="field-hint">启用后，访客首次访问或满足条件时将自动弹出欢迎弹窗</p>
+      </div>
+
+      <div class="form-group">
+        <label for="welcome_popup_title">弹窗标题</label>
+        <input type="text" id="welcome_popup_title" name="welcome_popup_title" value="<%= settings.welcome_popup_title || '欢迎访问' %>" placeholder="欢迎弹窗标题">
+      </div>
+
+      <div class="form-group">
+        <label for="welcome_popup_content">弹窗内容</label>
+        <textarea id="welcome_popup_content" name="welcome_popup_content" rows="8" class="policy-editor"><%= settings.welcome_popup_content || '' %></textarea>
+        <p class="field-hint">支持HTML标签，建议使用 p / h4 等标签排版</p>
+      </div>
+    </div>
+
+    <!-- ============ 用户协议与隐私政策 ============ -->
+    <div class="settings-section">
+      <h2>用户协议与隐私政策</h2>
+      <p class="section-desc">编辑注册页面的用户协议和隐私政策内容（支持HTML格式）</p>
+      
+      <div class="form-group">
+        <label for="user_agreement">用户协议内容</label>
+        <textarea id="user_agreement" name="user_agreement" rows="15" class="policy-editor"><%= settings.user_agreement || '' %></textarea>
+        <p class="field-hint">支持HTML标签，建议使用 h3 / p 等标签排版</p>
+      </div>
+      
+      <div class="form-group">
+        <label for="privacy_policy">隐私政策内容</label>
+        <textarea id="privacy_policy" name="privacy_policy" rows="15" class="policy-editor"><%= settings.privacy_policy || '' %></textarea>
+        <p class="field-hint">支持HTML标签，建议使用 h3 / p 等标签排版</p>
+      </div>
+    </div>
+
+    <!-- ============ 账户注销协议 ============ -->
+    <div class="settings-section">
+      <h2>账户注销协议</h2>
+      <p class="section-desc">编辑用户注销账户时需要查看并同意的协议内容（支持HTML格式），此协议与注册时的用户协议具有相同的后台编辑功能</p>
+      
+      <div class="form-group">
+        <label for="delete_account_agreement">注销协议内容</label>
+        <textarea id="delete_account_agreement" name="delete_account_agreement" rows="15" class="policy-editor"><%= settings.delete_account_agreement || '' %></textarea>
+        <p class="field-hint">支持HTML标签，建议使用 h3 / h4 / p 等标签排版。用户注销前必须查看并同意此协议</p>
+      </div>
+    </div>
+    
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存设置</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function uploadBackground() {
+  var fileInput = document.getElementById('bg-upload');
+  if (!fileInput.files[0]) {
+    alert('请先选择一个图片文件');
+    return;
+  }
+  
+  var formData = new FormData();
+  formData.append('background', fileInput.files[0]);
+  formData.append('_csrf', getCsrfToken());
+  
+  fetch('/admin/upload-background', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': getCsrfToken() },
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      document.getElementById('background_image').value = data.path;
+      var preview = document.getElementById('bg-preview');
+      preview.innerHTML = '<img src="' + data.path + '" alt="背景图片" style="max-width:100%;">';
+      alert('背景图片上传成功');
+    } else {
+      alert('上传失败：' + (data.error || '未知错误'));
+    }
+  })
+  .catch(err => {
+    alert('上传失败，请重试');
+  });
+}
+
+function removeBackground() {
+  if (confirm('确定要移除背景图片吗？')) {
+    document.getElementById('background_image').value = '';
+    var preview = document.getElementById('bg-preview');
+    preview.innerHTML = '<div class="no-bg">未设置背景图片</div>';
+  }
+}
+
+function uploadLogo() {
+  var fileInput = document.getElementById('logo-upload');
+  if (!fileInput.files[0]) {
+    alert('请先选择一个图片文件');
+    return;
+  }
+  
+  var formData = new FormData();
+  formData.append('logo', fileInput.files[0]);
+  formData.append('_csrf', getCsrfToken());
+  
+  fetch('/admin/upload-logo', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': getCsrfToken() },
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      document.getElementById('logo').value = data.path;
+      var preview = document.getElementById('logo-preview');
+      preview.innerHTML = '<img src="' + data.path + '" alt="网站Logo" style="max-width:200px;max-height:60px;">';
+      alert('Logo上传成功');
+    } else {
+      alert('上传失败：' + (data.error || '未知错误'));
+    }
+  })
+  .catch(err => {
+    alert('上传失败，请重试');
+  });
+}
+
+// 测试SMTP连接
+function testSmtpConnection() {
+  const btn = document.getElementById('test-smtp-btn');
+  const result = document.getElementById('test-smtp-result');
+  
+  const host = document.getElementById('smtp_host').value;
+  const port = document.getElementById('smtp_port').value;
+  const secure = document.getElementById('smtp_secure').value;
+  const user = document.getElementById('smtp_user').value;
+  const pass = document.getElementById('smtp_pass').value;
+  
+  if (!host || !user || !pass) {
+    result.innerHTML = '<span style="color:red;">请填写服务器地址、账号和密码</span>';
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.textContent = '测试中...';
+  result.innerHTML = '';
+  
+  fetch('/admin/settings/test-smtp', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ smtp_host: host, smtp_port: port, smtp_secure: secure, smtp_user: user, smtp_pass: pass })
+  })
+  .then(response => response.json())
+  .then(data => {
+    btn.disabled = false;
+    btn.textContent = '测试 SMTP 连接';
+    if (data.success) {
+      result.innerHTML = '<span style="color:green;">✓ ' + data.message + '</span>';
+    } else {
+      result.innerHTML = '<span style="color:red;">✗ ' + (data.error || '测试失败') + '</span>';
+    }
+  })
+  .catch(err => {
+    btn.disabled = false;
+    btn.textContent = '测试 SMTP 连接';
+    result.innerHTML = '<span style="color:red;">✗ 连接失败，请检查配置</span>';
+  });
+}
+</script>
+
+<style>
+.background-preview, .logo-preview {
+  margin: 10px 0;
+  max-width: 400px;
+}
+.policy-editor {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 300px;
+  tab-size: 2;
+}
+.field-hint {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+.background-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+.no-bg {
+  padding: 40px;
+  background: #f5f5f5;
+  text-align: center;
+  color: #999;
+  border: 1px dashed #ddd;
+  border-radius: 4px;
+}
+.form-group input[type="file"] {
+  margin: 10px 0;
+}
+.settings-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px solid #eee;
+}
+.settings-section h2 {
+  font-size: 18px;
+  margin-bottom: 5px;
+}
+.section-desc {
+  color: #888;
+  font-size: 13px;
+  margin-bottom: 15px;
+}
+.form-row {
+  display: flex;
+  gap: 15px;
+}
+.form-row .half {
+  flex: 1;
+}
+</style>

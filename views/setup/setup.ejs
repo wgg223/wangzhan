@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>系统初始化安装</title>
+  <link rel="stylesheet" href="/css/setup.css">
+</head>
+<body>
+  <div class="setup-container">
+    <div class="setup-header">
+      <h1>系统初始化安装</h1>
+      <p class="subtitle">欢迎使用本系统！请完成以下设置以开始使用。</p>
+    </div>
+
+    <!-- JS 控制的提示区域 -->
+    <div class="alert" id="setup-alert" style="display:none">
+      <span class="alert-icon"></span>
+      <span id="alert-message"></span>
+    </div>
+
+    <% if (error) { %>
+      <div class="alert alert-error">
+        <span class="alert-icon">⚠️</span>
+        <span><%= error %></span>
+      </div>
+    <% } %>
+
+    <form id="setup-form" action="/setup" method="POST" novalidate>
+      <!-- ===== 第一步：管理员账户 ===== -->
+      <div class="step active" id="step-1">
+        <div class="step-header">
+          <div class="step-number">1</div>
+          <div>
+            <h2>创建管理员账户</h2>
+            <p>设置系统超级管理员账号和密码</p>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="username">管理员用户名 <span class="required">*</span></label>
+          <input type="text" id="username" name="username" 
+                 value="<%= formData.username %>" 
+                 placeholder="输入管理员用户名（3-20个字符）"
+                 minlength="3" maxlength="20" required
+                 autocomplete="off">
+          <div class="field-hint" id="username-hint">只能包含中文、英文、数字和下划线</div>
+          <div class="field-error" id="username-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="password">密码 <span class="required">*</span></label>
+          <input type="password" id="password" name="password" 
+                 placeholder="输入密码（至少6位）"
+                 minlength="6" required>
+          <div class="password-strength" id="password-strength">
+            <div class="strength-bar" id="strength-bar"></div>
+          </div>
+          <div class="field-hint" id="password-hint">至少6位，建议使用字母、数字和特殊字符的组合</div>
+        </div>
+
+        <div class="form-group">
+          <label for="confirm_password">确认密码 <span class="required">*</span></label>
+          <input type="password" id="confirm_password" name="confirm_password" 
+                 placeholder="再次输入密码"
+                 minlength="6" required>
+          <div class="field-error" id="confirm-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="email">管理员邮箱（选填）</label>
+          <input type="email" id="email" name="email" 
+                 value="<%= formData.email %>" 
+                 placeholder="用于密码找回等功能"
+                 autocomplete="off">
+        </div>
+
+        <div class="step-actions">
+          <button type="button" class="btn btn-primary" onclick="nextStep()">下一步</button>
+        </div>
+      </div>
+
+      <!-- ===== 第二步：数据库模式选择 ===== -->
+      <div class="step" id="step-2">
+        <div class="step-header">
+          <div class="step-number">2</div>
+          <div>
+            <h2>选择数据库模式</h2>
+            <p>根据您的需求选择合适的 SQLite 性能模式</p>
+          </div>
+        </div>
+
+        <div class="preset-list">
+          <% for (const [key, preset] of Object.entries(presets)) { %>
+            <label class="preset-card <%= formData.db_mode === key ? 'selected' : '' %>" 
+                   data-mode="<%= key %>"
+                   onclick="selectPreset(this, '<%= key %>')">
+              <input type="radio" name="db_mode" value="<%= key %>" 
+                     <%= formData.db_mode === key ? 'checked' : '' %>
+                     style="display:none">
+              <div class="preset-info">
+                <div class="preset-name"><%= preset.label %></div>
+                <div class="preset-desc"><%= preset.description %></div>
+                <div class="preset-details">
+                  <span class="detail-tag">日志模式: <%= preset.journal_mode %></span>
+                  <span class="detail-tag">同步模式: <%= preset.synchronous %></span>
+                  <span class="detail-tag">缓存: <%= Math.abs(parseInt(preset.cache_size)) %>页</span>
+                </div>
+              </div>
+              <div class="preset-check">
+                <span class="check-icon">✓</span>
+              </div>
+            </label>
+          <% } %>
+        </div>
+
+        <!-- 自定义模式选项 -->
+        <div class="custom-options" id="custom-options" style="display:none">
+          <h3>自定义 PRAGMA 设置</h3>
+          <div class="custom-grid">
+            <div class="form-group">
+              <label for="custom_journal_mode">日志模式 (journal_mode)</label>
+              <select id="custom_journal_mode" name="custom_journal_mode">
+                <option value="WAL">WAL - 读写性能均衡（推荐）</option>
+                <option value="DELETE">DELETE - 最高安全性</option>
+                <option value="MEMORY">MEMORY - 仅内存（测试用）</option>
+                <option value="OFF">OFF - 无日志（不推荐）</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="custom_synchronous">同步模式 (synchronous)</label>
+              <select id="custom_synchronous" name="custom_synchronous">
+                <option value="NORMAL">NORMAL - 平衡性能与安全</option>
+                <option value="FULL">FULL - 最高安全性</option>
+                <option value="OFF">OFF - 最大性能</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="custom_cache_size">缓存大小 (cache_size, 页数)</label>
+              <input type="number" id="custom_cache_size" name="custom_cache_size" 
+                     value="2000" min="800" max="32000" step="200">
+              <div class="field-hint">每页约4KB，2000页 ≈ 8MB 缓存</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-actions">
+          <button type="button" class="btn btn-secondary" onclick="prevStep()">上一步</button>
+          <button type="button" class="btn btn-primary" onclick="nextStep()">下一步</button>
+        </div>
+      </div>
+
+      <!-- ===== 第三步：确认安装 ===== -->
+      <div class="step" id="step-3">
+        <div class="step-header">
+          <div class="step-number">3</div>
+          <div>
+            <h2>确认安装</h2>
+            <p>请确认以下信息，点击"完成安装"开始初始化</p>
+          </div>
+        </div>
+
+        <div class="summary">
+          <div class="summary-section">
+            <h3>管理员账户</h3>
+            <div class="summary-row">
+              <span class="summary-label">用户名</span>
+              <span class="summary-value" id="summary-username">-</span>
+            </div>
+            <div class="summary-row">
+              <span class="summary-label">邮箱</span>
+              <span class="summary-value" id="summary-email">未设置</span>
+            </div>
+          </div>
+
+          <div class="summary-section">
+            <h3>数据库配置</h3>
+            <div class="summary-row">
+              <span class="summary-label">模式</span>
+              <span class="summary-value" id="summary-db-mode">-</span>
+            </div>
+            <div class="summary-row">
+              <span class="summary-label">日志模式</span>
+              <span class="summary-value" id="summary-journal">-</span>
+            </div>
+            <div class="summary-row">
+              <span class="summary-label">同步模式</span>
+              <span class="summary-value" id="summary-sync">-</span>
+            </div>
+            <div class="summary-row">
+              <span class="summary-label">缓存大小</span>
+              <span class="summary-value" id="summary-cache">-</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-actions">
+          <button type="button" class="btn btn-secondary" onclick="prevStep()">上一步</button>
+          <button type="submit" class="btn btn-success" id="submit-btn">
+            <span class="btn-icon">⚡</span>
+            完成安装
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <!-- 步骤指示器 -->
+    <div class="step-indicator">
+      <div class="step-dot active" data-step="1" onclick="goToStep(1)">1</div>
+      <div class="step-line" id="line-1"></div>
+      <div class="step-dot" data-step="2" onclick="goToStep(2)">2</div>
+      <div class="step-line" id="line-2"></div>
+      <div class="step-dot" data-step="3" onclick="goToStep(3)">3</div>
+    </div>
+  </div>
+
+  <div class="loading-overlay" id="loading-overlay" style="display:none">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">正在初始化系统，请耐心等待...</div>
+  </div>
+
+  <script src="/js/setup.js"></script>
+</body>
+</html>

@@ -1,0 +1,687 @@
+<div class="container">
+  <div class="profile-page">
+    <div class="profile-header">
+      <div class="profile-cover">
+        <div class="avatar-wrapper">
+          <img src="<%= profileUser.avatar || '/assets/images/default-avatar.png' %>" alt="<%= profileUser.username %>" class="profile-avatar" id="profileAvatar">
+          <% if (typeof user !== 'undefined' && user && user.id === profileUser.id) { %>
+            <div class="avatar-overlay" onclick="document.getElementById('avatarInput').click()">
+              <span>📷</span>
+            </div>
+            <input type="file" id="avatarInput" accept="image/*" style="display: none;" onchange="handleAvatarSelect(this)">
+          <% } %>
+        </div>
+      </div>
+      <div class="profile-info">
+        <h1 class="profile-name"><%= profileUser.nickname || profileUser.username %></h1>
+        <p class="profile-username">@<%= profileUser.username %><% if (profileUser.uid) { %> · <span class="profile-uid">UID: <%= profileUser.uid %></span><% } %></p>
+        
+        <!-- 个人简介 -->
+        <div class="profile-bio" id="bioDisplay">
+          <% if (profileUser.bio) { %>
+            <p class="bio-text"><%= profileUser.bio %></p>
+          <% } else if (typeof user !== 'undefined' && user && user.id === profileUser.id) { %>
+            <p class="bio-text bio-empty" onclick="editBio()">点击添加个人简介...</p>
+          <% } %>
+          <% if (typeof user !== 'undefined' && user && user.id === profileUser.id) { %>
+            <button class="btn-edit-bio" onclick="editBio()" title="编辑简介">✏️</button>
+          <% } %>
+        </div>
+        
+        <!-- 编辑简介表单 -->
+        <div class="bio-edit-form" id="bioEditForm" style="display: none;">
+          <textarea id="bioInput" maxlength="200" placeholder="介绍一下自己..."><%= profileUser.bio || '' %></textarea>
+          <div class="bio-edit-actions">
+            <span class="bio-char-count"><span id="bioCharCount">0</span>/200</span>
+            <button class="btn btn-small" onclick="cancelEditBio()">取消</button>
+            <button class="btn btn-small btn-primary" onclick="saveBio()">保存</button>
+          </div>
+        </div>
+        
+        <p class="profile-join">加入时间：<%= new Date(profileUser.created_at).toLocaleDateString('zh-CN') %></p>
+        
+        <div class="profile-stats">
+          <div class="stat-item">
+            <span class="stat-count"><%= followerCount %></span>
+            <span class="stat-label">粉丝</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-count"><%= followingCount %></span>
+            <span class="stat-label">关注</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-count"><%= articles.length %></span>
+            <span class="stat-label">文章</span>
+          </div>
+        </div>
+
+        <% if (typeof user !== 'undefined' && user && user.id !== profileUser.id) { %>
+          <div class="profile-actions">
+            <button class="btn btn-follow <%= isFollowing ? 'following' : '' %>" data-user-id="<%= profileUser.id %>">
+              <%= isFollowing ? '已关注' : '关注' %>
+            </button>
+            <button class="btn btn-message" onclick="openChatWithUser(<%= profileUser.id %>, '<%= profileUser.nickname || profileUser.username %>', '<%= profileUser.avatar || "/assets/images/default-avatar.png" %>')">发私信</button>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="profile-content">
+      <h2>发布的文章</h2>
+      <% if (articles && articles.length > 0) { %>
+        <div class="articles-list">
+          <% articles.forEach(function(article) { %>
+            <div class="article-item">
+              <a href="/articles/<%= article.id %>" class="article-title"><%= article.title %></a>
+              <span class="article-time"><%= new Date(article.created_at).toLocaleDateString('zh-CN') %></span>
+            </div>
+          <% }); %>
+        </div>
+      <% } else { %>
+        <div class="empty-state">
+          <p>暂无文章</p>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<style>
+.profile-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.profile-header {
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  margin-bottom: 30px;
+}
+
+.profile-cover {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 40px;
+  display: flex;
+  justify-content: center;
+}
+
+.avatar-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.profile-avatar {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  object-fit: cover;
+}
+
+.avatar-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.avatar-wrapper:hover .avatar-overlay {
+  opacity: 1;
+}
+
+.avatar-overlay span {
+  font-size: 32px;
+}
+
+.profile-info {
+  padding: 24px;
+  text-align: center;
+}
+
+.profile-name {
+  font-size: 28px;
+  margin-bottom: 4px;
+}
+
+.profile-username {
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.profile-uid {
+  font-family: monospace;
+  font-size: 12px;
+  color: #999;
+  background: #f0f0f0;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+/* 个人简介 */
+.profile-bio {
+  position: relative;
+  margin-bottom: 12px;
+  min-height: 24px;
+}
+
+.bio-text {
+  color: #555;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.bio-empty {
+  color: #999;
+  cursor: pointer;
+  font-style: italic;
+}
+
+.bio-empty:hover {
+  color: #667eea;
+}
+
+.btn-edit-bio {
+  position: absolute;
+  right: -30px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.profile-bio:hover .btn-edit-bio {
+  opacity: 1;
+}
+
+.bio-edit-form {
+  margin-bottom: 12px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.bio-edit-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 60px;
+  max-height: 120px;
+  outline: none;
+  font-family: inherit;
+}
+
+.bio-edit-form textarea:focus {
+  border-color: #667eea;
+}
+
+.bio-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.bio-char-count {
+  font-size: 12px;
+  color: #999;
+  margin-right: auto;
+}
+
+.btn-small {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #333;
+}
+
+.btn-small:hover {
+  background: #f5f5f5;
+}
+
+.btn-small.btn-primary {
+  background: #667eea;
+  color: #fff;
+  border-color: #667eea;
+}
+
+.btn-small.btn-primary:hover {
+  background: #5a67d8;
+}
+
+.profile-join {
+  font-size: 14px;
+  color: #999;
+  margin-bottom: 20px;
+}
+
+.profile-stats {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-bottom: 24px;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-count {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: #333;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #666;
+}
+
+.profile-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-follow {
+  background: #3498db;
+  color: #fff;
+}
+
+.btn-follow:hover {
+  background: #2980b9;
+}
+
+.btn-follow.following {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.btn-follow.following:hover {
+  background: #e0e0e0;
+}
+
+.btn-message {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.btn-message:hover {
+  background: #e0e0e0;
+}
+
+.profile-content {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.profile-content h2 {
+  font-size: 20px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.articles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.article-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.article-item:hover {
+  background: #f5f5f5;
+}
+
+.article-title {
+  font-size: 16px;
+  color: #333;
+  text-decoration: none;
+}
+
+.article-title:hover {
+  color: #3498db;
+}
+
+.article-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
+
+/* 头像裁剪弹窗 */
+.avatar-crop-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.7);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-crop-modal.show {
+  display: flex;
+}
+
+.avatar-crop-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  overflow: hidden;
+}
+
+.avatar-crop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.avatar-crop-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.avatar-crop-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #999;
+}
+
+.avatar-crop-body {
+  padding: 20px;
+  max-height: 400px;
+}
+
+.avatar-crop-body img {
+  max-width: 100%;
+  max-height: 350px;
+}
+
+.avatar-crop-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #eee;
+}
+
+.avatar-crop-footer .btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-secondary {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.btn-primary {
+  background: #667eea;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #5a67d8;
+}
+</style>
+
+<!-- 头像裁剪弹窗 -->
+<div class="avatar-crop-modal" id="avatarCropModal">
+  <div class="avatar-crop-content">
+    <div class="avatar-crop-header">
+      <h3>裁剪头像</h3>
+      <button class="avatar-crop-close" onclick="closeCropModal()">&times;</button>
+    </div>
+    <div class="avatar-crop-body">
+      <img id="cropImage" src="" alt="裁剪图片">
+    </div>
+    <div class="avatar-crop-footer">
+      <button class="btn btn-secondary" onclick="closeCropModal()">取消</button>
+      <button class="btn btn-primary" onclick="cropAndUpload()">确认上传</button>
+    </div>
+  </div>
+</div>
+
+<!-- 引入 Cropper.js -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var followBtn = document.querySelector('.btn-follow');
+  if (followBtn) {
+    followBtn.addEventListener('click', async function() {
+      var userId = this.dataset.userId;
+      try {
+        var res = await fetch('/api/user/' + userId + '/follow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await res.json();
+        if (data.success) {
+          this.classList.toggle('following', data.data.following);
+          this.textContent = data.data.following ? '已关注' : '关注';
+        }
+      } catch (err) {
+        alert('操作失败');
+      }
+    });
+  }
+});
+
+var cropper = null;
+
+function handleAvatarSelect(input) {
+  if (!input.files || !input.files[0]) return;
+  
+  var file = input.files[0];
+  if (file.size > 5 * 1024 * 1024) {
+    alert('图片大小不能超过 5MB');
+    return;
+  }
+  
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var cropImage = document.getElementById('cropImage');
+    cropImage.src = e.target.result;
+    
+    document.getElementById('avatarCropModal').classList.add('show');
+    
+    // 初始化 Cropper
+    if (cropper) {
+      cropper.destroy();
+    }
+    
+    cropper = new Cropper(cropImage, {
+      aspectRatio: 1,
+      viewMode: 1,
+      dragMode: 'move',
+      autoCropArea: 0.8,
+      restore: false,
+      guides: true,
+      center: true,
+      highlight: true,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      ready: function() {
+        // Cropper 就绪
+      }
+    });
+  };
+  reader.readAsDataURL(file);
+  
+  // 清空 input 以便重复选择同一文件
+  input.value = '';
+}
+
+function closeCropModal() {
+  document.getElementById('avatarCropModal').classList.remove('show');
+  if (cropper) {
+    cropper.destroy();
+    cropper = null;
+  }
+}
+
+async function cropAndUpload() {
+  if (!cropper) return;
+  
+  // 获取裁剪后的 Canvas
+  var canvas = cropper.getCroppedCanvas({
+    width: 200,
+    height: 200,
+    fillColor: '#fff',
+    imageSmoothingEnabled: true,
+    imageSmoothingQuality: 'high'
+  });
+  
+  // 转换为 Blob
+  canvas.toBlob(async function(blob) {
+    var formData = new FormData();
+    formData.append('avatar', blob, 'avatar.jpg');
+    
+    try {
+      var res = await fetch('/admin/profile/avatar', {
+        method: 'POST',
+        body: formData
+      });
+      var data = await res.json();
+      
+      if (data.success) {
+        document.getElementById('profileAvatar').src = data.avatar + '?t=' + Date.now();
+        closeCropModal();
+        alert('头像更新成功');
+      } else {
+        alert(data.error || '上传失败');
+      }
+    } catch (err) {
+      alert('上传失败');
+    }
+  }, 'image/jpeg', 0.9);
+}
+
+// 个人简介编辑
+function editBio() {
+  document.getElementById('bioDisplay').style.display = 'none';
+  document.getElementById('bioEditForm').style.display = 'block';
+  
+  var bioInput = document.getElementById('bioInput');
+  bioInput.focus();
+  updateBioCharCount();
+  
+  // 监听输入
+  bioInput.addEventListener('input', updateBioCharCount);
+}
+
+function cancelEditBio() {
+  document.getElementById('bioDisplay').style.display = '';
+  document.getElementById('bioEditForm').style.display = 'none';
+}
+
+function updateBioCharCount() {
+  var count = document.getElementById('bioInput').value.length;
+  document.getElementById('bioCharCount').textContent = count;
+}
+
+async function saveBio() {
+  var bio = document.getElementById('bioInput').value.trim();
+  
+  try {
+    var res = await fetch('/admin/profile/bio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bio: bio })
+    });
+    var data = await res.json();
+    
+    if (data.success) {
+      // 更新显示
+      var bioDisplay = document.getElementById('bioDisplay');
+      if (bio) {
+        bioDisplay.innerHTML = '<p class="bio-text">' + escapeHtml(bio) + '</p>' +
+          '<button class="btn-edit-bio" onclick="editBio()" title="编辑简介">✏️</button>';
+      } else {
+        bioDisplay.innerHTML = '<p class="bio-text bio-empty" onclick="editBio()">点击添加个人简介...</p>' +
+          '<button class="btn-edit-bio" onclick="editBio()" title="编辑简介">✏️</button>';
+      }
+      cancelEditBio();
+    } else {
+      alert(data.error || '保存失败');
+    }
+  } catch (err) {
+    alert('保存失败');
+  }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+</script>

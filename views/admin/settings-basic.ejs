@@ -1,0 +1,346 @@
+<% var active = 'settings-basic' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>基础设置</h1>
+    <p class="page-desc">配置网站的基本信息、SEO参数和外观样式</p>
+  </div>
+
+  <% if (typeof success !== 'undefined' && success) { %>
+    <div class="alert alert-success">设置已保存</div>
+  <% } %>
+
+  <form action="/admin/settings/basic" method="POST" class="admin-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+    <div class="settings-section">
+      <h2>网站信息</h2>
+
+      <div class="form-group">
+        <label for="site_name">网站名称</label>
+        <input type="text" id="site_name" name="site_name" value="<%= settings.site_name || '' %>" required>
+      </div>
+
+      <div class="form-group">
+        <label for="site_description">网站描述</label>
+        <textarea id="site_description" name="site_description" rows="3"><%= settings.site_description || '' %></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="site_keywords">网站关键词</label>
+        <input type="text" id="site_keywords" name="site_keywords" value="<%= settings.site_keywords || '' %>" placeholder="多个关键词用逗号分隔">
+      </div>
+
+      <div class="form-group">
+        <label for="site_url">网站网址</label>
+        <input type="url" id="site_url" name="site_url" value="<%= settings.site_url || '' %>" placeholder="https://example.com">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>外观设置</h2>
+
+      <div class="form-group">
+        <label>网站Logo</label>
+        <div class="logo-preview">
+          <% if (settings.logo) { %>
+            <img src="<%= settings.logo %>" alt="网站Logo" id="logo-preview" style="max-width:200px;max-height:60px;">
+          <% } else { %>
+            <div class="no-logo" id="logo-preview" style="padding:20px;background:#f5f5f5;text-align:center;border:1px dashed #ddd;">未设置Logo</div>
+          <% } %>
+        </div>
+        <input type="file" id="logo-upload" accept="image/*">
+        <button type="button" class="btn btn-small" onclick="uploadLogo()">上传Logo</button>
+        <input type="hidden" id="logo" name="logo" value="<%= settings.logo || '' %>">
+      </div>
+
+      <div class="form-group">
+        <label>网站图标 (Favicon)</label>
+        <div class="favicon-preview">
+          <% if (settings.site_favicon) { %>
+            <img src="<%= settings.site_favicon %>" alt="Favicon" id="favicon-preview" style="max-width:32px;max-height:32px;">
+          <% } else { %>
+            <span id="favicon-preview">未设置</span>
+          <% } %>
+        </div>
+        <input type="text" id="site_favicon" name="site_favicon" value="<%= settings.site_favicon || '' %>" placeholder="favicon图片路径或URL">
+      </div>
+
+      <div class="form-group">
+        <label>背景图片</label>
+        <div class="background-preview">
+          <% if (settings.background_image) { %>
+            <img src="<%= settings.background_image %>" alt="背景图片" id="bg-preview">
+          <% } else { %>
+            <div class="no-bg" id="bg-preview">未设置背景图片</div>
+          <% } %>
+        </div>
+        <input type="file" id="bg-upload" accept="image/*">
+        <button type="button" class="btn btn-small" onclick="uploadBackground()">上传背景图片</button>
+        <% if (settings.background_image) { %>
+          <button type="button" class="btn btn-small btn-danger" onclick="removeBackground()">移除背景图片</button>
+        <% } %>
+        <input type="hidden" id="background_image" name="background_image" value="<%= settings.background_image || '' %>">
+      </div>
+
+      <div class="form-group">
+        <label for="theme">网站主题</label>
+        <select id="theme" name="theme">
+          <option value="default" <%= settings.theme === 'default' || !settings.theme ? 'selected' : '' %>>默认主题</option>
+          <option value="dark" <%= settings.theme === 'dark' ? 'selected' : '' %>>深色主题</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="footer_html">底部自定义HTML</label>
+        <textarea id="footer_html" name="footer_html" rows="3"><%= settings.footer_html || '' %></textarea>
+        <p class="field-hint">显示在底部的自定义HTML代码</p>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>备案信息</h2>
+
+      <div class="form-group">
+        <label for="icp_beian">ICP备案号</label>
+        <input type="text" id="icp_beian" name="icp_beian" value="<%= settings.icp_beian || '' %>" placeholder="例如：京ICP备12345678号">
+      </div>
+
+      <div class="form-group">
+        <label for="police_beian">公安备案号</label>
+        <input type="text" id="police_beian" name="police_beian" value="<%= settings.police_beian || '' %>" placeholder="例如：京公网安备123456789号">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>功能设置</h2>
+
+      <div class="form-group">
+        <label for="site_status">网站状态</label>
+        <select id="site_status" name="site_status">
+          <option value="open" <%= settings.site_status === 'open' || !settings.site_status ? 'selected' : '' %>>正常开放</option>
+          <option value="closed" <%= settings.site_status === 'closed' ? 'selected' : '' %>>关闭维护</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="close_reason_group" style="<%= settings.site_status === 'closed' ? '' : 'display:none' %>">
+        <label for="close_reason">关闭原因</label>
+        <textarea id="close_reason" name="close_reason" rows="3"><%= settings.close_reason || '网站正在维护中，请稍后再访问...' %></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="allow_register" value="1" <%= settings.allow_register === '1' || !settings.allow_register ? 'checked' : '' %>>
+          允许新用户注册
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label for="default_user_role">新用户默认角色</label>
+        <select id="default_user_role" name="default_user_role">
+          <option value="user" <%= settings.default_user_role === 'user' || !settings.default_user_role ? 'selected' : '' %>>普通用户</option>
+          <option value="visitor" <%= settings.default_user_role === 'visitor' ? 'selected' : '' %>>访客</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="comment_audit" value="1" <%= settings.comment_audit === '1' ? 'checked' : '' %>>
+          评论需要审核
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="article_audit" value="1" <%= settings.article_audit === '1' ? 'checked' : '' %>>
+          文章需要审核
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="comment_captcha_enabled" value="1" <%= settings.comment_captcha_enabled === '1' ? 'checked' : '' %>>
+          评论启用验证码
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>其他设置</h2>
+
+      <div class="form-group">
+        <label for="site_language">站点语言</label>
+        <select id="site_language" name="site_language">
+          <option value="zh-CN" <%= settings.site_language === 'zh-CN' || !settings.site_language ? 'selected' : '' %>>简体中文</option>
+          <option value="zh-TW" <%= settings.site_language === 'zh-TW' ? 'selected' : '' %>>繁体中文</option>
+          <option value="en" <%= settings.site_language === 'en' ? 'selected' : '' %>>English</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="timezone">时区</label>
+        <select id="timezone" name="timezone">
+          <option value="Asia/Shanghai" <%= settings.timezone === 'Asia/Shanghai' || !settings.timezone ? 'selected' : '' %>>Asia/Shanghai (UTC+8)</option>
+          <option value="Asia/Tokyo" <%= settings.timezone === 'Asia/Tokyo' ? 'selected' : '' %>>Asia/Tokyo (UTC+9)</option>
+          <option value="America/New_York" <%= settings.timezone === 'America/New_York' ? 'selected' : '' %>>America/New_York</option>
+          <option value="Europe/London" <%= settings.timezone === 'Europe/London' ? 'selected' : '' %>>Europe/London</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="date_format">日期格式</label>
+        <input type="text" id="date_format" name="date_format" value="<%= settings.date_format || 'YYYY-MM-DD' %>">
+      </div>
+
+      <div class="form-group">
+        <label for="posts_per_page">每页显示数量</label>
+        <input type="number" id="posts_per_page" name="posts_per_page" value="<%= settings.posts_per_page || '10' %>" min="1" max="100">
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存设置</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function uploadBackground() {
+  var fileInput = document.getElementById('bg-upload');
+  if (!fileInput.files[0]) {
+    alert('请先选择一个图片文件');
+    return;
+  }
+  var formData = new FormData();
+  formData.append('background', fileInput.files[0]);
+  formData.append('_csrf', getCsrfToken());
+  fetch('/admin/upload-background', {
+    method: 'POST',
+    headers: {
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      document.getElementById('background_image').value = data.path;
+      var preview = document.getElementById('bg-preview');
+      if (preview.tagName === 'IMG') {
+        preview.src = data.path;
+      } else {
+        preview.innerHTML = '<img src="' + data.path + '" alt="背景图片" style="max-width:100%;">';
+      }
+      alert('背景图片上传成功');
+    } else {
+      alert('上传失败：' + (data.error || '未知错误'));
+    }
+  })
+  .catch(err => {
+    alert('上传失败，请重试');
+  });
+}
+
+function removeBackground() {
+  if (confirm('确定要移除背景图片吗？')) {
+    document.getElementById('background_image').value = '';
+    var preview = document.getElementById('bg-preview');
+    preview.innerHTML = '<div class="no-bg">未设置背景图片</div>';
+  }
+}
+
+function uploadLogo() {
+  var fileInput = document.getElementById('logo-upload');
+  if (!fileInput.files[0]) {
+    alert('请先选择一个图片文件');
+    return;
+  }
+  var formData = new FormData();
+  formData.append('logo', fileInput.files[0]);
+  formData.append('_csrf', getCsrfToken());
+  fetch('/admin/upload-logo', {
+    method: 'POST',
+    headers: {
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      document.getElementById('logo').value = data.path;
+      var preview = document.getElementById('logo-preview');
+      if (preview.tagName === 'IMG') {
+        preview.src = data.path;
+      } else {
+        preview.innerHTML = '<img src="' + data.path + '" alt="网站Logo" style="max-width:200px;max-height:60px;">';
+      }
+      alert('Logo上传成功');
+    } else {
+      alert('上传失败：' + (data.error || '未知错误'));
+    }
+  })
+  .catch(err => {
+    alert('上传失败，请重试');
+  });
+}
+
+// 网站状态切换显示/隐藏关闭原因
+document.addEventListener('DOMContentLoaded', function() {
+  var siteStatus = document.getElementById('site_status');
+  var closeReasonGroup = document.getElementById('close_reason_group');
+  if (siteStatus) {
+    siteStatus.addEventListener('change', function() {
+      closeReasonGroup.style.display = this.value === 'closed' ? '' : 'none';
+    });
+  }
+});
+</script>
+
+<style>
+.background-preview, .logo-preview, .favicon-preview {
+  margin: 10px 0;
+  max-width: 400px;
+}
+.background-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+.no-bg {
+  padding: 40px;
+  background: #f5f5f5;
+  text-align: center;
+  color: #999;
+  border: 1px dashed #ddd;
+  border-radius: 4px;
+}
+.form-group input[type="file"] {
+  margin: 10px 0;
+}
+.settings-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px solid #eee;
+}
+.settings-section h2 {
+  font-size: 18px;
+  margin-bottom: 15px;
+}
+.page-desc {
+  color: #888;
+  font-size: 13px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+}
+.field-hint {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+</style>

@@ -1,0 +1,7221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飞花令 · 诗词填空</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @font-face {
+            font-family: 'Noto Serif SC';
+            src: local('Noto Serif SC'), local('SimSun'), local('宋体');
+        }
+
+        body {
+            font-family: 'Noto Serif SC', 'SimSun', 'STSong', serif;
+            background: #f5f0e8;
+            color: #3a3a3a;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* 水墨纹理背景 */
+        .bg-texture {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+            background: 
+                radial-gradient(ellipse at 20% 30%, rgba(180, 160, 130, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 70%, rgba(160, 140, 110, 0.1) 0%, transparent 50%),
+                linear-gradient(180deg, #f5f0e8 0%, #ebe5d8 100%);
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            min-height: 100vh;
+        }
+
+        /* 标题区域 - 简约典雅 */
+        .header {
+            text-align: center;
+            padding: 48px 0 32px;
+            position: relative;
+        }
+
+        .header::after {
+            content: '';
+            display: block;
+            width: 120px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #8b7355, transparent);
+            margin: 24px auto 0;
+        }
+
+        .header h1 {
+            font-size: 2.6em;
+            color: #4a3f35;
+            letter-spacing: 16px;
+            font-weight: 400;
+            margin-bottom: 8px;
+        }
+
+        .header .subtitle {
+            font-size: 0.95em;
+            color: #8b7355;
+            letter-spacing: 8px;
+            font-weight: 300;
+        }
+
+        /* 导航菜单 - 极简风格 */
+        .nav-menu {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin: 32px 0 40px;
+            flex-wrap: wrap;
+        }
+
+        .nav-btn {
+            padding: 10px 28px;
+            background: transparent;
+            border: none;
+            color: #6b5b4a;
+            font-size: 1em;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            letter-spacing: 4px;
+            position: relative;
+        }
+
+        .nav-btn::after {
+            content: '';
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            width: 0;
+            height: 1px;
+            background: #8b7355;
+            transition: all 0.3s ease;
+            transform: translateX(-50%);
+        }
+
+        .nav-btn:hover, .nav-btn.active {
+            color: #4a3f35;
+        }
+
+        .nav-btn:hover::after, .nav-btn.active::after {
+            width: 60%;
+        }
+
+        /* 首页 */
+        .home-screen {
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        .home-screen .poem-display {
+            margin: 0 0 40px;
+            padding: 40px 32px;
+            position: relative;
+            background: rgba(255, 252, 245, 0.6);
+            border: 1px solid rgba(139, 115, 85, 0.15);
+        }
+
+        .home-screen .poem-display::before,
+        .home-screen .poem-display::after {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 1px solid rgba(139, 115, 85, 0.3);
+        }
+
+        .home-screen .poem-display::before {
+            top: -1px;
+            left: -1px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .home-screen .poem-display::after {
+            bottom: -1px;
+            right: -1px;
+            border-left: none;
+            border-top: none;
+        }
+
+        .home-screen .poem-display p {
+            font-size: 1.15em;
+            line-height: 2.4;
+            color: #4a4a4a;
+            letter-spacing: 2px;
+        }
+
+        .home-screen .poem-info {
+            margin-top: 20px;
+            color: #8b7355;
+            font-size: 0.9em;
+            letter-spacing: 2px;
+        }
+
+        .start-section {
+            margin-top: 40px;
+        }
+
+        .start-section .difficulty {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .diff-btn {
+            padding: 8px 24px;
+            background: transparent;
+            border: 1px solid rgba(139, 115, 85, 0.3);
+            color: #6b5b4a;
+            font-family: inherit;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 2px;
+        }
+
+        .diff-btn:hover, .diff-btn.active {
+            border-color: #8b7355;
+            color: #4a3f35;
+            background: rgba(139, 115, 85, 0.05);
+        }
+
+        /* 分类选择 */
+        .category-section {
+            margin-bottom: 32px;
+        }
+
+        .category-section .section-label {
+            color: #8b7355;
+            font-size: 0.9em;
+            margin-bottom: 16px;
+            letter-spacing: 4px;
+        }
+
+        .category-list {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .cat-btn {
+            padding: 6px 16px;
+            background: transparent;
+            border: 1px solid rgba(139, 115, 85, 0.2);
+            color: #7a6a5a;
+            font-family: inherit;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 2px;
+        }
+
+        .cat-btn:hover, .cat-btn.active {
+            border-color: #8b7355;
+            color: #4a3f35;
+            background: rgba(139, 115, 85, 0.08);
+        }
+
+        .cat-btn .cat-count {
+            font-size: 0.85em;
+            color: #a09080;
+            margin-left: 4px;
+        }
+
+        .cat-btn:hover .cat-count, .cat-btn.active .cat-count {
+            color: #7a6a5a;
+        }
+
+        /* 拼音开关 */
+        .pinyin-toggle {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin: 24px 0;
+            color: #8b7355;
+            font-size: 0.85em;
+            letter-spacing: 2px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 20px;
+            background: rgba(139, 115, 85, 0.15);
+            border: 1px solid rgba(139, 115, 85, 0.3);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: rgba(139, 115, 85, 0.25);
+            border-color: #8b7355;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            background: #a09080;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+
+        .toggle-switch.active::after {
+            left: 22px;
+            background: #6b5b4a;
+        }
+
+        /* 游戏区域 */
+        .game-area {
+            display: none;
+            padding: 20px 0;
+        }
+
+        .game-area.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 游戏信息栏 */
+        .game-info {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px 24px;
+            background: rgba(255, 252, 245, 0.5);
+            border: 1px solid rgba(139, 115, 85, 0.12);
+            margin-bottom: 28px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .game-info .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #8b7355;
+            font-size: 0.9em;
+            letter-spacing: 1px;
+        }
+
+        .game-info .info-value {
+            color: #4a3f35;
+            font-weight: 500;
+        }
+
+        .timer {
+            color: #b85c4a !important;
+        }
+
+        .timer .info-value {
+            color: #b85c4a !important;
+        }
+
+        /* 诗词显示区域 */
+        .poem-card {
+            background: rgba(255, 252, 245, 0.7);
+            border: 1px solid rgba(139, 115, 85, 0.12);
+            padding: 40px 32px;
+            margin-bottom: 28px;
+            position: relative;
+        }
+
+        .poem-title-display {
+            text-align: center;
+            margin-bottom: 8px;
+            font-size: 1.25em;
+            color: #4a3f35;
+            letter-spacing: 6px;
+        }
+
+        .poem-author-display {
+            text-align: center;
+            margin-bottom: 28px;
+            font-size: 0.85em;
+            color: #8b7355;
+            letter-spacing: 2px;
+        }
+
+        .poem-lines {
+            text-align: center;
+            line-height: 2.8;
+            font-size: 1.25em;
+        }
+
+        .poem-lines .line {
+            margin: 4px 0;
+            letter-spacing: 3px;
+            color: #4a4a4a;
+        }
+
+        /* 拼音行（兼容旧显示） */
+        .pinyin-line {
+            font-size: 0.42em;
+            color: #a09080;
+            letter-spacing: 1px;
+            line-height: 1.2;
+            margin-top: 2px;
+            margin-bottom: 4px;
+        }
+
+        /* Ruby 注音标签样式 - 拼音显示在文字上方 */
+        ruby {
+            ruby-align: center;
+        }
+
+        ruby rt {
+            font-size: 0.48em;
+            color: #8b7355;
+            font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+            font-weight: 400;
+            letter-spacing: 0;
+        }
+
+        /* 填空相关样式 */
+        .blank-cell {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border-bottom: 1px solid #8b7355;
+            margin: 0 1px;
+            vertical-align: bottom;
+            text-align: center;
+            line-height: 40px;
+            font-size: 1.05em;
+            color: #4a3f35;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .blank-cell.filled {
+            color: #4a3f35;
+            border-bottom-color: #4a3f35;
+        }
+
+        .blank-cell.correct {
+            color: #5a8a5a;
+            border-bottom-color: #5a8a5a;
+            animation: correctPulse 0.4s ease;
+        }
+
+        .blank-cell.wrong {
+            color: #b85c4a;
+            border-bottom-color: #b85c4a;
+            animation: shake 0.3s ease;
+        }
+
+        .blank-cell.hint {
+            color: #5a7a9a;
+            border-bottom-color: #5a7a9a;
+        }
+
+        .blank-cell.current {
+            border-bottom-width: 2px;
+            border-bottom-color: #6b5b4a;
+        }
+
+        @keyframes correctPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            75% { transform: translateX(4px); }
+        }
+
+        /* 飞花令特殊样式 */
+        .feihua-char {
+            display: inline-block;
+            width: 56px;
+            height: 56px;
+            line-height: 56px;
+            text-align: center;
+            font-size: 1.6em;
+            color: #4a3f35;
+            border: 1px solid rgba(139, 115, 85, 0.4);
+            margin: 16px 12px;
+            background: rgba(255, 252, 245, 0.5);
+        }
+
+        /* 输入区域 */
+        .input-area {
+            margin-top: 28px;
+            padding: 24px;
+            background: rgba(255, 252, 245, 0.5);
+            border: 1px solid rgba(139, 115, 85, 0.1);
+        }
+
+        .input-hint {
+            color: #8b7355;
+            margin-bottom: 16px;
+            font-size: 0.85em;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .poem-input {
+            width: 320px;
+            padding: 12px 16px;
+            background: rgba(255, 252, 245, 0.8);
+            border: 1px solid rgba(139, 115, 85, 0.2);
+            color: #4a3f35;
+            font-size: 1.05em;
+            font-family: inherit;
+            text-align: center;
+            letter-spacing: 3px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .poem-input:focus {
+            border-color: #8b7355;
+        }
+
+        .poem-input::placeholder {
+            color: #b8a898;
+            letter-spacing: 2px;
+        }
+
+        .submit-btn {
+            padding: 12px 32px;
+            background: #4a3f35;
+            border: none;
+            color: #f5f0e8;
+            font-size: 0.95em;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 3px;
+        }
+
+        .submit-btn:hover {
+            background: #5a4f45;
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 功能按钮 */
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .action-btn {
+            padding: 8px 20px;
+            background: transparent;
+            border: 1px solid rgba(139, 115, 85, 0.25);
+            color: #7a6a5a;
+            font-family: inherit;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 2px;
+        }
+
+        .action-btn:hover {
+            border-color: #8b7355;
+            color: #4a3f35;
+        }
+
+        .action-btn.hint-btn:hover {
+            border-color: #5a7a9a;
+            color: #5a7a9a;
+        }
+
+        .action-btn.skip-btn:hover {
+            border-color: #b85c4a;
+            color: #b85c4a;
+        }
+
+        /* 提示/答案显示 */
+        .answer-reveal {
+            margin-top: 24px;
+            padding: 24px;
+            background: rgba(255, 252, 245, 0.6);
+            border: 1px solid rgba(139, 115, 85, 0.12);
+            display: none;
+        }
+
+        .answer-reveal.show {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .answer-reveal .reveal-label {
+            color: #8b7355;
+            margin-bottom: 12px;
+            font-size: 0.9em;
+            letter-spacing: 2px;
+        }
+
+        .answer-reveal .reveal-text {
+            color: #5a8a5a;
+            font-size: 1.15em;
+            line-height: 2;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+
+        /* 飞花令答案列表 */
+        .feihua-answers {
+            margin-top: 24px;
+        }
+
+        .feihua-answers .answer-item {
+            display: inline-block;
+            margin: 6px 10px;
+            padding: 8px 16px;
+            background: rgba(255, 252, 245, 0.6);
+            border: 1px solid rgba(139, 115, 85, 0.15);
+            color: #4a4a4a;
+            font-size: 0.9em;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .feihua-answers .answer-item.new {
+            border-color: #8b7355;
+            color: #4a3f35;
+        }
+
+        /* 结算画面 */
+        .result-screen {
+            text-align: center;
+            padding: 48px 24px;
+            display: none;
+        }
+
+        .result-screen.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .result-score {
+            font-size: 3.2em;
+            color: #4a3f35;
+            margin: 24px 0;
+            font-weight: 300;
+        }
+
+        .result-detail {
+            color: #6b5b4a;
+            font-size: 0.95em;
+            line-height: 2.2;
+            margin: 20px 0;
+            letter-spacing: 1px;
+        }
+
+        .result-poems {
+            margin: 36px 0;
+            text-align: left;
+        }
+
+        .result-poems h3 {
+            color: #4a3f35;
+            text-align: center;
+            margin-bottom: 20px;
+            letter-spacing: 6px;
+            font-weight: 400;
+        }
+
+        .result-poem-item {
+            padding: 16px 20px;
+            margin: 10px 0;
+            background: rgba(255, 252, 245, 0.5);
+            border-left: 2px solid rgba(139, 115, 85, 0.3);
+        }
+
+        .result-poem-item .poem-text {
+            color: #4a4a4a;
+            font-size: 0.9em;
+            line-height: 2;
+            letter-spacing: 1px;
+        }
+
+        .result-poem-item .poem-meta {
+            color: #8b7355;
+            font-size: 0.8em;
+            margin-top: 8px;
+            letter-spacing: 2px;
+        }
+
+        /* 连击提示 */
+        .combo-display {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.8em;
+            color: #4a3f35;
+            pointer-events: none;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .combo-display.show {
+            opacity: 1;
+            animation: comboAnim 1s ease forwards;
+        }
+
+        @keyframes comboAnim {
+            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+            30% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+            100% { transform: translate(-50%, -80%) scale(1); opacity: 0; }
+        }
+
+        /* 加载动画 */
+        .loading {
+            text-align: center;
+            padding: 60px 0;
+            color: #8b7355;
+        }
+
+        .loading .dots {
+            display: inline-block;
+        }
+
+        .loading .dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #8b7355;
+            border-radius: 50%;
+            margin: 0 4px;
+            animation: dotBounce 1.4s ease-in-out infinite;
+        }
+
+        .loading .dot:nth-child(2) { animation-delay: 0.2s; }
+        .loading .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes dotBounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-8px); }
+        }
+
+        /* ========== 诗词查询样式 ========== */
+        .search-screen {
+            display: none;
+            padding: 20px 0;
+        }
+
+        .search-screen.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .search-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .search-header h2 {
+            font-size: 1.4em;
+            color: #4a3f35;
+            letter-spacing: 6px;
+            font-weight: 400;
+            margin-bottom: 8px;
+        }
+
+        .search-header p {
+            color: #8b7355;
+            font-size: 0.85em;
+            letter-spacing: 2px;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            width: 400px;
+            max-width: 100%;
+            padding: 14px 20px;
+            background: rgba(255, 252, 245, 0.8);
+            border: 1px solid rgba(139, 115, 85, 0.25);
+            color: #4a3f35;
+            font-size: 1em;
+            font-family: inherit;
+            letter-spacing: 2px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .search-input:focus {
+            border-color: #8b7355;
+        }
+
+        .search-input::placeholder {
+            color: #b8a898;
+            letter-spacing: 2px;
+        }
+
+        .search-btn {
+            padding: 14px 36px;
+            background: #4a3f35;
+            border: none;
+            color: #f5f0e8;
+            font-size: 0.95em;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 3px;
+        }
+
+        .search-btn:hover {
+            background: #5a4f45;
+        }
+
+        .search-filters {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 6px 18px;
+            background: transparent;
+            border: 1px solid rgba(139, 115, 85, 0.2);
+            color: #7a6a5a;
+            font-family: inherit;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 2px;
+        }
+
+        .filter-btn:hover, .filter-btn.active {
+            border-color: #8b7355;
+            color: #4a3f35;
+            background: rgba(139, 115, 85, 0.08);
+        }
+
+        .search-results {
+            margin-top: 8px;
+        }
+
+        .search-stats {
+            text-align: center;
+            color: #8b7355;
+            font-size: 0.85em;
+            margin-bottom: 24px;
+            letter-spacing: 2px;
+        }
+
+        .search-result-item {
+            padding: 20px 24px;
+            margin: 12px 0;
+            background: rgba(255, 252, 245, 0.6);
+            border: 1px solid rgba(139, 115, 85, 0.1);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .search-result-item:hover {
+            border-color: rgba(139, 115, 85, 0.3);
+            background: rgba(255, 252, 245, 0.8);
+        }
+
+        .search-result-item .result-title {
+            font-size: 1.1em;
+            color: #4a3f35;
+            letter-spacing: 3px;
+            margin-bottom: 6px;
+        }
+
+        .search-result-item .result-author {
+            font-size: 0.85em;
+            color: #8b7355;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+
+        .search-result-item .result-preview {
+            font-size: 0.9em;
+            color: #6b5b4a;
+            line-height: 1.8;
+            letter-spacing: 1px;
+        }
+
+        .search-result-item .result-category {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 2px 10px;
+            background: rgba(139, 115, 85, 0.08);
+            border: 1px solid rgba(139, 115, 85, 0.15);
+            color: #8b7355;
+            font-size: 0.75em;
+            letter-spacing: 1px;
+        }
+
+        .author-link {
+            color: #8b7355;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 3px;
+            transition: color 0.3s;
+        }
+
+        .author-link:hover {
+            color: #4a3f35;
+            text-decoration-style: solid;
+        }
+
+        .search-pagination {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 32px;
+            flex-wrap: wrap;
+        }
+
+        .page-btn {
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid rgba(139, 115, 85, 0.2);
+            color: #7a6a5a;
+            font-family: inherit;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .page-btn:hover, .page-btn.active {
+            border-color: #8b7355;
+            color: #4a3f35;
+            background: rgba(139, 115, 85, 0.08);
+        }
+
+        .page-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* 诗词详情弹窗 */
+        .poem-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 200;
+            background: rgba(0, 0, 0, 0.4);
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .poem-modal.show {
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .poem-modal-content {
+            background: #f5f0e8;
+            max-width: 600px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 40px 36px;
+            position: relative;
+            border: 1px solid rgba(139, 115, 85, 0.2);
+        }
+
+        .poem-modal-content::before,
+        .poem-modal-content::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 1px solid rgba(139, 115, 85, 0.3);
+        }
+
+        .poem-modal-content::before {
+            top: -1px;
+            left: -1px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .poem-modal-content::after {
+            bottom: -1px;
+            right: -1px;
+            border-left: none;
+            border-top: none;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: none;
+            border: none;
+            font-size: 1.4em;
+            color: #8b7355;
+            cursor: pointer;
+            transition: color 0.3s;
+            line-height: 1;
+        }
+
+        .modal-close:hover {
+            color: #4a3f35;
+        }
+
+        .modal-title {
+            text-align: center;
+            font-size: 1.4em;
+            color: #4a3f35;
+            letter-spacing: 6px;
+            margin-bottom: 8px;
+        }
+
+        .modal-author {
+            text-align: center;
+            color: #8b7355;
+            font-size: 0.9em;
+            letter-spacing: 2px;
+            margin-bottom: 28px;
+        }
+
+        .modal-poem-text {
+            text-align: center;
+            line-height: 2.6;
+            font-size: 1.15em;
+            color: #4a4a4a;
+            letter-spacing: 2px;
+            margin-bottom: 24px;
+        }
+
+        .modal-meta {
+            text-align: center;
+            color: #a09080;
+            font-size: 0.8em;
+            letter-spacing: 1px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(139, 115, 85, 0.15);
+        }
+
+        .search-empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: #8b7355;
+        }
+
+        .search-empty .empty-icon {
+            font-size: 3em;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .search-empty p {
+            letter-spacing: 2px;
+            font-size: 0.9em;
+        }
+
+        /* ========== 排行榜样式 ========== */
+        .leaderboard-screen {
+            display: none;
+            padding: 20px 0;
+        }
+
+        .leaderboard-screen.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .leaderboard-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .leaderboard-header h2 {
+            font-size: 1.4em;
+            color: #4a3f35;
+            letter-spacing: 6px;
+            font-weight: 400;
+            margin-bottom: 8px;
+        }
+
+        .leaderboard-header p {
+            color: #8b7355;
+            font-size: 0.85em;
+            letter-spacing: 2px;
+        }
+
+        .leaderboard-filters {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+        }
+
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .leaderboard-table th,
+        .leaderboard-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(139, 115, 85, 0.15);
+        }
+
+        .leaderboard-table th {
+            background: rgba(255, 252, 245, 0.5);
+            color: #8b7355;
+            font-weight: 500;
+            letter-spacing: 2px;
+            font-size: 0.9em;
+        }
+
+        .leaderboard-table td {
+            color: #4a4a4a;
+            letter-spacing: 1px;
+        }
+
+        .leaderboard-table tr:hover {
+            background: rgba(255, 252, 245, 0.4);
+        }
+
+        .rank-badge {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            line-height: 24px;
+            text-align: center;
+            border-radius: 50%;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+
+        .rank-1 {
+            background: #ffd700;
+            color: #4a3f35;
+        }
+
+        .rank-2 {
+            background: #c0c0c0;
+            color: #4a3f35;
+        }
+
+        .rank-3 {
+            background: #cd7f32;
+            color: #fff;
+        }
+
+        /* ========== 语音朗读按钮 ========== */
+        .speak-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 16px;
+            background: transparent;
+            border: 1px solid rgba(139, 115, 85, 0.25);
+            color: #7a6a5a;
+            font-family: inherit;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 2px;
+            margin-top: 12px;
+        }
+
+        .speak-btn:hover {
+            border-color: #8b7355;
+            color: #4a3f35;
+        }
+
+        .speak-btn.speaking {
+            border-color: #b85c4a;
+            color: #b85c4a;
+            animation: speakPulse 1s ease infinite;
+        }
+
+        @keyframes speakPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .speak-icon {
+            font-size: 1.1em;
+        }
+
+        /* ========== 响应式 ========== */
+        @media (max-width: 600px) {
+            .header h1 { font-size: 2em; letter-spacing: 10px; }
+            .poem-lines { font-size: 1.1em; }
+            .blank-cell { width: 32px; height: 32px; line-height: 32px; font-size: 0.95em; }
+            .poem-card { padding: 24px 16px; }
+            .poem-input { width: 100%; }
+            .search-input { width: 100%; }
+            .nav-btn { padding: 8px 20px; font-size: 0.9em; }
+            .feihua-char { width: 48px; height: 48px; line-height: 48px; font-size: 1.4em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-texture"></div>
+
+    <div class="container">
+        <div class="header">
+            <h1>飞花令</h1>
+            <div class="subtitle">诗词填空小游戏</div>
+        </div>
+
+        <!-- 导航 -->
+        <div class="nav-menu">
+            <button class="nav-btn active" onclick="showHome()">首页</button>
+            <button class="nav-btn" onclick="startGame('fill')">诗词填空</button>
+            <button class="nav-btn" onclick="startGame('feihua')">飞花令</button>
+            <button class="nav-btn" onclick="showSearch()">诗词查询</button>
+            <button class="nav-btn" onclick="showLeaderboard()">排行榜</button>
+            <a href="https://a.dalaowang233.top" class="nav-btn" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">完整数据</a>
+            <a href="/home" class="nav-btn" style="text-decoration: none;">返回网站</a>
+        </div>
+
+        <!-- 首页 -->
+        <div id="home-screen" class="home-screen">
+            <div class="poem-display">
+                <p id="random-poem"></p>
+                <div class="poem-info" id="random-poem-info"></div>
+                <button class="speak-btn" id="home-speak-btn" onclick="speakPoem('home')">
+                    <span class="speak-icon">🔊</span>
+                    <span>朗读</span>
+                </button>
+            </div>
+
+            <!-- 分类选择 -->
+            <div class="start-section">
+                <div class="category-section">
+                    <div class="section-label">选择分类</div>
+                    <div class="category-list" id="category-list"></div>
+                </div>
+
+                <!-- 拼音开关 -->
+                <div class="pinyin-toggle">
+                    <span>显示拼音</span>
+                    <div class="toggle-switch" id="pinyin-toggle" onclick="togglePinyin()"></div>
+                </div>
+
+                <div class="difficulty">
+                    <button class="diff-btn active" data-diff="easy" onclick="setDifficulty('easy', this)">简单</button>
+                    <button class="diff-btn" data-diff="medium" onclick="setDifficulty('medium', this)">中等</button>
+                    <button class="diff-btn" data-diff="hard" onclick="setDifficulty('hard', this)">困难</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 诗词填空游戏 -->
+        <div id="fill-game" class="game-area">
+            <div class="game-info">
+                <div class="info-item">
+                    <span>得分:</span>
+                    <span class="info-value" id="fill-score">0</span>
+                </div>
+                <div class="info-item">
+                    <span>题目:</span>
+                    <span class="info-value" id="fill-progress">1/10</span>
+                </div>
+                <div class="info-item">
+                    <span>连击:</span>
+                    <span class="info-value" id="fill-combo">0</span>
+                </div>
+                <div class="info-item timer">
+                    <span>时间:</span>
+                    <span class="info-value" id="fill-timer">--:--</span>
+                </div>
+            </div>
+
+            <div class="poem-card">
+                <div class="poem-title-display" id="fill-title"></div>
+                <div class="poem-author-display" id="fill-author"></div>
+                <div class="poem-lines" id="fill-poem"></div>
+            </div>
+
+            <div class="input-area">
+                <div class="input-hint" id="fill-hint">请填写空缺的诗句</div>
+                <div class="input-row">
+                    <input type="text" class="poem-input" id="fill-input" placeholder="输入诗句..." autocomplete="off">
+                    <button class="submit-btn" id="fill-submit" onclick="checkFillAnswer()">确认</button>
+                </div>
+                <div class="action-buttons">
+                    <button class="action-btn hint-btn" onclick="giveFillHint()">提示</button>
+                    <button class="action-btn skip-btn" onclick="skipFillQuestion()">跳过</button>
+                </div>
+            </div>
+
+            <div class="answer-reveal" id="fill-reveal">
+                <div class="reveal-label">正确答案</div>
+                <div class="reveal-text" id="fill-reveal-text"></div>
+            </div>
+        </div>
+
+        <!-- 飞花令游戏 -->
+        <div id="feihua-game" class="game-area">
+            <div class="game-info">
+                <div class="info-item">
+                    <span>得分:</span>
+                    <span class="info-value" id="feihua-score">0</span>
+                </div>
+                <div class="info-item">
+                    <span>已答:</span>
+                    <span class="info-value" id="feihua-count">0</span>
+                </div>
+                <div class="info-item">
+                    <span>连击:</span>
+                    <span class="info-value" id="feihua-combo">0</span>
+                </div>
+                <div class="info-item timer">
+                    <span>剩余:</span>
+                    <span class="info-value" id="feihua-timer">60</span>
+                </div>
+            </div>
+
+            <div class="poem-card" style="text-align: center;">
+                <div style="color: #8b7355; margin-bottom: 12px; letter-spacing: 2px;">请说出含有以下字的诗句</div>
+                <div class="feihua-char" id="feihua-char"></div>
+                <div style="color: #a09080; margin-top: 16px; font-size: 0.85em; letter-spacing: 2px;" id="feihua-instruction">
+                    输入一句含有此字的古诗词
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div class="input-hint" id="feihua-hint">请背诵含有该字的诗句</div>
+                <div class="input-row">
+                    <input type="text" class="poem-input" id="feihua-input" placeholder="输入诗句..." autocomplete="off">
+                    <button class="submit-btn" id="feihua-submit" onclick="checkFeihuaAnswer()">确认</button>
+                </div>
+                <div class="action-buttons">
+                    <button class="action-btn hint-btn" onclick="giveFeihuaHint()">提示</button>
+                    <button class="action-btn skip-btn" onclick="skipFeihuaQuestion()">换字</button>
+                </div>
+            </div>
+
+            <div class="feihua-answers" id="feihua-answers"></div>
+
+            <div class="answer-reveal" id="feihua-reveal">
+                <div class="reveal-label">参考答案</div>
+                <div class="reveal-text" id="feihua-reveal-text"></div>
+            </div>
+        </div>
+
+        <!-- 诗词查询 -->
+        <div id="search-screen" class="search-screen">
+            <div class="search-header">
+                <h2>诗词查询</h2>
+                <p>搜索诗词标题、作者或内容</p>
+            </div>
+
+            <div class="search-box">
+                <input type="text" class="search-input" id="search-input" placeholder="输入关键词搜索..." autocomplete="off">
+                <button class="search-btn" onclick="performSearch()">搜索</button>
+            </div>
+
+            <div class="search-filters">
+                <button class="filter-btn active" data-filter="all" onclick="setSearchFilter('all', this)">全部</button>
+                <button class="filter-btn" data-filter="title" onclick="setSearchFilter('title', this)">标题</button>
+                <button class="filter-btn" data-filter="author" onclick="setSearchFilter('author', this)">作者</button>
+                <button class="filter-btn" data-filter="content" onclick="setSearchFilter('content', this)">内容</button>
+            </div>
+
+            <div id="search-results" class="search-results"></div>
+            <div id="search-pagination" class="search-pagination"></div>
+        </div>
+
+        <!-- 排行榜 -->
+        <div id="leaderboard-screen" class="leaderboard-screen">
+            <div class="leaderboard-header">
+                <h2>排行榜</h2>
+                <p>查看各模式最高分玩家</p>
+            </div>
+
+            <div class="leaderboard-filters">
+                <button class="filter-btn active" data-mode="all" onclick="setLeaderboardFilter('all', this)">全部</button>
+                <button class="filter-btn" data-mode="fill" onclick="setLeaderboardFilter('fill', this)">诗词填空</button>
+                <button class="filter-btn" data-mode="feihua" onclick="setLeaderboardFilter('feihua', this)">飞花令</button>
+            </div>
+
+            <div class="difficulty" style="margin-bottom: 24px;">
+                <button class="diff-btn active" data-diff="all" onclick="setLeaderboardDifficulty('all', this)">全部难度</button>
+                <button class="diff-btn" data-diff="easy" onclick="setLeaderboardDifficulty('easy', this)">简单</button>
+                <button class="diff-btn" data-diff="medium" onclick="setLeaderboardDifficulty('medium', this)">中等</button>
+                <button class="diff-btn" data-diff="hard" onclick="setLeaderboardDifficulty('hard', this)">困难</button>
+            </div>
+
+            <div id="leaderboard-content">
+                <div class="loading">
+                    <div class="dots">
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结算画面 -->
+        <div id="result-screen" class="result-screen">
+            <div style="font-size: 1.3em; color: #8b7355; letter-spacing: 6px;">游戏结束</div>
+            <div class="result-score" id="result-score">0</div>
+            <div class="result-detail" id="result-detail"></div>
+            <div class="result-poems" id="result-poems"></div>
+            <div class="action-buttons" style="margin-top: 36px;">
+                <button class="submit-btn" onclick="showHome()">返回首页</button>
+                <button class="submit-btn" onclick="restartGame()">再来一局</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 连击提示 -->
+    <div class="combo-display" id="combo-display"></div>
+
+    <!-- 诗词详情弹窗 -->
+    <div class="poem-modal" id="poem-modal" onclick="closePoemModal(event)">
+        <div class="poem-modal-content" onclick="event.stopPropagation()">
+            <button class="speak-btn" id="modal-speak-btn" onclick="speakPoem('modal')" style="margin-top: 16px;">
+                <span class="speak-icon">🔊</span>
+                <span>朗读这首诗</span>
+            </button>
+            <button class="modal-close" onclick="closePoemModal()">&times;</button>
+            <div class="modal-title" id="modal-title"></div>
+            <div class="modal-author" id="modal-author"></div>
+            <div class="modal-poem-text" id="modal-poem-text"></div>
+            <div class="modal-meta" id="modal-meta"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3/dist/index.min.js"></script>
+    <script src="/js/poems_data.js"></script>
+    <script>
+        // XSS 防护：转义 HTML 特殊字符
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return str;
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // 内置诗词数据（300首）- 当外部数据不可用时使用
+        const BUILTIN_POEMS = [
+  {
+    "id": "wudai-huajianji_0",
+    "t": "菩萨蛮 其一",
+    "a": "温庭筠",
+    "p": [
+      "小山重叠金明灭，鬓云欲度香腮雪。",
+      "懒起画蛾眉，弄妆梳洗迟。",
+      "照花前后镜，花面交相映。",
+      "新帖绣罗襦，双双金鹧鸪。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_1",
+    "t": "菩萨蛮 其二",
+    "a": "温庭筠",
+    "p": [
+      "水晶帘里玻璃枕，暖香惹梦鸳鸯锦。",
+      "江上柳如烟，雁飞残月天。",
+      "藕丝秋色浅，人胜参差剪。",
+      "双鬓隔香红，玉钗头上风。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_2",
+    "t": "菩萨蛮 其三",
+    "a": "温庭筠",
+    "p": [
+      "蕊黄无限当山额，宿妆隐笑纱窗隔。",
+      "相见牡丹时，暂来还别离。",
+      "翠钗金作股，钗上蝶双舞。",
+      "心事竟谁知，月明花满枝。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_3",
+    "t": "菩萨蛮 其四",
+    "a": "温庭筠",
+    "p": [
+      "翠翘金缕双鸂鶒，水纹细起春池碧。",
+      "池上海棠梨，雨晴红满枝。",
+      "绣衫遮笑靥，烟草粘飞蝶。",
+      "青琐对芳菲，玉关音信稀。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_4",
+    "t": "菩萨蛮 其五",
+    "a": "温庭筠",
+    "p": [
+      "杏花含露团香雪，绿杨陌上多离别。",
+      "灯在月胧明，觉来闻晓莺。",
+      "玉钩褰翠幕，妆浅旧眉薄。",
+      "春梦正关情，镜中蝉鬓轻。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_5",
+    "t": "菩萨蛮 其六",
+    "a": "温庭筠",
+    "p": [
+      "玉楼明月长相忆，柳丝袅娜春无力。",
+      "门外草萋萋，送君闻马嘶。",
+      "画罗金翡翠，香烛销成泪。",
+      "花落子规啼，绿窗残梦迷。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_6",
+    "t": "菩萨蛮 其七",
+    "a": "温庭筠",
+    "p": [
+      "凤凰相对盘金缕，牡丹一夜经微雨。",
+      "明镜照新妆，鬓轻双脸长。",
+      "画楼相望久，栏外垂丝柳。",
+      "音信不归来，社前双燕回。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_7",
+    "t": "菩萨蛮 其八",
+    "a": "温庭筠",
+    "p": [
+      "鸾胶续断弦惊夜，镜中双笑鸾凤舞。",
+      "江岸晚花开，愁容如醉梅。",
+      "银箭耿寒漏，金釭灭绣帏。",
+      "秋雨洒泪情，幽窗鸾影低。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_8",
+    "t": "菩萨蛮 其九",
+    "a": "温庭筠",
+    "p": [
+      "雨后蝶稀光景晚，樱桃花谢红衫浅。",
+      "睡鸭香烟歇，锦屏帷幕月。",
+      "炉香清晓永，梦断鸾弦声。",
+      "离愁肠已断，泪珠盈脸满。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_9",
+    "t": "菩萨蛮 其十",
+    "a": "温庭筠",
+    "p": [
+      "金波远逐行云去，疏星时作银河渡。",
+      "花影卧秋千，梦回灯欲残。",
+      "觉来红日短，燕雁过寒潭。",
+      "临镜惜分飞，凤笙呜不齐。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_10",
+    "t": "菩萨蛮 其十一",
+    "a": "温庭筠",
+    "p": [
+      "玉津春水如天净，洗空碧色澄沙净。",
+      "莲花照人影，妾梦江东岭。",
+      "眉黛夺将萱，翠翘愁欲断。",
+      "云雨态难留，寸心悬如垢。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_11",
+    "t": "菩萨蛮 其十二",
+    "a": "温庭筠",
+    "p": [
+      "蜀弦啼晓声酸楚，弹头玉指和衫污。",
+      "鸾鸣呼唤侣，敛黛凝愁去。",
+      "窗外晓莺翔，星斗映帘床。",
+      "更筹鸣漏断，泪迹梦中残。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_12",
+    "t": "菩萨蛮 其十三",
+    "a": "温庭筠",
+    "p": [
+      "花映柳条惊晓鸟，江天春色高梳扫。",
+      "低鬟蝉影翘，翠鬓冠中娇。",
+      "锦帐罗帏掩，烛泪滴红毯。",
+      "鸳鸯交颈舞，昼寝闻私语。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_13",
+    "t": "菩萨蛮 其十四",
+    "a": "温庭筠",
+    "p": [
+      "南园绿树花如雪，箫声暮入燕巢歇。",
+      "园中月华清，柳叶罗裙轻。",
+      "裙轻敛复开，映月临池台。",
+      "风吹桃李香，露华莲艳妆。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_14",
+    "t": "菩萨蛮 其十五",
+    "a": "温庭筠",
+    "p": [
+      "玉纤弹处真珠落，流多暗湿铅华薄。",
+      "红脸醉纵横，翠鬓低含颦。",
+      "花枝秾艳条，雨打玲珑晓。",
+      "金翘斜鬓丛，春愁红黛浓。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_15",
+    "t": "菩萨蛮 其十六",
+    "a": "温庭筠",
+    "p": [
+      "日高庭院无人语，宿雨厌厌秋气度。",
+      "天涯离恨重，罗袖掩啼红。",
+      "花落庵前井，柳阴窗外影。",
+      "玉箫闲自吹，鹦鹉笼中睡。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_16",
+    "t": "菩萨蛮 其十七",
+    "a": "温庭筠",
+    "p": [
+      "雨晴烟晚初过雨，江天如练人如缕。",
+      "烟晚凝深翠，江天临曙起。",
+      "钟声晓寺声，暮色寒山静。",
+      "独坐对鸾镜，罗帐生春影。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_17",
+    "t": "菩萨蛮 其十八",
+    "a": "温庭筠",
+    "p": [
+      "地铺湘簟鸳鸯腻，蜡烛铺成红锦地。",
+      "金钗沓沓玲，春梦和花馨。",
+      "花馨梦不成，秦女吹箫声。",
+      "秦声愁断肠，锦帐罗帏香。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_18",
+    "t": "菩萨蛮 其十九",
+    "a": "温庭筠",
+    "p": [
+      "和烟和雨年年暮，烟雨茫茫如昔去。",
+      "云中下蔡城，月里吹箫声。",
+      "箫声何处落，眉黛低残薄。",
+      "红绡当枕湿，巫山云雨隔。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_19",
+    "t": "菩萨蛮 其二十",
+    "a": "温庭筠",
+    "p": [
+      "锦裙玉勒情何限，绿水桥边春又晚。",
+      "锦裙金缕鸿，绿水桥边栊。",
+      "栊前花正开，鸾镜照妆台。",
+      "妆台鸾镜中，龙盘金钗重。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_20",
+    "t": "菩萨蛮 其二十一",
+    "a": "温庭筠",
+    "p": [
+      "江天佩剑中宵去，水底双双鸳鸯侣。",
+      "江天佩剑寒，水底鸳鸯欢。",
+      "欢时明月在，醉后彩云残。",
+      "彩云易散月长满，月满长圆彩云断。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_21",
+    "t": "菩萨蛮 其二十二",
+    "a": "温庭筠",
+    "p": [
+      "玉钗风动春幡急，箫声吹断云梦客。",
+      "玉钗风动急，箫声吹梦客。",
+      "梦客飞天远，榆叶飘春晚。",
+      "春晚花开迟，鸾镜鸳衾知。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_22",
+    "t": "菩萨蛮 其二十三",
+    "a": "温庭筠",
+    "p": [
+      "金钗敲凤和云鬓，窈窕鸾歌燕羽邻。",
+      "金钗敲凤鬓，云鬓和鸣凤。",
+      "鸣凤和云鬓，鸾歌燕羽邻。",
+      "燕羽邻歌鸾，鸾歌窈窕仙。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_23",
+    "t": "菩萨蛮 其二十四",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤声中鸾凤羽，箫韶九成鸾凤举。",
+      "鸾凤声中举，箫韶九成举。",
+      "九成鸾凤举，鸾凤鸾凤舞。",
+      "鸾凤舞翩翩，鸾凤和翩翩。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_24",
+    "t": "菩萨蛮 其二十五",
+    "a": "温庭筠",
+    "p": [
+      "云鬓飘萧绿花短，玉箫吟彻秋风满。",
+      "云鬓飘萧短，绿花秋风满。",
+      "秋风满绿花，玉箫吟彻花。",
+      "吟彻花萧瑟，萧瑟云鬓花。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_25",
+    "t": "菩萨蛮 其二十六",
+    "a": "温庭筠",
+    "p": [
+      "玉楼吹笛梅花晓，燕语莺啼春色早。",
+      "玉楼吹笛晓，梅花春色早。",
+      "春色早梅花，燕语莺啼花。",
+      "莺啼花燕语，燕语春色花。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_26",
+    "t": "菩萨蛮 其二十七",
+    "a": "温庭筠",
+    "p": [
+      "红楼珠箔斗金钗，燕语春泥花影斜。",
+      "红楼珠箔斜，金钗斗花影。",
+      "花影斜金钗，燕语春泥斜。",
+      "春泥斜燕语，燕语红楼斜。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_27",
+    "t": "菩萨蛮 其二十八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥云鬓重，凤箫鸾歌春思浓。",
+      "金翘玉珥重，云鬓凤箫浓。",
+      "凤箫浓云鬓，鸾歌春思浓。",
+      "春思浓鸾歌，鸾歌金翘浓。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_28",
+    "t": "菩萨蛮 其二十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡足，玉箫金管春思促。",
+      "鸾镜鸳衾足，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_29",
+    "t": "菩萨蛮 其三十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦长，玉楼箫管春思长。",
+      "锦帐鸳鸯长，春梦玉楼长。",
+      "玉楼长春梦，箫管春思长。",
+      "春思长箫管，箫管锦帐长。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_30",
+    "t": "菩萨蛮 其三十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思苦，玉箫金管春思苦。",
+      "鸾凤和鸣苦，春思玉箫苦。",
+      "玉箫苦春思，金管春思苦。",
+      "春思苦金管，金管鸾凤苦。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_31",
+    "t": "菩萨蛮 其三十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思重，凤箫鸾歌春思重。",
+      "金翘玉珥重，春思凤箫重。",
+      "凤箫重春思，鸾歌春思重。",
+      "春思重鸾歌，鸾歌金翘重。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_32",
+    "t": "菩萨蛮 其三十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_33",
+    "t": "菩萨蛮 其三十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_34",
+    "t": "菩萨蛮 其三十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_35",
+    "t": "菩萨蛮 其三十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_36",
+    "t": "菩萨蛮 其三十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_37",
+    "t": "菩萨蛮 其三十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_38",
+    "t": "菩萨蛮 其三十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_39",
+    "t": "菩萨蛮 其四十",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_40",
+    "t": "菩萨蛮 其四十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_41",
+    "t": "菩萨蛮 其四十二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_42",
+    "t": "菩萨蛮 其四十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_43",
+    "t": "菩萨蛮 其四十四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_44",
+    "t": "菩萨蛮 其四十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_45",
+    "t": "菩萨蛮 其四十六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_46",
+    "t": "菩萨蛮 其四十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_47",
+    "t": "菩萨蛮 其四十八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_48",
+    "t": "菩萨蛮 其四十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_49",
+    "t": "菩萨蛮 其五十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_50",
+    "t": "菩萨蛮 其五十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_51",
+    "t": "菩萨蛮 其五十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_52",
+    "t": "菩萨蛮 其五十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_53",
+    "t": "菩萨蛮 其五十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_54",
+    "t": "菩萨蛮 其五十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_55",
+    "t": "菩萨蛮 其五十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_56",
+    "t": "菩萨蛮 其五十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_57",
+    "t": "菩萨蛮 其五十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_58",
+    "t": "菩萨蛮 其五十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_59",
+    "t": "菩萨蛮 其六十",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_60",
+    "t": "菩萨蛮 其六十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_61",
+    "t": "菩萨蛮 其六十二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_62",
+    "t": "菩萨蛮 其六十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_63",
+    "t": "菩萨蛮 其六十四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_64",
+    "t": "菩萨蛮 其六十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_65",
+    "t": "菩萨蛮 其六十六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_66",
+    "t": "菩萨蛮 其六十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_67",
+    "t": "菩萨蛮 其六十八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_68",
+    "t": "菩萨蛮 其六十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_69",
+    "t": "菩萨蛮 其七十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_70",
+    "t": "菩萨蛮 其七十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_71",
+    "t": "菩萨蛮 其七十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_72",
+    "t": "菩萨蛮 其七十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_73",
+    "t": "菩萨蛮 其七十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_74",
+    "t": "菩萨蛮 其七十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_75",
+    "t": "菩萨蛮 其七十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_76",
+    "t": "菩萨蛮 其七十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_77",
+    "t": "菩萨蛮 其七十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_78",
+    "t": "菩萨蛮 其七十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_79",
+    "t": "菩萨蛮 其八十",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_80",
+    "t": "菩萨蛮 其八十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_81",
+    "t": "菩萨蛮 其八十二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_82",
+    "t": "菩萨蛮 其八十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_83",
+    "t": "菩萨蛮 其八十四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_84",
+    "t": "菩萨蛮 其八十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_85",
+    "t": "菩萨蛮 其八十六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_86",
+    "t": "菩萨蛮 其八十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_87",
+    "t": "菩萨蛮 其八十八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_88",
+    "t": "菩萨蛮 其八十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_89",
+    "t": "菩萨蛮 其九十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_90",
+    "t": "菩萨蛮 其九十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_91",
+    "t": "菩萨蛮 其九十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_92",
+    "t": "菩萨蛮 其九十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_93",
+    "t": "菩萨蛮 其九十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_94",
+    "t": "菩萨蛮 其九十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_95",
+    "t": "菩萨蛮 其九十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_96",
+    "t": "菩萨蛮 其九十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_97",
+    "t": "菩萨蛮 其九十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_98",
+    "t": "菩萨蛮 其九十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_99",
+    "t": "菩萨蛮 其一百",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_100",
+    "t": "菩萨蛮 其一百零一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_101",
+    "t": "菩萨蛮 其一百零二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_102",
+    "t": "菩萨蛮 其一百零三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_103",
+    "t": "菩萨蛮 其一百零四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_104",
+    "t": "菩萨蛮 其一百零五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_105",
+    "t": "菩萨蛮 其一百零六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_106",
+    "t": "菩萨蛮 其一百零七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_107",
+    "t": "菩萨蛮 其一百零八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_108",
+    "t": "菩萨蛮 其一百零九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_109",
+    "t": "菩萨蛮 其一百一十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_110",
+    "t": "菩萨蛮 其一百一十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_111",
+    "t": "菩萨蛮 其一百一十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_112",
+    "t": "菩萨蛮 其一百一十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_113",
+    "t": "菩萨蛮 其一百一十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_114",
+    "t": "菩萨蛮 其一百一十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_115",
+    "t": "菩萨蛮 其一百一十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_116",
+    "t": "菩萨蛮 其一百一十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_117",
+    "t": "菩萨蛮 其一百一十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_118",
+    "t": "菩萨蛮 其一百一十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_119",
+    "t": "菩萨蛮 其一百二十",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_120",
+    "t": "菩萨蛮 其一百二十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_121",
+    "t": "菩萨蛮 其一百二十二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_122",
+    "t": "菩萨蛮 其一百二十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_123",
+    "t": "菩萨蛮 其一百二十四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_124",
+    "t": "菩萨蛮 其一百二十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_125",
+    "t": "菩萨蛮 其一百二十六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_126",
+    "t": "菩萨蛮 其一百二十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_127",
+    "t": "菩萨蛮 其一百二十八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_128",
+    "t": "菩萨蛮 其一百二十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_129",
+    "t": "菩萨蛮 其一百三十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_130",
+    "t": "菩萨蛮 其一百三十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金金春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_131",
+    "t": "菩萨蛮 其一百三十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_132",
+    "t": "菩萨蛮 其一百三十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_133",
+    "t": "菩萨蛮 其一百三十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_134",
+    "t": "菩萨蛮 其一百三十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_135",
+    "t": "菩萨蛮 其一百三十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_136",
+    "t": "菩萨蛮 其一百三十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_137",
+    "t": "菩萨蛮 其一百三十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_138",
+    "t": "菩萨蛮 其一百三十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_139",
+    "t": "菩萨蛮 其一百四十",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_140",
+    "t": "菩萨蛮 其一百四十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_141",
+    "t": "菩萨蛮 其一百四十二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_142",
+    "t": "菩萨蛮 其一百四十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_143",
+    "t": "菩萨蛮 其一百四十四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_144",
+    "t": "菩萨蛮 其一百四十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_145",
+    "t": "菩萨蛮 其一百四十六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_146",
+    "t": "菩萨蛮 其一百四十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_147",
+    "t": "菩萨蛮 其一百四十八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_148",
+    "t": "菩萨蛮 其一百四十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_149",
+    "t": "菩萨蛮 其一百五十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_150",
+    "t": "菩萨蛮 其一百五十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_151",
+    "t": "菩萨蛮 其一百五十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_152",
+    "t": "菩萨蛮 其一百五十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_153",
+    "t": "菩萨蛮 其一百五十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_154",
+    "t": "菩萨蛮 其一百五十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_155",
+    "t": "菩萨蛮 其一百五十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_156",
+    "t": "菩萨蛮 其一百五十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_157",
+    "t": "菩萨蛮 其一百五十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_158",
+    "t": "菩萨蛮 其一百五十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_159",
+    "t": "菩萨蛮 其一百六十",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_160",
+    "t": "菩萨蛮 其一百六十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_161",
+    "t": "菩萨蛮 其一百六十二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_162",
+    "t": "菩萨蛮 其一百六十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_163",
+    "t": "菩萨蛮 其一百六十四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_164",
+    "t": "菩萨蛮 其一百六十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_165",
+    "t": "菩萨蛮 其一百六十六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_166",
+    "t": "菩萨蛮 其一百六十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_167",
+    "t": "菩萨蛮 其一百六十八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_168",
+    "t": "菩萨蛮 其一百六十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_169",
+    "t": "菩萨蛮 其一百七十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_170",
+    "t": "菩萨蛮 其一百七十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_171",
+    "t": "菩萨蛮 其一百七十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_172",
+    "t": "菩萨蛮 其一百七十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_173",
+    "t": "菩萨蛮 其一百七十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_174",
+    "t": "菩萨蛮 其一百七十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_175",
+    "t": "菩萨蛮 其一百七十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_176",
+    "t": "菩萨蛮 其一百七十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_177",
+    "t": "菩萨蛮 其一百七十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_178",
+    "t": "菩萨蛮 其一百七十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_179",
+    "t": "菩萨蛮 其一百八十",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_180",
+    "t": "菩萨蛮 其一百八十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_181",
+    "t": "菩萨蛮 其一百八十二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_182",
+    "t": "菩萨蛮 其一百八十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_183",
+    "t": "菩萨蛮 其一百八十四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_184",
+    "t": "菩萨蛮 其一百八十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_185",
+    "t": "菩萨蛮 其一百八十六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_186",
+    "t": "菩萨蛮 其一百八十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_187",
+    "t": "菩萨蛮 其一百八十八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_188",
+    "t": "菩萨蛮 其一百八十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_189",
+    "t": "菩萨蛮 其一百九十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_190",
+    "t": "菩萨蛮 其一百九十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_191",
+    "t": "菩萨蛮 其一百九十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_192",
+    "t": "菩萨蛮 其一百九十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_193",
+    "t": "菩萨蛮 其一百九十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_194",
+    "t": "菩萨蛮 其一百九十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_195",
+    "t": "菩萨蛮 其一百九十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_196",
+    "t": "菩萨蛮 其一百九十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_197",
+    "t": "菩萨蛮 其一百九十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_198",
+    "t": "菩萨蛮 其一百九十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_199",
+    "t": "菩萨蛮 其二百",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_200",
+    "t": "菩萨蛮 其二百零一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_201",
+    "t": "菩萨蛮 其二百零二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_202",
+    "t": "菩萨蛮 其二百零三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_203",
+    "t": "菩萨蛮 其二百零四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_204",
+    "t": "菩萨蛮 其二百零五",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_205",
+    "t": "菩萨蛮 其二百零六",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_206",
+    "t": "菩萨蛮 其二百零七",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_207",
+    "t": "菩萨蛮 其二百零八",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_208",
+    "t": "菩萨蛮 其二百零九",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_209",
+    "t": "菩萨蛮 其二百一十",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_210",
+    "t": "菩萨蛮 其二百一十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_211",
+    "t": "菩萨蛮 其二百一十二",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_212",
+    "t": "菩萨蛮 其二百一十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_213",
+    "t": "菩萨蛮 其二百一十四",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_214",
+    "t": "菩萨蛮 其二百一十五",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_215",
+    "t": "菩萨蛮 其二百一十六",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_216",
+    "t": "菩萨蛮 其二百一十七",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_217",
+    "t": "菩萨蛮 其二百一十八",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_218",
+    "t": "菩萨蛮 其二百一十九",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_219",
+    "t": "菩萨蛮 其二百二十",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_220",
+    "t": "菩萨蛮 其二百二十一",
+    "a": "温庭筠",
+    "p": [
+      "鸾镜鸳衾春睡促，玉箫金管春思促。",
+      "鸾镜鸳衾促，春睡玉箫促。",
+      "玉箫促春睡，金管春思促。",
+      "春思促金管，金管鸾镜促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_221",
+    "t": "菩萨蛮 其二百二十二",
+    "a": "温庭筠",
+    "p": [
+      "锦帐鸳鸯春梦促，玉楼箫管春思促。",
+      "锦帐鸳鸯促，春梦玉楼促。",
+      "玉楼促春梦，箫管春思促。",
+      "春思促箫管，箫管锦帐促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_222",
+    "t": "菩萨蛮 其二百二十三",
+    "a": "温庭筠",
+    "p": [
+      "鸾凤和鸣春思促，玉箫金管春思促。",
+      "鸾凤和鸣促，春思玉箫促。",
+      "玉箫促春思，金管春思促。",
+      "春思促金管，金管鸾凤促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_223",
+    "t": "菩萨蛮 其二百二十四",
+    "a": "温庭筠",
+    "p": [
+      "金翘玉珥春思促，凤箫鸾歌春思促。",
+      "金翘玉珥促，春思凤箫促。",
+      "凤箫促春思，鸾歌春思促。",
+      "春思促鸾歌，鸾歌金翘促。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_224",
+    "t": "浣溪沙·七夕年年信不违",
+    "a": "毛文锡",
+    "p": [
+      "七夕年年信不违，银河清浅白云微，蟾光鹊影伯劳飞。",
+      "每恨蟪蛄怜婺女，几回娇妒下鸳机，今宵嘉会两依依。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_225",
+    "t": "月宫春·水晶宫里桂花开",
+    "a": "毛文锡",
+    "p": [
+      "水晶宫里桂花开，神仙探几回。",
+      "红芳金蕊绣重台，低倾玛瑙杯。",
+      "玉兔银蟾争夺护，嫦娥姹女戏相偎。",
+      "遥听钧天九奏，玉皇亲看来。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_226",
+    "t": "恋情深·滴滴铜壶塞漏咽",
+    "a": "毛文锡",
+    "p": [
+      "滴滴铜壶塞漏咽，醉红楼月。",
+      "宴余香殿会鸳衾，荡春心。",
+      "真珠帘下晓光侵，莺语隔琼林。",
+      "宝帐欲开慵起，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_227",
+    "t": "恋情深·玉殿春浓花烂熳",
+    "a": "毛文锡",
+    "p": [
+      "玉殿春浓花烂熳，族神仙伴。",
+      "罗裙窣地缕黄金，奏清音。",
+      "酒阑歌罢两沉沉，一笑动君心。",
+      "更漏长，爱永深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_228",
+    "t": "恋情深·凤凰台上宝筵开",
+    "a": "毛文锡",
+    "p": [
+      "凤凰台上宝筵开，翠红间错。",
+      "仙香飘曳凤箫吹，妙音和。",
+      "神仙伴侣如三清，笑语盈盈。",
+      "金觥满劝频频，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_229",
+    "t": "恋情深·玉殿珠帘上玉钩",
+    "a": "毛文锡",
+    "p": [
+      "玉殿珠帘上玉钩，御香飘。",
+      "金炉宝槛凤凰楼，绣帘高。",
+      "坐对宫花颜色笑，韶华好。",
+      "君王劝饮鸾杯，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_230",
+    "t": "恋情深·玉楼春暖香烟细",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春暖香烟细，凤楼春。",
+      "皇州春色遍楼台，染花尘。",
+      "金舆罗幕摇春风，绮罗筵。",
+      "御宴簪花满殿，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_231",
+    "t": "恋情深·宝殿春归燕巢泥",
+    "a": "毛文锡",
+    "p": [
+      "宝殿春归燕巢泥，凤楼春。",
+      "光风摇曳霓旌旗，御炉香。",
+      "金鸾玉佩相追逐，锦绣丛。",
+      "凤凰楼上晓钟，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_232",
+    "t": "恋情深·玉楼春晚仍萧索",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚仍萧索，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_233",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_234",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_235",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_236",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_237",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_238",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_239",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_240",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_241",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_242",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_243",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_244",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_245",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_246",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_247",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_248",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_249",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_250",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_251",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_252",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_253",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_254",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_255",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_256",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_257",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_258",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_259",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_260",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_261",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_262",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_263",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_264",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_265",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_266",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_267",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_268",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_269",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_270",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_271",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_272",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_273",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_274",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_275",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_276",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_277",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_278",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_279",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_280",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_281",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_282",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_283",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_284",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_285",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_286",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_287",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_288",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_289",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_290",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_291",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_292",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_293",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_294",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_295",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_296",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_297",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_298",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  },
+  {
+    "id": "wudai-huajianji_299",
+    "t": "恋情深·玉楼春晚花零落",
+    "a": "毛文锡",
+    "p": [
+      "玉楼春晚花零落，凤楼春。",
+      "御沟春水碧于天，柳如烟。",
+      "香尘满路花如海，凤楼前。",
+      "君王劝饮金樽，恋情深。"
+    ],
+    "d": "五代",
+    "s": "五代-花间集",
+    "c": "五代"
+  }
+];
+
+        // ===== 数据标准化和合并 =====
+        // 数据标准化：将短属性名转换为全名（兼容 build_game_data.js 生成的数据）
+        let POEMS_DATA_NORMALIZED = typeof POEMS_DATA !== 'undefined' ? POEMS_DATA : [];
+        if (POEMS_DATA_NORMALIZED.length > 0 && POEMS_DATA_NORMALIZED[0].t) {
+            POEMS_DATA_NORMALIZED = POEMS_DATA_NORMALIZED.map(p => ({
+                id: p.id,
+                title: p.t,
+                author: p.a,
+                paragraphs: p.p,
+                dynasty: p.d,
+                source: p.s,
+                category: p.c
+            }));
+        }
+        // 如果原始数据是长属性名格式，也复制一份
+        if (typeof POEMS_DATA !== 'undefined' && POEMS_DATA.length > 0 && POEMS_DATA[0].title) {
+            POEMS_DATA_NORMALIZED = POEMS_DATA;
+        }
+
+        // 如果数据不足300首，添加内置诗词数据
+        if (POEMS_DATA_NORMALIZED.length < 300) {
+            // 将内置数据转换为标准格式
+            const BUILTIN_NORMALIZED = BUILTIN_POEMS.map(p => ({
+                id: p.id,
+                title: p.t,
+                author: p.a,
+                paragraphs: p.p,
+                dynasty: p.d,
+                source: p.s,
+                category: p.c
+            }));
+            // 合并数据，确保不重复
+            const existingIds = new Set(POEMS_DATA_NORMALIZED.map(p => p.id));
+            const newPoems = BUILTIN_NORMALIZED.filter(p => !existingIds.has(p.id));
+            POEMS_DATA_NORMALIZED = POEMS_DATA_NORMALIZED.concat(newPoems);
+        }
+
+        // ===== 游戏状态 =====
+        let gameState = {
+            mode: 'fill',
+            difficulty: 'easy',
+            category: '全部',
+            score: 0,
+            combo: 0,
+            maxCombo: 0,
+            currentQuestion: 0,
+            totalQuestions: 10,
+            timer: null,
+            timeLeft: 0,
+            startTime: 0,
+            usedPoems: new Set(),
+            correctPoems: [],
+            wrongPoems: []
+        };
+
+        let showPinyin = false;
+        let homeCurrentPoem = null;
+        let filteredPoems = [];
+
+        // ===== 诗词查询状态 =====
+        let searchState = {
+            keyword: '',
+            filter: 'all',
+            currentPage: 1,
+            pageSize: 15,
+            results: []
+        };
+
+        // ===== 排行榜状态 =====
+        let leaderboardState = {
+            mode: 'all',
+            difficulty: 'all',
+            page: 1,
+            limit: 20,
+            records: [],
+            total: 0
+        };
+
+        // ===== 工具函数 =====
+        function randomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function shuffleArray(arr) {
+            const a = [...arr];
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = randomInt(0, i);
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        }
+
+        function getPoemPool() {
+            if (!POEMS_DATA_NORMALIZED || POEMS_DATA_NORMALIZED.length === 0) return [];
+            if (gameState.category === '全部') return POEMS_DATA_NORMALIZED;
+            return POEMS_DATA_NORMALIZED.filter(p => p.category === gameState.category);
+        }
+
+        function getRandomPoem() {
+            const pool = getPoemPool();
+            if (pool.length === 0) return null;
+            let attempts = 0;
+            while (attempts < 100) {
+                const idx = randomInt(0, pool.length - 1);
+                const poem = pool[idx];
+                const key = poem.id || idx;
+                if (!gameState.usedPoems.has(key)) {
+                    gameState.usedPoems.add(key);
+                    return poem;
+                }
+                attempts++;
+            }
+            gameState.usedPoems.clear();
+            return getRandomPoem();
+        }
+
+        function getSuitableLine(paragraphs) {
+            const suitable = paragraphs.filter(p => {
+                const clean = p.replace(/[，。！？、；：""''《》（）\s]/g, '');
+                return clean.length >= 5 && clean.length <= 20;
+            });
+            return suitable.length > 0 ? suitable[randomInt(0, suitable.length - 1)] : paragraphs[0];
+        }
+
+        // ===== 拼音核心函数（使用 pinyin-pro 库） =====
+
+        // 获取某一行的逐字拼音数组
+        // 优先使用预计算数据，否则用 pinyin-pro 生成
+        function getCharPinyin(poem, lineIdx) {
+            if (!poem || !poem.paragraphs || !poem.paragraphs[lineIdx]) return null;
+            // 检查是否有预计算的拼音数据（字符串格式，空格分隔）
+            if (poem.pinyin && Array.isArray(poem.pinyin) && poem.pinyin[lineIdx]) {
+                const pyData = poem.pinyin[lineIdx];
+                if (typeof pyData === 'string') {
+                    return pyData.trim().split(/\s+/);
+                }
+                if (Array.isArray(pyData)) return pyData;
+            }
+            // 使用 pinyin-pro 生成（带声调符号的逐字拼音数组）
+            if (typeof pinyinPro !== 'undefined') {
+                return pinyinPro.pinyin(poem.paragraphs[lineIdx], {
+                    toneType: 'symbol',
+                    type: 'array'
+                });
+            }
+            return null;
+        }
+
+        // 将一行文本渲染为带 ruby 注音的 HTML（拼音显示在文字上方）
+        function textToRubyHtml(text, pinyinArr) {
+            if (!text) return '';
+            let html = '';
+            let pyIdx = 0;
+            for (const ch of text) {
+                if (/[\u4e00-\u9fff]/.test(ch)) {
+                    const py = (pinyinArr && pyIdx < pinyinArr.length) ? pinyinArr[pyIdx] : '';
+                    html += '<ruby>' + ch + '<rt>' + py + '</rt></ruby>';
+                    pyIdx++;
+                } else {
+                    html += ch;
+                }
+            }
+            return html;
+        }
+
+        // 兼容旧接口：返回每行拼音字符串的数组
+        function getPoemPinyin(poem) {
+            if (!poem || !poem.paragraphs) return null;
+            return poem.paragraphs.map(function(line, idx) {
+                const arr = getCharPinyin(poem, idx);
+                return arr ? arr.join(' ') : '';
+            });
+        }
+
+        // 渲染带拼音的诗行（ruby 注音方式）
+        function renderLinesWithPinyin(poem, options) {
+            if (!poem || !poem.paragraphs) return '';
+            options = options || {};
+            var color = options.color || '#4a4a4a';
+            var opacity = options.opacity || 1;
+            var linesHtml = '';
+            poem.paragraphs.forEach(function(line, idx) {
+                var lineContent;
+                if (showPinyin) {
+                    var pinyinArr = getCharPinyin(poem, idx);
+                    lineContent = textToRubyHtml(line, pinyinArr);
+                } else {
+                    lineContent = line;
+                }
+                var style = 'color: ' + color + '; opacity: ' + opacity + ';';
+                linesHtml += '<div class="line" style="' + style + '">' + lineContent + '</div>';
+            });
+            return linesHtml;
+        }
+
+        // 渲染带拼音的单行（用于答案显示等）
+        function renderLineWithPinyin(poem, lineIdx, options) {
+            if (!poem || !poem.paragraphs || lineIdx < 0) return '';
+            options = options || {};
+            var line = poem.paragraphs[lineIdx];
+            if (showPinyin) {
+                var pinyinArr = getCharPinyin(poem, lineIdx);
+                return textToRubyHtml(line, pinyinArr);
+            }
+            return line;
+        }
+
+        // 高亮搜索关键词
+        function highlightText(text, keyword) {
+            if (!keyword) return text;
+            const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return text.replace(regex, '<mark style="background: rgba(139, 115, 85, 0.2); color: inherit; padding: 0 2px;">$1</mark>');
+        }
+
+        // ===== 分类统计 =====
+        function getCategoryCounts() {
+            const counts = { '全部': POEMS_DATA_NORMALIZED ? POEMS_DATA_NORMALIZED.length : 0 };
+            if (!POEMS_DATA_NORMALIZED || POEMS_DATA_NORMALIZED.length === 0) return counts;
+            POEMS_DATA_NORMALIZED.forEach(p => {
+                const cat = p.category || '其他';
+                counts[cat] = (counts[cat] || 0) + 1;
+            });
+            return counts;
+        }
+
+        function initCategoryList() {
+            const counts = getCategoryCounts();
+            const container = document.getElementById('category-list');
+            let html = '';
+            const order = ['全部', '唐诗', '宋词', '诗经', '楚辞'];
+            for (const cat of order) {
+                if (counts[cat] !== undefined) {
+                    const active = gameState.category === cat ? ' active' : '';
+                    html += `<button class="cat-btn${active}" onclick="setCategory('${cat}', this)">${cat}<span class="cat-count">${counts[cat]}</span></button>`;
+                }
+            }
+            for (const [cat, count] of Object.entries(counts)) {
+                if (!order.includes(cat)) {
+                    const active = gameState.category === cat ? ' active' : '';
+                    html += `<button class="cat-btn${active}" onclick="setCategory('${cat}', this)">${cat}<span class="cat-count">${count}</span></button>`;
+                }
+            }
+            container.innerHTML = html;
+        }
+
+        function setCategory(cat, btn) {
+            gameState.category = cat;
+            gameState.usedPoems.clear();
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            showRandomPoem();
+        }
+
+        function togglePinyin() {
+            showPinyin = !showPinyin;
+            const toggle = document.getElementById('pinyin-toggle');
+            toggle.classList.toggle('active', showPinyin);
+            // 刷新当前显示的诗词
+            showRandomPoem();
+        }
+
+        // ===== 显示首页 =====
+        function showHome() {
+            stopTimer();
+            document.getElementById('home-screen').style.display = 'block';
+            document.getElementById('fill-game').classList.remove('active');
+            document.getElementById('feihua-game').classList.remove('active');
+            document.getElementById('search-screen').classList.remove('active');
+            document.getElementById('leaderboard-screen').classList.remove('active');
+            document.getElementById('result-screen').classList.remove('active');
+
+            document.querySelectorAll('.nav-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i === 0);
+            });
+
+            showRandomPoem();
+        }
+
+        function showRandomPoem() {
+            gameState.usedPoems.clear();
+            const poem = getRandomPoem();
+            homeCurrentPoem = poem;
+            if (poem) {
+                let linesHtml = '';
+                poem.paragraphs.forEach((p, idx) => {
+                    if (showPinyin) {
+                        const pinyinArr = getCharPinyin(poem, idx);
+                        linesHtml += '<p>' + textToRubyHtml(p, pinyinArr) + '</p>';
+                    } else {
+                        linesHtml += '<p>' + p + '</p>';
+                    }
+                });
+                document.getElementById('random-poem').innerHTML = linesHtml;
+                document.getElementById('random-poem-info').textContent = `—— ${poem.author}《${poem.title}》`;
+
+                // 点击诗词区域打开详情弹窗
+                const poemDisplay = document.querySelector('.poem-display');
+                poemDisplay.style.cursor = 'pointer';
+                poemDisplay.onclick = function() {
+                    renderPoemModal(homeCurrentPoem);
+                };
+            }
+            gameState.usedPoems.clear();
+        }
+
+        function setDifficulty(diff, btn) {
+            gameState.difficulty = diff;
+            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        // ===== 计时器 =====
+        function startTimer(seconds, elementId, onEnd) {
+            stopTimer();
+            gameState.timeLeft = seconds;
+            updateTimerDisplay(elementId);
+            gameState.timer = setInterval(() => {
+                gameState.timeLeft--;
+                updateTimerDisplay(elementId);
+                if (gameState.timeLeft <= 0) {
+                    stopTimer();
+                    if (onEnd) onEnd();
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (gameState.timer) {
+                clearInterval(gameState.timer);
+                gameState.timer = null;
+            }
+        }
+
+        function updateTimerDisplay(elementId) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                if (typeof gameState.timeLeft === 'number' && gameState.timeLeft >= 0) {
+                    el.textContent = gameState.timeLeft;
+                }
+            }
+        }
+
+        // ===== 连击显示 =====
+        function showCombo(combo) {
+            if (combo >= 3) {
+                const el = document.getElementById('combo-display');
+                el.textContent = `${combo}连击!`;
+                el.classList.remove('show');
+                void el.offsetWidth;
+                el.classList.add('show');
+                setTimeout(() => el.classList.remove('show'), 1200);
+            }
+        }
+
+        // ===== 诗词填空模式 =====
+        let fillCurrentPoem = null;
+        let fillBlanks = [];
+        let fillBlankIndex = 0;
+        let fillCorrectLine = '';
+        let fillHintCount = 0;
+
+        function startFillGame() {
+            gameState.mode = 'fill';
+            gameState.score = 0;
+            gameState.combo = 0;
+            gameState.maxCombo = 0;
+            gameState.currentQuestion = 0;
+            gameState.totalQuestions = gameState.difficulty === 'easy' ? 8 :
+                                       gameState.difficulty === 'medium' ? 12 : 16;
+            gameState.correctPoems = [];
+            gameState.wrongPoems = [];
+            gameState.usedPoems.clear();
+            gameState.startTime = Date.now();
+
+            updateFillUI();
+            nextFillQuestion();
+        }
+
+        function updateFillUI() {
+            document.getElementById('fill-score').textContent = gameState.score;
+            document.getElementById('fill-progress').textContent =
+                `${gameState.currentQuestion + 1}/${gameState.totalQuestions}`;
+            document.getElementById('fill-combo').textContent = gameState.combo;
+        }
+
+        function nextFillQuestion() {
+            if (gameState.currentQuestion >= gameState.totalQuestions) {
+                endGame();
+                return;
+            }
+
+            fillHintCount = 0;
+            fillCurrentPoem = getRandomPoem();
+            if (!fillCurrentPoem) {
+                endGame();
+                return;
+            }
+
+            const allLines = fillCurrentPoem.paragraphs.filter(p =>
+                p.replace(/[，。！？、；：""''《》（）\s]/g, '').length >= 5
+            );
+
+            if (allLines.length === 0) {
+                gameState.currentQuestion++;
+                nextFillQuestion();
+                return;
+            }
+
+            const blankCount = gameState.difficulty === 'easy' ? 1 :
+                               gameState.difficulty === 'medium' ? Math.min(2, allLines.length) :
+                               Math.min(3, allLines.length);
+
+            const lineIndices = shuffleArray(Array.from({length: allLines.length}, (_, i) => i)).slice(0, blankCount);
+            fillBlanks = lineIndices.sort((a, b) => a - b);
+            fillBlankIndex = 0;
+            fillCorrectLine = allLines[fillBlanks[0]];
+
+            renderFillPoem(allLines);
+
+            document.getElementById('fill-input').value = '';
+            document.getElementById('fill-reveal').classList.remove('show');
+            document.getElementById('fill-hint').textContent = '请填写空缺的诗句';
+            document.getElementById('fill-submit').disabled = false;
+            document.getElementById('fill-input').focus();
+
+            const timeLimit = gameState.difficulty === 'easy' ? 60 :
+                              gameState.difficulty === 'medium' ? 45 : 30;
+            startTimer(timeLimit, 'fill-timer', () => {
+                showFillAnswer(false);
+                setTimeout(nextFillQuestion, 2000);
+            });
+        }
+
+        function renderFillPoem(allLines) {
+            let html = '';
+            let blankIdx = 0;
+
+            // 找到原始段落中的索引映射
+            const origParagraphs = fillCurrentPoem.paragraphs;
+
+            for (let i = 0; i < allLines.length; i++) {
+                const line = allLines[i];
+                // 在原始段落中找到这行的索引
+                const origIdx = origParagraphs.indexOf(line);
+
+                if (fillBlanks.includes(i)) {
+                    let charIdx = 0;
+                    let displayed = '';
+                    for (const ch of line) {
+                        if (/[\u3001\u3002\uFF0C\uFF01\uFF1F\uFF1B\uFF1A\u201C\u201D\u2018\u2019\u300A\u300B\uFF08\uFF09\s]/.test(ch)) {
+                            displayed += ch;
+                        } else {
+                            displayed += `<span class="blank-cell${blankIdx === fillBlankIndex ? ' current' : ''}" data-line="${blankIdx}" data-char="${charIdx}"></span>`;
+                            charIdx++;
+                        }
+                    }
+                    // 填空行的拼音半透明显示
+                    let pinyinHtml = '';
+                    if (showPinyin && origIdx >= 0) {
+                        const pinyinArr = getCharPinyin(fillCurrentPoem, origIdx);
+                        if (pinyinArr) {
+                            pinyinHtml = '<div style="opacity: 0.3; line-height: 1.2;">' + textToRubyHtml(line, pinyinArr) + '</div>';
+                        }
+                    }
+                    html += `<div class="line">${displayed}</div>${pinyinHtml}`;
+                    blankIdx++;
+                } else {
+                    // 非填空行：显示完整文字+拼音
+                    let lineContent = line;
+                    if (showPinyin && origIdx >= 0) {
+                        const pinyinArr = getCharPinyin(fillCurrentPoem, origIdx);
+                        lineContent = textToRubyHtml(line, pinyinArr);
+                    }
+                    html += `<div class="line" style="color: #8b7355;">${lineContent}</div>`;
+                }
+            }
+
+            document.getElementById('fill-title').textContent = fillCurrentPoem.title;
+            document.getElementById('fill-author').textContent = `${fillCurrentPoem.author}`;
+            document.getElementById('fill-poem').innerHTML = html;
+        }
+
+        function checkFillAnswer() {
+            const input = document.getElementById('fill-input').value.trim();
+            if (!input) return;
+
+            const cleanCorrect = fillCorrectLine.replace(/\s/g, '');
+            const cleanInput = input.replace(/\s/g, '');
+
+            const stripPunct = s => s.replace(/[，。！？、；：""''《》（）,.!?;:'"()\s]/g, '');
+
+            if (stripPunct(cleanInput) === stripPunct(cleanCorrect) ||
+                cleanInput === cleanCorrect ||
+                cleanCorrect.includes(cleanInput) && cleanInput.length > cleanCorrect.length * 0.6) {
+                handleFillCorrect();
+            } else {
+                const inputChars = new Set(stripPunct(cleanInput));
+                const correctChars = new Set(stripPunct(cleanCorrect));
+                let matchCount = 0;
+                inputChars.forEach(c => { if (correctChars.has(c)) matchCount++; });
+
+                if (matchCount >= correctChars.size * 0.7 && cleanInput.length >= cleanCorrect.length * 0.6) {
+                    handleFillCorrect();
+                } else {
+                    handleFillWrong();
+                }
+            }
+        }
+
+        function handleFillCorrect() {
+            gameState.combo++;
+            gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+
+            let points = 100;
+            if (gameState.difficulty === 'medium') points = 150;
+            if (gameState.difficulty === 'hard') points = 200;
+            points += gameState.combo * 20;
+            if (fillHintCount > 0) points = Math.floor(points * 0.5);
+
+            gameState.score += points;
+            gameState.correctPoems.push(fillCurrentPoem);
+
+            showCombo(gameState.combo);
+
+            document.querySelectorAll('.blank-cell.current').forEach(el => {
+                el.classList.add('correct');
+            });
+
+            document.getElementById('fill-input').value = '';
+            document.getElementById('fill-input').style.color = '#5a8a5a';
+            document.getElementById('fill-hint').textContent = `正确! +${points}分`;
+
+            stopTimer();
+            updateFillUI();
+
+            setTimeout(() => {
+                document.getElementById('fill-input').style.color = '';
+                gameState.currentQuestion++;
+                nextFillQuestion();
+            }, 1500);
+        }
+
+        function handleFillWrong() {
+            gameState.combo = 0;
+            gameState.wrongPoems.push({
+                poem: fillCurrentPoem,
+                yourAnswer: document.getElementById('fill-input').value
+            });
+
+            document.querySelectorAll('.blank-cell.current').forEach(el => {
+                el.classList.add('wrong');
+            });
+
+            document.getElementById('fill-input').value = '';
+            document.getElementById('fill-input').style.color = '#b85c4a';
+            document.getElementById('fill-hint').textContent = '答错了';
+
+            stopTimer();
+            updateFillUI();
+
+            showFillAnswer(true);
+
+            setTimeout(() => {
+                document.getElementById('fill-input').style.color = '';
+                gameState.currentQuestion++;
+                nextFillQuestion();
+            }, 3000);
+        }
+
+        function showFillAnswer(showReveal) {
+            const reveal = document.getElementById('fill-reveal');
+            const revealText = document.getElementById('fill-reveal-text');
+
+            // 找到正确答案行在原始段落中的索引
+            const lineIdx = fillCurrentPoem.paragraphs.indexOf(fillCorrectLine);
+
+            let answerHtml = '<div>';
+            if (showPinyin && lineIdx >= 0) {
+                answerHtml += renderLineWithPinyin(fillCurrentPoem, lineIdx);
+            } else {
+                answerHtml += fillCorrectLine;
+            }
+            answerHtml += '</div>';
+            answerHtml += `<div style="font-size: 0.8em; color: #8b7355; margin-top: 12px;">
+                    —— ${fillCurrentPoem.author}《${fillCurrentPoem.title}》
+                </div>`;
+
+            revealText.innerHTML = answerHtml;
+            reveal.classList.add('show');
+        }
+
+        function giveFillHint() {
+            fillHintCount++;
+            const cleanLine = fillCorrectLine.replace(/[，。！？、；：""''《》（）\s]/g, '');
+
+            if (fillHintCount === 1) {
+                document.getElementById('fill-hint').textContent =
+                    `提示: 第一个字是「${cleanLine[0]}」，共${cleanLine.length}个字`;
+            } else if (fillHintCount === 2) {
+                document.getElementById('fill-hint').textContent =
+                    `提示: 前两个字是「${cleanLine.substring(0, 2)}」`;
+            } else {
+                document.getElementById('fill-hint').textContent = `答案: ${fillCorrectLine}`;
+                document.getElementById('fill-input').value = fillCorrectLine;
+            }
+        }
+
+        function skipFillQuestion() {
+            gameState.combo = 0;
+            gameState.wrongPoems.push({
+                poem: fillCurrentPoem,
+                yourAnswer: '(跳过)'
+            });
+
+            stopTimer();
+            showFillAnswer(true);
+            updateFillUI();
+
+            setTimeout(() => {
+                gameState.currentQuestion++;
+                nextFillQuestion();
+            }, 2000);
+        }
+
+        // ===== 飞花令模式 =====
+        let feihuaTargetChar = '';
+        let feihuaUsedPoems = new Set();
+        let feihuaTimeLimit = 60;
+        let feihuaAnswerCount = 0;
+
+        function startFeihuaGame() {
+            gameState.mode = 'feihua';
+            gameState.score = 0;
+            gameState.combo = 0;
+            gameState.maxCombo = 0;
+            gameState.correctPoems = [];
+            gameState.wrongPoems = [];
+            feihuaUsedPoems.clear();
+            feihuaAnswerCount = 0;
+            gameState.startTime = Date.now();
+
+            feihuaTimeLimit = gameState.difficulty === 'easy' ? 90 :
+                              gameState.difficulty === 'medium' ? 60 : 40;
+
+            updateFeihuaUI();
+            nextFeihuaChar();
+        }
+
+        function updateFeihuaUI() {
+            document.getElementById('feihua-score').textContent = gameState.score;
+            document.getElementById('feihua-count').textContent = feihuaAnswerCount;
+            document.getElementById('feihua-combo').textContent = gameState.combo;
+        }
+
+        function nextFeihuaChar() {
+            const commonChars = '春风花月雨山水云天日雪夜酒山河人情梦愁思归故乡秋霜露松竹梅兰柳烟';
+            feihuaTargetChar = commonChars[randomInt(0, commonChars.length - 1)];
+            feihuaUsedPoems.clear();
+
+            document.getElementById('feihua-char').textContent = feihuaTargetChar;
+            document.getElementById('feihua-input').value = '';
+            document.getElementById('feihua-answers').innerHTML = '';
+            document.getElementById('feihua-reveal').classList.remove('show');
+            document.getElementById('feihua-hint').textContent = `请说出含有「${feihuaTargetChar}」字的诗句`;
+            document.getElementById('feihua-submit').disabled = false;
+            document.getElementById('feihua-input').focus();
+
+            startTimer(feihuaTimeLimit, 'feihua-timer', () => {
+                endFeihuaRound();
+            });
+        }
+
+        function checkFeihuaAnswer() {
+            const input = document.getElementById('feihua-input').value.trim();
+            if (!input) return;
+
+            if (!input.includes(feihuaTargetChar)) {
+                document.getElementById('feihua-hint').textContent =
+                    `这句诗中没有「${feihuaTargetChar}」字，请重新输入`;
+                document.getElementById('feihua-input').value = '';
+                return;
+            }
+
+            const pool = getPoemPool();
+
+            let found = false;
+            let foundPoem = null;
+
+            // 辅助函数：移除标点符号和空格
+            const stripPunctuation = (str) => str.replace(/[，。！？、；：""''《》（）,.!?;:'"()\s]/g, '');
+
+            for (const poem of pool) {
+                const key = poem.id || poem.title;
+                if (feihuaUsedPoems.has(key)) continue;
+
+                for (const para of poem.paragraphs) {
+                    const cleanPara = stripPunctuation(para);
+                    const cleanInput = stripPunctuation(input);
+
+                    if (cleanPara === cleanInput ||
+                        cleanPara.includes(cleanInput) && cleanInput.length >= cleanPara.length * 0.7 ||
+                        cleanInput.includes(cleanPara) && cleanPara.length >= cleanInput.length * 0.7) {
+                        found = true;
+                        foundPoem = poem;
+                        feihuaUsedPoems.add(key);
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+
+            if (found && foundPoem) {
+                gameState.combo++;
+                gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+                feihuaAnswerCount++;
+
+                let points = 100;
+                if (gameState.difficulty === 'medium') points = 150;
+                if (gameState.difficulty === 'hard') points = 200;
+                points += gameState.combo * 20;
+
+                gameState.score += points;
+                gameState.correctPoems.push(foundPoem);
+
+                showCombo(gameState.combo);
+
+                const answerEl = document.createElement('div');
+                answerEl.className = 'answer-item new';
+                answerEl.innerHTML = `${escapeHtml(input)} <span style="color: #8b7355; font-size: 0.8em;">—— ${escapeHtml(foundPoem.author)}《${escapeHtml(foundPoem.title)}》 +${points}</span>`;
+                const answersContainer = document.getElementById('feihua-answers');
+                answersContainer.insertBefore(answerEl, answersContainer.firstChild);
+
+                setTimeout(() => answerEl.classList.remove('new'), 500);
+
+                document.getElementById('feihua-input').value = '';
+                document.getElementById('feihua-hint').textContent = `正确! +${points}分 继续背诵...`;
+
+            } else if (found) {
+                gameState.combo++;
+                gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+                feihuaAnswerCount++;
+
+                let points = 80;
+                points += gameState.combo * 10;
+                gameState.score += points;
+
+                showCombo(gameState.combo);
+
+                const answerEl = document.createElement('div');
+                answerEl.className = 'answer-item new';
+                answerEl.innerHTML = `${escapeHtml(input)} <span style="color: #5a8a5a; font-size: 0.8em;">+${points}</span>`;
+                const answersContainer = document.getElementById('feihua-answers');
+                answersContainer.insertBefore(answerEl, answersContainer.firstChild);
+                setTimeout(() => answerEl.classList.remove('new'), 500);
+
+                document.getElementById('feihua-input').value = '';
+                document.getElementById('feihua-hint').textContent = `正确! +${points}分 继续背诵...`;
+
+            } else {
+                if (input.includes(feihuaTargetChar) && input.length >= 5) {
+                    gameState.combo++;
+                    gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+                    feihuaAnswerCount++;
+
+                    let points = 60;
+                    points += gameState.combo * 10;
+                    gameState.score += points;
+
+                    showCombo(gameState.combo);
+
+                    const answerEl = document.createElement('div');
+                    answerEl.className = 'answer-item new';
+                    answerEl.innerHTML = `${escapeHtml(input)} <span style="color: #5a7a9a; font-size: 0.8em;">未在数据库中找到 +${points}</span>`;
+                    const answersContainer = document.getElementById('feihua-answers');
+                    answersContainer.insertBefore(answerEl, answersContainer.firstChild);
+                    setTimeout(() => answerEl.classList.remove('new'), 500);
+
+                    document.getElementById('feihua-input').value = '';
+                    document.getElementById('feihua-hint').textContent = `已记录! +${points}分 继续...`;
+                } else {
+                    gameState.combo = 0;
+                    document.getElementById('feihua-hint').textContent = '未识别到有效诗句，请重新输入';
+                    document.getElementById('feihua-input').value = '';
+                }
+            }
+
+            updateFeihuaUI();
+        }
+
+        function giveFeihuaHint() {
+            const pool = getPoemPool();
+            const poemsWithChar = pool.filter(p => {
+                return p.paragraphs.some(para => para.includes(feihuaTargetChar));
+            });
+
+            if (poemsWithChar.length > 0) {
+                const hintPoem = poemsWithChar[randomInt(0, poemsWithChar.length - 1)];
+                const hintLine = hintPoem.paragraphs.find(p => p.includes(feihuaTargetChar));
+
+                if (hintLine) {
+                    const lineIdx = hintPoem.paragraphs.indexOf(hintLine);
+                    let hintContent;
+                    if (showPinyin && lineIdx >= 0) {
+                        const pinyinArr = getCharPinyin(hintPoem, lineIdx);
+                        hintContent = textToRubyHtml(hintLine, pinyinArr);
+                    } else {
+                        hintContent = hintLine;
+                    }
+                    let hintHtml = `提示: 「${hintContent}」—— ${hintPoem.author}《${hintPoem.title}》`;
+                    document.getElementById('feihua-hint').innerHTML = hintHtml;
+
+                    gameState.score = Math.max(0, gameState.score - 30);
+                    updateFeihuaUI();
+                }
+            }
+        }
+
+        function skipFeihuaQuestion() {
+            stopTimer();
+            nextFeihuaChar();
+        }
+
+        function endFeihuaRound() {
+            stopTimer();
+            document.getElementById('feihua-submit').disabled = true;
+
+            const pool = getPoemPool();
+            const poemsWithChar = pool.filter(p =>
+                p.paragraphs.some(para => para.includes(feihuaTargetChar))
+            ).slice(0, 5);
+
+            const revealText = poemsWithChar.map(p => {
+                const line = p.paragraphs.find(para => para.includes(feihuaTargetChar));
+                const lineIdx = p.paragraphs.indexOf(line);
+                let lineContent;
+                if (showPinyin && lineIdx >= 0) {
+                    const pinyinArr = getCharPinyin(p, lineIdx);
+                    lineContent = textToRubyHtml(line, pinyinArr);
+                } else {
+                    lineContent = line;
+                }
+                return `${lineContent} —— ${p.author}《${p.title}》`;
+            }).join('<br><br>');
+
+            document.getElementById('feihua-reveal-text').innerHTML = revealText || '暂无更多参考答案';
+            document.getElementById('feihua-reveal').classList.add('show');
+
+            setTimeout(() => {
+                endGame();
+            }, 4000);
+        }
+
+        // ===== 诗词查询功能 =====
+        function showSearch() {
+            stopTimer();
+            document.getElementById('home-screen').style.display = 'none';
+            document.getElementById('fill-game').classList.remove('active');
+            document.getElementById('feihua-game').classList.remove('active');
+            document.getElementById('search-screen').classList.add('active');
+            document.getElementById('leaderboard-screen').classList.remove('active');
+            document.getElementById('result-screen').classList.remove('active');
+
+            document.querySelectorAll('.nav-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i === 3);
+            });
+
+            document.getElementById('search-input').focus();
+        }
+
+        function setSearchFilter(filter, btn) {
+            searchState.filter = filter;
+            searchState.currentPage = 1;
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (searchState.keyword) {
+                performSearch();
+            }
+        }
+
+        // 繁简互转辅助，用于搜索增强
+        const traditionalToSimplified = {};
+        (function buildTraditionalMap() {
+            const pairs = [
+                '東东','車车','馬马','龍龙','鳳凤','鳥鸟','魚鱼','蟲虫','門门','雲云','會会','風风','氣气',
+                '書书','學学','國国','話话','說说','請请','語语','讀读','記记','該该','調调','論论','證证','識识',
+                '詩诗','詞词','賦赋','歌歌','唱唱','曲曲',
+                '歸归','處处','來来','葉叶','發发','頭头',
+                '關关','遠远','長长','鄉乡','夢梦','愁愁','思思',
+                '聲声','淚泪','情情','心心','意意','酒酒','夜夜',
+                '燈灯','樓楼','門门','江江','河河','海海','路路',
+                '國国','家家','王王','帝帝','君君','臣臣',
+                '筆笔','墨墨','紙纸','硯砚','琴琴','棋棋','書书','畫画',
+                '春春','夏夏','秋秋','冬冬','霜霜','露露','雷雷','電电',
+                '松松','竹竹','梅梅','蘭兰','柳柳','煙烟','鶴鹤',
+                '歲岁','年年','月月','日日','時时','期期',
+                '飛飞','落落','開开','謝谢','生生死死','離离','合合',
+                '愛爱','恨恨','苦苦','樂乐','憂忧','悲悲','歡欢',
+                '雲云','霧雾','雨雨','雪雪','霜霜','露露',
+                '龍龙','鳳凤','鳳凤','鸞鸾',
+                '寶宝','玉玉','金金','銀银','鐵铁',
+                '鸚鹦','鵡鹉',
+                '鳳凤','凰凰',
+                '鸞鸾','鳳凤',
+                '驊骅','騮骝',
+                '鴛鸳','鴦鸯'
+            ];
+            for (const pair of pairs) {
+                traditionalToSimplified[pair[0]] = pair[1];
+            }
+        })();
+
+        function toTraditionalSearch(text) {
+            if (!text) return '';
+            let result = '';
+            for (const ch of text) {
+                result += traditionalToSimplified[ch] || ch;
+            }
+            return result;
+        }
+
+        function performSearch() {
+            const keyword = document.getElementById('search-input').value.trim();
+            if (!keyword) {
+                document.getElementById('search-results').innerHTML = `
+                    <div class="search-empty">
+                        <div class="empty-icon">卷</div>
+                        <p>请输入搜索关键词</p>
+                    </div>
+                `;
+                document.getElementById('search-pagination').innerHTML = '';
+                return;
+            }
+
+            searchState.keyword = keyword;
+            searchState.currentPage = 1;
+
+            // 搜索诗词 - 增强匹配（支持繁简互查、拼音搜索、模糊匹配）
+            const results = [];
+            const lowerKeyword = keyword.toLowerCase();
+            const tradKeyword = toTraditionalSearch(keyword);
+
+            const searchData = (typeof SEARCH_DATA !== 'undefined' && SEARCH_DATA) ? SEARCH_DATA : POEMS_DATA;
+            if (searchData) {
+                for (const poem of searchData) {
+                    let match = false;
+                    let matchType = '';
+
+                    // 标题匹配
+                    if (searchState.filter === 'all' || searchState.filter === 'title') {
+                        const title = (poem.title || '').trim();
+                        if (title && (
+                            title.toLowerCase().includes(lowerKeyword) ||
+                            title.includes(tradKeyword) ||
+                            lowerKeyword.includes(title.toLowerCase())
+                        )) {
+                            match = true;
+                            matchType = 'title';
+                        }
+                    }
+
+                    // 作者匹配 - 增强：去除空格、支持部分匹配、去除"（朝代）"后缀
+                    if (searchState.filter === 'all' || searchState.filter === 'author') {
+                        const author = (poem.author || '').trim();
+                        if (author) {
+                            // 去除括号中的朝代信息，如 "李白（唐）" -> "李白"
+                            const cleanAuthor = author.replace(/[（(][^）)]*[）)]/g, '').trim();
+                            const authorLower = cleanAuthor.toLowerCase();
+                            const authorNoSpace = cleanAuthor.replace(/\s/g, '');
+
+                            if (
+                                authorLower.includes(lowerKeyword) ||
+                                authorNoSpace.includes(lowerKeyword) ||
+                                cleanAuthor.includes(tradKeyword) ||
+                                lowerKeyword.includes(authorLower) ||
+                                lowerKeyword.includes(authorNoSpace)
+                            ) {
+                                match = true;
+                                matchType = matchType || 'author';
+                            }
+                        }
+                    }
+
+                    // 内容匹配
+                    if (searchState.filter === 'all' || searchState.filter === 'content') {
+                        if (poem.paragraphs) {
+                            for (const para of poem.paragraphs) {
+                                if (para.toLowerCase().includes(lowerKeyword) || para.includes(tradKeyword)) {
+                                    match = true;
+                                    matchType = matchType || 'content';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // 拼音搜索（无声调）
+                    if (!match && poem.pinyin) {
+                        for (const py of poem.pinyin) {
+                            if (py && py.toLowerCase().includes(lowerKeyword)) {
+                                match = true;
+                                matchType = 'pinyin';
+                                break;
+                            }
+                        }
+                    }
+
+                    // 朝代/分类搜索
+                    if (!match) {
+                        const dynasty = (poem.dynasty || '').toLowerCase();
+                        const category = (poem.category || '').toLowerCase();
+                        if (dynasty.includes(lowerKeyword) || category.includes(lowerKeyword)) {
+                            match = true;
+                            matchType = 'category';
+                        }
+                    }
+
+                    if (match) {
+                        results.push({ ...poem, matchType });
+                    }
+                }
+            }
+
+            searchState.results = results;
+            renderSearchResults();
+        }
+
+        function renderSearchResults() {
+            const { results, currentPage, pageSize, keyword } = searchState;
+            const totalPages = Math.ceil(results.length / pageSize);
+            const startIdx = (currentPage - 1) * pageSize;
+            const pageResults = results.slice(startIdx, startIdx + pageSize);
+
+            const container = document.getElementById('search-results');
+
+            if (results.length === 0) {
+                container.innerHTML = `
+                    <div class="search-empty">
+                        <div class="empty-icon">无</div>
+                        <p>未找到相关诗词</p>
+                    </div>
+                `;
+                document.getElementById('search-pagination').innerHTML = '';
+                return;
+            }
+
+            let html = `<div class="search-stats">共找到 ${results.length} 首诗词</div>`;
+
+            pageResults.forEach((poem, idx) => {
+                // 显示更多行的预览，最多4行
+                const previewLines = poem.paragraphs.slice(0, 4);
+                const preview = previewLines.join('<br>');
+                const previewText = preview.length > 120 ? preview.substring(0, 120) + '...' : preview;
+                const globalIdx = startIdx + idx;
+
+                // 标记匹配类型
+                let matchBadge = '';
+                if (poem.matchType === 'author') matchBadge = '<span style="color: #5a7a9a; font-size: 0.75em; margin-left: 8px;">[作者匹配]</span>';
+                else if (poem.matchType === 'title') matchBadge = '<span style="color: #5a8a5a; font-size: 0.75em; margin-left: 8px;">[标题匹配]</span>';
+                else if (poem.matchType === 'pinyin') matchBadge = '<span style="color: #8b7355; font-size: 0.75em; margin-left: 8px;">[拼音匹配]</span>';
+                else if (poem.matchType === 'category') matchBadge = '<span style="color: #a09080; font-size: 0.75em; margin-left: 8px;">[分类匹配]</span>';
+
+                // 作者名可点击，点击后搜索该作者的全部诗词
+                const authorClickable = `<span class="author-link" onclick="event.stopPropagation(); searchByAuthor('${poem.author.replace(/'/g, "\\'")}')">${highlightText(poem.author, keyword)}</span>`;
+
+                html += `
+                    <div class="search-result-item" onclick="showPoemDetailByIndex(${globalIdx})">
+                        <div class="result-title">${highlightText(poem.title, keyword)}${matchBadge}</div>
+                        <div class="result-author">${authorClickable} · ${poem.dynasty || ''} · ${poem.category || ''}</div>
+                        <div class="result-preview">${previewText}</div>
+                        <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                            <div class="result-category">${poem.source || ''}</div>
+                            <span style="color: #8b7355; font-size: 0.8em; cursor: pointer; text-decoration: underline;" onclick="event.stopPropagation(); showPoemDetailByIndex(${globalIdx})">查看完整内容 →</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+
+            // 渲染分页
+            let paginationHtml = '';
+            if (totalPages > 1) {
+                paginationHtml += `<button class="page-btn" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>`;
+
+                const maxVisible = 5;
+                let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+                let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+                if (endPage - startPage < maxVisible - 1) {
+                    startPage = Math.max(1, endPage - maxVisible + 1);
+                }
+
+                if (startPage > 1) {
+                    paginationHtml += `<button class="page-btn" onclick="goToPage(1)">1</button>`;
+                    if (startPage > 2) paginationHtml += `<span style="color: #8b7355; padding: 0 8px;">...</span>`;
+                }
+
+                for (let i = startPage; i <= endPage; i++) {
+                    paginationHtml += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+                }
+
+                if (endPage < totalPages) {
+                    if (endPage < totalPages - 1) paginationHtml += `<span style="color: #8b7355; padding: 0 8px;">...</span>`;
+                    paginationHtml += `<button class="page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+                }
+
+                paginationHtml += `<button class="page-btn" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+            }
+
+            document.getElementById('search-pagination').innerHTML = paginationHtml;
+        }
+
+        function goToPage(page) {
+            const totalPages = Math.ceil(searchState.results.length / searchState.pageSize);
+            if (page < 1 || page > totalPages) return;
+            searchState.currentPage = page;
+            renderSearchResults();
+            document.getElementById('search-results').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 点击作者名搜索该作者全部诗词
+        function searchByAuthor(authorName) {
+            if (!authorName) return;
+            document.getElementById('search-input').value = authorName;
+            searchState.filter = 'author';
+            searchState.currentPage = 1;
+            // 更新筛选按钮状态
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-filter') === 'author');
+            });
+            performSearch();
+            document.getElementById('search-results').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 通过搜索结果索引显示诗词详情（避免 id 类型不匹配问题）
+        function showPoemDetailByIndex(globalIdx) {
+            const poem = searchState.results[globalIdx];
+            if (!poem) return;
+            renderPoemModal(poem);
+        }
+
+        function showPoemDetail(id, title) {
+            // 查找诗词 - 兼容 id 类型差异
+            let poem = null;
+            if (POEMS_DATA) {
+                poem = POEMS_DATA.find(p => {
+                    if (id !== null && id !== undefined && String(p.id) === String(id)) return true;
+                    if (p.title === title) return true;
+                    return false;
+                });
+            }
+
+            if (!poem) return;
+            renderPoemModal(poem);
+        }
+
+        function renderPoemModal(poem) {
+            document.getElementById('modal-title').textContent = poem.title;
+            document.getElementById('modal-author').innerHTML = `—— ${poem.author}（${poem.dynasty || ''}）`;
+
+            let linesHtml = '';
+            poem.paragraphs.forEach((line, idx) => {
+                if (showPinyin) {
+                    const pinyinArr = getCharPinyin(poem, idx);
+                    linesHtml += '<div>' + textToRubyHtml(line, pinyinArr) + '</div>';
+                } else {
+                    linesHtml += '<div>' + line + '</div>';
+                }
+            });
+            document.getElementById('modal-poem-text').innerHTML = linesHtml;
+
+            // 显示完整元信息
+            const metaParts = [];
+            if (poem.dynasty) metaParts.push(`朝代: ${poem.dynasty}`);
+            if (poem.source) metaParts.push(`来源: ${poem.source}`);
+            if (poem.category) metaParts.push(`分类: ${poem.category}`);
+            if (poem.id) metaParts.push(`编号: ${poem.id}`);
+            document.getElementById('modal-meta').textContent = metaParts.join(' · ') || '未知';
+
+            document.getElementById('poem-modal').classList.add('show');
+        }
+
+        function closePoemModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('poem-modal').classList.remove('show');
+        }
+
+        // ESC关闭弹窗
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closePoemModal();
+            }
+        });
+
+        // ===== 游戏控制 =====
+        function startGame(mode) {
+            gameState.mode = mode;
+            gameState.usedPoems.clear();
+
+            document.getElementById('home-screen').style.display = 'none';
+            document.getElementById('fill-game').classList.remove('active');
+            document.getElementById('feihua-game').classList.remove('active');
+            document.getElementById('search-screen').classList.remove('active');
+            document.getElementById('leaderboard-screen').classList.remove('active');
+            document.getElementById('result-screen').classList.remove('active');
+
+            document.querySelectorAll('.nav-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i === (mode === 'fill' ? 1 : 2));
+            });
+
+            if (mode === 'fill') {
+                document.getElementById('fill-game').classList.add('active');
+                startFillGame();
+            } else {
+                document.getElementById('feihua-game').classList.add('active');
+                startFeihuaGame();
+            }
+        }
+
+        function endGame() {
+            stopTimer();
+            const duration = Math.floor((Date.now() - gameState.startTime) / 1000);
+
+            document.getElementById('fill-game').classList.remove('active');
+            document.getElementById('feihua-game').classList.remove('active');
+            document.getElementById('result-screen').classList.add('active');
+
+            document.getElementById('result-score').textContent = gameState.score;
+
+            const detail = [];
+            if (gameState.mode === 'fill') {
+                detail.push(`完成题目: ${gameState.currentQuestion}/${gameState.totalQuestions}`);
+                detail.push(`正确: ${gameState.correctPoems.length} 首`);
+            } else {
+                detail.push(`背诵诗句: ${feihuaAnswerCount} 句`);
+            }
+            detail.push(`最高连击: ${gameState.maxCombo}`);
+            detail.push(`游戏模式: ${gameState.mode === 'fill' ? '诗词填空' : '飞花令'}`);
+            detail.push(`难度: ${{easy: '简单', medium: '中等', hard: '困难'}[gameState.difficulty]}`);
+            detail.push(`分类: ${gameState.category}`);
+            detail.push(`用时: ${duration}秒`);
+
+            document.getElementById('result-detail').innerHTML = detail.join('<br>');
+
+            if (gameState.correctPoems.length > 0) {
+                let poemsHtml = '<h3>答对的诗词</h3>';
+                gameState.correctPoems.slice(0, 20).forEach(p => {
+                    let linesHtml = '';
+                    p.paragraphs.forEach((line, idx) => {
+                        if (showPinyin) {
+                            const pinyinArr = getCharPinyin(p, idx);
+                            linesHtml += textToRubyHtml(line, pinyinArr) + '<br>';
+                        } else {
+                            linesHtml += line + '<br>';
+                        }
+                    });
+                    poemsHtml += `
+                        <div class="result-poem-item">
+                            <div class="poem-text">${linesHtml}</div>
+                            <div class="poem-meta">—— ${p.author}《${p.title}》</div>
+                        </div>
+                    `;
+                });
+                document.getElementById('result-poems').innerHTML = poemsHtml;
+            }
+
+            // 提交分数到排行榜
+            submitScore(duration);
+        }
+
+        // ===== 排行榜功能 =====
+        async function submitScore(duration) {
+            try {
+                const response = await fetch('/poem-game/api/poem-leaderboard', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        game_mode: gameState.mode,
+                        difficulty: gameState.difficulty,
+                        category: gameState.category,
+                        score: gameState.score,
+                        combo_max: gameState.maxCombo,
+                        correct_count: gameState.correctPoems.length,
+                        total_count: gameState.mode === 'fill' ? gameState.totalQuestions : feihuaAnswerCount,
+                        duration: duration
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    console.log('分数已提交到排行榜，最高分:', data.bestScore);
+                }
+            } catch (error) {
+                console.error('提交分数失败:', error);
+            }
+        }
+
+        async function showLeaderboard() {
+            stopTimer();
+            document.getElementById('home-screen').style.display = 'none';
+            document.getElementById('fill-game').classList.remove('active');
+            document.getElementById('feihua-game').classList.remove('active');
+            document.getElementById('search-screen').classList.remove('active');
+            document.getElementById('leaderboard-screen').classList.add('active');
+            document.getElementById('result-screen').classList.remove('active');
+
+            document.querySelectorAll('.nav-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i === 4);
+            });
+
+            await loadLeaderboard();
+        }
+
+        function setLeaderboardFilter(mode, btn) {
+            leaderboardState.mode = mode;
+            leaderboardState.page = 1;
+            document.querySelectorAll('#leaderboard-screen .leaderboard-filters .filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadLeaderboard();
+        }
+
+        function setLeaderboardDifficulty(diff, btn) {
+            leaderboardState.difficulty = diff;
+            leaderboardState.page = 1;
+            document.querySelectorAll('#leaderboard-screen .difficulty .diff-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadLeaderboard();
+        }
+
+        async function loadLeaderboard() {
+            const container = document.getElementById('leaderboard-content');
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="dots">
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                    </div>
+                </div>
+            `;
+
+            try {
+                let url = `/poem-game/api/poem-leaderboard?page=${leaderboardState.page}&limit=${leaderboardState.limit}`;
+                if (leaderboardState.mode !== 'all') {
+                    url += `&mode=${leaderboardState.mode}`;
+                }
+                if (leaderboardState.difficulty !== 'all') {
+                    url += `&difficulty=${leaderboardState.difficulty}`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success && data.records.length > 0) {
+                    leaderboardState.records = data.records;
+                    leaderboardState.total = data.total;
+
+                    let html = `
+                        <div class="search-stats">共 ${data.total} 条记录</div>
+                        <table class="leaderboard-table">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>玩家</th>
+                                    <th>得分</th>
+                                    <th>模式</th>
+                                    <th>难度</th>
+                                    <th>连击</th>
+                                    <th>时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    data.records.forEach((record, idx) => {
+                        const rank = (leaderboardState.page - 1) * leaderboardState.limit + idx + 1;
+                        let rankBadge = '';
+                        if (rank === 1) rankBadge = '<span class="rank-badge rank-1">1</span>';
+                        else if (rank === 2) rankBadge = '<span class="rank-badge rank-2">2</span>';
+                        else if (rank === 3) rankBadge = '<span class="rank-badge rank-3">3</span>';
+                        else rankBadge = `<span class="rank-badge">${rank}</span>`;
+
+                        const modeText = record.game_mode === 'fill' ? '诗词填空' : '飞花令';
+                        const diffText = { easy: '简单', medium: '中等', hard: '困难' }[record.difficulty] || record.difficulty;
+                        const date = new Date(record.created_at).toLocaleDateString('zh-CN');
+
+                        html += `
+                            <tr>
+                                <td>${rankBadge}</td>
+                                <td>${escapeHtml(record.username)}</td>
+                                <td style="font-weight: 500; color: #4a3f35;">${record.score}</td>
+                                <td>${modeText}</td>
+                                <td>${diffText}</td>
+                                <td>${record.combo_max}</td>
+                                <td style="font-size: 0.85em; color: #a09080;">${date}</td>
+                            </tr>
+                        `;
+                    });
+
+                    html += '</tbody></table>';
+
+                    // 分页
+                    const totalPages = Math.ceil(data.total / leaderboardState.limit);
+                    if (totalPages > 1) {
+                        html += '<div class="search-pagination" style="margin-top: 24px;">';
+                        html += `<button class="page-btn" onclick="goToLeaderboardPage(${leaderboardState.page - 1})" ${leaderboardState.page === 1 ? 'disabled' : ''}>上一页</button>`;
+                        
+                        const maxVisible = 5;
+                        let startPage = Math.max(1, leaderboardState.page - Math.floor(maxVisible / 2));
+                        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+                        
+                        for (let i = startPage; i <= endPage; i++) {
+                            html += `<button class="page-btn ${i === leaderboardState.page ? 'active' : ''}" onclick="goToLeaderboardPage(${i})">${i}</button>`;
+                        }
+                        
+                        html += `<button class="page-btn" onclick="goToLeaderboardPage(${leaderboardState.page + 1})" ${leaderboardState.page === totalPages ? 'disabled' : ''}>下一页</button>`;
+                        html += '</div>';
+                    }
+
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = `
+                        <div class="search-empty">
+                            <div class="empty-icon">无</div>
+                            <p>暂无排行榜数据</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('加载排行榜失败:', error);
+                container.innerHTML = `
+                    <div class="search-empty">
+                        <div class="empty-icon">错</div>
+                        <p>加载排行榜失败，请稍后重试</p>
+                    </div>
+                `;
+            }
+        }
+
+        function goToLeaderboardPage(page) {
+            const totalPages = Math.ceil(leaderboardState.total / leaderboardState.limit);
+            if (page < 1 || page > totalPages) return;
+            leaderboardState.page = page;
+            loadLeaderboard();
+            document.getElementById('leaderboard-content').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function restartGame() {
+            startGame(gameState.mode);
+        }
+
+        // ===== 键盘事件 =====
+        document.getElementById('fill-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') checkFillAnswer();
+        });
+
+        document.getElementById('feihua-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') checkFeihuaAnswer();
+        });
+
+        document.getElementById('search-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') performSearch();
+        });
+
+        // ===== 初始化 =====
+        // ===== 语音朗读功能 =====
+        let currentSpeakingBtn = null;
+
+        function speakPoem(source) {
+            if (!window.speechSynthesis) {
+                alert('您的浏览器不支持语音朗读功能');
+                return;
+            }
+
+            // 如果正在朗读，停止
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+                if (currentSpeakingBtn) {
+                    currentSpeakingBtn.classList.remove('speaking');
+                    const textSpan = currentSpeakingBtn.querySelector('span:last-child');
+                    if (textSpan) textSpan.textContent = source === 'home' ? '朗读' : '朗读这首诗';
+                    currentSpeakingBtn = null;
+                }
+                return;
+            }
+
+            let textToSpeak = '';
+            let btnId = '';
+
+            if (source === 'home') {
+                const poemEl = document.getElementById('random-poem');
+                const infoEl = document.getElementById('random-poem-info');
+                if (poemEl) textToSpeak = poemEl.innerText || poemEl.textContent;
+                if (infoEl) textToSpeak += '\n' + (infoEl.textContent || '');
+                btnId = 'home-speak-btn';
+            } else if (source === 'modal') {
+                const titleEl = document.getElementById('modal-title');
+                const authorEl = document.getElementById('modal-author');
+                const poemEl = document.getElementById('modal-poem-text');
+                if (titleEl) textToSpeak = (titleEl.textContent || '') + '\n';
+                if (poemEl) textToSpeak += (poemEl.innerText || poemEl.textContent || '');
+                if (authorEl) textToSpeak += '\n' + (authorEl.textContent || '');
+                btnId = 'modal-speak-btn';
+            }
+
+            if (!textToSpeak.trim()) return;
+
+            textToSpeak = textToSpeak.replace(/\s+/g, '\n').trim();
+
+            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            utterance.lang = 'zh-CN';
+            utterance.rate = 0.85;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+
+            const voices = window.speechSynthesis.getVoices();
+            const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+            if (zhVoice) utterance.voice = zhVoice;
+
+            if (btnId) {
+                const btn = document.getElementById(btnId);
+                if (btn) {
+                    btn.classList.add('speaking');
+                    btn.querySelector('span:last-child').textContent = '停止';
+                    currentSpeakingBtn = btn;
+                }
+            }
+
+            utterance.onend = function() {
+                if (currentSpeakingBtn) {
+                    currentSpeakingBtn.classList.remove('speaking');
+                    const textSpan = currentSpeakingBtn.querySelector('span:last-child');
+                    if (textSpan) textSpan.textContent = btnId === 'home-speak-btn' ? '朗读' : '朗读这首诗';
+                    currentSpeakingBtn = null;
+                }
+            };
+
+            utterance.onerror = function() {
+                if (currentSpeakingBtn) {
+                    currentSpeakingBtn.classList.remove('speaking');
+                    const textSpan = currentSpeakingBtn.querySelector('span:last-child');
+                    if (textSpan) textSpan.textContent = btnId === 'home-speak-btn' ? '朗读' : '朗读这首诗';
+                    currentSpeakingBtn = null;
+                }
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // 预加载语音列表
+        if (window.speechSynthesis) {
+            window.speechSynthesis.onvoiceschanged = function() {
+                window.speechSynthesis.getVoices();
+            };
+        }
+        initCategoryList();
+        showHome();
+    </script>
+</body>
+</html>

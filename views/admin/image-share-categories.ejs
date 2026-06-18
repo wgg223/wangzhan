@@ -1,0 +1,177 @@
+<div style="margin-bottom: 20px;">
+  <a href="/admin/image-share" style="color: #667eea;">← 返回图片分享管理</a>
+</div>
+
+<h2 style="margin-bottom: 20px;">📁 分类管理</h2>
+
+<div class="card" style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+  <h3 style="margin-bottom: 15px;">添加新分类</h3>
+  <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+    <div style="flex: 1; min-width: 150px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">分类名称</label>
+      <input type="text" id="newCateName" placeholder="分类名称" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    </div>
+    <div style="width: 100px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">排序值</label>
+      <input type="number" id="newCateSort" placeholder="排序值" value="0" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    </div>
+    <label style="display: flex; align-items: center; gap: 5px; height: 40px;">
+      <input type="checkbox" id="newCateGuest"> 访客可见
+    </label>
+    <button onclick="addCategory()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">+ 添加</button>
+  </div>
+</div>
+
+<!-- 批量操作工具栏 -->
+<div id="batchToolbar" style="display: none; padding: 12px 16px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+  <span style="font-size: 14px; color: #4338ca; font-weight: 500;">已选 <span id="selectedCount">0</span> 项</span>
+  <button onclick="batchDeleteCategories()" style="padding: 6px 14px; font-size: 13px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">批量删除</button>
+  <button onclick="clearSelection()" style="padding: 6px 14px; font-size: 13px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">取消选择</button>
+</div>
+
+<div class="card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
+        <th>ID</th>
+        <th>名称</th>
+        <th>排序</th>
+        <th>状态</th>
+        <th>访客可见</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% categories.forEach(function(cat) { %>
+        <tr>
+          <td><input type="checkbox" class="cate-checkbox" value="<%= cat.id %>" onchange="updateSelection()"></td>
+          <td><%= cat.id %></td>
+          <td><input type="text" id="cate-name-<%= cat.id %>" value="<%= cat.name %>" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;"></td>
+          <td><input type="number" id="cate-sort-<%= cat.id %>" value="<%= cat.sort %>" style="width: 60px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;"></td>
+          <td>
+            <select id="cate-status-<%= cat.id %>" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+              <option value="1" <%= cat.status === 1 ? 'selected' : '' %>>启用</option>
+              <option value="0" <%= cat.status === 0 ? 'selected' : '' %>>禁用</option>
+            </select>
+          </td>
+          <td>
+            <input type="checkbox" id="cate-guest-<%= cat.id %>" <%= cat.is_guest ? 'checked' : '' %>>
+          </td>
+          <td>
+            <button onclick="editCategory(<%= cat.id %>)" style="padding: 5px 12px; font-size: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">保存</button>
+            <button onclick="deleteCategory(<%= cat.id %>)" style="padding: 5px 12px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">删除</button>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function addCategory() {
+  var name = document.getElementById('newCateName').value.trim();
+  var sort = document.getElementById('newCateSort').value || 0;
+  var isGuest = document.getElementById('newCateGuest').checked;
+  
+  if (!name) { alert('请输入分类名称'); return; }
+  
+  fetch('/admin/image-share/categories/add', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ name: name, sort: parseInt(sort), is_guest: isGuest })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+
+function editCategory(id) {
+  var name = document.getElementById('cate-name-' + id).value.trim();
+  var sort = document.getElementById('cate-sort-' + id).value || 0;
+  var status = document.getElementById('cate-status-' + id).value;
+  var isGuest = document.getElementById('cate-guest-' + id).checked;
+  
+  if (!name) { alert('分类名称不能为空'); return; }
+  
+  fetch('/admin/image-share/categories/edit', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ id: id, name: name, sort: parseInt(sort), status: parseInt(status), is_guest: isGuest })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+
+function deleteCategory(id) {
+  if (!confirm('确定要删除此分类吗？')) return;
+  
+  fetch('/admin/image-share/categories/delete', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ id: id })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+
+// ============ 批量操作函数 ============
+
+function getSelectedIds() {
+  var checkboxes = document.querySelectorAll('.cate-checkbox:checked');
+  var ids = [];
+  checkboxes.forEach(function(cb) { ids.push(parseInt(cb.value)); });
+  return ids;
+}
+
+function toggleSelectAll(el) {
+  document.querySelectorAll('.cate-checkbox').forEach(function(cb) { cb.checked = el.checked; });
+  updateSelection();
+}
+
+function updateSelection() {
+  var selected = getSelectedIds();
+  document.getElementById('selectedCount').textContent = selected.length;
+  document.getElementById('batchToolbar').style.display = selected.length > 0 ? 'flex' : 'none';
+  var allCbs = document.querySelectorAll('.cate-checkbox');
+  document.getElementById('selectAll').checked = allCbs.length > 0 && selected.length === allCbs.length;
+}
+
+function clearSelection() {
+  document.querySelectorAll('.cate-checkbox').forEach(function(cb) { cb.checked = false; });
+  document.getElementById('selectAll').checked = false;
+  updateSelection();
+}
+
+async function batchDeleteCategories() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  if (!confirm('确定要删除选中的 ' + ids.length + ' 个分类吗？\n\n注意：包含图片的分类无法删除！')) return;
+  
+  try {
+    var response = await fetch('/admin/image-share/batch-delete-categories', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify({ ids: ids })
+    });
+    var data = await response.json();
+    if (data.success) { alert(data.message); location.reload(); } else { alert(data.message); }
+  } catch (err) { alert('操作失败: ' + err.message); }
+}
+</script>

@@ -1,0 +1,153 @@
+<h2 style="margin-bottom: 20px;">💬 图片评论管理</h2>
+
+<div class="stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-bottom: 20px;">
+  <div class="stat-card" style="background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 28px; font-weight: bold; color: #667eea;"><%= stats.total %></div>
+    <div style="font-size: 13px; color: #999; margin-top: 5px;">总评论</div>
+  </div>
+  <div class="stat-card" style="background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 28px; font-weight: bold; color: #ffc107;"><%= stats.pending %></div>
+    <div style="font-size: 13px; color: #999; margin-top: 5px;">待审核</div>
+  </div>
+  <div class="stat-card" style="background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 28px; font-weight: bold; color: #28a745;"><%= stats.approved %></div>
+    <div style="font-size: 13px; color: #999; margin-top: 5px;">已通过</div>
+  </div>
+  <div class="stat-card" style="background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 28px; font-weight: bold; color: #dc3545;"><%= stats.rejected %></div>
+    <div style="font-size: 13px; color: #999; margin-top: 5px;">已驳回</div>
+  </div>
+</div>
+
+<!-- 状态筛选标签 -->
+<div class="tabs" style="margin-bottom: 20px;">
+  <a href="/admin/image-share/comments" class="<%= currentStatus === 'all' ? 'active' : '' %>">全部</a>
+  <a href="/admin/image-share/comments?status=pending" class="<%= currentStatus === 'pending' ? 'active' : '' %>">待审核</a>
+  <a href="/admin/image-share/comments?status=approved" class="<%= currentStatus === 'approved' ? 'active' : '' %>">已通过</a>
+  <a href="/admin/image-share/comments?status=rejected" class="<%= currentStatus === 'rejected' ? 'active' : '' %>">已驳回</a>
+</div>
+
+<div class="card">
+  <% if (comments.length > 0) { %>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>评论内容</th>
+          <th>图片</th>
+          <th>评论者</th>
+          <th>状态</th>
+          <th>时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% comments.forEach(function(comment) { %>
+          <tr id="comment-row-<%= comment.id %>">
+            <td><%= comment.id %></td>
+            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><%= comment.content %></td>
+            <td>
+              <% if (comment.image_title) { %>
+                <a href="/image-share/image?id=<%= comment.image_id %>" target="_blank" style="color: #667eea;"><%= comment.image_title %></a>
+              <% } else { %>
+                <span style="color: #999;">已删除</span>
+              <% } %>
+            </td>
+            <td><%= comment.nickname || comment.username || '未知' %></td>
+            <td>
+              <% if (comment.status === 'pending') { %>
+                <span class="badge badge-warning">待审核</span>
+              <% } else if (comment.status === 'approved') { %>
+                <span class="badge badge-success">已通过</span>
+              <% } else { %>
+                <span class="badge badge-danger">已驳回</span>
+              <% } %>
+            </td>
+            <td style="color: #999; font-size: 12px;"><%= comment.created_at %></td>
+            <td>
+              <% if (comment.status === 'pending') { %>
+                <button class="btn btn-success btn-sm comment-review-btn" data-id="<%= comment.id %>" data-action="approve">
+                  <i class="fas fa-check"></i> 通过
+                </button>
+                <button class="btn btn-warning btn-sm comment-review-btn" data-id="<%= comment.id %>" data-action="reject">
+                  <i class="fas fa-times"></i> 驳回
+                </button>
+              <% } %>
+              <button class="btn btn-danger btn-sm comment-delete-btn" data-id="<%= comment.id %>">
+                <i class="fas fa-trash"></i> 删除
+              </button>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } else { %>
+    <div class="empty-state">
+      <i class="fas fa-comments"></i>
+      <p>暂无评论</p>
+    </div>
+  <% } %>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+// 审核评论
+document.querySelectorAll('.comment-review-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var id = this.getAttribute('data-id');
+    var action = this.getAttribute('data-action');
+    var self = this;
+    
+    fetch('/admin/image-share/comments/review', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken() 
+      },
+      body: JSON.stringify({ id: id, action: action })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        alert(data.message);
+        location.reload();
+      } else {
+        alert(data.message || '操作失败');
+      }
+    })
+    .catch(function() { alert('请求失败'); });
+  });
+});
+
+// 删除评论
+document.querySelectorAll('.comment-delete-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    if (!confirm('确定要删除这条评论吗？')) return;
+    var id = this.getAttribute('data-id');
+    
+    fetch('/admin/image-share/comments/delete', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken() 
+      },
+      body: JSON.stringify({ id: id })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var row = document.getElementById('comment-row-' + id);
+        if (row) row.remove();
+        alert(data.message);
+      } else {
+        alert(data.message || '删除失败');
+      }
+    })
+    .catch(function() { alert('请求失败'); });
+  });
+});
+</script>

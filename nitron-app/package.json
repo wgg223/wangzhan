@@ -1,0 +1,13 @@
+{
+  "name": "rp-hub",
+  "version": "1.0.0",
+  "description": "RP-HUB Android App",
+  "main": "app.js",
+  "scripts": {
+    "dev": "nitron dev",
+    "build": "nitron build -t android"
+  },
+  "dependencies": {
+    "nitron": "^1.3.0"
+  }
+}

@@ -1,0 +1,91 @@
+<% var active = 'settings-popup' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>弹窗设置</h1>
+    <p class="page-desc">管理网站的各种弹窗通知功能</p>
+  </div>
+
+  <% if (typeof success !== 'undefined' && success) { %>
+    <div class="alert alert-success">弹窗设置已保存</div>
+  <% } %>
+
+  <form action="/admin/settings/popup" method="POST" class="admin-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+    <div class="settings-section">
+      <h2>站内信弹窗设置</h2>
+      <p class="section-desc">控制站内信是否以弹窗方式通知用户</p>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="message_popup_enabled" value="1" <%= settings.message_popup_enabled === '1' ? 'checked' : '' %>>
+          启用站内信弹窗通知
+        </label>
+        <p class="field-hint">启用后，发送站内信时勾选"弹窗通知"，用户访问网站时将看到弹窗提示</p>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>欢迎弹窗设置</h2>
+      <p class="section-desc">设置网站首页的自动欢迎/通知弹窗，所有访客均可看到</p>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="welcome_popup_enabled" value="1" <%= settings.welcome_popup_enabled === '1' ? 'checked' : '' %>>
+          启用欢迎弹窗
+        </label>
+        <p class="field-hint">启用后，访客首次访问或满足条件时将自动弹出欢迎弹窗</p>
+      </div>
+
+      <div class="form-group">
+        <label for="welcome_popup_title">弹窗标题</label>
+        <input type="text" id="welcome_popup_title" name="welcome_popup_title" value="<%= settings.welcome_popup_title || '欢迎访问' %>" placeholder="欢迎弹窗标题">
+      </div>
+
+      <div class="form-group">
+        <label for="welcome_popup_content">弹窗内容（支持HTML）</label>
+        <textarea id="welcome_popup_content" name="welcome_popup_content" rows="8" class="policy-editor"><%= settings.welcome_popup_content || '' %></textarea>
+        <p class="field-hint">支持HTML标签，建议使用 p / h4 等标签排版</p>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存设置</button>
+    </div>
+  </form>
+</div>
+
+<style>
+.settings-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px solid #eee;
+}
+.settings-section h2 {
+  font-size: 18px;
+  margin-bottom: 5px;
+}
+.section-desc {
+  color: #888;
+  font-size: 13px;
+  margin-bottom: 15px;
+}
+.page-desc {
+  color: #888;
+  font-size: 13px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+}
+.field-hint {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+.policy-editor {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 200px;
+  tab-size: 2;
+}
+</style>

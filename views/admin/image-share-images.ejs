@@ -1,0 +1,481 @@
+<div style="margin-bottom: 20px;">
+  <a href="/admin/image-share" style="color: #667eea;">← 返回图片分享管理</a>
+</div>
+
+<h2 style="margin-bottom: 20px;">🖼️ 图片管理</h2>
+
+<div style="display: flex; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px;">
+  <a href="/admin/image-share/images" style="padding: 8px 16px; border-radius: 6px 6px 0 0; color: <%= !currentStatus && currentStatus !== '0' ? 'white' : '#666' %>; background: <%= !currentStatus && currentStatus !== '0' ? '#667eea' : 'transparent' %>; text-decoration: none;">全部</a>
+  <a href="/admin/image-share/images?status=0" style="padding: 8px 16px; border-radius: 6px 6px 0 0; color: <%= currentStatus === '0' ? 'white' : '#666' %>; background: <%= currentStatus === '0' ? '#667eea' : 'transparent' %>; text-decoration: none;">待审核</a>
+  <a href="/admin/image-share/images?status=1" style="padding: 8px 16px; border-radius: 6px 6px 0 0; color: <%= currentStatus === '1' ? 'white' : '#666' %>; background: <%= currentStatus === '1' ? '#667eea' : 'transparent' %>; text-decoration: none;">已通过</a>
+  <a href="/admin/image-share/images?status=2" style="padding: 8px 16px; border-radius: 6px 6px 0 0; color: <%= currentStatus === '2' ? 'white' : '#666' %>; background: <%= currentStatus === '2' ? '#667eea' : 'transparent' %>; text-decoration: none;">已驳回</a>
+</div>
+
+<!-- 批量操作工具栏 -->
+<div id="batchToolbar" style="display: none; padding: 12px 16px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+  <span style="font-size: 14px; color: #4338ca; font-weight: 500;">已选 <span id="selectedCount">0</span> 项</span>
+  <button onclick="batchApprove()" style="padding: 6px 14px; font-size: 13px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">批量通过</button>
+  <button onclick="batchReject()" style="padding: 6px 14px; font-size: 13px; background: #ffc107; color: #333; border: none; border-radius: 4px; cursor: pointer;">批量驳回</button>
+  <button onclick="batchDelete()" style="padding: 6px 14px; font-size: 13px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">批量删除</button>
+  <button onclick="clearSelection()" style="padding: 6px 14px; font-size: 13px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">取消选择</button>
+</div>
+
+<% if (images.length > 0) { %>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
+        <th>图片</th>
+        <th>标题</th>
+        <th>上传者</th>
+        <th>分类</th>
+        <th>可见性</th>
+        <th>状态</th>
+        <th>时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% images.forEach(function(img) { 
+        var visText = '公开';
+        var visColor = '#28a745';
+        if (img.visibility === 'private') { visText = '仅自己'; visColor = '#dc3545'; }
+        else if (img.visibility === 'selected') { visText = '指定用户'; visColor = '#fd7e14'; }
+      %>
+        <tr>
+          <td><input type="checkbox" class="image-checkbox" value="<%= img.id %>" onchange="updateSelection()"></td>
+          <td><img src="<%= img.url %>" alt="" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;"></td>
+          <td><%= img.title %></td>
+          <td><%= img.nickname || img.username || '未知' %></td>
+          <td><%= img.cate_name || '未分类' %></td>
+          <td>
+            <span style="display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; background: <%= visColor %>20; color: <%= visColor %>;">
+              <%= visText %>
+            </span>
+            <% if (img.visibility === 'selected') { %>
+              <span style="font-size: 11px; color: #999; display: block; margin-top: 2px;" title="<% 
+                try { 
+                  var ids = JSON.parse(img.allowed_user_ids || '[]'); 
+                  %><%= ids.length %>位用户<%
+                } catch(e) { } 
+              %>">
+                <%
+                try { 
+                  var ids = JSON.parse(img.allowed_user_ids || '[]'); 
+                  %><%= ids.length %>人可见<%
+                } catch(e) { } 
+                %>
+              </span>
+            <% } %>
+          </td>
+          <td>
+            <% if (img.status === 0) { %>
+              <span style="display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; background: #fff3cd; color: #856404;">待审核</span>
+            <% } else if (img.status === 1) { %>
+              <span style="display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; background: #d4edda; color: #155724;">已通过</span>
+            <% } else { %>
+              <span style="display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; background: #f8d7da; color: #721c24;">已驳回</span>
+            <% } %>
+          </td>
+          <td style="font-size: 12px; color: #999;"><%= img.created_at %></td>
+          <td>
+            <a href="/image-share/image?id=<%= img.id %>" class="btn btn-primary" style="padding: 5px 12px; font-size: 12px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; text-decoration: none;" target="_blank">查看</a>
+            <% if (img.status !== 1) { %>
+              <button onclick="reviewImage(<%= img.id %>, 'approve')" style="padding: 5px 12px; font-size: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">通过</button>
+            <% } %>
+            <% if (img.status !== 2) { %>
+              <button onclick="reviewImage(<%= img.id %>, 'reject')" style="padding: 5px 12px; font-size: 12px; background: #ffc107; color: #333; border: none; border-radius: 4px; cursor: pointer;">驳回</button>
+            <% } %>
+            <button onclick="openVisibilityModal(this)" data-image-id="<%= img.id %>" data-visibility="<%= img.visibility || 'public' %>" data-allowed-users='<%- JSON.stringify(img.allowed_user_ids || '[]') %>' style="padding: 5px 12px; font-size: 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer;">可见性</button>
+            <button onclick="deleteImage(<%= img.id %>)" style="padding: 5px 12px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">删除</button>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+<% } else { %>
+  <div style="text-align: center; padding: 50px; color: #999; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 48px; margin-bottom: 15px;">🖼️</div>
+    <p>暂无图片</p>
+  </div>
+<% } %>
+
+<!-- 可见性设置弹窗 -->
+<div id="visibilityModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; overflow-y: auto;" onclick="if(event.target===this)closeVisibilityModal()">
+  <div style="background: white; margin: 60px auto; max-width: 600px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.2); overflow: hidden;">
+    <div style="padding: 20px 24px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+      <h3 style="margin: 0; font-size: 18px;">设置图片可见性</h3>
+      <button onclick="closeVisibilityModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0 4px;">&times;</button>
+    </div>
+    <div style="padding: 24px;">
+      <input type="hidden" id="visImageId" value="">
+      
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">可见范围</label>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <label style="display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer; transition: all 0.2s;" onclick="document.getElementById('visPublic').checked=true;toggleVisOptions()" id="labelPublic">
+            <input type="radio" name="visibility" value="public" id="visPublic" onchange="toggleVisOptions()" style="accent-color: #667eea;">
+            <span>🌐 公开</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer; transition: all 0.2s;" onclick="document.getElementById('visPrivate').checked=true;toggleVisOptions()" id="labelPrivate">
+            <input type="radio" name="visibility" value="private" id="visPrivate" onchange="toggleVisOptions()" style="accent-color: #667eea;">
+            <span>🔒 仅自己</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer; transition: all 0.2s;" onclick="document.getElementById('visSelected').checked=true;toggleVisOptions()" id="labelSelected">
+            <input type="radio" name="visibility" value="selected" id="visSelected" onchange="toggleVisOptions()" style="accent-color: #667eea;">
+            <span>👥 指定用户</span>
+          </label>
+        </div>
+      </div>
+
+      <div id="userSelectionPanel" style="display: none; margin-bottom: 20px; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 12px 16px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0;">
+          <input type="text" id="userSearch" placeholder="搜索用户名/昵称..." oninput="searchUsers()" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+        </div>
+        <div id="userList" style="max-height: 250px; overflow-y: auto; padding: 8px;">
+          <!-- 用户列表由JS动态渲染 -->
+          <div style="text-align: center; padding: 20px; color: #999;">加载中...</div>
+        </div>
+        <div style="padding: 8px 16px; background: #f8f9fa; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666;">
+          已选 <span id="selectedCount">0</span> 位用户
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button onclick="closeVisibilityModal()" style="padding: 10px 24px; border: 1px solid #ddd; border-radius: 6px; background: white; cursor: pointer; color: #666;">取消</button>
+        <button onclick="saveVisibility()" style="padding: 10px 24px; border: none; border-radius: 6px; background: #667eea; color: white; cursor: pointer; font-weight: 500;">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function reviewImage(id, action) {
+  var text = action === 'approve' ? '通过' : '驳回';
+  if (!confirm('确定要' + text + '这张图片吗？')) return;
+  
+  fetch('/admin/image-share/review', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ id: id, action: action })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+
+function deleteImage(id) {
+  if (!confirm('确定要删除这张图片吗？此操作不可撤销。')) return;
+  
+  fetch('/admin/image-share/delete', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ id: id })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+
+// 可见性弹窗相关
+var currentImageId = null;
+var selectedUserIds = [];
+
+function openVisibilityModal(btn) {
+  var imageId = parseInt(btn.getAttribute('data-image-id'));
+  var currentVisibility = btn.getAttribute('data-visibility') || 'public';
+  var allowedUserIdsJson = btn.getAttribute('data-allowed-users') || '[]';
+  
+  currentImageId = imageId;
+  document.getElementById('visImageId').value = imageId;
+  
+  // 设置当前可见性
+  var radio = document.getElementById('vis' + currentVisibility.charAt(0).toUpperCase() + currentVisibility.slice(1));
+  if (radio) {
+    radio.checked = true;
+  } else {
+    document.getElementById('visPublic').checked = true;
+  }
+  
+  // 解析已选用户ID
+  try {
+    selectedUserIds = JSON.parse(allowedUserIdsJson);
+    if (!Array.isArray(selectedUserIds)) selectedUserIds = [];
+  } catch(e) {
+    selectedUserIds = [];
+  }
+  
+  toggleVisOptions();
+  loadUsers();
+  document.getElementById('visibilityModal').style.display = 'block';
+}
+
+function closeVisibilityModal() {
+  document.getElementById('visibilityModal').style.display = 'none';
+  currentImageId = null;
+}
+
+function toggleVisOptions() {
+  var selected = document.getElementById('visSelected').checked;
+  document.getElementById('userSelectionPanel').style.display = selected ? 'block' : 'none';
+  
+  // 高亮选中的选项框
+  var labels = ['labelPublic', 'labelPrivate', 'labelSelected'];
+  var radios = ['visPublic', 'visPrivate', 'visSelected'];
+  labels.forEach(function(lid, i) {
+    var el = document.getElementById(lid);
+    if (document.getElementById(radios[i]).checked) {
+      el.style.borderColor = '#667eea';
+      el.style.background = '#f0f0ff';
+    } else {
+      el.style.borderColor = '#ddd';
+      el.style.background = 'white';
+    }
+  });
+}
+
+function loadUsers(search) {
+  var url = '/admin/image-share/visible-users';
+  if (search) {
+    url += '?search=' + encodeURIComponent(search);
+  }
+  
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.success) { return; }
+      renderUserList(data.users);
+    })
+    .catch(function(err) {
+      document.getElementById('userList').innerHTML = '<div style="text-align: center; padding: 20px; color: #999;">加载失败</div>';
+    });
+}
+
+function renderUserList(users) {
+  var container = document.getElementById('userList');
+  if (!users || users.length === 0) {
+    container.innerHTML = '<div style="text-align: center; padding: 20px; color: #999;">没有找到用户</div>';
+    return;
+  }
+  
+  var html = '';
+  users.forEach(function(u) {
+    var checked = selectedUserIds.indexOf(u.id) !== -1;
+    html += '<label style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; cursor: pointer; ' + (checked ? 'background: #f0f0ff;' : '') + '" onmouseenter="this.style.background=\'#f5f5ff\'" onmouseleave="this.style.background=' + (checked ? "'#f0f0ff'" : "'white'") + '">';
+    html += '<input type="checkbox" value="' + u.id + '" ' + (checked ? 'checked' : '') + ' onchange="toggleUser(this)" style="accent-color: #667eea;">';
+    html += '<div>';
+    html += '<div style="font-weight: 500; font-size: 13px; color: #333;">' + u.name + '</div>';
+    html += '<div style="font-size: 11px; color: #999;">' + (u.email || u.username) + '</div>';
+    html += '</div>';
+    html += '</label>';
+  });
+  
+  container.innerHTML = html;
+  updateSelectedCount();
+}
+
+function toggleUser(checkbox) {
+  var userId = parseInt(checkbox.value);
+  if (checkbox.checked) {
+    if (selectedUserIds.indexOf(userId) === -1) {
+      selectedUserIds.push(userId);
+    }
+  } else {
+    selectedUserIds = selectedUserIds.filter(function(id) { return id !== userId; });
+  }
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  document.getElementById('selectedCount').textContent = selectedUserIds.length;
+}
+
+var searchTimer = null;
+function searchUsers() {
+  if (searchTimer) { clearTimeout(searchTimer); }
+  var value = document.getElementById('userSearch').value;
+  searchTimer = setTimeout(function() {
+    loadUsers(value);
+  }, 300);
+}
+
+function saveVisibility() {
+  if (!currentImageId) return;
+  
+  var visibility;
+  var radios = document.getElementsByName('visibility');
+  for (var i = 0; i < radios.length; i++) {
+    if (radios[i].checked) {
+      visibility = radios[i].value;
+      break;
+    }
+  }
+  
+  if (!visibility) {
+    alert('请选择可见范围');
+    return;
+  }
+  
+  if (visibility === 'selected' && selectedUserIds.length === 0) {
+    if (!confirm('您选择了"指定用户"但未选择任何用户，图片将仅对上传者可见。确定继续吗？')) {
+      return;
+    }
+  }
+  
+  fetch('/admin/image-share/set-visibility', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ 
+      id: currentImageId, 
+      visibility: visibility, 
+      allowed_user_ids: selectedUserIds 
+    })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) {
+      closeVisibilityModal();
+      location.reload();
+    } else {
+      alert(data.message);
+    }
+  });
+}
+
+// ============ 批量操作函数 ============
+
+function getSelectedIds() {
+  var checkboxes = document.querySelectorAll('.image-checkbox:checked');
+  var ids = [];
+  checkboxes.forEach(function(cb) {
+    ids.push(parseInt(cb.value));
+  });
+  return ids;
+}
+
+function toggleSelectAll(el) {
+  var checkboxes = document.querySelectorAll('.image-checkbox');
+  checkboxes.forEach(function(cb) {
+    cb.checked = el.checked;
+  });
+  updateSelection();
+}
+
+function updateSelection() {
+  var selected = getSelectedIds();
+  var countEl = document.getElementById('selectedCount');
+  var toolbar = document.getElementById('batchToolbar');
+  
+  countEl.textContent = selected.length;
+  
+  if (selected.length > 0) {
+    toolbar.style.display = 'flex';
+  } else {
+    toolbar.style.display = 'none';
+  }
+  
+  // Update select all checkbox
+  var allCheckboxes = document.querySelectorAll('.image-checkbox');
+  var selectAll = document.getElementById('selectAll');
+  if (allCheckboxes.length > 0) {
+    selectAll.checked = selected.length === allCheckboxes.length;
+  }
+}
+
+function clearSelection() {
+  var checkboxes = document.querySelectorAll('.image-checkbox');
+  checkboxes.forEach(function(cb) {
+    cb.checked = false;
+  });
+  document.getElementById('selectAll').checked = false;
+  updateSelection();
+}
+
+async function batchApprove() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  if (!confirm('确定要通过选中的 ' + ids.length + ' 张图片吗？')) return;
+  
+  try {
+    var response = await fetch('/admin/image-share/batch-review', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify({ ids: ids, action: 'approve' })
+    });
+    var data = await response.json();
+    if (data.success) {
+      alert(data.message);
+      location.reload();
+    } else {
+      alert(data.message);
+    }
+  } catch (err) {
+    alert('操作失败: ' + err.message);
+  }
+}
+
+async function batchReject() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  if (!confirm('确定要驳回选中的 ' + ids.length + ' 张图片吗？')) return;
+  
+  try {
+    var response = await fetch('/admin/image-share/batch-review', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify({ ids: ids, action: 'reject' })
+    });
+    var data = await response.json();
+    if (data.success) {
+      alert(data.message);
+      location.reload();
+    } else {
+      alert(data.message);
+    }
+  } catch (err) {
+    alert('操作失败: ' + err.message);
+  }
+}
+
+async function batchDelete() {
+  var ids = getSelectedIds();
+  if (ids.length === 0) return;
+  if (!confirm('确定要删除选中的 ' + ids.length + ' 张图片吗？\n\n此操作不可恢复！')) return;
+  
+  try {
+    var response = await fetch('/admin/image-share/batch-delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify({ ids: ids })
+    });
+    var data = await response.json();
+    if (data.success) {
+      alert(data.message);
+      location.reload();
+    } else {
+      alert(data.message);
+    }
+  } catch (err) {
+    alert('操作失败: ' + err.message);
+  }
+}
+</script>

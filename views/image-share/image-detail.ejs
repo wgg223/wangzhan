@@ -1,0 +1,157 @@
+<%- include('header') %>
+
+<div style="margin-bottom: 20px;">
+  <a href="/image-share" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回首页</a>
+</div>
+
+<div class="card">
+  <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+    <!-- 图片预览区 -->
+    <div style="flex: 1; min-width: 300px;">
+      <div style="position: relative; border-radius: 8px; overflow: hidden; background: #f5f5f5;">
+        <img id="mainImage" src="<%= image.url %>" alt="<%= image.title %>" style="width: 100%; max-height: 500px; object-fit: contain; cursor: zoom-in; transition: transform 0.3s;" onclick="toggleZoom(this)">
+      </div>
+      <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center;">
+        <button onclick="zoomImage(1.2)" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; cursor: pointer; font-size: 14px;"><i class="fas fa-search-plus"></i></button>
+        <button onclick="zoomImage(0.8)" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; cursor: pointer; font-size: 14px;"><i class="fas fa-search-minus"></i></button>
+        <button onclick="resetZoom()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; cursor: pointer; font-size: 14px;">重置</button>
+        <a href="/image-share/download?id=<%= image.id %>" style="padding: 6px 12px; border: 1px solid #667eea; border-radius: 6px; background: #667eea; color: white; text-decoration: none; font-size: 14px;"><i class="fas fa-download"></i> 下载</a>
+      </div>
+    </div>
+    
+    <!-- 图片信息区 -->
+    <div style="flex: 0 0 300px;">
+      <h2 style="margin-bottom: 15px; font-size: 22px;"><%= image.title %></h2>
+      
+      <div style="margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+          <img src="<%= image.avatar || '/assets/images/default-avatar.png' %>" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
+          <div>
+            <div style="font-weight: 500;"><%= image.nickname || '匿名' %></div>
+            <div style="font-size: 12px; color: #999;">上传者</div>
+          </div>
+        </div>
+        
+        <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; font-size: 14px;">
+          <div style="margin-bottom: 8px;"><i class="fas fa-folder" style="width: 20px; color: #667eea;"></i> 分类: <%= image.cate_name || '未分类' %></div>
+          <div style="margin-bottom: 8px;"><i class="fas fa-clock" style="width: 20px; color: #667eea;"></i> 时间: <%= image.created_at %></div>
+          <div style="margin-bottom: 8px;"><i class="fas fa-download" style="width: 20px; color: #667eea;"></i> 下载: <%= image.download_count || 0 %> 次</div>
+          <div><i class="fas fa-eye" style="width: 20px; color: #667eea;"></i> 浏览: <%= image.view_count || 0 %> 次</div>
+        </div>
+      </div>
+      
+      <% if (image.description) { %>
+        <div style="margin-bottom: 20px;">
+          <h4 style="margin-bottom: 8px; color: #666;">描述</h4>
+          <p style="line-height: 1.8; color: #555; font-size: 14px;"><%= image.description %></p>
+        </div>
+      <% } %>
+      
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <% if (user && (user.id === image.user_id || user.role === 1 || user.role === 'admin' || user.role === 'super_admin')) { %>
+          <a href="/image-share/user/edit?id=<%= image.id %>" class="btn btn-warning" style="flex: 1;"><i class="fas fa-edit"></i> 编辑</a>
+          <form action="/image-share/user/delete" method="POST" style="display: flex; flex: 1;" onsubmit="return confirm('确定要删除这张图片吗？')">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input type="hidden" name="id" value="<%= image.id %>">
+            <button type="submit" class="btn btn-danger" style="flex: 1; width: 100%;"><i class="fas fa-trash"></i> 删除</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 评论区 -->
+<div class="card" style="margin-top: 20px;">
+  <h3 style="margin-bottom: 15px;">
+    <i class="fas fa-comments"></i> 评论区
+    <% if (typeof pendingCommentCount !== 'undefined' && pendingCommentCount > 0) { %>
+      <span class="badge badge-warning" style="font-size: 11px; vertical-align: middle;"><%= pendingCommentCount %> 条待审核</span>
+    <% } %>
+  </h3>
+
+  <% if (user) { %>
+    <form action="/image-share/comment/add" method="POST" style="margin-bottom: 20px;">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="image_id" value="<%= image.id %>">
+      <div class="form-group">
+        <textarea name="content" rows="3" placeholder="写下你的评论..." required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; resize: vertical;"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-paper-plane"></i> 发表评论</button>
+      <span style="color: #999; font-size: 12px; margin-left: 10px;">评论需管理员审核后显示</span>
+    </form>
+  <% } else { %>
+    <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; text-align: center; margin-bottom: 20px;">
+      <p style="color: #666;">请 <a href="/image-share/login" style="color: #667eea; font-weight: 600;">登录</a> 后发表评论</p>
+    </div>
+  <% } %>
+
+  <% if (typeof comments !== 'undefined' && comments.length > 0) { %>
+    <div id="comments-list">
+      <% comments.forEach(function(comment) { %>
+        <div style="border-bottom: 1px solid #f0f0f0; padding: 15px 0;" id="comment-<%= comment.id %>">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <img src="<%= comment.avatar || '/assets/images/default-avatar.png' %>" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+            <div>
+              <strong style="font-size: 14px;"><%= comment.nickname || '匿名用户' %></strong>
+              <span style="color: #999; font-size: 12px; margin-left: 8px;"><%= comment.created_at %></span>
+            </div>
+          </div>
+          <p style="color: #555; line-height: 1.6; margin-left: 42px;"><%= comment.content %></p>
+          <% if (user && (user.id === comment.user_id || user.role === 'admin' || user.role === 'super_admin')) { %>
+            <div style="margin-left: 42px; margin-top: 5px;">
+              <form action="/image-share/comment/delete" method="POST" style="display: inline;" onsubmit="return confirm('确定要删除这条评论吗？')">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="id" value="<%= comment.id %>">
+                <input type="hidden" name="image_id" value="<%= image.id %>">
+                <button type="submit" style="background: none; border: none; color: #999; font-size: 12px; cursor: pointer; padding: 0;">
+                  <i class="fas fa-trash"></i> 删除
+                </button>
+              </form>
+            </div>
+          <% } %>
+        </div>
+      <% }); %>
+    </div>
+  <% } else { %>
+    <div style="text-align: center; padding: 30px; color: #999;">
+      <i class="fas fa-comment-dots" style="font-size: 32px; display: block; margin-bottom: 10px;"></i>
+      <p>暂无评论，来发表第一条评论吧！</p>
+    </div>
+  <% } %>
+</div>
+
+<style>
+.image-zoom { transform: scale(1.5); cursor: zoom-out !important; }
+</style>
+
+<script>
+var currentZoom = 1;
+
+function toggleZoom(img) {
+  if (currentZoom > 1) {
+    resetZoom();
+  } else {
+    img.classList.add('image-zoom');
+    currentZoom = 1.5;
+  }
+}
+
+function zoomImage(factor) {
+  var img = document.getElementById('mainImage');
+  currentZoom *= factor;
+  currentZoom = Math.max(0.5, Math.min(3, currentZoom));
+  img.style.transform = 'scale(' + currentZoom + ')';
+  img.style.cursor = currentZoom > 1 ? 'zoom-out' : 'zoom-in';
+}
+
+function resetZoom() {
+  var img = document.getElementById('mainImage');
+  currentZoom = 1;
+  img.style.transform = 'scale(1)';
+  img.classList.remove('image-zoom');
+  img.style.cursor = 'zoom-in';
+}
+</script>
+
+<%- include('footer') %>

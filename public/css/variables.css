@@ -1,0 +1,258 @@
+/* ============================================
+   统一CSS变量定义
+   ============================================ */
+
+/* 亮色模式（默认） */
+:root {
+  /* 主色调 */
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --primary-light: #a5b4fc;
+  --primary-bg: #eef2ff;
+  
+  /* 功能色 */
+  --success: #10b981;
+  --success-dark: #059669;
+  --warning: #f59e0b;
+  --warning-dark: #d97706;
+  --danger: #ef4444;
+  --danger-dark: #dc2626;
+  --info: #3b82f6;
+  --info-dark: #2563eb;
+  
+  /* 中性色 */
+  --gray-50: #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e2e8f0;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1e293b;
+  --gray-900: #0f172a;
+  
+  /* 背景色 */
+  --bg-primary: #ffffff;
+  --bg-secondary: var(--gray-50);
+  --bg-card: #ffffff;
+  
+  /* 文字色 */
+  --text-primary: var(--gray-800);
+  --text-secondary: var(--gray-600);
+  --text-muted: var(--gray-400);
+  
+  /* 边框色 */
+  --border-color: var(--gray-200);
+  --border-light: rgba(0, 0, 0, 0.04);
+  
+  /* 特殊背景 */
+  --header-bg: rgba(255, 255, 255, 0.9);
+  --footer-bg: var(--gray-100);
+  --sidebar-bg: #0f172a;
+  --sidebar-hover: #1e293b;
+  --code-bg: #f4f4f5;
+  
+  /* 骨架屏 */
+  --skeleton-base: #e2e8f0;
+  --skeleton-shine: #f1f5f9;
+  
+  /* 遮罩层 */
+  --overlay-bg: rgba(0, 0, 0, 0.25);
+  
+  /* 反色文字 */
+  --text-inverse: #ffffff;
+  
+  /* 字体粗细 */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  
+  /* 扩展功能色 */
+  --danger-bg: rgba(239, 68, 68, 0.08);
+  --danger-border: rgba(239, 68, 68, 0.2);
+  --primary-border: rgba(99, 102, 241, 0.2);
+  --primary-shadow: rgba(99, 102, 241, 0.3);
+  --primary-focus: rgba(99, 102, 241, 0.12);
+  --primary-glow: rgba(99, 102, 241, 0.4);
+  --success-light: #34d399;
+  --success-bg: rgba(16, 185, 129, 0.08);
+  --success-border: rgba(16, 185, 129, 0.2);
+  --success-shadow: rgba(16, 185, 129, 0.3);
+  --warning-bg: rgba(245, 158, 11, 0.08);
+  --warning-border: rgba(245, 158, 11, 0.2);
+  --warning-shadow: rgba(245, 158, 11, 0.3);
+  --danger-shadow: rgba(239, 68, 68, 0.3);
+  --info-bg: rgba(59, 130, 246, 0.08);
+  --info-border: rgba(59, 130, 246, 0.2);
+  --info-shadow: rgba(59, 130, 246, 0.3);
+  --accent: #8b5cf6;
+  --bg-tertiary: var(--gray-100);
+  
+  /* 圆角 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+  
+  /* 阴影 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  
+  /* 过渡 */
+  --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  
+  /* 行高 */
+  --line-height-tight: 1.3;
+  --line-height-normal: 1.6;
+  --line-height-relaxed: 1.7;
+  --line-height-loose: 1.9;
+  
+  /* 字体大小 */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 20px;
+  --text-3xl: 24px;
+  --text-4xl: 28px;
+  --text-5xl: 36px;
+  
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-9: 36px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  
+  /* Z-index层级 */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-fixed: 300;
+  --z-modal-backdrop: 400;
+  --z-modal: 500;
+  --z-popover: 600;
+  --z-tooltip: 700;
+  --z-toast: 800;
+}
+
+/* 暗色模式 */
+[data-theme="dark"] {
+  /* 主色调 */
+  --primary: #818cf8;
+  --primary-dark: #6366f1;
+  --primary-light: #a5b4fc;
+  --primary-bg: #1e1b4b;
+  
+  /* 功能色 */
+  --success: #34d399;
+  --success-dark: #10b981;
+  --warning: #fbbf24;
+  --warning-dark: #f59e0b;
+  --danger: #f87171;
+  --danger-dark: #ef4444;
+  --info: #60a5fa;
+  --info-dark: #3b82f6;
+  
+  /* 中性色 */
+  --gray-50: #0f172a;
+  --gray-100: #1e293b;
+  --gray-200: #334155;
+  --gray-300: #475569;
+  --gray-400: #64748b;
+  --gray-500: #94a3b8;
+  --gray-600: #cbd5e1;
+  --gray-700: #e2e8f0;
+  --gray-800: #f1f5f9;
+  --gray-900: #f8fafc;
+  
+  /* 背景色 */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-card: #1e293b;
+  
+  /* 文字色 */
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  
+  /* 边框色 */
+  --border-color: #334155;
+  --border-light: rgba(255, 255, 255, 0.06);
+  
+  /* 特殊背景 */
+  --header-bg: rgba(15, 23, 42, 0.95);
+  --footer-bg: #1e293b;
+  --sidebar-bg: #0f172a;
+  --sidebar-hover: #1e293b;
+  --code-bg: #1e293b;
+  
+  /* 骨架屏 */
+  --skeleton-base: #334155;
+  --skeleton-shine: #475569;
+  
+  /* 遮罩层 */
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+  
+  /* 反色文字 */
+  --text-inverse: #0f172a;
+  
+  /* 扩展功能色 */
+  --danger-bg: rgba(248, 113, 113, 0.08);
+  --danger-border: rgba(248, 113, 113, 0.2);
+  --primary-border: rgba(129, 140, 248, 0.2);
+  --primary-shadow: rgba(129, 140, 248, 0.3);
+  --primary-focus: rgba(129, 140, 248, 0.12);
+  --primary-glow: rgba(129, 140, 248, 0.4);
+  --success-light: #6ee7b7;
+  --success-bg: rgba(52, 211, 153, 0.08);
+  --success-border: rgba(52, 211, 153, 0.2);
+  --success-shadow: rgba(52, 211, 153, 0.3);
+  --warning-bg: rgba(251, 191, 36, 0.08);
+  --warning-border: rgba(251, 191, 36, 0.2);
+  --warning-shadow: rgba(251, 191, 36, 0.3);
+  --danger-shadow: rgba(248, 113, 113, 0.3);
+  --info-bg: rgba(96, 165, 250, 0.08);
+  --info-border: rgba(96, 165, 250, 0.2);
+  --info-shadow: rgba(96, 165, 250, 0.3);
+  --accent: #a78bfa;
+  --bg-tertiary: var(--gray-100);
+  
+  /* 阴影（暗色模式下更明显） */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* 响应式断点变量（仅供参考，实际使用媒体查询） */
+/* 
+  移动端: max-width: 480px
+  平板: max-width: 768px
+  小桌面: max-width: 1024px
+  大桌面: min-width: 1200px
+*/

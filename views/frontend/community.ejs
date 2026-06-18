@@ -1,0 +1,215 @@
+<div class="container">
+  <div class="community-page">
+    <div class="community-header">
+      <h1>社区动态</h1>
+      <p class="subtitle">关注的人的最新动态</p>
+    </div>
+
+    <div class="feed-container">
+      <% if (feed && feed.length > 0) { %>
+        <% feed.forEach(function(item) { %>
+          <div class="feed-item">
+            <div class="feed-user">
+              <a href="/user/<%= item.user_uid || item.user_id %>">
+                <img src="<%= item.avatar || '/assets/images/default-avatar.png' %>" alt="<%= item.username %>" class="user-avatar">
+              </a>
+              <div class="user-info">
+                <a href="/user/<%= item.user_id %>" class="username"><%= item.nickname || item.username %></a>
+                <span class="feed-time"><%= new Date(item.created_at).toLocaleString('zh-CN') %></span>
+              </div>
+            </div>
+            <div class="feed-content">
+              <% if (item.type === 'article') { %>
+                <div class="feed-type-badge">发布了文章</div>
+                <a href="/articles/<%= item.id %>" class="feed-title"><%= item.content %></a>
+                <% if (item.cover_image) { %>
+                  <div class="feed-cover">
+                    <img src="<%= item.cover_image %>" alt="封面">
+                  </div>
+                <% } %>
+              <% } else if (item.type === 'comment') { %>
+                <div class="feed-type-badge">发表了评论</div>
+                <p class="feed-text"><%= item.content %></p>
+              <% } %>
+            </div>
+          </div>
+        <% }); %>
+
+        <% if (hasMore) { %>
+          <div class="load-more">
+            <a href="/community?page=<%= page + 1 %>" class="btn btn-secondary">加载更多</a>
+          </div>
+        <% } %>
+      <% } else { %>
+        <div class="empty-state">
+          <div class="empty-icon">📱</div>
+          <h3>暂无动态</h3>
+          <p>关注更多用户，查看他们的最新动态</p>
+          <a href="/articles" class="btn btn-primary">浏览文章</a>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<style>
+.community-page {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.community-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.community-header h1 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: #666;
+}
+
+.feed-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.feed-item {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.feed-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.user-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.username {
+  font-weight: 600;
+  color: #333;
+  text-decoration: none;
+}
+
+.username:hover {
+  color: #3498db;
+}
+
+.feed-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.feed-type-badge {
+  display: inline-block;
+  font-size: 12px;
+  color: #666;
+  background: #f0f0f0;
+  padding: 4px 10px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+
+.feed-title {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  text-decoration: none;
+  margin-bottom: 10px;
+}
+
+.feed-title:hover {
+  color: #3498db;
+}
+
+.feed-cover {
+  margin-top: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.feed-cover img {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+}
+
+.feed-text {
+  color: #555;
+  line-height: 1.6;
+}
+
+.load-more {
+  text-align: center;
+  padding: 20px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state h3 {
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 10px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #3498db;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+}
+
+.btn-secondary {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.btn-secondary:hover {
+  background: #e0e0e0;
+}
+</style>

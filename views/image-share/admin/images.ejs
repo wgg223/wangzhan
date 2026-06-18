@@ -1,0 +1,105 @@
+<%- include('../header') %>
+
+<div style="margin-bottom: 20px;">
+  <a href="/image-share/admin" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回管理首页</a>
+</div>
+
+<h2 style="margin-bottom: 20px;"><i class="fas fa-images"></i> 图片管理</h2>
+
+<div class="tabs">
+  <a href="/image-share/admin/images" class="<%= !currentStatus && currentStatus !== '0' ? 'active' : '' %>">全部</a>
+  <a href="/image-share/admin/images?status=0" class="<%= currentStatus === '0' ? 'active' : '' %>">待审核</a>
+  <a href="/image-share/admin/images?status=1" class="<%= currentStatus === '1' ? 'active' : '' %>">已通过</a>
+  <a href="/image-share/admin/images?status=2" class="<%= currentStatus === '2' ? 'active' : '' %>">已驳回</a>
+</div>
+
+<% if (images.length > 0) { %>
+  <table>
+    <thead>
+      <tr>
+        <th>图片</th>
+        <th>标题</th>
+        <th>上传者</th>
+        <th>分类</th>
+        <th>状态</th>
+        <th>时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% images.forEach(function(img) { %>
+        <tr>
+          <td><img src="<%= img.url %>" alt="" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;"></td>
+          <td><%= img.title %></td>
+          <td><%= img.nickname || img.username || '未知' %></td>
+          <td><%= img.cate_name || '未分类' %></td>
+          <td>
+            <% if (img.status === 0) { %>
+              <span class="badge badge-warning">待审核</span>
+            <% } else if (img.status === 1) { %>
+              <span class="badge badge-success">已通过</span>
+            <% } else { %>
+              <span class="badge badge-danger">已驳回</span>
+            <% } %>
+          </td>
+          <td style="font-size: 12px; color: #999;"><%= img.created_at %></td>
+          <td>
+            <a href="/image-share/image?id=<%= img.id %>" class="btn btn-primary btn-sm" target="_blank"><i class="fas fa-eye"></i></a>
+            <% if (img.status !== 1) { %>
+              <button class="btn btn-success btn-sm" onclick="reviewImage(<%= img.id %>, 'approve')"><i class="fas fa-check"></i></button>
+            <% } %>
+            <% if (img.status !== 2) { %>
+              <button class="btn btn-warning btn-sm" onclick="reviewImage(<%= img.id %>, 'reject')"><i class="fas fa-times"></i></button>
+            <% } %>
+            <button class="btn btn-danger btn-sm" onclick="deleteImage(<%= img.id %>)"><i class="fas fa-trash"></i></button>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+<% } else { %>
+  <div class="card empty-state">
+    <i class="fas fa-images"></i>
+    <p>暂无图片</p>
+  </div>
+<% } %>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function reviewImage(id, action) {
+  const text = action === 'approve' ? '通过' : '驳回';
+  if (!confirm('确定要' + text + '这张图片吗？')) return;
+  
+  fetch('/image-share/admin/review', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ id, action })
+  }).then(r => r.json()).then(data => {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+
+function deleteImage(id) {
+  if (!confirm('确定要删除这张图片吗？此操作不可撤销。')) return;
+  
+  fetch('/image-share/admin/delete', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ id })
+  }).then(r => r.json()).then(data => {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+</script>
+
+<%- include('../footer') %>

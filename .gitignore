@@ -1,0 +1,102 @@
+# Dependencies
+node_modules/
+
+# Database
+database.sqlite
+database.sqlite.tmp
+database.sqlite.backup.*
+
+# Uploads
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Backups
+backups/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+/scripts
+
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+venv/
+ENV/
+env/
+
+# Build and dist
+dist/
+build/
+*.tgz
+*.zip
+
+# Cache
+.cache/
+*.cache
+.parcel-cache/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Cookies and auth
+cookies.txt
+login_result.html
+
+# Setup
+.setup_completed
+
+# Scripts
+scripts/.file_checksums.json
+
+# Vendor maps
+public/vendor/**/*.map
+
+# RP-Hub (legacy)
+RP-Hub/
+
+# Sensitive files
+*.key
+*.pem
+config.json
+security-config.json
+
+# PM2
+.pm2/
+
+# Editor
+*.sublime-project
+*.sublime-workspace
+
+# Misc
+*.bak
+*.orig
+.writerHelper
+.vscode

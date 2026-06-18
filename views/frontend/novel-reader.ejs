@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= currentChapter ? currentChapter.title + ' - ' : '' %><%= novel.title %> - <%= settings.site_name || '我的网站' %></title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { background: var(--gray-50); }
+    main { max-width: 1000px; }
+
+    /* 阅读器工具栏 */
+    .reader-toolbar {
+      position: sticky;
+      top: 68px;
+      z-index: 100;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--gray-200);
+      padding: 12px 24px;
+      margin: -32px -24px 24px -24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .reader-toolbar .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .reader-toolbar label {
+      font-size: 13px;
+      color: var(--gray-500);
+      font-weight: 500;
+    }
+
+    .reader-toolbar select,
+    .reader-toolbar input[type="range"] {
+      padding: 6px 10px;
+      border: 1px solid var(--gray-200);
+      border-radius: 6px;
+      background: #fff;
+      font-size: 13px;
+      color: var(--gray-700);
+    }
+
+    .reader-toolbar select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(99,102,241,0.12);
+    }
+
+    /* 小说标题区 */
+    .novel-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .novel-header h1 {
+      border: none;
+      padding: 0;
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .novel-header .novel-meta {
+      color: var(--gray-400);
+      font-size: 14px;
+    }
+
+    /* 章节选择器 */
+    .chapter-selector {
+      margin-bottom: 24px;
+    }
+
+    .chapter-selector select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
+      font-size: 15px;
+      color: var(--gray-700);
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .chapter-selector select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    /* 章节标题 */
+    .chapter-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--gray-800);
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--gray-100);
+    }
+
+    /* 阅读内容区 */
+    .reader-content {
+      line-height: var(--reader-line-height, 2);
+      font-size: var(--reader-font-size, 18px);
+      color: var(--reader-text-color, var(--gray-700));
+      padding: 32px 40px;
+      background: var(--reader-bg, #fff);
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--gray-100);
+      min-height: 400px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: 'Noto Serif SC', 'Source Han Serif SC', 'SimSun', '宋体', serif;
+    }
+
+    .reader-content p {
+      text-indent: 2em;
+      margin-bottom: 0.5em;
+    }
+
+    /* 翻页导航 */
+    .chapter-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 24px;
+      gap: 12px;
+    }
+
+    .chapter-nav .btn {
+      min-width: 120px;
+      justify-content: center;
+    }
+
+    .chapter-nav .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .chapter-nav .chapter-info {
+      font-size: 14px;
+      color: var(--gray-400);
+      text-align: center;
+    }
+
+    /* 章节列表面板 */
+    .chapter-list-panel {
+      margin-bottom: 24px;
+      background: #fff;
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--gray-100);
+      overflow: hidden;
+    }
+
+    .chapter-list-header {
+      padding: 14px 20px;
+      background: var(--gray-50);
+      border-bottom: 1px solid var(--gray-100);
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--gray-700);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chapter-list-header:hover {
+      background: var(--gray-100);
+    }
+
+    .chapter-list-body {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .chapter-list-body a {
+      display: block;
+      padding: 10px 20px;
+      color: var(--gray-600);
+      font-size: 14px;
+      border-bottom: 1px solid var(--gray-50);
+      transition: var(--transition);
+      text-decoration: none;
+    }
+
+    .chapter-list-body a:hover {
+      background: var(--primary-bg);
+      color: var(--primary);
+    }
+
+    .chapter-list-body a.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    /* 色调选择按钮 */
+    .theme-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-block;
+    }
+
+    .theme-btn:hover {
+      transform: scale(1.15);
+    }
+
+    .theme-btn.active {
+      border-color: var(--primary);
+    }
+
+    .theme-btn.white { background: #fff; border-color: var(--gray-300); }
+    .theme-btn.cream { background: #f5f0e8; }
+    .theme-btn.gray { background: #e8e8e8; }
+    .theme-btn.dark { background: #1a1a2e; }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .reader-content {
+        padding: 20px 16px;
+        font-size: var(--reader-font-size-mobile, 16px);
+      }
+      .reader-toolbar {
+        padding: 10px 16px;
+        margin: -24px -16px 16px -16px;
+        top: 0;
+      }
+      .reader-toolbar .toolbar-group {
+        gap: 6px;
+      }
+      .chapter-nav .btn {
+        min-width: 90px;
+        font-size: 13px;
+      }
+      .novel-header h1 {
+        font-size: 22px;
+      }
+      .chapter-title {
+        font-size: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <div class="logo">
+        <a href="/home">
+          <% if (settings.logo) { %>
+            <img src="<%= settings.logo %>" alt="<%= settings.site_name || '我的网站' %>" class="site-logo">
+          <% } else { %>
+            <%= settings.site_name || '我的网站' %>
+          <% } %>
+        </a>
+      </div>
+      <ul class="nav-links">
+        <li><a href="/home">首页</a></li>
+        <li><a href="/articles">文章</a></li>
+        <li><a href="/novels" style="color:var(--primary);font-weight:600;">📚 小说</a></li>
+        <li><a href="/image-share">图片</a></li>
+        <li><a href="/about">关于</a></li>
+        <li><a href="/contact">联系</a></li>
+        <li class="user-dropdown">
+          <a href="#" class="dropdown-toggle">
+            <% if (typeof user !== 'undefined' && user) { %>
+              👤 <%= user.username %> ▾
+            <% } else { %>
+              👤 用户 ▾
+            <% } %>
+          </a>
+          <ul class="dropdown-menu">
+            <% if (typeof user !== 'undefined' && user) { %>
+              <li><a href="/auth/change-password">🔑 修改密码</a></li>
+              <li><a href="/auth/logout">🚪 退出登录</a></li>
+              <% if (user.role === 'admin' || user.role === 'super_admin' || user.role === 'editor') { %>
+                <li class="dropdown-divider"></li>
+                <li><a href="/admin">⚙️ 后台管理</a></li>
+              <% } %>
+            <% } else { %>
+              <li><a href="/auth/login">🔐 登录</a></li>
+              <li><a href="/auth/register">📝 注册</a></li>
+              <li class="dropdown-divider"></li>
+              <li><a href="/auth/change-password">🔑 修改密码</a></li>
+            <% } %>
+          </ul>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 工具箱 -->
+    <div class="reader-toolbar">
+      <div class="toolbar-group">
+        <label>📏 字号</label>
+        <select id="fontSizeSelect" onchange="changeFontSize(this.value)">
+          <option value="14">14px</option>
+          <option value="16">16px</option>
+          <option value="18" selected>18px</option>
+          <option value="20">20px</option>
+          <option value="22">22px</option>
+          <option value="24">24px</option>
+          <option value="28">28px</option>
+          <option value="32">32px</option>
+        </select>
+
+        <label>↕ 行距</label>
+        <select id="lineHeightSelect" onchange="changeLineHeight(this.value)">
+          <option value="1.5">1.5</option>
+          <option value="1.8">1.8</option>
+          <option value="2.0" selected>2.0</option>
+          <option value="2.2">2.2</option>
+          <option value="2.5">2.5</option>
+          <option value="3.0">3.0</option>
+        </select>
+      </div>
+
+      <div class="toolbar-group">
+        <label>🎨 主题</label>
+        <button class="theme-btn white active" onclick="changeTheme('white', '#fff', '#334155')" title="白色"></button>
+        <button class="theme-btn cream" onclick="changeTheme('cream', '#f5f0e8', '#5c4b3a')" title="护眼米黄"></button>
+        <button class="theme-btn gray" onclick="changeTheme('gray', '#e8e8e8', '#333')" title="灰色"></button>
+        <button class="theme-btn dark" onclick="changeTheme('dark', '#1a1a2e', '#e0e0e0')" title="夜间模式"></button>
+
+        <label style="margin-left:8px;">
+          <input type="checkbox" id="fontToggle" onchange="toggleSerifFont(this.checked)" checked>
+          宋体
+        </label>
+
+        <label style="margin-left:12px;">🎨 字体颜色</label>
+        <input type="color" id="fontColorPicker" value="#334155" onchange="changeFontColor(this.value)" title="点击选择字体颜色"
+               style="width:32px;height:28px;padding:0;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;background:none;">
+      </div>
+    </div>
+
+    <div class="container" style="padding-top:0;">
+      <!-- 小说信息 -->
+      <div class="novel-header">
+        <h1><%= novel.title %></h1>
+        <div class="novel-meta">
+          ✍️ <%= novel.author || '未知作者' %> &nbsp;|&nbsp; 📄 <%= chapters.length %> 章
+        </div>
+        <% if (novel.description) { %>
+          <p style="color:var(--gray-500);font-size:14px;margin-top:8px;"><%= novel.description %></p>
+        <% } %>
+      </div>
+
+      <% if (chapters.length > 0) { %>
+        <!-- 章节选择面板 -->
+        <div class="chapter-list-panel" id="chapterPanel">
+          <div class="chapter-list-header" onclick="toggleChapterList()">
+            <span>📑 目录 (<%= chapters.length %> 章)</span>
+            <span id="chapterToggleIcon">▼</span>
+          </div>
+          <div class="chapter-list-body" id="chapterListBody" style="display:none;">
+            <% chapters.forEach(function(ch) { %>
+              <a href="/novels/<%= novel.id %>/chapter/<%= ch.id %>"
+                 class="<%= currentChapter && currentChapter.id == ch.id ? 'active' : '' %>">
+                第 <%= ch.chapter_number %> 章 · <%= ch.title %>
+              </a>
+            <% }); %>
+          </div>
+        </div>
+
+        <!-- 阅读内容 -->
+        <% if (currentChapter) { %>
+          <h2 class="chapter-title">第 <%= currentChapter.chapter_number %> 章 · <%= currentChapter.title %></h2>
+          <div class="reader-content" id="readerContent"><%= currentChapter.content %></div>
+
+          <!-- 翻页导航 -->
+          <div class="chapter-nav">
+            <% if (chapterIndex > 0) { %>
+              <a href="/novels/<%= novel.id %>/chapter/<%= chapters[chapterIndex - 1].id %>" class="btn">← 上一章</a>
+            <% } else { %>
+              <button class="btn" disabled>← 上一章</button>
+            <% } %>
+
+            <div class="chapter-info">
+              第 <%= chapterIndex + 1 %> / <%= chapters.length %> 章
+            </div>
+
+            <% if (chapterIndex < chapters.length - 1) { %>
+              <a href="/novels/<%= novel.id %>/chapter/<%= chapters[chapterIndex + 1].id %>" class="btn btn-primary">下一章 →</a>
+            <% } else { %>
+              <button class="btn" disabled>下一章 →</button>
+            <% } %>
+          </div>
+        <% } else { %>
+          <!-- 未选择章节时显示开始阅读按钮 -->
+          <div style="text-align:center;padding:60px 20px;">
+            <p style="font-size:48px;margin-bottom:20px;">📖</p>
+            <p style="color:var(--gray-500);margin-bottom:24px;">选择章节开始阅读</p>
+            <a href="/novels/<%= novel.id %>/chapter/<%= chapters[0].id %>" class="btn btn-primary btn-large">开始阅读</a>
+          </div>
+        <% } %>
+      <% } else { %>
+        <div style="text-align:center;padding:80px 20px;color:var(--gray-400);">
+          <p style="font-size:64px;margin-bottom:16px;">📝</p>
+          <p style="font-size:18px;">暂无章节内容</p>
+        </div>
+      <% } %>
+    </div>
+  </main>
+
+  <footer>
+    <p>&copy; <%= new Date().getFullYear() %> <%= settings.site_name || '我的网站' %></p>
+    <% if (settings.footer_text) { %>
+      <p><%= settings.footer_text %></p>
+    <% } %>
+    <% if (settings.icp_number) { %>
+      <p><a href="<%= settings.icp_link || 'https://beian.miit.gov.cn/' %>" target="_blank" rel="noopener"><%= settings.icp_number %></a></p>
+    <% } %>
+  </footer>
+
+  <script>
+    // 字体大小调整
+    function changeFontSize(size) {
+      document.getElementById('readerContent').style.setProperty('--reader-font-size', size + 'px');
+      document.getElementById('readerContent').style.fontSize = size + 'px';
+      localStorage.setItem('novel-font-size', size);
+    }
+
+    // 行距调整
+    function changeLineHeight(height) {
+      document.getElementById('readerContent').style.setProperty('--reader-line-height', height);
+      document.getElementById('readerContent').style.lineHeight = height;
+      localStorage.setItem('novel-line-height', height);
+    }
+
+    // 主题切换
+    function changeTheme(theme, bgColor, textColor) {
+      const content = document.getElementById('readerContent');
+      content.style.setProperty('--reader-bg', bgColor);
+      content.style.setProperty('--reader-text-color', textColor);
+      content.style.backgroundColor = bgColor;
+      content.style.color = textColor;
+      localStorage.setItem('novel-theme-bg', bgColor);
+      localStorage.setItem('novel-theme-text', textColor);
+
+      // 同步字体颜色选择器
+      const colorPicker = document.getElementById('fontColorPicker');
+      if (colorPicker) colorPicker.value = textColor;
+
+      // 更新按钮状态
+      document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    // 字体颜色自定义
+    function changeFontColor(color) {
+      const content = document.getElementById('readerContent');
+      content.style.setProperty('--reader-text-color', color);
+      content.style.color = color;
+      localStorage.setItem('novel-theme-text', color);
+
+      // 取消主题按钮的选中状态
+      document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.remove('active'));
+    }
+
+    // 宋体/无衬线切换
+    function toggleSerifFont(useSerif) {
+      const content = document.getElementById('readerContent');
+      if (useSerif) {
+        content.style.fontFamily = "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', '宋体', serif";
+      } else {
+        content.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif";
+      }
+      localStorage.setItem('novel-serif', useSerif ? 'true' : 'false');
+    }
+
+    // 目录折叠
+    function toggleChapterList() {
+      const body = document.getElementById('chapterListBody');
+      const icon = document.getElementById('chapterToggleIcon');
+      if (body.style.display === 'none') {
+        body.style.display = 'block';
+        icon.textContent = '▲';
+      } else {
+        body.style.display = 'none';
+        icon.textContent = '▼';
+      }
+    }
+
+    // 从localStorage恢复阅读设置
+    document.addEventListener('DOMContentLoaded', function() {
+      const savedFontSize = localStorage.getItem('novel-font-size');
+      const savedLineHeight = localStorage.getItem('novel-line-height');
+      const savedThemeBg = localStorage.getItem('novel-theme-bg');
+      const savedThemeText = localStorage.getItem('novel-theme-text');
+      const savedSerif = localStorage.getItem('novel-serif');
+
+      const content = document.getElementById('readerContent');
+      if (!content) return;
+
+      if (savedFontSize) {
+        content.style.fontSize = savedFontSize + 'px';
+        document.getElementById('fontSizeSelect').value = savedFontSize;
+      }
+      if (savedLineHeight) {
+        content.style.lineHeight = savedLineHeight;
+        document.getElementById('lineHeightSelect').value = savedLineHeight;
+      }
+      if (savedThemeBg && savedThemeText) {
+        content.style.backgroundColor = savedThemeBg;
+        content.style.color = savedThemeText;
+        const colorPicker = document.getElementById('fontColorPicker');
+        if (colorPicker) colorPicker.value = savedThemeText;
+      }
+      if (savedSerif === 'false') {
+        content.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif";
+        document.getElementById('fontToggle').checked = false;
+      }
+    });
+
+    // 键盘快捷键
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'ArrowLeft') {
+        const prevBtn = document.querySelector('.chapter-nav .btn:first-child');
+        if (prevBtn && !prevBtn.disabled && prevBtn.href) {
+          window.location.href = prevBtn.href;
+        }
+      }
+      if (e.key === 'ArrowRight') {
+        const nextBtn = document.querySelector('.chapter-nav .btn:last-child');
+        if (nextBtn && !nextBtn.disabled && nextBtn.href) {
+          window.location.href = nextBtn.href;
+        }
+      }
+    });
+  </script>
+</body>
+</html>

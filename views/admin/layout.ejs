@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>后台管理 - 网站管理系统</title>
+  <meta name="csrf-token" content="<%= csrfToken %>">
+  <link rel="stylesheet" href="/css/admin.css">
+  <!-- Quill rich text editor CSS + JS - 使用本地版本，备用 CDN -->
+  <link href="/vendor/quill/quill.snow.css" rel="stylesheet" id="quill-css">
+  <script src="/vendor/quill/quill.js"></script>
+  <!-- 备用 CDN (如果本地加载失败) -->
+  <script>
+    if (typeof Quill === 'undefined') {
+      var cssLink = document.createElement('link');
+      cssLink.rel = 'stylesheet';
+      cssLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/quill/2.0.0/quill.snow.css';
+      document.head.appendChild(cssLink);
+      
+      var scriptTag = document.createElement('script');
+      scriptTag.src = 'https://cdnjs.cloudflare.com/ajax/libs/quill/2.0.0/quill.min.js';
+      document.head.appendChild(scriptTag);
+    }
+  </script>
+</head>
+<body>
+<%
+  // 辅助函数：检查用户是否有某个模块的任意权限（前缀匹配）
+  function hasPerm(permissions, permKey) {
+    if (!permissions || !Array.isArray(permissions)) return false;
+    if (permissions.indexOf(permKey) !== -1) return true;
+    var prefix = permKey.split('.')[0] + '.';
+    return permissions.some(function(key) { return key.indexOf(prefix) === 0; });
+  }
+%>
+<div class="admin-container">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>后台管理</h2>
+      </div>
+      <nav class="sidebar-nav">
+        <ul>
+          <% if (user.role === 'super_admin') { %>
+          <li><a href="/admin">📊 仪表盘</a></li>
+          <% } %>
+          <% if (user.role === 'super_admin') { %>
+          <li><a href="/admin/activity-logs">📋 操作日志</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'pages.view')) { %>
+          <li><a href="/admin/pages">📄 页面管理</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'articles.view')) { %>
+          <li><a href="/admin/articles">📝 文章管理</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'novels.view')) { %>
+          <li><a href="/admin/novels">📚 小说管理</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'users.view')) { %>
+          <li><a href="/admin/users">👥 用户管理</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'permissions.view')) { %>
+          <li><a href="/admin/permissions">🔐 权限管理</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'comments.view')) { %>
+          <li><a href="/admin/comments">💬 评论管理</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'messages.view')) { %>
+          <li><a href="/admin/messages">📬 站内信</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'leaderboard.view')) { %>
+          <li><a href="/admin/leaderboard">🏆 排行榜</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.view')) { %>
+          <li><a href="/admin/image-share">🖼️ 图片分享</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.review')) { %>
+          <li><a href="/admin/image-share/trusted-users">👤 免审核用户</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.comment')) { %>
+          <li><a href="/admin/image-share/comments">💬 图片评论</a></li>
+          <% } %>
+          <% if (user.role === 'super_admin' || user.role === 'admin') { %>
+          <li><a href="/admin/settings/basic">⚙️ 基础设置</a></li>
+          <li><a href="/admin/settings/smtp">📧 SMTP配置</a></li>
+          <li><a href="/admin/settings/agreement">📄 协议设置</a></li>
+          <li><a href="/admin/settings/popup">🪟 弹窗设置</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && userPermissions.indexOf('settings.advanced') !== -1) { %>
+          <li><a href="/admin/system-update">🔄 RP-HUB系统更新</a></li>
+          <% } %>
+          <% if (user.role === 'super_admin') { %>
+            <li><a href="/admin/backup">💾 备份管理</a></li>
+            <li><a href="/admin/maintenance">🔧 服务器维护</a></li>
+            <li><a href="/admin/projects">📦 项目管理</a></li>
+            <li><a href="/admin/reset" style="color:#ef4444;">⚠️ 重置服务器</a></li>
+          <% } %>
+        </ul>
+      </nav>
+      <div class="sidebar-footer">
+        <p>当前用户：<%= user.username %></p>
+        <a href="/admin/profile">账户设置</a>
+        <a href="/auth/logout">退出登录</a>
+        <a href="/" target="_blank">查看网站</a>
+      </div>
+    </aside>
+    <main class="admin-main">
+      <%- body %>
+    </main>
+  </div>
+  <script>
+  window.addEventListener('load', function() {
+    if (typeof Quill === 'undefined') {
+      console.warn('Quill编辑器CDN加载失败，编辑器功能将不可用');
+      document.querySelectorAll('#editor-container').forEach(function(el) {
+        el.innerHTML = '<div style="padding:20px;color:#999;text-align:center;">⚠️ 编辑器组件加载失败，请刷新页面重试</div>';
+      });
+    }
+  });
+  </script>
+  <script src="/js/admin.js"></script>
+  <script>
+  // CSRF token injection for AJAX requests
+  document.addEventListener('DOMContentLoaded', function() {
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+    
+    // ---- Global fetch wrapping for CSRF ----
+    const originalFetch = window.fetch;
+    window.fetch = function(input, init) {
+      init = init || {};
+      init.headers = init.headers || {};
+      const method = (init.method || 'GET').toUpperCase();
+      if (method !== 'GET' && csrfToken) {
+        init.headers['x-csrf-token'] = csrfToken;
+      }
+      return originalFetch.call(window, input, init).then(function(response) {
+        if (response.status === 403) {
+          response.clone().json().then(function(data) {
+            if (data.error && data.error.includes('非法操作')) {
+              alert('⚠️ ' + data.error);
+            }
+          }).catch(function() {});
+        }
+        return response;
+      });
+    };
+    
+    // ---- Global XHR wrapping for CSRF ----
+    const originalXHROpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+      this._csrfMethod = method;
+      return originalXHROpen.apply(this, arguments);
+    };
+    const originalXHRSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(body) {
+      if (this._csrfMethod && this._csrfMethod.toUpperCase() !== 'GET' && csrfToken) {
+        this.setRequestHeader('x-csrf-token', csrfToken);
+      }
+      this.addEventListener('load', function() {
+        if (this.status === 403) {
+          try {
+            const data = JSON.parse(this.responseText);
+            if (data.error && data.error.includes('非法操作')) {
+              alert('⚠️ ' + data.error);
+            }
+          } catch(e) {}
+        }
+      });
+      return originalXHRSend.apply(this, arguments);
+    };
+  });
+  </script>
+</body>
+</html>

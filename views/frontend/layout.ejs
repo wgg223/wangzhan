@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title><%= settings.site_name || '我的网站' %></title>
+  <meta name="csrf-token" content="<%= csrfToken %>">
+  <meta name="theme-color" content="#6366f1">
+  <link rel="manifest" href="/pwa/manifest.json">
+  <link rel="apple-touch-icon" href="/pwa/icon-192.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/community.css">
+  <style>
+    body {
+      <% if (settings.background_image) { %>
+        background-image: url('<%= settings.background_image %>');
+        background-size: cover;
+        background-attachment: fixed;
+        background-position: center;
+      <% } %>
+    }
+    
+    /* ===== 导航栏优化 ===== */
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+      height: 64px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+    
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    /* Logo */
+    .logo a {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--primary);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .logo img.site-logo {
+      height: 32px;
+      width: auto;
+    }
+    
+    /* 主导航链接 */
+    .nav-main {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .nav-main li a {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 8px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    
+    .nav-main li a:hover {
+      color: var(--primary);
+      background: var(--primary-bg);
+    }
+    
+    .nav-main li a.active {
+      color: var(--primary);
+      background: var(--primary-bg);
+    }
+    
+    /* 图标导航 */
+    .nav-icons {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .nav-icon-btn {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      background: none;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 18px;
+      color: var(--text-secondary);
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    
+    .nav-icon-btn:hover {
+      background: var(--gray-100);
+      color: var(--primary);
+    }
+    
+    /* 未读徽章 */
+    .msg-badge {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      background: #ef4444;
+      color: #fff;
+      border-radius: 10px;
+      padding: 0 5px;
+      font-size: 10px;
+      line-height: 16px;
+      min-width: 16px;
+      text-align: center;
+      font-weight: 600;
+      border: 2px solid #fff;
+    }
+    
+    /* 分隔线 */
+    .nav-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border-color);
+      margin: 0 8px;
+    }
+    
+    /* 用户菜单 */
+    .user-menu {
+      position: relative;
+    }
+    
+    .user-menu-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: none;
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .user-menu-btn:hover {
+      border-color: var(--primary);
+      background: var(--primary-bg);
+    }
+    
+    .user-avatar-small {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--gray-100);
+    }
+    
+    .user-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      max-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .dropdown-arrow {
+      font-size: 12px;
+      color: var(--text-muted);
+      transition: transform 0.2s;
+    }
+    
+    .user-menu:hover .dropdown-arrow {
+      transform: rotate(180deg);
+    }
+    
+    /* 下拉菜单 */
+    .dropdown-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 200px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+      z-index: 1000;
+      padding: 8px;
+      animation: dropdownIn 0.2s ease;
+    }
+    
+    @keyframes dropdownIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .user-menu:hover .dropdown-menu {
+      display: block;
+    }
+    
+    /* 伪元素桥接 */
+    .user-menu::before {
+      content: '';
+      position: absolute;
+      top: 100%;
+      right: 0;
+      left: 0;
+      height: 12px;
+    }
+    
+    .dropdown-menu a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      text-decoration: none;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    
+    .dropdown-menu a:hover {
+      background: var(--gray-50);
+      color: var(--text-primary);
+    }
+    
+    .dropdown-divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 4px 0;
+    }
+    
+    .dropdown-menu .danger {
+      color: var(--danger);
+    }
+    
+    .dropdown-menu .danger:hover {
+      background: #fef2f2;
+    }
+    
+    /* 通知下拉面板 */
+    .notification-dropdown {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: -20px;
+      width: 360px;
+      max-height: 480px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+      z-index: 1000;
+      overflow: hidden;
+      animation: dropdownIn 0.2s ease;
+    }
+    
+    .notification-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .notification-header h4 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    
+    .notification-header a {
+      font-size: 13px;
+      color: var(--primary);
+      text-decoration: none;
+    }
+    
+    .notification-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .notification-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-light);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .notification-item:hover {
+      background: var(--gray-50);
+    }
+    
+    .notification-item.unread {
+      background: var(--primary-bg);
+    }
+    
+    .notification-item.clickable {
+      border-left: 3px solid var(--primary);
+    }
+    
+    .notification-item.clickable:hover {
+      background: var(--primary-bg);
+      border-left-color: var(--primary-dark);
+    }
+    
+    .notification-item .notif-title {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
+    
+    .notification-item .notif-content {
+      font-size: 12px;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .notification-item .notif-time {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    
+    .notification-item .notif-action {
+      font-size: 11px;
+      color: var(--primary);
+      font-weight: 500;
+    }
+    
+    .notification-empty {
+      padding: 40px 16px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    
+    /* 移动端菜单按钮 */
+    .mobile-menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: var(--text-primary);
+      padding: 8px;
+      border-radius: 8px;
+    }
+    
+    .mobile-menu-btn:hover {
+      background: var(--gray-100);
+    }
+    
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .nav-container {
+        padding: 0 16px;
+      }
+      
+      .mobile-menu-btn {
+        display: block;
+      }
+      
+      .nav-main {
+        display: none;
+        position: absolute;
+        top: 64px;
+        left: 0;
+        right: 0;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border-color);
+        flex-direction: column;
+        padding: 16px;
+        gap: 4px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        z-index: 999;
+      }
+      
+      .nav-main.open {
+        display: flex;
+      }
+      
+      .nav-main li a {
+        padding: 12px 16px;
+        width: 100%;
+      }
+      
+      .nav-right {
+        gap: 4px;
+      }
+      
+      .nav-divider {
+        display: none;
+      }
+      
+      .user-name {
+        display: none;
+      }
+      
+      .user-menu-btn {
+        padding: 6px;
+      }
+      
+      .notification-dropdown {
+        width: calc(100vw - 32px);
+        right: -60px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .nav-icon-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="nav-container">
+      <div class="nav-left">
+        <div class="logo">
+          <a href="/home">
+            <% if (settings.logo) { %>
+              <img src="<%= settings.logo %>" alt="<%= settings.site_name || '我的网站' %>" class="site-logo">
+            <% } else { %>
+              <%= settings.site_name || '我的网站' %>
+            <% } %>
+          </a>
+        </div>
+        
+        <ul class="nav-main" id="navMain">
+          <li><a href="/home">首页</a></li>
+          <li><a href="/articles">文章</a></li>
+          <li><a href="/community">社区</a></li>
+          <li><a href="/novels">小说</a></li>
+          <li><a href="/image-share">图片</a></li>
+          <li><a href="/search">搜索</a></li>
+        </ul>
+      </div>
+      
+      <div class="nav-right">
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="菜单">☰</button>
+        
+        <% if (typeof user !== 'undefined' && user) { %>
+          <div class="nav-icons">
+            <div class="nav-icon-item" style="position: relative;">
+              <button class="nav-icon-btn" id="notification-toggle" title="通知">
+                🔔
+                <span id="notify-unread-badge" class="msg-badge" style="display: none;">0</span>
+              </button>
+              <div id="notification-dropdown" class="notification-dropdown" style="display: none;">
+                <div class="notification-header">
+                  <h4>通知</h4>
+                  <a href="javascript:void(0)" id="mark-all-read">全部已读</a>
+                </div>
+                <div id="notification-list" class="notification-list">
+                  <div class="notification-empty">暂无通知</div>
+                </div>
+              </div>
+            </div>
+            
+            <a href="/chat" class="nav-icon-btn" title="私信">
+              💬
+              <span id="dm-unread-badge" class="msg-badge" style="display: none;">0</span>
+            </a>
+            
+            <a href="/messages" class="nav-icon-btn" title="站内信">
+              📧
+              <span id="msg-unread-badge" class="msg-badge" style="display: none;">0</span>
+            </a>
+          </div>
+          
+          <div class="nav-divider"></div>
+          
+          <div class="user-menu">
+            <button class="user-menu-btn">
+              <img src="<%= user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="user-avatar-small">
+              <span class="user-name"><%= user.nickname || user.username %></span>
+              <span class="dropdown-arrow">▾</span>
+            </button>
+            <div class="dropdown-menu">
+              <a href="/user/<%= user.uid || user.id %>">👤 我的主页</a>
+              <a href="/chat">💬 私信</a>
+              <a href="/permissions/apply">🔐 权限申请</a>
+              <div class="dropdown-divider"></div>
+              <a href="/admin">⚙️ 后台管理</a>
+              <a href="/auth/change-password">🔑 修改密码</a>
+              <div class="dropdown-divider"></div>
+              <a href="/auth/logout" class="danger">🚪 退出登录</a>
+            </div>
+          </div>
+        <% } else { %>
+          <a href="/auth/login" class="btn btn-primary" style="padding: 8px 20px; font-size: 14px;">登录</a>
+          <a href="/auth/register" class="btn" style="padding: 8px 20px; font-size: 14px;">注册</a>
+        <% } %>
+      </div>
+    </div>
+  </header>
+  <main>
+    <%- body %>
+  </main>
+  <footer>
+    <p>&copy; <%= new Date().getFullYear() %> <%= settings.site_name || '我的网站' %></p>
+    <% if (settings.footer_text) { %>
+      <p><%= settings.footer_text %></p>
+    <% } %>
+    <% var icpNumber = settings.icp_beian || settings.icp_number || ''; %>
+    <% if (icpNumber) { %>
+      <p>
+        <a href="<%= settings.icp_link || 'https://beian.miit.gov.cn/' %>" target="_blank" rel="noopener">
+          <%= icpNumber %>
+        </a>
+      </p>
+    <% } %>
+    <% if (settings.police_beian) { %>
+      <p><%= settings.police_beian %></p>
+    <% } %>
+  </footer>
+
+  <% if (typeof user !== 'undefined' && user && settings.message_popup_enabled === '1') { %>
+  <div id="message-popup" style="display:none;position:fixed;z-index:99999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+    <div style="position:relative;background:#fff;margin:10% auto;padding:0;width:500px;max-width:90%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
+      <div style="background:#007bff;color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;font-size:18px;" id="popup-title">站内信</h3>
+        <button type="button" onclick="closeMessagePopup()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
+      </div>
+      <div style="padding:24px;max-height:350px;overflow-y:auto;" id="popup-content"></div>
+      <div style="padding:16px 24px;border-top:1px solid #eee;text-align:right;">
+        <a href="/messages" class="btn" style="background:#007bff;color:#fff;text-decoration:none;padding:8px 20px;border-radius:5px;">查看所有站内信</a>
+      </div>
+    </div>
+  </div>
+  <% } %>
+
+  <% if (settings.welcome_popup_enabled === '1') { %>
+  <div id="welcome-popup" style="display:none;position:fixed;z-index:99990;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+    <div style="position:relative;background:#fff;margin:8% auto;padding:0;width:550px;max-width:90%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
+      <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;font-size:18px;" id="welcome-popup-title"><%= settings.welcome_popup_title || '欢迎访问' %></h3>
+        <button type="button" onclick="closeWelcomePopup()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
+      </div>
+      <div style="padding:24px;max-height:400px;overflow-y:auto;line-height:1.8;color:#555;" id="welcome-popup-content">
+        <%- settings.welcome_popup_content || '<p>欢迎来到本站！</p>' %>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid #eee;text-align:right;">
+        <button type="button" onclick="closeWelcomePopup()" class="btn" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;">我知道了</button>
+      </div>
+    </div>
+  </div>
+  <% } %>
+
+  <% if (typeof user !== 'undefined' && user) { %>
+  <!-- 私信弹窗 -->
+  <div id="chatModal" class="chat-modal-overlay" style="display: none;">
+    <div class="chat-modal">
+      <div class="chat-modal-header">
+        <div class="chat-modal-user">
+          <img id="chatModalAvatar" src="/assets/images/default-avatar.png" alt="" class="chat-modal-avatar">
+          <span id="chatModalUsername" class="chat-modal-username">私信</span>
+        </div>
+        <button class="chat-modal-close" onclick="closeChatModal()">&times;</button>
+      </div>
+      <div class="chat-modal-messages" id="chatModalMessages">
+        <div class="chat-modal-empty">暂无消息</div>
+      </div>
+      <form class="chat-modal-input" id="chatModalForm">
+        <input type="text" id="chatModalInput" placeholder="输入消息..." maxlength="2000" autocomplete="off">
+        <button type="submit">发送</button>
+      </form>
+    </div>
+  </div>
+
+  <style>
+    .chat-modal-overlay {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+    }
+    
+    .chat-modal {
+      width: 380px;
+      height: 500px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .chat-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+    }
+    
+    .chat-modal-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .chat-modal-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid rgba(255,255,255,0.3);
+    }
+    
+    .chat-modal-username {
+      font-weight: 600;
+      font-size: 16px;
+    }
+    
+    .chat-modal-close {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0 4px;
+      opacity: 0.8;
+    }
+    
+    .chat-modal-close:hover {
+      opacity: 1;
+    }
+    
+    .chat-modal-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .chat-modal-empty {
+      text-align: center;
+      color: #999;
+      padding: 40px;
+    }
+    
+    .chat-modal-msg {
+      display: flex;
+      gap: 8px;
+      max-width: 80%;
+    }
+    
+    .chat-modal-msg.sent {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    
+    .chat-modal-msg .msg-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    
+    .chat-modal-msg .msg-content {
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    
+    .chat-modal-msg.sent .msg-content {
+      background: #667eea;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    
+    .chat-modal-msg.received .msg-content {
+      background: #f0f0f0;
+      color: #333;
+      border-bottom-left-radius: 4px;
+    }
+    
+    .chat-modal-msg .msg-time {
+      font-size: 11px;
+      color: #999;
+      margin-top: 4px;
+    }
+    
+    .chat-modal-msg.sent .msg-time {
+      text-align: right;
+    }
+    
+    .chat-modal-input {
+      display: flex;
+      padding: 12px 16px;
+      border-top: 1px solid #eee;
+      gap: 8px;
+    }
+    
+    .chat-modal-input input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      border-radius: 20px;
+      font-size: 14px;
+      outline: none;
+    }
+    
+    .chat-modal-input input:focus {
+      border-color: #667eea;
+    }
+    
+    .chat-modal-input button {
+      padding: 10px 20px;
+      background: #667eea;
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    
+    .chat-modal-input button:hover {
+      background: #5a67d8;
+    }
+    
+    @media (max-width: 480px) {
+      .chat-modal-overlay {
+        bottom: 0;
+        right: 0;
+        left: 0;
+      }
+      
+      .chat-modal {
+        width: 100%;
+        height: 70vh;
+        border-radius: 16px 16px 0 0;
+      }
+    }
+  </style>
+  <% } %>
+
+  <script src="/js/main.js"></script>
+  <% if (typeof user !== 'undefined' && user) { %>
+  <script>
+    // 通知下拉面板
+    (function() {
+      const notifToggle = document.getElementById('notification-toggle');
+      const notifDropdown = document.getElementById('notification-dropdown');
+      const notifList = document.getElementById('notification-list');
+      const markAllRead = document.getElementById('mark-all-read');
+
+      if (notifToggle && notifDropdown) {
+        notifToggle.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const isOpen = notifDropdown.style.display !== 'none';
+          notifDropdown.style.display = isOpen ? 'none' : 'block';
+          if (!isOpen) loadNotifications();
+        });
+
+        document.addEventListener('click', function(e) {
+          if (!notifDropdown.contains(e.target) && e.target !== notifToggle) {
+            notifDropdown.style.display = 'none';
+          }
+        });
+      }
+
+      if (markAllRead) {
+        markAllRead.addEventListener('click', async function() {
+          await fetch('/api/notifications/read-all', { method: 'PATCH' });
+          loadNotifications();
+          updateNotifBadge();
+        });
+      }
+
+      async function loadNotifications() {
+        try {
+          const res = await fetch('/api/notifications?limit=10');
+          const data = await res.json();
+          if (data.success && data.data) {
+            renderNotifications(data.data.notifications || []);
+          }
+        } catch (err) {
+          console.error('加载通知失败:', err);
+        }
+      }
+
+      function getNotifUrl(n) {
+        var tt = n.target_type || '';
+        var tid = n.target_id || '';
+        if (tt === 'article' && tid) return '/articles/' + tid;
+        if (tt === 'comment' && tid) return '/articles/' + tid;
+        if (tt === 'user' && tid) return '/user/' + tid;
+        if (tt === 'conversation' && tid) return '/chat/' + tid;
+        if (tt === 'image' && tid) return '/image-share/image/' + tid;
+        if (tt === 'permission') return '/permissions/apply';
+        if (tt === 'account') return '/auth/frontend/change-password';
+        return null;
+      }
+
+      function renderNotifications(notifications) {
+        if (!notifList) return;
+        if (notifications.length === 0) {
+          notifList.innerHTML = '<div class="notification-empty">暂无通知</div>';
+          return;
+        }
+        notifList.innerHTML = notifications.map(function(n) {
+          var url = getNotifUrl(n);
+          var clickable = url ? ' clickable' : '';
+          return '<div class="notification-item ' + (n.is_read === 0 ? 'unread' : '') + clickable + '" data-id="' + n.id + '" data-url="' + (url || '') + '">' +
+            '<div class="notif-title">' + escapeHtml(n.title) + '</div>' +
+            '<div class="notif-content">' + escapeHtml(n.content) + '</div>' +
+            '<div class="notif-time">' + new Date(n.created_at).toLocaleString('zh-CN') + '</div>' +
+            (url ? '<div class="notif-action">点击查看详情 →</div>' : '') +
+          '</div>';
+        }).join('');
+
+        notifList.querySelectorAll('.notification-item').forEach(function(item) {
+          item.addEventListener('click', function() {
+            var id = this.dataset.id;
+            var url = this.dataset.url;
+            if (this.classList.contains('unread')) {
+              fetch('/api/notifications/' + id + '/read', { method: 'PATCH' });
+              this.classList.remove('unread');
+              updateNotifBadge();
+            }
+            if (url) {
+              notifDropdown.style.display = 'none';
+              window.location.href = url;
+            }
+          });
+        });
+      }
+
+      function escapeHtml(text) {
+        if (!text) return '';
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      async function updateNotifBadge() {
+        try {
+          var res = await fetch('/api/notifications/unread-count');
+          var data = await res.json();
+          var badge = document.getElementById('notify-unread-badge');
+          if (badge && data.success) {
+            badge.textContent = data.data.count;
+            badge.style.display = data.data.count > 0 ? '' : 'none';
+          }
+        } catch (err) {}
+      }
+
+      // 私信未读数
+      async function updateDmBadge() {
+        try {
+          var res = await fetch('/api/messages/unread-total');
+          var data = await res.json();
+          var badge = document.getElementById('dm-unread-badge');
+          if (badge && data.success) {
+            badge.textContent = data.data.count;
+            badge.style.display = data.data.count > 0 ? '' : 'none';
+          }
+        } catch (err) {}
+      }
+
+      // 初始加载
+      updateNotifBadge();
+      updateDmBadge();
+
+      // 每30秒轮询
+      setInterval(function() {
+        updateNotifBadge();
+        updateDmBadge();
+      }, 30000);
+    })();
+  </script>
+  <% } %>
+  
+  <script>
+    // 移动端菜单
+    document.addEventListener('DOMContentLoaded', function() {
+      var mobileMenuBtn = document.getElementById('mobileMenuBtn');
+      var navMain = document.getElementById('navMain');
+      
+      if (mobileMenuBtn && navMain) {
+        mobileMenuBtn.addEventListener('click', function() {
+          navMain.classList.toggle('open');
+          this.textContent = navMain.classList.contains('open') ? '✕' : '☰';
+        });
+        
+        // 点击导航链接后关闭菜单
+        navMain.querySelectorAll('a').forEach(function(link) {
+          link.addEventListener('click', function() {
+            navMain.classList.remove('open');
+            mobileMenuBtn.textContent = '☰';
+          });
+        });
+        
+        // 点击外部关闭菜单
+        document.addEventListener('click', function(e) {
+          if (!navMain.contains(e.target) && e.target !== mobileMenuBtn) {
+            navMain.classList.remove('open');
+            mobileMenuBtn.textContent = '☰';
+          }
+        });
+      }
+    });
+  </script>
+  
+  <% if (typeof user !== 'undefined' && user) { %>
+  <script>
+    // 私信弹窗
+    var currentChatConvId = null;
+    var currentChatUserId = null;
+    
+    // 打开私信弹窗（与指定用户）
+    async function openChatWithUser(userId, username, avatar) {
+      currentChatUserId = userId;
+      document.getElementById('chatModalAvatar').src = avatar || '/assets/images/default-avatar.png';
+      document.getElementById('chatModalUsername').textContent = username || '私信';
+      document.getElementById('chatModal').style.display = 'block';
+      
+      // 创建或获取对话
+      try {
+        var res = await fetch('/api/messages/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_user_id: userId })
+        });
+        var data = await res.json();
+        
+        if (data.success && data.data) {
+          currentChatConvId = data.data.id;
+          loadChatMessages(currentChatConvId);
+        } else {
+          alert(data.error || '无法创建对话');
+          closeChatModal();
+        }
+      } catch (err) {
+        alert('创建对话失败');
+        closeChatModal();
+      }
+    }
+    
+    // 打开私信弹窗（通过对话ID）
+    async function openChatModal(convId) {
+      currentChatConvId = convId;
+      document.getElementById('chatModal').style.display = 'block';
+      loadChatMessages(convId);
+    }
+    
+    // 加载消息
+    async function loadChatMessages(convId) {
+      var container = document.getElementById('chatModalMessages');
+      container.innerHTML = '<div class="chat-modal-empty">加载中...</div>';
+      
+      try {
+        var res = await fetch('/api/messages/conversations/' + convId);
+        var data = await res.json();
+        
+        if (data.success && data.data) {
+          var otherUser = data.data.other_user;
+          document.getElementById('chatModalAvatar').src = otherUser.avatar || '/assets/images/default-avatar.png';
+          document.getElementById('chatModalUsername').textContent = otherUser.nickname || otherUser.username;
+          
+          var messages = data.data.messages || [];
+          if (messages.length === 0) {
+            container.innerHTML = '<div class="chat-modal-empty">暂无消息，开始聊天吧</div>';
+          } else {
+            container.innerHTML = messages.map(function(msg) {
+              var isSent = msg.sender_id === <%= user.id %>;
+              return '<div class="chat-modal-msg ' + (isSent ? 'sent' : 'received') + '">' +
+                '<img src="' + (isSent ? '<%= user.avatar || "/assets/images/default-avatar.png" %>' : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="msg-avatar">' +
+                '<div>' +
+                  '<div class="msg-content">' + escapeHtml(msg.content) + '</div>' +
+                  '<div class="msg-time">' + formatTime(msg.created_at) + '</div>' +
+                '</div>' +
+              '</div>';
+            }).join('');
+            container.scrollTop = container.scrollHeight;
+          }
+          
+          // 标记已读
+          fetch('/api/messages/conversations/' + convId + '/read', { method: 'PATCH' });
+        }
+      } catch (err) {
+        container.innerHTML = '<div class="chat-modal-empty">加载失败</div>';
+      }
+    }
+    
+    // 关闭弹窗
+    function closeChatModal() {
+      document.getElementById('chatModal').style.display = 'none';
+      currentChatConvId = null;
+      currentChatUserId = null;
+    }
+    
+    // 发送消息
+    document.getElementById('chatModalForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var input = document.getElementById('chatModalInput');
+      var content = input.value.trim();
+      
+      if (!content || !currentChatConvId) return;
+      
+      try {
+        var res = await fetch('/api/messages/conversations/' + currentChatConvId, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: content })
+        });
+        var data = await res.json();
+        
+        if (data.success) {
+          input.value = '';
+          // 添加消息到列表
+          var container = document.getElementById('chatModalMessages');
+          var emptyMsg = container.querySelector('.chat-modal-empty');
+          if (emptyMsg) emptyMsg.remove();
+          
+          var msgHtml = '<div class="chat-modal-msg sent">' +
+            '<img src="<%= user.avatar || "/assets/images/default-avatar.png" %>" alt="" class="msg-avatar">' +
+            '<div>' +
+              '<div class="msg-content">' + escapeHtml(content) + '</div>' +
+              '<div class="msg-time">刚刚</div>' +
+            '</div>' +
+          '</div>';
+          container.insertAdjacentHTML('beforeend', msgHtml);
+          container.scrollTop = container.scrollHeight;
+        } else {
+          alert(data.error || '发送失败');
+        }
+      } catch (err) {
+        alert('发送失败');
+      }
+    });
+    
+    function escapeHtml(text) {
+      if (!text) return '';
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    function formatTime(timeStr) {
+      if (!timeStr) return '';
+      var date = new Date(timeStr);
+      var now = new Date();
+      var diff = now - date;
+      
+      if (diff < 60000) return '刚刚';
+      if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+      if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+      return date.toLocaleDateString('zh-CN');
+    }
+  </script>
+  <% } %>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/pwa/sw.js').then(function(reg) {
+          console.log('SW registered:', reg.scope);
+        }).catch(function(err) {
+          console.log('SW registration failed:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

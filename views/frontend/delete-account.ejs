@@ -1,0 +1,167 @@
+<div class="container" style="max-width: 650px; margin: 0 auto;">
+  <div class="page-header">
+    <h1>注销账号</h1>
+  </div>
+
+  <% if (user.role === 'super_admin') { %>
+    <div class="delete-warning-box" style="background: #f8d7da; border: 2px solid #dc3545; border-radius: 8px; padding: 20px; margin-bottom: 20px; text-align: center;">
+      <div style="font-size: 48px; margin-bottom: 15px;">&#128737;</div>
+      <h3 style="color: #721c24; margin-top: 0;">无法注销超级管理员账户</h3>
+      <p style="color: #721c24; line-height: 1.8;">
+        超级管理员账户是系统的核心账户，不可自行注销。<br>
+        如需注销此账户，请先将角色变更为普通管理员或其他角色后再进行操作。
+      </p>
+      <a href="/" class="btn" style="background: #6c757d; color: #fff; text-decoration: none; padding: 12px 30px; border-radius: 5px; font-size: 16px; display: inline-block; margin-top: 10px;">
+        返回首页
+      </a>
+    </div>
+  <% } else { %>
+
+  <div class="delete-warning-box" style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+    <h3 style="color: #856404; margin-top: 0;">&#9888; 重要警告</h3>
+    <ul style="color: #856404; line-height: 1.8; padding-left: 20px;">
+      <li>注销账号后，您的账号将被<strong>永久禁用</strong>，无法登录</li>
+      <li>您的所有数据（文章、图片、评论、小说等）将<strong>保留在系统中</strong>但无法继续管理</li>
+      <li>您的用户名将被<strong>锁定</strong>，无法被他人重新注册使用</li>
+      <li>此操作<strong>不可撤销</strong>，如需恢复请联系网站管理员</li>
+    </ul>
+  </div>
+
+  <% if (typeof error !== 'undefined' && error) { %>
+    <div class="alert alert-error" style="background: #f8d7da; color: #721c24; padding: 12px 15px; border-radius: 5px; margin-bottom: 20px;">
+      <%= error %>
+    </div>
+  <% } %>
+
+  <% if (typeof success !== 'undefined' && success) { %>
+    <div class="alert alert-success" style="background: #d4edda; color: #155724; padding: 12px 15px; border-radius: 5px; margin-bottom: 20px;">
+      <%= success %>
+    </div>
+  <% } %>
+
+  <% if (step === 'confirm') { %>
+    <!-- 第一步：身份确认 -->
+    <% if (typeof agreementContent !== 'undefined' && agreementContent) { %>
+    <div style="background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px;">
+      <h3 style="margin-top: 0; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">账户注销协议</h3>
+      <div class="agreement-scroll-box" style="max-height: 250px; overflow-y: auto; padding: 15px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 15px; font-size: 14px; line-height: 1.8; color: #555;">
+        <%- agreementContent %>
+      </div>
+    </div>
+    <% } %>
+
+    <form id="delete-confirm-form" action="/auth/delete-account" method="POST" style="background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label for="password" style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">
+          请输入您的登录密码以确认操作 <span style="color: red;">*</span>
+        </label>
+        <input type="password" id="password" name="password" required
+          style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; box-sizing: border-box;"
+          placeholder="请输入当前密码">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label for="confirm" style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">
+          请输入以下文字以确认：<strong style="color: #dc3545;">我已知晓风险，确认注销账号</strong> <span style="color: red;">*</span>
+        </label>
+        <input type="text" id="confirm" name="confirm" required
+          style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; box-sizing: border-box;"
+          placeholder="请完整输入上面的文字">
+      </div>
+
+      <% if (typeof agreementContent !== 'undefined' && agreementContent) { %>
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label style="display: flex; align-items: flex-start; font-weight: 600; color: #333; cursor: pointer;">
+          <input type="checkbox" name="agree" value="1" id="agree-checkbox" style="margin-right: 8px; margin-top: 3px;">
+          <span>我已阅读并同意<strong>账户注销协议</strong>的全部内容 <span style="color: red;">*</span></span>
+        </label>
+      </div>
+      <% } %>
+
+      <div style="display: flex; gap: 12px;">
+        <button type="submit" id="confirm-btn" class="btn" style="background: #dc3545; color: #fff; border: none; padding: 12px 30px; border-radius: 5px; font-size: 16px; cursor: pointer; flex: 1;"
+          <% if (typeof agreementContent !== 'undefined' && agreementContent) { %>disabled<% } %>>
+          <% if (smtpConfigured && userHasEmail) { %>
+            发送邮箱验证码
+          <% } else { %>
+            确认注销账号
+          <% } %>
+        </button>
+        <a href="/" class="btn" style="background: #6c757d; color: #fff; text-decoration: none; padding: 12px 30px; border-radius: 5px; font-size: 16px; text-align: center;">
+          取消
+        </a>
+      </div>
+    </form>
+
+    <% if (typeof agreementContent !== 'undefined' && agreementContent) { %>
+    <script>
+      (function() {
+        var checkbox = document.getElementById('agree-checkbox');
+        var btn = document.getElementById('confirm-btn');
+        if (checkbox && btn) {
+          checkbox.addEventListener('change', function() {
+            btn.disabled = !this.checked;
+            if (this.checked) {
+              btn.style.opacity = '1';
+              btn.style.cursor = 'pointer';
+            } else {
+              btn.style.opacity = '0.6';
+              btn.style.cursor = 'not-allowed';
+            }
+          });
+          btn.style.opacity = '0.6';
+          btn.style.cursor = 'not-allowed';
+        }
+      })();
+    </script>
+    <% } %>
+
+  <% } else if (step === 'verify') { %>
+    <!-- 第二步：邮箱验证 -->
+        <div style="background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+      <form action="/auth/delete-account" method="POST">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+        <div style="text-align: center; margin-bottom: 20px;">
+          <div style="font-size: 48px; margin-bottom: 10px;">&#9993;</div>
+          <h3 style="color: #333; margin-bottom: 8px;">邮箱验证</h3>
+          <p style="color: #666; font-size: 14px;">
+            验证码已发送至 <strong><%= user.email %></strong>
+          </p>
+          <p style="color: #999; font-size: 12px;">验证码有效期为10分钟，如未收到请检查垃圾邮件箱</p>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label for="code" style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">
+            请输入邮箱验证码 <span style="color: red;">*</span>
+          </label>
+          <input type="text" id="code" name="code" required maxlength="8" autocomplete="off"
+            style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 20px; box-sizing: border-box; text-align: center; letter-spacing: 4px;"
+            placeholder="请输入验证码">
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-bottom: 15px;">
+          <button type="submit" class="btn" style="background: #dc3545; color: #fff; border: none; padding: 12px 30px; border-radius: 5px; font-size: 16px; cursor: pointer; flex: 1;">
+            确认注销账号
+          </button>
+          <a href="/" class="btn" style="background: #6c757d; color: #fff; text-decoration: none; padding: 12px 30px; border-radius: 5px; font-size: 16px; text-align: center;">
+            取消
+          </a>
+        </div>
+      </form>
+
+      <div style="text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+        <form action="/auth/delete-account/send-code" method="POST" style="display: inline;">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" style="background: none; border: none; color: #007bff; cursor: pointer; font-size: 13px; text-decoration: underline;">
+            重新发送验证码
+          </button>
+        </form>
+      </div>
+    </div>
+  <% } %>
+
+  <% } %>
+</div>

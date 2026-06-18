@@ -1,0 +1,50 @@
+<%- include('../header') %>
+
+<h2 style="margin-bottom: 20px;"><i class="fas fa-images"></i> 我的图片</h2>
+
+<div style="margin-bottom: 20px;">
+  <a href="/image-share/user/upload" class="btn btn-primary"><i class="fas fa-upload"></i> 上传图片</a>
+</div>
+
+<% if (myImages.length > 0) { %>
+  <div class="image-grid">
+    <% myImages.forEach(function(img) { %>
+      <div class="image-card">
+        <a href="/image-share/image?id=<%= img.id %>">
+          <img src="<%= img.url %>" alt="<%= img.title %>">
+        </a>
+        <div class="info">
+          <div class="title"><%= img.title %></div>
+          <div class="meta">
+            <span><i class="fas fa-folder"></i> <%= img.cate_name || '未分类' %></span>
+            <span style="margin-left: 10px;">
+              <% if (img.status === 0) { %>
+                <span class="badge badge-warning">待审核</span>
+              <% } else if (img.status === 1) { %>
+                <span class="badge badge-success">已通过</span>
+              <% } else { %>
+                <span class="badge badge-danger">已驳回</span>
+              <% } %>
+            </span>
+          </div>
+          <div style="margin-top: 8px;">
+            <a href="/image-share/user/edit?id=<%= img.id %>" class="btn btn-warning btn-sm"><i class="fas fa-edit"></i> 编辑</a>
+            <form action="/image-share/user/delete" method="POST" style="display: inline;" onsubmit="return confirm('确定要删除这张图片吗？')">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="hidden" name="id" value="<%= img.id %>">
+              <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i> 删除</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    <% }); %>
+  </div>
+<% } else { %>
+  <div class="card empty-state">
+    <i class="fas fa-images"></i>
+    <p>您还没有上传过图片</p>
+    <a href="/image-share/user/upload" class="btn btn-primary" style="margin-top: 15px;">去上传</a>
+  </div>
+<% } %>
+
+<%- include('../footer') %>

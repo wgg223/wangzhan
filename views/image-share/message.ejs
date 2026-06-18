@@ -1,0 +1,23 @@
+<%- include('header') %>
+
+<div class="card" style="max-width: 500px; margin: 50px auto; text-align: center; padding: 40px;">
+  <% if (type === 'success') { %>
+    <i class="fas fa-check-circle" style="font-size: 48px; color: #28a745; margin-bottom: 15px;"></i>
+  <% } else if (type === 'error') { %>
+    <i class="fas fa-times-circle" style="font-size: 48px; color: #dc3545; margin-bottom: 15px;"></i>
+  <% } else { %>
+    <i class="fas fa-info-circle" style="font-size: 48px; color: #667eea; margin-bottom: 15px;"></i>
+  <% } %>
+  
+  <h2 style="margin-bottom: 15px;"><%= message %></h2>
+  
+  <div style="margin-top: 20px;">
+    <% if (typeof redirect !== 'undefined' && redirect) { %>
+      <a href="<%= redirect %>" class="btn btn-primary">返回</a>
+    <% } else { %>
+      <a href="/image-share" class="btn btn-primary">返回首页</a>
+    <% } %>
+  </div>
+</div>
+
+<%- include('footer') %>

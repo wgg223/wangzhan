@@ -1,0 +1,543 @@
+<div class="container">
+  <div class="permission-apply-page">
+    <h1>权限申请</h1>
+    <p class="subtitle">选择您需要申请的权限，提交后等待管理员审核</p>
+
+    <% if (rateLimitInfo && rateLimitInfo.remaining <= 2) { %>
+      <div class="rate-limit-notice">
+        <span class="rate-limit-icon">⏰</span>
+        <span>本小时还可申请 <strong><%= rateLimitInfo.remaining %></strong> 次权限</span>
+        <% if (rateLimitInfo.resetAt) { %>
+          <span class="reset-time">（<%= new Date(rateLimitInfo.resetAt).toLocaleTimeString('zh-CN') %> 重置）</span>
+        <% } %>
+      </div>
+    <% } %>
+
+    <div class="user-perms-section">
+      <h2>我已拥有的权限</h2>
+      <% if (userPermKeys.length > 0) { %>
+        <div class="perms-grid">
+          <% userPermKeys.forEach(function(pk) { %>
+            <% var perm = null; %>
+            <% Object.values(permissionsByCategory).forEach(function(cat) { %>
+              <% cat.permissions.forEach(function(p) { if (p.perm_key === pk) perm = p; }); %>
+            <% }); %>
+            <div class="perm-card owned">
+              <span class="perm-name"><%= perm ? perm.perm_name : pk %></span>
+              <% if (perm && perm.description) { %>
+                <span class="perm-desc"><%= perm.description %></span>
+              <% } %>
+              <span class="status-badge owned">已拥有</span>
+            </div>
+          <% }); %>
+        </div>
+      <% } else { %>
+        <p class="empty-text">暂无特殊权限</p>
+      <% } %>
+    </div>
+
+    <% Object.entries(permissionsByCategory).forEach(function([catKey, category]) { %>
+      <div class="apply-section">
+        <h2>
+          <% if (catKey === 'basic') { %>📌<% } %>
+          <% if (catKey === 'content') { %>📝<% } %>
+          <% if (catKey === 'media') { %>🖼️<% } %>
+          <% if (catKey === 'community') { %>💬<% } %>
+          <% if (catKey === 'admin') { %>⚙️<% } %>
+          <%= category.name %>
+        </h2>
+        <p class="section-desc"><%= category.description %></p>
+        <div class="perms-grid">
+          <% category.permissions.forEach(function(perm) { %>
+            <%- renderPermCard(perm) %>
+          <% }); %>
+        </div>
+      </div>
+    <% }); %>
+
+    <div class="history-section">
+      <h2>📋 申请记录</h2>
+      <% if (applications.length > 0) { %>
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>权限</th>
+              <th>申请时间</th>
+              <th>状态</th>
+              <th>拒绝原因</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% applications.forEach(function(app) { %>
+              <tr>
+                <td><%= app.perm_name || app.perm_key %></td>
+                <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
+                <td>
+                  <span class="status-badge <%= app.status %>">
+                    <% if (app.status === 'pending') { %>待审核<% } %>
+                    <% if (app.status === 'approved') { %>已通过<% } %>
+                    <% if (app.status === 'rejected') { %>已拒绝<% } %>
+                  </span>
+                </td>
+                <td><% if (app.status === 'rejected') { %><span class="reject-reason"><%= app.reject_reason || '未填写' %></span><% } else { %>-<% } %></td>
+                <td>
+                  <% if (app.status === 'pending') { %>
+                    <button class="btn btn-small btn-cancel" onclick="cancelApplicationById(<%= app.id %>)">取消</button>
+                  <% } else { %>
+                    -
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <p class="empty-text">暂无申请记录</p>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<% function renderPermCard(perm) { %>
+  <div class="perm-card <%= perm.isOwned ? 'owned' : (perm.isPending ? 'pending' : 'available') %>">
+    <span class="perm-name"><%= perm.perm_name %></span>
+    <% if (perm.description) { %>
+      <span class="perm-desc"><%= perm.description %></span>
+    <% } %>
+    <span class="perm-key"><%= perm.perm_key %></span>
+    <% if (perm.isOwned) { %>
+      <span class="status-badge owned">已拥有</span>
+    <% } else if (perm.isPending) { %>
+      <span class="status-badge pending">审核中</span>
+      <button class="btn btn-small btn-cancel" onclick="cancelApplication('<%= perm.perm_key %>')">取消申请</button>
+    <% } else { %>
+      <button class="btn btn-small btn-primary" onclick="showApplyModal('<%= perm.perm_key %>', '<%= perm.perm_name %>')">申请</button>
+    <% } %>
+  </div>
+<% } %>
+
+<!-- 申请弹窗 -->
+<div id="applyModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>申请权限 - <span id="modalPermName"></span></h3>
+      <button class="modal-close" onclick="closeApplyModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="applyPermKey">
+      <div class="form-group">
+        <label>申请理由（可选）</label>
+        <textarea id="applyReason" rows="4" placeholder="请说明您申请此权限的原因..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="submitApplication()">提交申请</button>
+      <button class="btn btn-secondary" onclick="closeApplyModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.permission-apply-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+.permission-apply-page h1 {
+  font-size: 28px;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: #666;
+  margin-bottom: 32px;
+}
+
+h2 {
+  font-size: 20px;
+  color: #444;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #eee;
+}
+
+.section-desc {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.perm-group {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.perm-group h3 {
+  font-size: 16px;
+  color: #495057;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.perms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.perm-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.perm-card.owned {
+  border-color: #27ae60;
+  background: #f0fff4;
+}
+
+.perm-card.pending {
+  border-color: #f39c12;
+  background: #fffdf0;
+}
+
+.perm-card.available {
+  border-color: #3498db;
+}
+
+.perm-card.admin {
+  border-left: 3px solid #9b59b6;
+}
+
+.perm-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 14px;
+}
+
+.perm-desc {
+  font-size: 12px;
+  color: #666;
+}
+
+.perm-key {
+  font-size: 11px;
+  color: #0d6efd;
+  font-family: monospace;
+  background: #e7f1ff;
+  padding: 2px 6px;
+  border-radius: 3px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  width: fit-content;
+}
+
+.status-badge.owned {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.status-badge.approved {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.rejected {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.btn-primary {
+  background: #3498db;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+}
+
+.btn-cancel {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.btn-cancel:hover {
+  background: #c0392b;
+}
+
+.empty-text {
+  color: #999;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.history-table th,
+.history-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.history-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+}
+
+.reject-reason {
+  color: #721c24;
+  font-size: 13px;
+  background: #f8d7da;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 8px;
+  width: 450px;
+  max-width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #999;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.form-group textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.modal-footer {
+  padding: 16px 20px;
+  border-top: 1px solid #eee;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.user-perms-section,
+.apply-section,
+.history-section {
+  margin-bottom: 40px;
+}
+
+.rate-limit-notice {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #856404;
+}
+
+.rate-limit-icon {
+  font-size: 18px;
+}
+
+.reset-time {
+  color: #666;
+  font-size: 12px;
+}
+</style>
+
+<script>
+function showApplyModal(permKey, permName) {
+  document.getElementById('applyPermKey').value = permKey;
+  document.getElementById('modalPermName').textContent = permName;
+  document.getElementById('applyReason').value = '';
+  document.getElementById('applyModal').style.display = 'flex';
+}
+
+function closeApplyModal() {
+  document.getElementById('applyModal').style.display = 'none';
+}
+
+function submitApplication() {
+  var permKey = document.getElementById('applyPermKey').value;
+  var reason = document.getElementById('applyReason').value;
+
+  if (reason && reason.length > 500) {
+    alert('申请原因不能超过500字');
+    return;
+  }
+
+  fetch('/permissions/apply', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      perm_key: permKey,
+      reason: reason
+    })
+  })
+  .then(function(res) { 
+    if (res.status === 429) {
+      throw new Error('申请过于频繁，请稍后再试');
+    }
+    return res.json(); 
+  })
+  .then(function(data) {
+    if (data.success) {
+      alert(data.message);
+      location.reload();
+    } else {
+      alert(data.error || '申请失败');
+    }
+  })
+  .catch(function(err) {
+    alert(err.message || '请求失败');
+  });
+}
+
+function cancelApplication(permKey) {
+  if (!confirm('确定要取消此权限的申请吗？')) return;
+
+  // 查找对应的申请ID
+  var rows = document.querySelectorAll('.history-table tbody tr');
+  var appId = null;
+  rows.forEach(function(row) {
+    var statusBadge = row.querySelector('.status-badge');
+    if (statusBadge && statusBadge.classList.contains('pending')) {
+      var btn = row.querySelector('.btn-cancel');
+      if (btn) {
+        var onclick = btn.getAttribute('onclick');
+        var match = onclick && onclick.match(/cancelApplicationById\((\d+)\)/);
+        if (match) appId = match[1];
+      }
+    }
+  });
+
+  if (appId) {
+    cancelApplicationById(parseInt(appId));
+  }
+}
+
+function cancelApplicationById(appId) {
+  if (!confirm('确定要取消此申请吗？')) return;
+
+  fetch('/permissions/cancel', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      application_id: appId
+    })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (data.success) {
+      alert(data.message);
+      location.reload();
+    } else {
+      alert(data.error || '取消失败');
+    }
+  })
+  .catch(function(err) {
+    alert('请求失败: ' + err.message);
+  });
+}
+
+// 点击遮罩层关闭
+document.getElementById('applyModal').addEventListener('click', function(e) {
+  if (e.target === this) closeApplyModal();
+});
+</script>

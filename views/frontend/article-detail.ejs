@@ -1,0 +1,514 @@
+<div class="container">
+  <article class="article-detail">
+    <h1><%= article.title %></h1>
+    <div class="article-meta">
+      <span>发布时间：<%= new Date(article.created_at).toLocaleDateString('zh-CN') %></span>
+      <% if (article.author_name) { %>
+        <span>
+          作者：<a href="/user/<%= article.author_uid || article.author_id %>"><%= article.author_name %></a>
+          <% if (typeof user !== 'undefined' && user && user.id !== article.author_id) { %>
+            <button class="btn-follow-small follow-btn" data-user-id="<%= article.author_id %>" data-following="false">+ 关注</button>
+            <button class="btn-message-small" onclick="openChatWithUser(<%= article.author_id %>, '<%= article.author_name %>', '/assets/images/default-avatar.png')">私信</button>
+          <% } %>
+        </span>
+      <% } %>
+      <% if (article.category) { %>
+        <span>分类：<%= article.category %></span>
+      <% } %>
+    </div>
+    <% if (article.cover_image) { %>
+      <div class="article-cover-large">
+        <img src="<%= article.cover_image %>" alt="<%= article.title %>">
+      </div>
+    <% } %>
+    <div class="article-body">
+      <%- article.content %>
+    </div>
+    <div class="article-footer">
+      <div class="article-actions-left">
+        <a href="/articles" class="btn">返回文章列表</a>
+        <% if (typeof user !== 'undefined' && user) { %>
+          <button class="btn like-btn" data-type="article" data-id="<%= article.id %>">
+            <span class="like-icon">♡</span>
+            <span class="like-count">点赞</span>
+          </button>
+        <% } %>
+      </div>
+      <div class="article-actions-right">
+        <% if (typeof user !== 'undefined' && user) { %>
+          <% if (currentUserId === article.author_id || user.role === 'admin' || user.role === 'super_admin') { %>
+            <a href="/articles/<%= article.id %>/edit" class="btn btn-primary">编辑文章</a>
+          <% } %>
+        <% } %>
+      </div>
+    </div>
+  </article>
+  
+  <!-- 评论区 -->
+  <section class="comments-section">
+    <h2>评论 (<%= comments ? comments.length : 0 %>)</h2>
+    
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    
+    <!-- 评论列表 -->
+    <% if (comments && comments.length > 0) { %>
+      <div class="comments-list">
+        <% comments.forEach(comment => { %>
+          <div class="comment-item" id="comment-<%= comment.id %>">
+            <div class="comment-avatar">
+              <span class="avatar-icon">
+                <%= (comment.commenter_name || comment.visitor_name || '匿')[0] %>
+              </span>
+            </div>
+            <div class="comment-body">
+              <div class="comment-author">
+                <strong><%= comment.commenter_name || comment.visitor_name || '匿名' %></strong>
+                <span class="comment-time"><%= new Date(comment.created_at).toLocaleString('zh-CN') %></span>
+              </div>
+              <div class="comment-text"><%= comment.content %></div>
+              <div class="comment-actions">
+                <a href="javascript:void(0)" onclick="showReplyForm(<%= comment.id %>)">回复</a>
+              </div>
+              
+              <!-- 回复表单 -->
+              <div class="reply-form-container" id="reply-form-<%= comment.id %>" style="display: none;">
+                <form action="/articles/<%= article.id %>/comment" method="POST">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input type="hidden" name="parent_id" value="<%= comment.id %>">
+                  <% if (!user) { %>
+                    <div class="reply-form-row">
+                      <input type="text" name="visitor_name" placeholder="您的姓名 *" required class="reply-input">
+                      <input type="email" name="visitor_email" placeholder="您的邮箱 *" required class="reply-input">
+                    </div>
+                  <% } %>
+                  <textarea name="content" rows="3" placeholder="写下您的回复..." required class="reply-textarea"></textarea>
+                  <button type="submit" class="btn btn-small btn-primary">提交回复</button>
+                  <a href="javascript:void(0)" class="btn btn-small" onclick="hideReplyForm(<%= comment.id %>)">取消</a>
+                </form>
+              </div>
+              
+              <!-- 子评论 -->
+              <% if (comment.replies && comment.replies.length > 0) { %>
+                <div class="replies-list">
+                  <% comment.replies.forEach(reply => { %>
+                    <div class="reply-item">
+                      <div class="reply-avatar">
+                        <span class="avatar-icon small">
+                          <%= (reply.commenter_name || reply.visitor_name || '匿')[0] %>
+                        </span>
+                      </div>
+                      <div class="reply-body">
+                        <div class="comment-author">
+                          <strong><%= reply.commenter_name || reply.visitor_name || '匿名' %></strong>
+                          <span class="comment-time"><%= new Date(reply.created_at).toLocaleString('zh-CN') %></span>
+                        </div>
+                        <div class="comment-text"><%= reply.content %></div>
+                      </div>
+                    </div>
+                  <% }) %>
+                </div>
+              <% } %>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <p class="no-comments">暂无评论，快来抢沙发吧！</p>
+    <% } %>
+    
+    <!-- 发表评论 -->
+    <div class="comment-form-wrapper">
+      <h3>发表评论</h3>
+      <form action="/articles/<%= article.id %>/comment" method="POST" class="comment-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <% if (!user) { %>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="visitor_name">姓名 *</label>
+              <input type="text" id="visitor_name" name="visitor_name" required>
+            </div>
+            <div class="form-group">
+              <label for="visitor_email">邮箱 *</label>
+              <input type="email" id="visitor_email" name="visitor_email" required>
+            </div>
+          </div>
+        <% } else { %>
+          <p class="logged-in-as">登录为：<strong><%= user.username %></strong></p>
+        <% } %>
+        <div class="form-group">
+          <label for="content">评论内容 *</label>
+          <textarea id="content" name="content" rows="5" required placeholder="写下您的评论..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">提交评论</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<style>
+/* 评论样式 */
+.comments-section {
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid #eee;
+}
+
+.comments-section h2 {
+  margin-bottom: 20px;
+  font-size: 22px;
+  color: #333;
+}
+
+.comments-list {
+  margin-bottom: 30px;
+}
+
+.comment-item {
+  display: flex;
+  gap: 15px;
+  padding: 20px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.comment-avatar, .reply-avatar {
+  flex-shrink: 0;
+}
+
+.avatar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: #007bff;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.avatar-icon.small {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+
+.comment-body, .reply-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.comment-author {
+  margin-bottom: 5px;
+}
+
+.comment-author strong {
+  font-size: 15px;
+  color: #333;
+}
+
+.comment-time {
+  font-size: 12px;
+  color: #999;
+  margin-left: 10px;
+}
+
+.comment-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #555;
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.comment-actions {
+  font-size: 13px;
+}
+
+.comment-actions a {
+  color: #007bff;
+  cursor: pointer;
+}
+
+/* 回复列表 */
+.replies-list {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.reply-item {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.reply-item + .reply-item {
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+}
+
+/* 回复表单 */
+.reply-form-container {
+  margin-top: 10px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.reply-form-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.reply-input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.reply-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  resize: vertical;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+/* 发表评论表单 */
+.comment-form-wrapper {
+  background: #f8f9fa;
+  padding: 25px;
+  border-radius: 8px;
+  margin-top: 20px;
+}
+
+.comment-form-wrapper h3 {
+  margin-bottom: 15px;
+  font-size: 18px;
+  color: #333;
+}
+
+.logged-in-as {
+  margin-bottom: 15px;
+  color: #666;
+  font-size: 14px;
+}
+
+.no-comments {
+  text-align: center;
+  color: #999;
+  padding: 30px;
+  font-size: 15px;
+}
+
+.alert-success {
+  background: #d4edda;
+  color: #155724;
+  padding: 12px 15px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+}
+
+.alert-error {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 12px 15px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+}
+
+/* 文章底部操作栏 */
+.article-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.article-actions-left,
+.article-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 关注按钮（小） */
+.btn-follow-small {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  background: var(--primary, #6366f1);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 8px;
+  transition: all 0.2s;
+}
+
+.btn-follow-small:hover {
+  background: var(--primary-dark, #4f46e5);
+}
+
+.btn-follow-small.following {
+  background: #f0f0f0;
+  color: #666;
+}
+
+.btn-follow-small.following:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+/* 私信按钮（小） */
+.btn-message-small {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  background: #f0f0f0;
+  color: #666;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 4px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn-message-small:hover {
+  background: #e0e0e0;
+  color: #333;
+}
+
+/* 点赞按钮 */
+.like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 16px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.like-btn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.like-btn.liked {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.like-btn .like-icon {
+  font-size: 16px;
+}
+
+.like-btn.liked .like-icon {
+  color: #ef4444;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // 关注按钮
+  document.querySelectorAll('.follow-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      var userId = this.dataset.userId;
+      var btnEl = this;
+      
+      try {
+        var res = await fetch('/api/user/' + userId + '/follow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await res.json();
+        
+        if (data.success) {
+          var isFollowing = data.data.following;
+          btnEl.classList.toggle('following', isFollowing);
+          btnEl.textContent = isFollowing ? '已关注' : '+ 关注';
+        } else {
+          alert(data.error || '操作失败');
+        }
+      } catch (err) {
+        alert('操作失败');
+      }
+    });
+  });
+  
+  // 点赞按钮
+  document.querySelectorAll('.like-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      var type = this.dataset.type;
+      var id = this.dataset.id;
+      var btnEl = this;
+      
+      try {
+        var res = await fetch('/api/like/' + type + '/' + id, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await res.json();
+        
+        if (data.success) {
+          btnEl.classList.toggle('liked', data.data.liked);
+          btnEl.querySelector('.like-icon').textContent = data.data.liked ? '♥' : '♡';
+          var countText = data.data.like_count > 0 ? data.data.like_count : '点赞';
+          btnEl.querySelector('.like-count').textContent = countText;
+        }
+      } catch (err) {
+        console.error('点赞失败');
+      }
+    });
+  });
+  
+  // 加载点赞状态
+  var likeBtn = document.querySelector('.like-btn');
+  if (likeBtn) {
+    var type = likeBtn.dataset.type;
+    var id = likeBtn.dataset.id;
+    fetch('/api/like/' + type + '/' + id + '/status')
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          likeBtn.classList.toggle('liked', data.data.liked);
+          likeBtn.querySelector('.like-icon').textContent = data.data.liked ? '♥' : '♡';
+          if (data.data.like_count > 0) {
+            likeBtn.querySelector('.like-count').textContent = data.data.like_count;
+          }
+        }
+      });
+  }
+});
+
+function showReplyForm(commentId) {
+  document.getElementById('reply-form-' + commentId).style.display = 'block';
+}
+
+function hideReplyForm(commentId) {
+  document.getElementById('reply-form-' + commentId).style.display = 'none';
+}
+</script>

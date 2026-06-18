@@ -1,0 +1,201 @@
+<div class="admin-card">
+  <div class="admin-card-header">
+    <h2>🏆 排行榜管理</h2>
+  </div>
+  <div class="admin-card-body">
+    <!-- 统计信息 -->
+    <div class="stats-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
+      <div class="stat-card" style="background: #f8f9fa; padding: 15px; border-radius: 4px; text-align: center;">
+        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: #333;"><%= stats.totalRecords %></div>
+        <div class="stat-label" style="color: #666; font-size: 12px;">总记录数</div>
+      </div>
+      <div class="stat-card" style="background: #e3f2fd; padding: 15px; border-radius: 4px; text-align: center;">
+        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: #1976d2;"><%= stats.fillCount %></div>
+        <div class="stat-label" style="color: #666; font-size: 12px;">诗词填空</div>
+      </div>
+      <div class="stat-card" style="background: #fce4ec; padding: 15px; border-radius: 4px; text-align: center;">
+        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: #c2185b;"><%= stats.feihuaCount %></div>
+        <div class="stat-label" style="color: #666; font-size: 12px;">飞花令</div>
+      </div>
+      <div class="stat-card" style="background: #e8f5e9; padding: 15px; border-radius: 4px; text-align: center;">
+        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: #388e3c;"><%= Math.round(stats.avgScore) %></div>
+        <div class="stat-label" style="color: #666; font-size: 12px;">平均分</div>
+      </div>
+    </div>
+
+    <!-- 筛选器 -->
+    <div class="filter-bar" style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;">
+      <div>
+        <label>游戏模式：</label>
+        <select id="mode-filter" onchange="applyFilters()">
+          <option value="all" <%= filters.mode === 'all' ? 'selected' : '' %>>全部</option>
+          <option value="fill" <%= filters.mode === 'fill' ? 'selected' : '' %>>诗词填空</option>
+          <option value="feihua" <%= filters.mode === 'feihua' ? 'selected' : '' %>>飞花令</option>
+        </select>
+      </div>
+      <div>
+        <label>难度：</label>
+        <select id="difficulty-filter" onchange="applyFilters()">
+          <option value="all" <%= filters.difficulty === 'all' ? 'selected' : '' %>>全部</option>
+          <option value="easy" <%= filters.difficulty === 'easy' ? 'selected' : '' %>>简单</option>
+          <option value="medium" <%= filters.difficulty === 'medium' ? 'selected' : '' %>>中等</option>
+          <option value="hard" <%= filters.difficulty === 'hard' ? 'selected' : '' %>>困难</option>
+        </select>
+      </div>
+      <button onclick="clearLeaderboard()" class="btn btn-danger" style="margin-left: auto;">
+        🗑️ 清空排行榜
+      </button>
+    </div>
+
+    <!-- 排行榜表格 -->
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>排名</th>
+          <th>玩家</th>
+          <th>得分</th>
+          <th>模式</th>
+          <th>难度</th>
+          <th>连击</th>
+          <th>正确/总数</th>
+          <th>时间(秒)</th>
+          <th>创建时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (records.length === 0) { %>
+          <tr>
+            <td colspan="10" style="text-align: center; padding: 40px; color: #999;">
+              暂无排行榜数据
+            </td>
+          </tr>
+        <% } else { %>
+          <% records.forEach(function(record, index) { %>
+            <tr>
+              <td>
+                <% var rank = (pagination.page - 1) * pagination.limit + index + 1; %>
+                <% if (rank === 1) { %>
+                  <span style="color: #ffd700; font-weight: bold;">🥇 1</span>
+                <% } else if (rank === 2) { %>
+                  <span style="color: #c0c0c0; font-weight: bold;">🥈 2</span>
+                <% } else if (rank === 3) { %>
+                  <span style="color: #cd7f32; font-weight: bold;">🥉 3</span>
+                <% } else { %>
+                  <%= rank %>
+                <% } %>
+              </td>
+              <td><%= record.username %></td>
+              <td style="font-weight: bold; color: #1976d2;"><%= record.score %></td>
+              <td>
+                <% if (record.game_mode === 'fill') { %>
+                  <span style="background: #e3f2fd; color: #1976d2; padding: 2px 8px; border-radius: 10px; font-size: 12px;">诗词填空</span>
+                <% } else { %>
+                  <span style="background: #fce4ec; color: #c2185b; padding: 2px 8px; border-radius: 10px; font-size: 12px;">飞花令</span>
+                <% } %>
+              </td>
+              <td>
+                <% var diffText = { easy: '简单', medium: '中等', hard: '困难' }[record.difficulty] || record.difficulty; %>
+                <%= diffText %>
+              </td>
+              <td><%= record.combo_max %></td>
+              <td><%= record.correct_count %>/<%= record.total_count %></td>
+              <td><%= record.duration %></td>
+              <td><%= new Date(record.created_at).toLocaleString('zh-CN') %></td>
+              <td>
+                <button onclick="deleteRecord(<%= record.id %>)" class="btn btn-small btn-danger">
+                  删除
+                </button>
+              </td>
+            </tr>
+          <% }); %>
+        <% } %>
+      </tbody>
+    </table>
+
+    <!-- 分页 -->
+    <% if (pagination.totalPages > 1) { %>
+      <div class="pagination" style="display: flex; gap: 5px; justify-content: center; margin-top: 20px;">
+        <% if (pagination.page > 1) { %>
+          <a href="?page=<%= pagination.page - 1 %>&mode=<%= filters.mode %>&difficulty=<%= filters.difficulty %>" class="btn btn-small">
+            ← 上一页
+          </a>
+        <% } %>
+        
+        <% for (var i = 1; i <= pagination.totalPages; i++) { %>
+          <% if (i === pagination.page) { %>
+            <span class="btn btn-small btn-primary"><%= i %></span>
+          <% } else if (Math.abs(i - pagination.page) <= 2 || i === 1 || i === pagination.totalPages) { %>
+            <a href="?page=<%= i %>&mode=<%= filters.mode %>&difficulty=<%= filters.difficulty %>" class="btn btn-small">
+              <%= i %>
+            </a>
+          <% } else if (Math.abs(i - pagination.page) === 3) { %>
+            <span style="padding: 5px 10px;">...</span>
+          <% } %>
+        <% } %>
+        
+        <% if (pagination.page < pagination.totalPages) { %>
+          <a href="?page=<%= pagination.page + 1 %>&mode=<%= filters.mode %>&difficulty=<%= filters.difficulty %>" class="btn btn-small">
+            下一页 →
+          </a>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function applyFilters() {
+  const mode = document.getElementById('mode-filter').value;
+  const difficulty = document.getElementById('difficulty-filter').value;
+  window.location.href = `/admin/leaderboard?mode=${mode}&difficulty=${difficulty}`;
+}
+
+async function deleteRecord(id) {
+  if (!confirm('确定要删除这条记录吗？')) return;
+  
+  try {
+    const response = await fetch(`/admin/leaderboard/delete/${id}`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': getCsrfToken() }
+    });
+    
+    if (response.redirected) {
+      window.location.href = response.url;
+    }
+  } catch (error) {
+    alert('删除失败: ' + error.message);
+  }
+}
+
+async function clearLeaderboard() {
+  if (!confirm('确定要清空所有排行榜数据吗？此操作不可恢复！')) return;
+  if (!confirm('再次确认：真的要清空排行榜吗？')) return;
+  
+  try {
+    const response = await fetch('/admin/leaderboard/clear', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken() 
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      alert('✅ ' + result.message);
+      window.location.reload();
+    } else {
+      alert('❌ ' + result.error);
+    }
+  } catch (error) {
+    alert('操作失败: ' + error.message);
+  }
+}
+</script>

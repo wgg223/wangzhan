@@ -1,0 +1,109 @@
+<h2 style="margin-bottom: 20px;">👤 免审核用户管理</h2>
+
+<p style="color: #666; margin-bottom: 20px;">
+  <i class="fas fa-info-circle"></i> 被设置为"免审核"的用户上传图片时将自动通过审核，无需管理员手动审核。
+</p>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>用户名</th>
+        <th>昵称</th>
+        <th>邮箱</th>
+        <th>账户状态</th>
+        <th>免审核</th>
+        <th>注册时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% users.forEach(function(u) { %>
+        <tr>
+          <td><%= u.uid || u.id %></td>
+          <td><%= u.username %></td>
+          <td><%= u.nickname || '-' %></td>
+          <td><%= u.email || '-' %></td>
+          <td>
+            <% if (u.status === 'active') { %>
+              <span class="badge badge-success">正常</span>
+            <% } else { %>
+              <span class="badge badge-danger">禁用</span>
+            <% } %>
+          </td>
+          <td>
+            <% if (u.image_no_review === 1) { %>
+              <span class="badge badge-success">免审核</span>
+            <% } else { %>
+              <span class="badge badge-warning">需审核</span>
+            <% } %>
+          </td>
+          <td style="color: #999; font-size: 12px;"><%= u.created_at %></td>
+          <td>
+            <button class="btn btn-sm toggle-trusted-btn" data-user-id="<%= u.id %>" 
+              data-no-review="<%= u.image_no_review %>"
+              style="background: <%= u.image_no_review === 1 ? '#dc3545' : '#28a745' %>; color: white;">
+              <i class="fas fa-<%= u.image_no_review === 1 ? 'times' : 'check' %>"></i>
+              <%= u.image_no_review === 1 ? '取消免审核' : '设为免审核' %>
+            </button>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% if (users.length === 0) { %>
+    <div class="empty-state">
+      <i class="fas fa-users"></i>
+      <p>暂无用户</p>
+    </div>
+  <% } %>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+document.querySelectorAll('.toggle-trusted-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var userId = this.getAttribute('data-user-id');
+    var self = this;
+    
+    fetch('/admin/image-share/trusted-users/toggle', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken() 
+      },
+      body: JSON.stringify({ id: userId })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        if (data.no_review === 1) {
+          self.setAttribute('data-no-review', '1');
+          self.style.background = '#dc3545';
+          self.innerHTML = '<i class="fas fa-times"></i> 取消免审核';
+          // 更新badge
+          var badge = self.closest('tr').querySelector('.badge');
+          badge.className = 'badge badge-success';
+          badge.textContent = '免审核';
+        } else {
+          self.setAttribute('data-no-review', '0');
+          self.style.background = '#28a745';
+          self.innerHTML = '<i class="fas fa-check"></i> 设为免审核';
+          var badge = self.closest('tr').querySelector('.badge');
+          badge.className = 'badge badge-warning';
+          badge.textContent = '需审核';
+        }
+        alert(data.message);
+      } else {
+        alert(data.message || '操作失败');
+      }
+    })
+    .catch(function() { alert('请求失败'); });
+  });
+});
+</script>

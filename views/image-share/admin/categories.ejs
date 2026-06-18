@@ -1,0 +1,119 @@
+<%- include('../header') %>
+
+<div style="margin-bottom: 20px;">
+  <a href="/image-share/admin" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回管理首页</a>
+</div>
+
+<h2 style="margin-bottom: 20px;"><i class="fas fa-folder"></i> 分类管理</h2>
+
+<div class="card">
+  <h3 style="margin-bottom: 15px;">添加新分类</h3>
+  <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+    <input type="text" id="newCateName" placeholder="分类名称" style="flex: 1; min-width: 150px; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+    <input type="number" id="newCateSort" placeholder="排序值" value="0" style="width: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+    <label style="display: flex; align-items: center; gap: 5px;">
+      <input type="checkbox" id="newCateGuest"> 访客可见
+    </label>
+    <button class="btn btn-primary" onclick="addCategory()"><i class="fas fa-plus"></i> 添加</button>
+  </div>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>排序</th>
+        <th>状态</th>
+        <th>访客可见</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% categories.forEach(function(cat) { %>
+        <tr>
+          <td><%= cat.id %></td>
+          <td><input type="text" id="cate-name-<%= cat.id %>" value="<%= cat.name %>" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;"></td>
+          <td><input type="number" id="cate-sort-<%= cat.id %>" value="<%= cat.sort %>" style="width: 60px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;"></td>
+          <td>
+            <select id="cate-status-<%= cat.id %>" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+              <option value="1" <%= cat.status === 1 ? 'selected' : '' %>>启用</option>
+              <option value="0" <%= cat.status === 0 ? 'selected' : '' %>>禁用</option>
+            </select>
+          </td>
+          <td>
+            <input type="checkbox" id="cate-guest-<%= cat.id %>" <%= cat.is_guest ? 'checked' : '' %>>
+          </td>
+          <td>
+            <button class="btn btn-success btn-sm" onclick="editCategory(<%= cat.id %>)"><i class="fas fa-save"></i></button>
+            <button class="btn btn-danger btn-sm" onclick="deleteCategory(<%= cat.id %>)"><i class="fas fa-trash"></i></button>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function addCategory() {
+  var name = document.getElementById('newCateName').value.trim();
+  var sort = document.getElementById('newCateSort').value || 0;
+  var isGuest = document.getElementById('newCateGuest').checked;
+  
+  if (!name) { alert('请输入分类名称'); return; }
+  
+  fetch('/image-share/admin/categories/add', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ name: name, sort: parseInt(sort), is_guest: isGuest })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+
+function editCategory(id) {
+  var name = document.getElementById('cate-name-' + id).value.trim();
+  var sort = document.getElementById('cate-sort-' + id).value || 0;
+  var status = document.getElementById('cate-status-' + id).value;
+  var isGuest = document.getElementById('cate-guest-' + id).checked;
+  
+  if (!name) { alert('分类名称不能为空'); return; }
+  
+  fetch('/image-share/admin/categories/edit', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ id: id, name: name, sort: parseInt(sort), status: parseInt(status), is_guest: isGuest })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+
+function deleteCategory(id) {
+  if (!confirm('确定要删除此分类吗？')) return;
+  
+  fetch('/image-share/admin/categories/delete', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ id: id })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.message); }
+  });
+}
+</script>
+
+<%- include('../footer') %>

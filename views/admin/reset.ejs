@@ -1,0 +1,590 @@
+<% var active = 'reset' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>⚠️ 重置服务器</h1>
+  </div>
+
+  <!-- 项目选择器 -->
+  <div class="card">
+    <h2>📦 项目重置</h2>
+    <p style="margin-bottom: 16px; color: var(--gray-500);">选择一个项目进行单独重置，仅清除该项目关联的数据：</p>
+    
+    <div class="form-group">
+      <label for="project-select">选择项目</label>
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <select id="project-select" onchange="onProjectSelect()" style="min-width: 250px;">
+          <option value="">-- 请选择项目 --</option>
+        </select>
+        <button type="button" class="btn btn-primary btn-small" id="project-reset-btn" onclick="openProjectResetModal()" disabled>
+          🔄 重置选中项目
+        </button>
+      </div>
+    </div>
+
+    <div id="project-stats-area" style="display: none;">
+      <div class="reset-stats" id="project-stats-grid"></div>
+      <div class="project-total" id="project-total-area"></div>
+    </div>
+  </div>
+
+  <div class="alert alert-danger">
+    <strong>⚠️ 危险操作：</strong>以下操作将重置服务器到初始状态，所有业务数据将被清空，仅保留超级管理员账户和网站设置。此操作不可撤销！
+  </div>
+
+  <!-- 按项目展示数据统计 -->
+  <div class="card">
+    <h2>📊 当前数据统计（按模块）</h2>
+    <p style="margin-bottom: 16px; color: var(--gray-500);">以下所有数据将在重置后被清空，总计 <strong style="color: #dc2626;"><%= totalRecords %></strong> 条记录：</p>
+    
+    <% projectStats.forEach(function(project) { %>
+    <div class="project-stat-block">
+      <h3 style="margin-bottom: 8px; font-size: 16px;"><%= project.icon %> <%= project.name %></h3>
+      <p style="margin-bottom: 8px; color: var(--gray-500); font-size: 13px;"><%= project.description %></p>
+      <div class="reset-stats">
+        <% var tableKeys = Object.keys(project.stats); %>
+        <% tableKeys.forEach(function(table) { %>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label"><%= table %></span>
+          <span class="reset-stat-value"><%= project.stats[table] %></span>
+        </div>
+        <% }); %>
+      </div>
+      <div class="project-total">
+        小计：<span><%= project.totalRecords %></span> 条记录
+      </div>
+    </div>
+    <% }); %>
+
+    <!-- 全局数据统计 -->
+    <div class="project-stat-block">
+      <h3 style="margin-bottom: 8px; font-size: 16px;">🌐 全局数据</h3>
+      <p style="margin-bottom: 8px; color: var(--gray-500); font-size: 13px;">用户、媒体、活动日志等跨模块数据</p>
+      <div class="reset-stats">
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">👤 普通用户</span>
+          <span class="reset-stat-value"><%= globalStats.users %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">🖼️ 媒体文件</span>
+          <span class="reset-stat-value"><%= globalStats.media %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">📋 活动日志</span>
+          <span class="reset-stat-value"><%= globalStats.activity_logs %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">📬 站内信</span>
+          <span class="reset-stat-value"><%= globalStats.internal_messages %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">🔔 通知</span>
+          <span class="reset-stat-value"><%= globalStats.notifications %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">❤️ 点赞</span>
+          <span class="reset-stat-value"><%= globalStats.content_likes %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">👥 用户关注</span>
+          <span class="reset-stat-value"><%= globalStats.user_follows %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">🏷️ 标签</span>
+          <span class="reset-stat-value"><%= globalStats.tags %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">🔗 标签关联</span>
+          <span class="reset-stat-value"><%= globalStats.content_tags %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">📝 内容版本</span>
+          <span class="reset-stat-value"><%= globalStats.content_versions %></span>
+        </div>
+        <div class="reset-stat-item">
+          <span class="reset-stat-label">📄 文章草稿</span>
+          <span class="reset-stat-value"><%= globalStats.article_drafts %></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="border-color: #fecaca; background: #fef2f2;">
+    <h2 style="color: #dc2626;">重置确认</h2>
+    <p style="margin-bottom: 16px; color: #991b1b;">
+      重置后将恢复到以下初始状态：
+    </p>
+    <ul style="margin-bottom: 20px; padding-left: 20px; color: #991b1b; line-height: 1.8;">
+      <li>保留超级管理员账户（admin）</li>
+      <li>保留网站设置（站点名称、SMTP、协议等）</li>
+      <li>删除所有普通用户及其权限</li>
+      <li>清空所有文章、页面、评论数据</li>
+      <li>清空所有媒体文件记录和上传文件</li>
+      <li>清空所有小说及章节数据</li>
+      <li>清空所有图片分享数据（图片、分类、评论、配置）</li>
+      <li>清空所有 AI 聊天数据（对话、消息、角色、配额、模型配置）</li>
+      <li>清空所有 AI 知识库数据</li>
+      <li>清空所有 RP-Hub 角色扮演数据</li>
+      <li>清空所有诗词游戏排行榜数据</li>
+      <li>清空所有站内信、通知、点赞、关注数据</li>
+      <li>清空所有活动日志</li>
+      <li>恢复默认页面（首页、关于、联系我们）</li>
+    </ul>
+    <div class="form-group">
+      <label for="confirm-text" style="color: #991b1b; font-weight: 600;">
+        请输入 <strong style="color: #dc2626; font-size: 16px;">确认重置</strong> 以继续：
+      </label>
+      <input type="text" id="confirm-text" placeholder="请输入" style="border-color: #fecaca; max-width: 300px;">
+    </div>
+    <div class="form-group">
+      <label for="admin-password" style="color: #991b1b; font-weight: 600;">
+        🔑 请输入当前管理员密码以确认身份：
+      </label>
+      <input type="password" id="admin-password" placeholder="请输入管理员密码" style="border-color: #fecaca; max-width: 300px;">
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-danger btn-large" id="reset-btn" onclick="executeServerReset()" disabled>执行重置</button>
+      <a href="/admin" class="btn">取消</a>
+    </div>
+  </div>
+</div>
+  <div class="card" style="margin-top: 24px; border-color: #fecaca; background: #fff7ed;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+      <div>
+        <h2 style="color: #dc2626; margin-bottom: 8px;">🔥 完全恢复出厂设置</h2>
+        <p style="color: #991b1b; font-size: 14px;">
+          <strong>更彻底的重置方式</strong> — 直接<strong>删除数据库文件</strong>，包括超级管理员账户、网站设置等全部数据。
+          重启服务器后自动重建全新数据库。
+        </p>
+      </div>
+      <a href="/admin/reset/factory" class="btn btn-danger" style="padding: 12px 28px; font-weight: 600;">
+        🔥 进入恢复出厂设置
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- 项目重置确认弹窗 -->
+<div id="project-reset-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>⚠️ 重置项目数据</h3>
+      <button class="modal-close" onclick="closeProjectResetModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-danger" id="pr-modal-alert"></div>
+      <div class="reset-stats" id="pr-modal-stats"></div>
+      <div class="form-group" style="margin-top: 20px;">
+        <label style="color: #991b1b; font-weight: 600;">
+          请输入 <strong style="color: #dc2626; font-size: 16px;">确认重置</strong> 以继续：
+        </label>
+        <input type="text" id="pr-confirm-text" placeholder="请输入" style="border-color: #fecaca; max-width: 300px;">
+      </div>
+      <div class="form-group">
+        <label style="color: #991b1b; font-weight: 600;">
+          🔑 请输入当前管理员密码以确认身份：
+        </label>
+        <input type="password" id="pr-admin-password" placeholder="请输入管理员密码" style="border-color: #fecaca; max-width: 300px;">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-danger" id="pr-confirm-btn" onclick="executeProjectReset()" disabled>执行重置</button>
+      <button type="button" class="btn" onclick="closeProjectResetModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="reset-progress-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+  <div style="background:#fff; padding:40px; border-radius:16px; text-align:center; max-width:400px; box-shadow:0 25px 50px rgba(0,0,0,0.3);">
+    <div class="spinner" style="width:48px; height:48px; border:4px solid #e2e8f0; border-top-color:#ef4444; border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 20px;"></div>
+    <h3 style="margin-bottom:8px; color:#1e293b;">正在重置服务器...</h3>
+    <p style="color:#64748b; font-size:14px;">请勿关闭页面或刷新页面</p>
+  </div>
+</div>
+
+<style>
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.reset-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.reset-stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--gray-50);
+  border-radius: var(--border-radius-sm);
+  border: 1px solid var(--gray-100);
+}
+
+.reset-stat-label {
+  font-size: 14px;
+  color: var(--gray-600);
+}
+
+.reset-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.project-total {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--primary-bg);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--gray-600);
+}
+
+.project-total span {
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 18px;
+}
+
+.project-stat-block {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.project-stat-block:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* 项目重置弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  max-width: 520px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalSlideIn 0.2s ease;
+}
+
+@keyframes modalSlideIn {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--gray-800);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--gray-400);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--gray-700);
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+</style>
+
+<script>
+var allProjects = [];
+var currentProjectId = null;
+
+// 加载项目列表
+document.addEventListener('DOMContentLoaded', function() {
+  loadProjectsForSelect();
+  
+  // 全局重置表单监听
+  var confirmInput = document.getElementById('confirm-text');
+  var passwordInput = document.getElementById('admin-password');
+  var resetBtn = document.getElementById('reset-btn');
+
+  function checkForm() {
+    resetBtn.disabled = !(confirmInput.value.trim() === '确认重置' && passwordInput.value.trim().length >= 6);
+  }
+
+  if (confirmInput && passwordInput && resetBtn) {
+    confirmInput.addEventListener('input', checkForm);
+    passwordInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !resetBtn.disabled) {
+        executeServerReset();
+      }
+    });
+  }
+
+  // 项目重置弹窗表单监听
+  var prConfirmInput = document.getElementById('pr-confirm-text');
+  var prPasswordInput = document.getElementById('pr-admin-password');
+  var prResetBtn = document.getElementById('pr-confirm-btn');
+
+  function checkPrForm() {
+    prResetBtn.disabled = !(prConfirmInput.value.trim() === '确认重置' && prPasswordInput.value.trim().length >= 6);
+  }
+
+  if (prConfirmInput && prPasswordInput && prResetBtn) {
+    prConfirmInput.addEventListener('input', checkPrForm);
+    prPasswordInput.addEventListener('input', checkPrForm);
+  }
+});
+
+function loadProjectsForSelect() {
+  fetch('/admin/projects/api/list')
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success && data.projects) {
+        allProjects = data.projects;
+        var select = document.getElementById('project-select');
+        data.projects.forEach(function(p) {
+          var opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = (p.icon || '📦') + ' ' + p.name + ' (' + (p.totalRecords || 0) + ' 条记录)';
+          select.appendChild(opt);
+        });
+      }
+    })
+    .catch(function(err) {
+      console.error('加载项目列表失败:', err);
+    });
+}
+
+function onProjectSelect() {
+  var select = document.getElementById('project-select');
+  var projectId = select.value;
+  var statsArea = document.getElementById('project-stats-area');
+  var resetBtn = document.getElementById('project-reset-btn');
+
+  if (!projectId) {
+    statsArea.style.display = 'none';
+    resetBtn.disabled = true;
+    return;
+  }
+
+  resetBtn.disabled = false;
+  currentProjectId = projectId;
+
+  var project = allProjects.find(function(p) { return p.id === projectId; });
+  if (project) {
+    var statsGrid = document.getElementById('project-stats-grid');
+    var totalArea = document.getElementById('project-total-area');
+    var html = '';
+    var tables = project.tables || [];
+    tables.forEach(function(table) {
+      var count = (project.stats && project.stats[table] !== undefined) ? project.stats[table] : 0;
+      html += '<div class="reset-stat-item">';
+      html += '  <span class="reset-stat-label">' + table + '</span>';
+      html += '  <span class="reset-stat-value">' + count + '</span>';
+      html += '</div>';
+    });
+    statsGrid.innerHTML = html || '<div style="text-align:center;color:var(--gray-400);padding:12px;">无关联数据表</div>';
+    totalArea.innerHTML = '总记录数：<span>' + (project.totalRecords || 0) + '</span>';
+    statsArea.style.display = 'block';
+  }
+}
+
+function openProjectResetModal() {
+  if (!currentProjectId) return;
+
+  var project = allProjects.find(function(p) { return p.id === currentProjectId; });
+  if (!project) return;
+
+  // 清空输入
+  document.getElementById('pr-confirm-text').value = '';
+  document.getElementById('pr-admin-password').value = '';
+  document.getElementById('pr-confirm-btn').disabled = true;
+
+  document.getElementById('pr-modal-alert').innerHTML = '<strong>⚠️ 危险操作：</strong>即将重置项目「<strong>' + escapeHtml(project.name) + '</strong>」的所有数据，此操作不可撤销！';
+
+  // 显示统计数据
+  var statsDiv = document.getElementById('pr-modal-stats');
+  var html = '';
+  var tables = project.tables || [];
+  tables.forEach(function(table) {
+    var count = (project.stats && project.stats[table] !== undefined) ? project.stats[table] : 0;
+    html += '<div class="reset-stat-item">';
+    html += '  <span class="reset-stat-label">' + table + '</span>';
+    html += '  <span class="reset-stat-value">' + count + '</span>';
+    html += '</div>';
+  });
+  statsDiv.innerHTML = html || '<div style="text-align:center;color:#999;padding:10px;">无数据</div>';
+
+  document.getElementById('project-reset-modal').style.display = 'flex';
+}
+
+function closeProjectResetModal() {
+  document.getElementById('project-reset-modal').style.display = 'none';
+}
+
+function executeProjectReset() {
+  if (!currentProjectId) return;
+
+  var password = document.getElementById('pr-admin-password').value.trim();
+  var confirmText = document.getElementById('pr-confirm-text').value.trim();
+
+  if (!password) {
+    alert('⚠️ 请输入管理员密码');
+    return;
+  }
+
+  if (!confirm('⚠️ 这是最后确认！\n\n确定要重置该项目的所有数据吗？此操作不可撤销！')) {
+    return;
+  }
+
+  var resetBtn = document.getElementById('pr-confirm-btn');
+  resetBtn.disabled = true;
+  resetBtn.textContent = '重置中...';
+
+  fetch('/admin/projects/api/' + currentProjectId + '/reset', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-csrf-token': getCsrfToken()
+    },
+    body: JSON.stringify({ password: password, confirm: confirmText })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      alert('✅ 项目重置成功！\n\n' + (data.message || ''));
+      closeProjectResetModal();
+      // 重新加载项目列表和统计数据
+      loadProjectsForSelect();
+      onProjectSelect();
+    } else {
+      alert('❌ 重置失败: ' + (data.error || '未知错误'));
+      resetBtn.disabled = false;
+      resetBtn.textContent = '执行重置';
+    }
+  })
+  .catch(function(err) {
+    alert('❌ 网络错误: ' + err.message);
+    resetBtn.disabled = false;
+    resetBtn.textContent = '执行重置';
+  });
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(text));
+  return div.innerHTML;
+}
+
+// 从页面获取 CSRF token
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+// ============ 全局重置 ============
+function executeServerReset() {
+  var passwordInput = document.getElementById('admin-password');
+  var password = passwordInput ? passwordInput.value.trim() : '';
+
+  if (!password) {
+    alert('⚠️ 请输入管理员密码');
+    return;
+  }
+
+  if (!confirm('⚠️ 这是最后确认！\n\n此操作将永久删除所有业务数据，且不可恢复！\n\n确定要继续吗？')) {
+    return;
+  }
+
+  // 显示进度遮罩
+  var overlay = document.getElementById('reset-progress-overlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+  }
+
+  // 禁用按钮防止重复点击
+  var resetBtn = document.getElementById('reset-btn');
+  if (resetBtn) {
+    resetBtn.disabled = true;
+    resetBtn.textContent = '重置中...';
+  }
+
+  fetch('/admin/reset/execute', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-csrf-token': getCsrfToken()
+    },
+    body: JSON.stringify({ password: password })
+  })
+  .then(function(response) {
+    return response.json();
+  })
+  .then(function(data) {
+    if (data.success) {
+      alert('✅ 服务器重置成功！\n\n系统已恢复到初始状态。\n\n点击确定后将跳转到仪表盘。');
+      window.location.href = '/admin';
+    } else {
+      alert('❌ 重置失败: ' + (data.error || '未知错误'));
+      if (overlay) overlay.style.display = 'none';
+      if (resetBtn) {
+        resetBtn.disabled = false;
+        resetBtn.textContent = '执行重置';
+      }
+    }
+  })
+  .catch(function(err) {
+    alert('❌ 网络错误: ' + err.message);
+    if (overlay) overlay.style.display = 'none';
+    if (resetBtn) {
+      resetBtn.disabled = false;
+      resetBtn.textContent = '执行重置';
+    }
+  });
+}
+</script>

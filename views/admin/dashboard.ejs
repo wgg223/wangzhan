@@ -1,0 +1,1174 @@
+<style>
+  /* ===== 仪表盘扩展样式 ===== */
+  .dashboard h1 {
+    margin-bottom: 28px;
+    font-size: 26px;
+    color: var(--gray-800);
+  }
+
+  /* 统计卡片网格 - 5列 */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: #fff;
+    padding: 20px 16px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--gray-100);
+    text-align: center;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--card-accent, linear-gradient(135deg, var(--primary), #8b5cf6));
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .stat-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .stat-number {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--primary);
+    margin-bottom: 4px;
+    line-height: 1.2;
+  }
+
+  .stat-card .stat-label {
+    font-size: 12px;
+    color: var(--gray-500);
+    font-weight: 500;
+  }
+
+  .stat-card .stat-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--primary);
+    font-weight: 500;
+  }
+
+  .stat-card .stat-link:hover {
+    color: var(--primary-dark);
+  }
+
+  /* 不同颜色的卡片 */
+  .card-blue { --card-accent: linear-gradient(135deg, #3b82f6, #60a5fa); }
+  .card-blue .stat-number { color: #3b82f6; }
+
+  .card-green { --card-accent: linear-gradient(135deg, #10b981, #34d399); }
+  .card-green .stat-number { color: #10b981; }
+
+  .card-purple { --card-accent: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+  .card-purple .stat-number { color: #8b5cf6; }
+
+  .card-amber { --card-accent: linear-gradient(135deg, #f59e0b, #fbbf24); }
+  .card-amber .stat-number { color: #f59e0b; }
+
+  .card-red { --card-accent: linear-gradient(135deg, #ef4444, #f87171); }
+  .card-red .stat-number { color: #ef4444; }
+
+  .card-pink { --card-accent: linear-gradient(135deg, #ec4899, #f472b6); }
+  .card-pink .stat-number { color: #ec4899; }
+
+  .card-indigo { --card-accent: linear-gradient(135deg, #6366f1, #818cf8); }
+  .card-indigo .stat-number { color: #6366f1; }
+
+  .card-teal { --card-accent: linear-gradient(135deg, #14b8a6, #2dd4bf); }
+  .card-teal .stat-number { color: #14b8a6; }
+
+  .card-cyan { --card-accent: linear-gradient(135deg, #06b6d4, #22d3ee); }
+  .card-cyan .stat-number { color: #06b6d4; }
+
+  .card-orange { --card-accent: linear-gradient(135deg, #f97316, #fb923c); }
+  .card-orange .stat-number { color: #f97316; }
+
+  /* 系统状态区域 */
+  .system-status {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+
+  .status-panel {
+    background: #fff;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--gray-100);
+    padding: 24px;
+  }
+
+  .status-panel h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--gray-800);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--gray-100);
+  }
+
+  .status-row:last-child {
+    border-bottom: none;
+  }
+
+  .status-label {
+    color: var(--gray-500);
+    font-size: 14px;
+  }
+
+  .status-value {
+    font-weight: 600;
+    color: var(--gray-700);
+    font-size: 14px;
+  }
+
+  .memory-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--gray-100);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .memory-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+
+  .memory-fill.low { background: linear-gradient(90deg, #10b981, #34d399); }
+  .memory-fill.medium { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  .memory-fill.high { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+  /* 7天活动趋势 */
+  .trend-section {
+    background: #fff;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--gray-100);
+    padding: 24px;
+    margin-bottom: 28px;
+  }
+
+  .trend-section h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--gray-800);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .trend-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    height: 180px;
+    padding: 0 8px;
+  }
+
+  .trend-bar-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    justify-content: flex-end;
+  }
+
+  .trend-bar-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gray-600);
+    margin-bottom: 4px;
+  }
+
+  .trend-bar {
+    width: 100%;
+    max-width: 48px;
+    min-height: 2px;
+    background: linear-gradient(180deg, var(--primary), #818cf8);
+    border-radius: 4px 4px 0 0;
+    transition: height 0.5s ease;
+    position: relative;
+  }
+
+  .trend-bar:hover {
+    opacity: 0.85;
+  }
+
+  .trend-date {
+    font-size: 11px;
+    color: var(--gray-400);
+    margin-top: 8px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .trend-empty {
+    text-align: center;
+    color: var(--gray-400);
+    padding: 40px 0;
+    font-size: 14px;
+  }
+
+  /* 最近操作日志 */
+  .activity-section {
+    background: #fff;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--gray-100);
+    padding: 24px;
+    margin-bottom: 28px;
+  }
+
+  .activity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .activity-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--gray-800);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .activity-filters {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .activity-filters select,
+  .activity-filters input {
+    padding: 7px 12px;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius-sm);
+    font-size: 13px;
+    background: #fff;
+    color: var(--gray-600);
+    transition: var(--transition);
+  }
+
+  .activity-filters select:focus,
+  .activity-filters input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  }
+
+  .activity-info {
+    font-size: 12px;
+    color: var(--gray-400);
+    margin-bottom: 12px;
+  }
+
+  .activity-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .activity-table thead th {
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--gray-500);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 2px solid var(--gray-100);
+    white-space: nowrap;
+    background: var(--gray-50);
+  }
+
+  .activity-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--gray-50);
+    color: var(--gray-600);
+    vertical-align: middle;
+  }
+
+  .activity-table tbody tr {
+    transition: var(--transition);
+  }
+
+  .activity-table tbody tr:hover {
+    background: var(--gray-50);
+  }
+
+  .activity-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .activity-table .td-user {
+    font-weight: 600;
+    color: var(--gray-700);
+    white-space: nowrap;
+  }
+
+  .activity-table .td-target-title {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .activity-table .td-detail {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--gray-400);
+    font-size: 12px;
+  }
+
+  .activity-table .td-time {
+    white-space: nowrap;
+    color: var(--gray-400);
+    font-size: 12px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .badge-success { background: #d1fae5; color: #065f46; }
+  .badge-primary { background: #eef2ff; color: #4338ca; }
+  .badge-danger { background: #fee2e2; color: #991b1b; }
+  .badge-warning { background: #fef3c7; color: #92400e; }
+  .badge-info { background: #dbeafe; color: #1e40af; }
+  .badge-secondary { background: var(--gray-100); color: var(--gray-600); }
+
+  /* 分页 */
+  .activity-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    margin-top: 16px;
+  }
+
+  .activity-pagination button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 14px;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius-sm);
+    background: #fff;
+    color: var(--gray-600);
+    font-size: 13px;
+    cursor: pointer;
+    transition: var(--transition);
+    font-family: inherit;
+  }
+
+  .activity-pagination button:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-bg);
+  }
+
+  .activity-pagination button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .activity-pagination button.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+
+  .activity-pagination .page-info {
+    font-size: 13px;
+    color: var(--gray-500);
+    margin: 0 8px;
+  }
+
+  .activity-no-data {
+    text-align: center;
+    color: var(--gray-400);
+    padding: 40px 16px;
+    font-size: 14px;
+  }
+
+  /* 快速操作 */
+  .quick-actions {
+    background: #fff;
+    padding: 24px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--gray-100);
+    margin-bottom: 28px;
+  }
+
+  .quick-actions h2 {
+    margin-bottom: 16px;
+    font-size: 16px;
+    color: var(--gray-800);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .action-buttons .btn {
+    padding: 8px 20px;
+    font-size: 13px;
+  }
+
+  /* 待审评论提醒 */
+  .alert {
+    padding: 12px 16px;
+    border-radius: var(--border-radius-sm);
+    margin-bottom: 20px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .alert-warning {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
+
+  /* 响应式 */
+  @media (max-width: 1280px) {
+    .stats-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .stats-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .system-status {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .trend-chart {
+      height: 140px;
+      gap: 6px;
+    }
+    .activity-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .activity-filters {
+      width: 100%;
+    }
+    .activity-filters select,
+    .activity-filters input {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
+    .action-buttons {
+      flex-direction: column;
+    }
+    .action-buttons .btn {
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="dashboard">
+  <h1>📊 仪表盘</h1>
+  <% const perms = typeof userPermissions !== "undefined" ? userPermissions : []; %>
+  <% const hasPerm = (key) => perms.indexOf(key) !== -1; %>
+
+  <!-- ===== 1. 统计卡片区域 ===== -->
+  <div class="stats-grid">
+    <% if (hasPerm("articles.manage")) { %>
+    <div class="stat-card card-blue">
+      <span class="stat-icon">📝</span>
+      <p class="stat-number"><%= stats.articleCount %></p>
+      <span class="stat-label">文章数量</span>
+      <a href="/admin/articles" class="stat-link">管理 →</a>
+    </div>
+    <% } %>
+
+    <% if (hasPerm("users.manage")) { %>
+    <div class="stat-card card-green">
+      <span class="stat-icon">👥</span>
+      <p class="stat-number"><%= stats.userCount %></p>
+      <span class="stat-label">用户数量</span>
+      <a href="/admin/users" class="stat-link">管理 →</a>
+    </div>
+    <% } %>
+
+    <% if (hasPerm("pages.manage")) { %>
+    <div class="stat-card card-purple">
+      <span class="stat-icon">📄</span>
+      <p class="stat-number"><%= stats.pageCount %></p>
+      <span class="stat-label">页面数量</span>
+      <a href="/admin/pages" class="stat-link">管理 →</a>
+    </div>
+    <% } %>
+
+    <% if (hasPerm("comments.manage")) { %>
+    <div class="stat-card card-amber">
+      <span class="stat-icon">💬</span>
+      <p class="stat-number"><%= stats.commentCount %></p>
+      <span class="stat-label">待审评论</span>
+      <a href="/admin/comments" class="stat-link">审核 →</a>
+    </div>
+    <% } %>
+
+    <% if (hasPerm("novels.manage")) { %>
+    <div class="stat-card card-red">
+      <span class="stat-icon">📚</span>
+      <p class="stat-number"><%= stats.novelCount %></p>
+      <span class="stat-label">小说数量</span>
+      <a href="/admin/novels" class="stat-link">管理 →</a>
+    </div>
+    <% } %>
+
+    <div class="stat-card card-indigo">
+      <span class="stat-icon">🎬</span>
+      <p class="stat-number"><%= stats.mediaCount %></p>
+      <span class="stat-label">媒体文件</span>
+    </div>
+
+    <% if (hasPerm("image_share.manage")) { %>
+    <div class="stat-card card-teal">
+      <span class="stat-icon">🖼️</span>
+      <p class="stat-number"><%= stats.imageCount %></p>
+      <span class="stat-label">图片分享</span>
+      <a href="/admin/image-share" class="stat-link">管理 →</a>
+    </div>
+    <% } else { %>
+    <div class="stat-card card-teal">
+      <span class="stat-icon">🖼️</span>
+      <p class="stat-number"><%= stats.imageCount %></p>
+      <span class="stat-label">图片分享</span>
+    </div>
+    <% } %>
+
+    <div class="stat-card card-cyan">
+      <span class="stat-icon">📂</span>
+      <p class="stat-number"><%= stats.imageCategoryCount %></p>
+      <span class="stat-label">图片分类</span>
+    </div>
+
+    <div class="stat-card card-orange">
+      <span class="stat-icon">🎭</span>
+      <p class="stat-number"><%= stats.poemGameCount %></p>
+      <span class="stat-label">诗词游戏</span>
+    </div>
+
+    <% if (hasPerm("novels.manage")) { %>
+    <div class="stat-card card-pink">
+      <span class="stat-icon">📖</span>
+      <p class="stat-number"><%= stats.novelChapterCount %></p>
+      <span class="stat-label">小说章节</span>
+      <a href="/admin/novels" class="stat-link">管理 →</a>
+    </div>
+    <% } %>
+  </div>
+
+  <!-- 待审评论提醒 -->
+  <% if (stats.commentCount > 0 && hasPerm("comments.manage")) { %>
+  <div class="alert alert-warning">
+    ⚠️ 有 <strong><%= stats.commentCount %></strong> 条评论待审核，
+    <a href="/admin/comments" style="color:#92400e;font-weight:600;">前往审核</a>
+  </div>
+  <% } %>
+
+  <!-- ===== 2. 系统状态区域 ===== -->
+  <div class="system-status">
+    <!-- 运行时间 -->
+    <div class="status-panel">
+      <h2>⏱️ 服务器运行状态</h2>
+      <%
+        var uptimeSec = Math.floor(stats.processUptime || 0);
+        var days = Math.floor(uptimeSec / 86400);
+        var hours = Math.floor((uptimeSec % 86400) / 3600);
+        var minutes = Math.floor((uptimeSec % 3600) / 60);
+        var uptimeStr = '';
+        if (days > 0) uptimeStr += days + '天 ';
+        if (hours > 0) uptimeStr += hours + '时 ';
+        uptimeStr += minutes + '分';
+      %>
+      <div class="status-row">
+        <span class="status-label">运行时间</span>
+        <span class="status-value"><%= uptimeStr.trim() %></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">进程 PID</span>
+        <span class="status-value"><%= process.pid %></span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Node.js 版本</span>
+        <span class="status-value"><%= process.version %></span>
+      </div>
+    </div>
+
+    <!-- 内存使用 -->
+    <div class="status-panel">
+      <h2>💾 内存使用情况</h2>
+      <%
+        var mem = stats.processMemory || {};
+        var rssMB = ((mem.rss || 0) / 1024 / 1024).toFixed(1);
+        var heapUsedMB = ((mem.heapUsed || 0) / 1024 / 1024).toFixed(1);
+        var heapTotalMB = ((mem.heapTotal || 0) / 1024 / 1024).toFixed(1);
+        var externalMB = ((mem.external || 0) / 1024 / 1024).toFixed(1);
+        var heapPercent = mem.heapTotal > 0 ? ((mem.heapUsed / mem.heapTotal) * 100).toFixed(1) : 0;
+        var heapClass = heapPercent < 60 ? 'low' : (heapPercent < 85 ? 'medium' : 'high');
+      %>
+      <div class="status-row">
+        <span class="status-label">RSS（常驻内存）</span>
+        <span class="status-value"><%= rssMB %> MB</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">堆内存（已用/总量）</span>
+        <span class="status-value"><%= heapUsedMB %> / <%= heapTotalMB %> MB</span>
+      </div>
+      <div class="memory-bar">
+        <div class="memory-fill <%= heapClass %>" style="width: <%= Math.min(heapPercent, 100) %>%"></div>
+      </div>
+      <div class="status-row">
+        <span class="status-label">外部内存</span>
+        <span class="status-value"><%= externalMB %> MB</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 3. 7天活动趋势 ===== -->
+  <div class="trend-section">
+    <h2>📈 最近7天活动趋势</h2>
+    <%
+      var trendData = stats.activityTrend || [];
+      var trendMap = {};
+      trendData.forEach(function(item) {
+        trendMap[item.date] = item.count;
+      });
+      var trendDays = [];
+      for (var i = 6; i >= 0; i--) {
+        var d = new Date();
+        d.setDate(d.getDate() - i);
+        var dateStr = d.getFullYear() + '-' +
+          String(d.getMonth() + 1).padStart(2, '0') + '-' +
+          String(d.getDate()).padStart(2, '0');
+        var shortDate = String(d.getMonth() + 1) + '/' + String(d.getDate());
+        trendDays.push({
+          date: dateStr,
+          short: shortDate,
+          count: trendMap[dateStr] || 0
+        });
+      }
+      var maxCount = 1;
+      trendDays.forEach(function(item) {
+        if (item.count > maxCount) maxCount = item.count;
+      });
+    %>
+    <% if (trendDays.some(function(d) { return d.count > 0; })) { %>
+    <div class="trend-chart">
+      <% trendDays.forEach(function(item) { %>
+      <div class="trend-bar-wrapper">
+        <span class="trend-bar-count"><%= item.count %></span>
+        <div class="trend-bar" style="height: <%= Math.max((item.count / maxCount) * 140, item.count > 0 ? 8 : 2) %>px" title="<%= item.date %>: <%= item.count %> 次操作"></div>
+        <span class="trend-date"><%= item.short %></span>
+      </div>
+      <% }); %>
+    </div>
+    <% } else { %>
+    <div class="trend-empty">暂无活动数据</div>
+    <% } %>
+  </div>
+
+  <!-- ===== 4. 最近操作日志（仅超级管理员可见） ===== -->
+  <% if (user.role === 'super_admin') { %>
+  <div class="activity-section">
+    <div class="activity-header">
+      <h2>📋 最近操作日志</h2>
+      <div class="activity-filters">
+        <select id="filterAction">
+          <option value="">全部操作</option>
+          <optgroup label="📝 内容操作">
+            <option value="create">创建</option>
+            <option value="update">更新</option>
+            <option value="delete">删除</option>
+            <option value="upload">上传</option>
+          </optgroup>
+          <optgroup label="✅ 审核操作">
+            <option value="approve">批准</option>
+            <option value="reject">驳回</option>
+          </optgroup>
+          <optgroup label="🔐 认证操作">
+            <option value="login">登录</option>
+            <option value="login_fail">登录失败</option>
+            <option value="logout">登出</option>
+            <option value="register">注册</option>
+            <option value="register_info">填写注册信息</option>
+            <option value="register_verify">验证注册邮箱</option>
+            <option value="register_success">注册成功</option>
+          </optgroup>
+          <optgroup label="🔑 密码操作">
+            <option value="change_password">修改密码</option>
+            <option value="force_change_password">强制修改密码</option>
+            <option value="forgot_send_code">发送重置验证码</option>
+            <option value="forgot_reset">重置密码成功</option>
+            <option value="reset">重置数据</option>
+          </optgroup>
+          <optgroup label="📧 邮件操作">
+            <option value="email_send">发送邮件</option>
+            <option value="email_send_success">邮件发送成功</option>
+            <option value="email_send_fail">邮件发送失败</option>
+            <option value="email_resend">重新发送验证码</option>
+            <option value="email_verify">邮箱验证</option>
+          </optgroup>
+          <optgroup label="🔧 权限与安全">
+            <option value="grant">授予权限</option>
+            <option value="revoke">撤销权限</option>
+            <option value="disable">禁用</option>
+            <option value="captcha_fail">图形验证码失败</option>
+            <option value="email_domain_blocked">邮箱域名被拦截</option>
+            <option value="password_sha">SHA密码升级</option>
+          </optgroup>
+          <optgroup label="💬 站内信">
+            <option value="send_message">发送站内信</option>
+            <option value="delete_message">删除站内信</option>
+          </optgroup>
+          <optgroup label="🚫 账号操作">
+            <option value="delete_account">注销账号</option>
+          </optgroup>
+        </select>
+        <input type="text" id="filterUser" placeholder="搜索用户名..." style="width: 140px;">
+      </div>
+    </div>
+
+    <% if (recentActivities && recentActivities.length > 0) { %>
+    <div class="activity-info" id="activityInfo"></div>
+    <div class="table-responsive">
+      <table class="activity-table" id="activityTable">
+        <thead>
+          <tr>
+            <th>用户名</th>
+            <th>操作类型</th>
+            <th>目标类型</th>
+            <th>目标标题</th>
+            <th>详情</th>
+            <th>时间</th>
+            <th>IP 地址</th>
+          </tr>
+        </thead>
+        <tbody id="activityBody">
+          <% recentActivities.forEach(function(log) { %>
+          <tr
+            data-action="<%= log.action || '' %>"
+            data-username="<%= (log.username || '').toLowerCase() %>"
+          >
+            <td class="td-user"><%= log.username %></td>
+            <td>
+              <% var badgeCls = 'badge-secondary';
+                 if (log.action === 'create' || log.action === 'upload' || log.action === 'send_message') { badgeCls = 'badge-success'; }
+                 else if (log.action === 'update') { badgeCls = 'badge-primary'; }
+                 else if (log.action === 'delete' || log.action === 'disable' || log.action === 'delete_account' || log.action === 'delete_message') { badgeCls = 'badge-danger'; }
+                 else if (log.action === 'approve') { badgeCls = 'badge-success'; }
+                 else if (log.action === 'reject') { badgeCls = 'badge-warning'; }
+                 else if (log.action === 'login') { badgeCls = 'badge-info'; }
+                 else if (log.action === 'reset') { badgeCls = 'badge-danger'; }
+                 else if (log.action === 'grant' || log.action === 'revoke') { badgeCls = 'badge-warning'; }
+              %>
+              <span class="badge <%= badgeCls %>"><%= log.action_label || log.action %></span>
+            </td>
+            <td><%= log.target_label || log.target_type || '-' %></td>
+            <td class="td-target-title" title="<%= log.target_title || '' %>"><%= log.target_title || '-' %></td>
+            <td class="td-detail" title="<%= log.detail || '' %>"><%= log.detail || '-' %></td>
+            <td class="td-time"><%= log.created_at %></td>
+            <td class="td-ip"><%= log.ip || '-' %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <div class="activity-pagination" id="activityPagination"></div>
+    <% } else { %>
+    <p class="activity-no-data">暂无操作记录</p>
+    <% } %>
+  </div>
+  <% } %>
+
+  <!-- ===== 4.5 图片分享站操作日志 ===== -->
+  <% if (hasPerm("image_share.manage") && imageShareLogs && imageShareLogs.length > 0) { %>
+  <div class="activity-section">
+    <div class="activity-header">
+      <h2>🖼️ 图片分享站操作日志</h2>
+    </div>
+    <div class="table-responsive">
+      <table class="activity-table">
+        <thead>
+          <tr>
+            <th>管理员</th>
+            <th>操作内容</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% imageShareLogs.forEach(function(log) { %>
+          <tr>
+            <td class="td-user"><%= log.admin_name || '未知' %></td>
+            <td><%= log.content %></td>
+            <td class="td-time"><%= log.created_at %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } %>
+
+  <!-- ===== 4.6 服务器运维日志 ===== -->
+  <% if (user.role === 'super_admin' && serverLogs && serverLogs.length > 0) { %>
+  <div class="activity-section">
+    <div class="activity-header">
+      <h2>🔧 服务器运维日志</h2>
+      <a href="/admin/activity-logs?target_type=server" class="stat-link">查看全部 →</a>
+    </div>
+    <div class="table-responsive">
+      <table class="activity-table">
+        <thead>
+          <tr>
+            <th>用户名</th>
+            <th>操作类型</th>
+            <th>详情</th>
+            <th>时间</th>
+            <th>IP 地址</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% serverLogs.forEach(function(log) { %>
+          <tr>
+            <td class="td-user"><%= log.username %></td>
+            <td>
+              <% var srvBadge = 'badge-secondary';
+                 if (log.action === 'server_start' || log.action === 'server_restart') { srvBadge = 'badge-success'; }
+                 else if (log.action === 'server_stop') { srvBadge = 'badge-danger'; }
+                 else if (log.action === 'server_reload') { srvBadge = 'badge-primary'; }
+                 else if (log.action === 'backup_create' || log.action === 'backup_restore') { srvBadge = 'badge-info'; }
+              %>
+              <span class="badge <%= srvBadge %>"><%= actionLabels[log.action] || log.action %></span>
+            </td>
+            <td class="td-detail" title="<%= log.detail || '' %>"><%= log.detail || '-' %></td>
+            <td class="td-time"><%= log.created_at %></td>
+            <td class="td-ip"><%= log.ip || '-' %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } %>
+
+  <!-- ===== 4.7 用户认证操作日志 ===== -->
+  <% if (user.role === 'super_admin' && authLogs && authLogs.length > 0) { %>
+  <div class="activity-section">
+    <div class="activity-header">
+      <h2>🔐 用户认证操作日志</h2>
+      <a href="/admin/activity-logs?target_type=auth" class="stat-link">查看全部 →</a>
+    </div>
+    <div class="table-responsive">
+      <table class="activity-table">
+        <thead>
+          <tr>
+            <th>用户名</th>
+            <th>操作类型</th>
+            <th>目标类型</th>
+            <th>详情</th>
+            <th>时间</th>
+            <th>IP 地址</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% authLogs.forEach(function(log) { %>
+          <tr>
+            <td class="td-user"><%= log.username %></td>
+            <td>
+              <% var authBadge = 'badge-secondary';
+                 if (log.action === 'login' || log.action === 'user_login') { authBadge = 'badge-info'; }
+                 else if (log.action === 'login_fail' || log.action === 'user_register_fail') { authBadge = 'badge-danger'; }
+                 else if (log.action === 'logout' || log.action === 'user_logout') { authBadge = 'badge-warning'; }
+                 else if (log.action === 'register' || log.action === 'user_register' || log.action === 'user_register_success') { authBadge = 'badge-success'; }
+                 else if (log.action === 'change_password' || log.action === 'forgot_reset') { authBadge = 'badge-primary'; }
+              %>
+              <span class="badge <%= authBadge %>"><%= actionLabels[log.action] || log.action %></span>
+            </td>
+            <td><span class="badge badge-secondary"><%= targetLabels[log.target_type] || log.target_type || '-' %></span></td>
+            <td class="td-detail" title="<%= log.detail || '' %>"><%= log.detail || '-' %></td>
+            <td class="td-time"><%= log.created_at %></td>
+            <td class="td-ip"><%= log.ip || '-' %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } %>
+
+  <!-- ===== 4.8 今日操作统计 ===== -->
+  <% if (user.role === 'super_admin' && todayActionStats && todayActionStats.length > 0) { %>
+  <div class="trend-section">
+    <h2>📊 今日操作统计（按目标类型）</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;">
+      <% todayActionStats.forEach(function(stat) { %>
+      <div class="stat-card" style="flex:1;min-width:100px;padding:12px;text-align:center;">
+        <p class="stat-number" style="font-size:22px;"><%= stat.count %></p>
+        <span class="stat-label"><%= targetLabels[stat.target_type] || stat.target_type %></span>
+      </div>
+      <% }); %>
+    </div>
+  </div>
+  <% } %>
+
+  <!-- ===== 4.9 活跃用户排行 ===== -->
+  <% if (user.role === 'super_admin' && activeUsers && activeUsers.length > 0) { %>
+  <div class="trend-section">
+    <h2>🏆 活跃用户排行（近7天）</h2>
+    <div class="table-responsive">
+      <table class="activity-table">
+        <thead>
+          <tr>
+            <th>排名</th>
+            <th>用户名</th>
+            <th>操作次数</th>
+            <th>最后活跃时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% activeUsers.forEach(function(u, idx) { %>
+          <tr>
+            <td><span class="badge <%= idx < 3 ? 'badge-warning' : 'badge-secondary' %>"><%= idx + 1 %></span></td>
+            <td class="td-user"><%= u.username %></td>
+            <td><strong><%= u.action_count %></strong> 次</td>
+            <td class="td-time"><%= u.last_action %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } %>
+
+  <!-- ===== 5. 快速操作 ===== -->
+  <div class="quick-actions">
+    <h2>⚡ 快速操作</h2>
+    <div class="action-buttons">
+      <% if (hasPerm("articles.manage")) { %>
+      <a href="/admin/articles/new" class="btn btn-primary">📝 新建文章</a>
+      <% } %>
+      <% if (hasPerm("pages.manage")) { %>
+      <a href="/admin/pages/new" class="btn btn-primary">📄 新建页面</a>
+      <% } %>
+      <% if (hasPerm("novels.manage")) { %>
+      <a href="/admin/novels/new" class="btn btn-primary">📚 新建小说</a>
+      <% } %>
+      <% if (hasPerm("image_share.manage")) { %>
+      <a href="/admin/image-share" class="btn btn-primary">🖼️ 图片管理</a>
+      <a href="/image-share" class="btn btn-primary" target="_blank" style="background: linear-gradient(135deg, #667eea, #764ba2);">🌐 访问图片分享站</a>
+      <% } %>
+      <% if (hasPerm("comments.manage") && stats.commentCount > 0) { %>
+      <a href="/admin/comments" class="btn btn-warning">💬 审核评论 (<%= stats.commentCount %>)</a>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var ALL_LOGS = [];
+  var rows = document.querySelectorAll('#activityBody tr');
+  rows.forEach(function(row) {
+    ALL_LOGS.push({
+      action: row.getAttribute('data-action') || '',
+      username: row.getAttribute('data-username') || '',
+      html: row.outerHTML
+    });
+  });
+
+  var PAGE_SIZE = 20;
+  var currentPage = 1;
+  var filteredLogs = ALL_LOGS.slice();
+
+  var filterAction = document.getElementById('filterAction');
+  var filterUser = document.getElementById('filterUser');
+  var activityInfo = document.getElementById('activityInfo');
+  var activityBody = document.getElementById('activityBody');
+  var paginationEl = document.getElementById('activityPagination');
+
+  function applyFilters() {
+    var actionVal = (filterAction.value || '').toLowerCase();
+    var userVal = (filterUser.value || '').toLowerCase().trim();
+
+    filteredLogs = ALL_LOGS.filter(function(log) {
+      if (actionVal && log.action !== actionVal) return false;
+      if (userVal && log.username.indexOf(userVal) === -1) return false;
+      return true;
+    });
+
+    currentPage = 1;
+    renderTable();
+  }
+
+  function renderTable() {
+    if (!activityBody) return;
+    var total = filteredLogs.length;
+    var totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    var start = (currentPage - 1) * PAGE_SIZE;
+    var end = Math.min(start + PAGE_SIZE, total);
+    var pageLogs = filteredLogs.slice(start, end);
+
+    var html = '';
+    pageLogs.forEach(function(log) {
+      html += log.html;
+    });
+    if (total === 0) {
+      html = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:32px;">没有匹配的记录</td></tr>';
+    }
+    activityBody.innerHTML = html;
+
+    if (activityInfo) {
+      if (total > 0) {
+        activityInfo.textContent = '共 ' + total + ' 条记录，当前显示 ' + (start + 1) + '-' + end + ' 条';
+      } else {
+        activityInfo.textContent = '';
+      }
+    }
+
+    renderPagination(totalPages);
+  }
+
+  function renderPagination(totalPages) {
+    if (!paginationEl) return;
+    if (totalPages <= 1) {
+      paginationEl.innerHTML = '';
+      return;
+    }
+
+    var html = '';
+    html += '<button ' + (currentPage <= 1 ? 'disabled' : '') + ' onclick="window._actPaginate(' + (currentPage - 1) + ')">上一页</button>';
+
+    var startPage = Math.max(1, currentPage - 2);
+    var endPage = Math.min(totalPages, startPage + 4);
+    if (endPage - startPage < 4) {
+      startPage = Math.max(1, endPage - 4);
+    }
+
+    if (startPage > 1) {
+      html += '<button onclick="window._actPaginate(1)">1</button>';
+      if (startPage > 2) html += '<span class="page-info">...</span>';
+    }
+
+    for (var i = startPage; i <= endPage; i++) {
+      html += '<button class="' + (i === currentPage ? 'active' : '') + '" onclick="window._actPaginate(' + i + ')">' + i + '</button>';
+    }
+
+    if (endPage < totalPages) {
+      if (endPage < totalPages - 1) html += '<span class="page-info">...</span>';
+      html += '<button onclick="window._actPaginate(' + totalPages + ')">' + totalPages + '</button>';
+    }
+
+    html += '<button ' + (currentPage >= totalPages ? 'disabled' : '') + ' onclick="window._actPaginate(' + (currentPage + 1) + ')">下一页</button>';
+    html += '<span class="page-info">第 ' + currentPage + ' / ' + totalPages + ' 页</span>';
+
+    paginationEl.innerHTML = html;
+  }
+
+  window._actPaginate = function(page) {
+    currentPage = page;
+    renderTable();
+    var section = document.querySelector('.activity-section');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  if (filterAction) {
+    filterAction.addEventListener('change', applyFilters);
+  }
+  if (filterUser) {
+    var searchTimer = null;
+    filterUser.addEventListener('input', function() {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(applyFilters, 300);
+    });
+  }
+
+  if (ALL_LOGS.length > 0 && activityBody) {
+    renderTable();
+  }
+})();
+</script>

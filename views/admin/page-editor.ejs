@@ -1,0 +1,494 @@
+<% var active = 'pages' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1><%= page ? '编辑页面' : '新建页面' %></h1>
+    <a href="/admin/pages" class="btn">返回页面列表</a>
+  </div>
+  
+  <form action="/admin/pages/save" method="POST" class="admin-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <% if (page) { %>
+      <input type="hidden" name="id" value="<%= page.id %>">
+    <% } %>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label for="title">页面标题 *</label>
+        <input type="text" id="title" name="title" value="<%= page ? page.title : '' %>" required>
+      </div>
+      
+      <div class="form-group">
+        <label for="slug">页面 Slug *</label>
+        <input type="text" id="slug" name="slug" value="<%= page ? page.slug : '' %>" required placeholder="例如: about-us">
+      </div>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label for="type">页面类型</label>
+        <select id="type" name="type">
+          <option value="page" <%= page && page.type === 'page' ? 'selected' : '' %>>普通页面</option>
+          <option value="article" <%= page && page.type === 'article' ? 'selected' : '' %>>文章页面</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="status">状态</label>
+        <select id="status" name="status">
+          <option value="published" <%= !page || page.status === 'published' ? 'selected' : '' %>>已发布</option>
+          <option value="draft" <%= page && page.status === 'draft' ? 'selected' : '' %>>草稿</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="sort_order">排序</label>
+        <input type="number" id="sort_order" name="sort_order" value="<%= page ? page.sort_order : 0 %>" min="0">
+      </div>
+      
+      <div class="form-group">
+        <label for="font_color">页面字体颜色</label>
+        <div class="color-picker-wrapper">
+          <input type="color" id="font_color" name="font_color" value="<%= page ? (page.font_color || '#333333') : '#333333' %>" class="color-input">
+          <input type="text" id="font_color_text" value="<%= page ? (page.font_color || '#333333') : '#333333' %>" class="color-text-input" placeholder="#333333">
+          <span class="color-preview-label">选择页面内容的默认文字颜色</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label for="content">页面内容</label>
+      <div id="editor-container"></div>
+      <input type="hidden" id="content" name="content" value="<%= page ? page.content : '' %>">
+    </div>
+    
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存页面</button>
+      <a href="/admin/pages" class="btn">取消</a>
+    </div>
+  </form>
+</div>
+
+<!-- 媒体选择器模态框 -->
+<div id="media-modal" class="media-modal">
+  <div class="media-modal-content">
+    <div class="media-modal-header">
+      <h2>选择媒体文件</h2>
+      <button type="button" class="close-modal" onclick="closeMediaSelector()">&times;</button>
+    </div>
+    <div class="media-modal-body">
+      <div class="media-upload-zone" id="media-upload-zone">
+        <div class="media-upload-inner">
+          <i class="fas fa-cloud-upload-alt" style="font-size:28px;color:#007bff;margin-bottom:8px;display:block;"></i>
+          <p style="font-weight:600;margin:0 0 4px 0;">拖拽图片到此处上传</p>
+          <p style="color:#999;font-size:12px;margin:0;">或 <button type="button" class="upload-browse-btn" onclick="document.getElementById('media-file-input').click()">点击浏览文件</button></p>
+          <p style="color:#999;font-size:11px;margin:4px 0 0 0;">支持 JPG、PNG、GIF，最大 10MB</p>
+        </div>
+        <div class="media-upload-progress" id="media-upload-progress" style="display:none;">
+          <div class="progress-bar-track"><div class="progress-bar-fill" id="upload-bar"></div></div>
+          <span id="upload-status-text" style="font-size:12px;color:#666;"></span>
+        </div>
+      </div>
+      <input type="file" id="media-file-input" accept="image/jpeg,image/png,image/gif" style="display:none;" onchange="handleFileSelect(event)">
+      <div class="media-list" id="media-list">
+        <p style="text-align:center;padding:20px;color:#999;">加载中...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var quill = null;
+
+// 安全初始化 Quill 编辑器
+try {
+  if (typeof Quill !== 'undefined') {
+    quill = new Quill('#editor-container', {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+          [{ 'font': [] }],
+          [{ 'size': ['small', false, 'large', 'huge'] }],
+          ['bold', 'italic', 'underline', 'strike'],
+          [{ 'color': [] }, { 'background': [] }],
+          [{ 'script': 'sub'}, { 'script': 'super' }],
+          [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+          [{ 'indent': '-1'}, { 'indent': '+1' }],
+          [{ 'direction': 'rtl' }],
+          [{ 'align': [] }],
+          ['link', 'image', 'video'],
+          ['blockquote', 'code-block'],
+          ['clean']
+        ]
+      },
+      placeholder: '请输入页面内容...'
+    });
+
+    // 设置初始内容
+    var contentElement = document.getElementById('content');
+    if (contentElement.value) {
+      quill.root.innerHTML = contentElement.value;
+    }
+
+    // 表单提交前更新隐藏字段
+    document.querySelector('.admin-form').addEventListener('submit', function(e) {
+      document.getElementById('content').value = quill.root.innerHTML;
+    });
+
+    // 自定义图片处理器 - 使用媒体库
+    var toolbar = quill.getModule('toolbar');
+    toolbar.addHandler('image', function() {
+      openMediaSelectorForEditor();
+    });
+  } else {
+    document.getElementById('editor-container').innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + (document.getElementById('content').value || '') + '</textarea>';
+  }
+} catch (e) {
+  console.error('Quill编辑器初始化失败:', e);
+  document.getElementById('editor-container').innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + (document.getElementById('content').value || '') + '</textarea>';
+}
+
+// 自动生成 slug
+document.getElementById('title').addEventListener('input', function() {
+  var slug = this.value
+    .toLowerCase()
+    .replace(/[\s]+/g, '-')
+    .replace(/[^\w\u4e00-\u9fa5-]/g, '')
+    .replace(/--+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+  document.getElementById('slug').value = slug;
+});
+
+// 字体颜色选择器同步
+(function() {
+  var colorInput = document.getElementById('font_color');
+  var colorText = document.getElementById('font_color_text');
+  
+  if (colorInput && colorText) {
+    colorInput.addEventListener('input', function() {
+      colorText.value = this.value;
+    });
+    
+    colorText.addEventListener('input', function() {
+      if (/^#[0-9a-fA-F]{6}$/.test(this.value)) {
+        colorInput.value = this.value;
+      }
+    });
+  }
+})();
+
+// ============ 媒体选择器功能 ============
+
+var pendingEditorTarget = null;
+
+function openMediaSelectorForEditor() {
+  pendingEditorTarget = 'editor';
+  document.getElementById('media-modal').style.display = 'block';
+  loadMediaFiles();
+}
+
+function closeMediaSelector() {
+  document.getElementById('media-modal').style.display = 'none';
+  pendingEditorTarget = null;
+  resetUploadZone();
+}
+
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function resetUploadZone() {
+  var zone = document.getElementById('media-upload-zone');
+  var inner = zone.querySelector('.media-upload-inner');
+  var progress = document.getElementById('media-upload-progress');
+  var fileInput = document.getElementById('media-file-input');
+  if (inner) inner.style.display = '';
+  if (progress) progress.style.display = 'none';
+  if (fileInput) fileInput.value = '';
+  zone.classList.remove('drag-over');
+}
+
+function handleFileSelect(event) {
+  var file = event.target.files[0];
+  if (file) uploadMediaFile(file);
+}
+
+var uploadZone = document.getElementById('media-upload-zone');
+if (uploadZone) {
+  uploadZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.classList.add('drag-over');
+  });
+  uploadZone.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.classList.remove('drag-over');
+  });
+  uploadZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.classList.remove('drag-over');
+    var file = e.dataTransfer.files[0];
+    if (file && file.type.match(/^image\/(jpeg|png|gif)$/)) {
+      uploadMediaFile(file);
+    } else {
+      alert('请拖拽 JPG、PNG 或 GIF 格式的图片文件');
+    }
+  });
+}
+
+function uploadMediaFile(file) {
+  if (file.size > 10 * 1024 * 1024) {
+    alert('文件超过 10MB 限制，请压缩后上传');
+    return;
+  }
+
+  var inner = uploadZone.querySelector('.media-upload-inner');
+  var progress = document.getElementById('media-upload-progress');
+  var bar = document.getElementById('upload-bar');
+  var statusText = document.getElementById('upload-status-text');
+
+  if (inner) inner.style.display = 'none';
+  if (progress) progress.style.display = '';
+  if (bar) bar.style.width = '0%';
+  if (statusText) statusText.textContent = '正在上传: ' + file.name;
+
+  var formData = new FormData();
+  formData.append('file', file);
+  formData.append('_csrf', getCsrfToken());
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/admin/media/upload');
+  xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+  xhr.upload.addEventListener('progress', function(e) {
+    if (e.lengthComputable && bar) {
+      var pct = Math.round(e.loaded / e.total * 100);
+      bar.style.width = pct + '%';
+    }
+  });
+
+  xhr.addEventListener('load', function() {
+    try {
+      var result = JSON.parse(xhr.responseText);
+    } catch (err) {
+      if (statusText) statusText.textContent = '服务器返回异常，请重试';
+      return;
+    }
+    if (result.success) {
+      if (statusText) statusText.textContent = '上传成功！';
+      setTimeout(function() {
+        resetUploadZone();
+        loadMediaFiles();
+      }, 600);
+      if (pendingEditorTarget === 'editor') {
+        if (quill) {
+          var range = quill.getSelection(true);
+          quill.insertEmbed(range.index, 'image', result.file.file_path);
+        }
+        setTimeout(function() { closeMediaSelector(); }, 300);
+      }
+    } else {
+      if (statusText) statusText.textContent = '上传失败: ' + (result.message || '未知错误');
+    }
+  });
+
+  xhr.addEventListener('error', function() {
+    if (statusText) statusText.textContent = '网络错误，请重试';
+  });
+
+  xhr.send(formData);
+}
+
+function loadMediaFiles() {
+  var mediaList = document.getElementById('media-list');
+  mediaList.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">加载中...</p>';
+
+  fetch('/admin/media/list')
+    .then(response => response.json())
+    .then(function(media) {
+      var html = '';
+      if (media.length > 0) {
+        media.forEach(function(item) {
+          if (item.file_type && item.file_type.startsWith('image/')) {
+            html += '<div class="media-item" onclick="selectMedia(\'' + item.file_path + '\')">';
+            html += '  <img src="' + item.file_path + '" alt="' + (item.original_name || '') + '">';
+            html += '  <p>' + (item.original_name || item.filename) + '</p>';
+            html += '</div>';
+          }
+        });
+      }
+      mediaList.innerHTML = html || '<p style="text-align:center;padding:20px;color:#999;">没有图片文件</p>';
+    })
+    .catch(function(err) {
+      mediaList.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">加载失败，请重试</p>';
+    });
+}
+
+function selectMedia(url) {
+  if (pendingEditorTarget === 'editor') {
+    if (quill) {
+      var range = quill.getSelection(true);
+      quill.insertEmbed(range.index, 'image', url);
+    }
+  }
+  closeMediaSelector();
+}
+
+window.onclick = function(event) {
+  var modal = document.getElementById('media-modal');
+  if (event.target == modal) {
+    closeMediaSelector();
+  }
+}
+</script>
+
+<style>
+.color-picker-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.color-input {
+  width: 40px !important;
+  height: 40px !important;
+  padding: 2px !important;
+  cursor: pointer;
+  border: 1px solid #ddd !important;
+  border-radius: 6px !important;
+}
+
+.color-text-input {
+  width: 120px !important;
+  padding: 8px 12px !important;
+  border: 1px solid #ddd !important;
+  border-radius: 6px !important;
+  font-size: 14px;
+  font-family: monospace;
+}
+
+.color-preview-label {
+  font-size: 12px;
+  color: #888;
+}
+
+/* 媒体选择器模态框 */
+.media-modal {
+  display: none;
+  position: fixed;
+  z-index: 10000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+}
+.media-modal-content {
+  background-color: #fefefe;
+  margin: 5% auto;
+  padding: 20px;
+  border: 1px solid #888;
+  width: 80%;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow-y: auto;
+  border-radius: 8px;
+}
+.media-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee;
+}
+.media-modal-header h2 {
+  margin: 0;
+}
+.close-modal {
+  background: none;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  color: #999;
+  padding: 0 5px;
+}
+.close-modal:hover {
+  color: #333;
+}
+.media-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 15px;
+}
+.media-item {
+  border: 2px solid #ddd;
+  padding: 10px;
+  cursor: pointer;
+  text-align: center;
+  border-radius: 8px;
+  transition: all 0.3s;
+}
+.media-item:hover {
+  border-color: #007bff;
+  box-shadow: 0 2px 10px rgba(0,123,255,0.2);
+}
+.media-item img {
+  max-width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.media-item p {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-upload-zone {
+  border: 2px dashed #d0d0d0;
+  border-radius: 10px;
+  padding: 24px;
+  text-align: center;
+  margin-bottom: 20px;
+  transition: all 0.3s;
+  background: #fafbfc;
+  cursor: pointer;
+}
+.media-upload-zone:hover,
+.media-upload-zone.drag-over {
+  border-color: #007bff;
+  background: #f0f7ff;
+}
+.upload-browse-btn {
+  background: none;
+  border: none;
+  color: #007bff;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
+}
+.progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  margin: 8px 0 4px 0;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #007bff, #00c6ff);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+</style>

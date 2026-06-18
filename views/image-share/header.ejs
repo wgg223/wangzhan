@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof pageTitle !== 'undefined' ? pageTitle + ' - ' : '' %><%= config.site_name || '图片分享网' %></title>
+  <meta name="csrf-token" content="<%= csrfToken %>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; min-height: 100vh; }
+    a { text-decoration: none; color: inherit; }
+    .nav { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .nav .logo { font-size: 20px; font-weight: bold; }
+    .nav .logo a { color: white; }
+    .nav-links { display: flex; gap: 15px; align-items: center; }
+    .nav-links a { color: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 6px; transition: all 0.3s; }
+    .nav-links a:hover { background: rgba(255,255,255,0.2); color: white; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .btn { display: inline-block; padding: 8px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px; transition: all 0.3s; text-align: center; }
+    .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-success { background: #28a745; color: white; }
+    .btn-danger { background: #dc3545; color: white; }
+    .btn-warning { background: #ffc107; color: #333; }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: 500; color: #555; }
+    .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; transition: border-color 0.3s; }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: #667eea; }
+    .form-group textarea { resize: vertical; min-height: 80px; }
+    .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; }
+    .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .alert-danger { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .alert-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    .alert-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+    .image-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.3s, box-shadow 0.3s; display: block; }
+    .image-card:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); }
+    .image-card img { width: 100%; height: 200px; object-fit: cover; }
+    .image-card .info { padding: 12px; }
+    .image-card .title { font-weight: 600; margin-bottom: 5px; }
+    .image-card .meta { font-size: 12px; color: #999; }
+    .category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
+    .category-card { background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: all 0.3s; cursor: pointer; display: block; }
+    .category-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+    .category-card i { font-size: 32px; color: #667eea; margin-bottom: 10px; display: block; }
+    .category-card h3 { font-size: 14px; color: #555; }
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+    .badge-success { background: #d4edda; color: #155724; }
+    .badge-warning { background: #fff3cd; color: #856404; }
+    .badge-danger { background: #f8d7da; color: #721c24; }
+    .badge-info { background: #d1ecf1; color: #0c5460; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .stat-card .number { font-size: 28px; font-weight: bold; color: #667eea; }
+    .stat-card .label { font-size: 13px; color: #999; margin-top: 5px; }
+    table { width: 100%; border-collapse: collapse; }
+    table th, table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+    table th { background: #f8f9fa; font-weight: 600; color: #555; }
+    table tr:hover { background: #f8f9fa; }
+    .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
+    .search-bar input { flex: 1; padding: 10px 15px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+    .search-bar input:focus { outline: none; border-color: #667eea; }
+    .footer { background: #333; color: #999; text-align: center; padding: 20px; margin-top: 40px; }
+    .tabs { display: flex; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+    .tabs a { padding: 8px 16px; border-radius: 6px 6px 0 0; color: #666; transition: all 0.3s; }
+    .tabs a.active, .tabs a:hover { background: #667eea; color: white; }
+    .empty-state { text-align: center; padding: 50px; color: #999; }
+    .empty-state i { font-size: 48px; margin-bottom: 15px; display: block; }
+    @media (max-width: 768px) {
+      .nav { flex-direction: column; gap: 10px; }
+      .nav-links { flex-wrap: wrap; justify-content: center; }
+      .image-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+      .category-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="logo"><a href="/image-share"><i class="fas fa-images"></i> <%= config.site_name || '图片分享网' %></a></div>
+    <div class="nav-links">
+      <a href="/" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);" title="返回主站"><i class="fas fa-arrow-left"></i> 返回主站</a>
+      <a href="/image-share"><i class="fas fa-home"></i> 首页</a>
+      <% if (typeof user !== 'undefined' && user) { %>
+        <a href="/image-share/user"><i class="fas fa-user"></i> 我的图片</a>
+        <a href="/image-share/user/upload"><i class="fas fa-upload"></i> 上传</a>
+        <% if (user.role === 1 || user.role === 'admin' || user.role === 'super_admin') { %>
+          <a href="/admin/image-share"><i class="fas fa-cog"></i> 管理</a>
+        <% } %>
+        <span style="color: rgba(255,255,255,0.7);">|</span>
+        <a href="/image-share/user/profile"><i class="fas fa-user-circle"></i> <%= user.nickname || user.username %></a>
+        <a href="/image-share/logout"><i class="fas fa-sign-out-alt"></i> 退出</a>
+      <% } else { %>
+        <a href="/image-share/login"><i class="fas fa-sign-in-alt"></i> 登录</a>
+        <a href="/image-share/register"><i class="fas fa-user-plus"></i> 注册</a>
+      <% } %>
+    </div>
+  </nav>
+  <div class="container">

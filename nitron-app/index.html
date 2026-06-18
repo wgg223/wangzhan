@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>daolaowang</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .container {
+      text-align: center;
+      padding: 20px;
+    }
+    .logo {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    p {
+      font-size: 16px;
+      opacity: 0.9;
+      margin-bottom: 30px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      background: #fff;
+      color: #6366f1;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+    }
+    .loading {
+      display: none;
+      margin-top: 20px;
+    }
+    .spinner {
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top: 3px solid #fff;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .version {
+      position: fixed;
+      bottom: 20px;
+      font-size: 12px;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">🌐</div>
+    <h1>浮沉</h1>
+    <p>连接到服务器</p>
+    <a href="https://dalaowang233.top" class="btn" id="openBtn">打开应用</a>
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>正在加载...</p>
+    </div>
+  </div>
+  <div class="version">v1.0.0</div>
+  <script>
+    document.getElementById('openBtn').addEventListener('click', function(e) {
+      e.preventDefault();
+      document.getElementById('loading').style.display = 'block';
+      this.style.display = 'none';
+      window.location.href = 'https://dalaowang233.top';
+    });
+    
+    // Auto redirect after 2 seconds
+    setTimeout(function() {
+      window.location.href = 'https://dalaowang233.top';
+    }, 2000);
+  </script>
+</body>
+</html>

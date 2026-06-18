@@ -1,0 +1,332 @@
+<% var active = 'maintenance' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>🔧 服务器维护</h1>
+    <p class="page-desc">管理服务器维护模式状态</p>
+  </div>
+
+  <div class="settings-section">
+    <h2>维护状态</h2>
+    <div class="update-info-card">
+      <div class="maintenance-status-display" id="statusDisplay">
+        <div class="status-icon" id="statusIcon">🟢</div>
+        <div class="status-info">
+          <h3 id="statusTitle">当前状态：正常运行</h3>
+          <p id="statusDesc" class="text-muted">网站可正常访问</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <h2>维护设置</h2>
+    <div class="update-info-card">
+      <div class="form-group">
+        <label>维护模式</label>
+        <div class="toggle-switch-container">
+          <label class="toggle-switch">
+            <input type="checkbox" id="maintenanceEnabled" <%= settings.maintenance_mode === 'true' ? 'checked' : '' %>>
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label" id="toggleLabel"><%= settings.maintenance_mode === 'true' ? '已开启' : '已关闭' %></span>
+        </div>
+        <p class="help-text">开启后，前端页面将显示维护页面，只有管理员可以访问后台</p>
+      </div>
+
+      <div class="form-group">
+        <label for="maintenanceTitle">维护标题</label>
+        <input type="text" id="maintenanceTitle" class="form-control" value="<%= settings.maintenance_title || '系统维护中' %>" placeholder="系统维护中">
+      </div>
+
+      <div class="form-group">
+        <label for="maintenanceMessage">维护消息</label>
+        <textarea id="maintenanceMessage" class="form-control" rows="4" placeholder="系统正在进行维护升级，请稍后再试。"><%= settings.maintenance_message || '系统正在进行维护升级，请稍后再试。' %></textarea>
+      </div>
+
+      <div class="update-actions">
+        <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveMaintenance()">
+          <span class="btn-text">保存设置</span>
+          <span class="btn-loading" style="display: none;">保存中...</span>
+        </button>
+        <button type="button" class="btn btn-success" id="toggleBtn" onclick="toggleMaintenance()">
+          <span class="btn-text" id="toggleBtnText"><%= settings.maintenance_mode === 'true' ? '关闭维护模式' : '开启维护模式' %></span>
+          <span class="btn-loading" style="display: none;">处理中...</span>
+        </button>
+      </div>
+
+      <div id="saveStatus" style="display: none; margin-top: 12px;"></div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <h2>说明</h2>
+    <div class="info-card">
+      <ul class="info-list">
+        <li>开启维护模式后，前端所有页面将显示维护页面</li>
+        <li>管理员仍然可以正常访问后台管理面板</li>
+        <li>健康检查接口 (<code>/health</code>) 不受影响</li>
+        <li>静态资源和 API 请求不受影响</li>
+        <li>关闭维护模式后，前端立即恢复正常访问</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<style>
+.maintenance-status-display {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+  border-radius: 8px;
+  transition: all 0.3s;
+}
+.maintenance-status-display.active {
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+}
+.maintenance-status-display.inactive {
+  background: #d1fae5;
+  border: 1px solid #a7f3d0;
+}
+.status-icon {
+  font-size: 48px;
+}
+.status-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+}
+.status-info p {
+  margin: 0;
+  color: #6b7280;
+}
+.toggle-switch-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 34px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .toggle-slider {
+  background-color: #ef4444;
+}
+input:checked + .toggle-slider:before {
+  transform: translateX(26px);
+}
+.toggle-label {
+  font-weight: 500;
+  color: #374151;
+}
+.help-text {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+.form-control {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+.form-control:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+.form-group {
+  margin-bottom: 20px;
+}
+.form-group label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: #374151;
+}
+.info-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 20px;
+}
+.info-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #475569;
+  line-height: 1.8;
+}
+.info-list code {
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.text-muted {
+  color: #6b7280;
+}
+</style>
+
+<script>
+function getCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+// Update status display
+function updateStatusDisplay(enabled) {
+  const display = document.getElementById('statusDisplay');
+  const icon = document.getElementById('statusIcon');
+  const title = document.getElementById('statusTitle');
+  const desc = document.getElementById('statusDesc');
+  const toggleLabel = document.getElementById('toggleLabel');
+  const toggleBtnText = document.getElementById('toggleBtnText');
+
+  if (enabled) {
+    display.className = 'maintenance-status-display active';
+    icon.textContent = '🔴';
+    title.textContent = '当前状态：维护中';
+    desc.textContent = '前端页面显示维护页面，仅管理员可访问后台';
+    toggleLabel.textContent = '已开启';
+    toggleBtnText.textContent = '关闭维护模式';
+  } else {
+    display.className = 'maintenance-status-display inactive';
+    icon.textContent = '🟢';
+    title.textContent = '当前状态：正常运行';
+    desc.textContent = '网站可正常访问';
+    toggleLabel.textContent = '已关闭';
+    toggleBtnText.textContent = '开启维护模式';
+  }
+}
+
+// Initialize
+updateStatusDisplay(document.getElementById('maintenanceEnabled').checked);
+
+// Toggle change event
+document.getElementById('maintenanceEnabled').addEventListener('change', function() {
+  updateStatusDisplay(this.checked);
+});
+
+async function saveMaintenance() {
+  const btn = document.getElementById('saveBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('saveStatus');
+
+  const enabled = document.getElementById('maintenanceEnabled').checked;
+  const title = document.getElementById('maintenanceTitle').value;
+  const message = document.getElementById('maintenanceMessage').value;
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">保存中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ enabled, title, message })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+      updateStatusDisplay(enabled);
+    } else {
+      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+async function toggleMaintenance() {
+  const btn = document.getElementById('toggleBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('saveStatus');
+
+  const checkbox = document.getElementById('maintenanceEnabled');
+  const newEnabled = !checkbox.checked;
+  const title = document.getElementById('maintenanceTitle').value;
+  const message = document.getElementById('maintenanceMessage').value;
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">处理中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ enabled: newEnabled, title, message })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      checkbox.checked = newEnabled;
+      updateStatusDisplay(newEnabled);
+      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+    } else {
+      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+</script>

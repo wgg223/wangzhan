@@ -1,0 +1,302 @@
+<% var active = 'projects' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1><%= project ? '✏️ 编辑项目' : '➕ 创建新项目' %></h1>
+    <div class="actions">
+      <a href="/admin/projects" class="btn">← 返回项目列表</a>
+    </div>
+  </div>
+
+  <% if (typeof error !== 'undefined' && error) { %>
+    <div class="alert alert-error"><%= error %></div>
+  <% } %>
+
+  <div class="card">
+    <form id="project-form" onsubmit="return false;">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="project-id">项目 ID <span style="color: var(--danger);">*</span></label>
+          <input type="text" id="project-id" name="id" 
+                 value="<%= project ? project.id : '' %>" 
+                 placeholder="例如：blog, novel, image" 
+                 <%= project ? 'disabled' : '' %>
+                 required>
+          <small style="color: var(--gray-400); font-size: 12px;">仅允许字母、数字、下划线和连字符，创建后不可修改</small>
+        </div>
+        <div class="form-group">
+          <label for="project-icon">图标</label>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="project-icon" name="icon" 
+                   value="<%= project ? project.icon : '📦' %>" 
+                   placeholder="📦" style="max-width: 80px; text-align: center; font-size: 20px;">
+            <span id="icon-preview" style="font-size: 32px;"><%= project ? project.icon : '📦' %></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="project-name">项目名称 <span style="color: var(--danger);">*</span></label>
+        <input type="text" id="project-name" name="name" 
+               value="<%= project ? project.name : '' %>" 
+               placeholder="例如：博客系统" required>
+      </div>
+
+      <div class="form-group">
+        <label for="project-description">项目描述</label>
+        <textarea id="project-description" name="description" rows="3" 
+                  placeholder="简要描述该项目的功能和用途"><%= project ? project.description : '' %></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="project-tables">关联数据表 <small style="color: var(--gray-400);">(每行一个表名)</small></label>
+        <textarea id="project-tables" name="tables" rows="4" 
+                  placeholder="articles&#10;pages&#10;comments"><%= project && project.tables ? project.tables.join('\n') : '' %></textarea>
+        <small style="color: var(--gray-400); font-size: 12px;">重置项目时将清空这些表的数据</small>
+      </div>
+
+      <div class="form-group">
+        <label for="project-file-dirs">关联文件目录 <small style="color: var(--gray-400);">(每行一个路径，相对于 public/)</small></label>
+        <textarea id="project-file-dirs" name="file_dirs" rows="3"
+                  placeholder="uploads&#10;uploads/images"><%= project && project.file_dirs ? project.file_dirs.join('\n') : '' %></textarea>
+        <small style="color: var(--gray-400); font-size: 12px;">重置项目时将删除这些目录下的文件</small>
+      </div>
+
+      <div class="form-group">
+        <label for="project-github-url">GitHub 仓库链接 <small style="color: var(--gray-400);">(可选)</small></label>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <input type="url" id="project-github-url" name="github_url"
+                 value="<%= project ? project.github_url || '' : '' %>"
+                 placeholder="https://github.com/username/repo"
+                 style="flex: 1;">
+          <span id="github-url-status" style="font-size: 20px;"></span>
+        </div>
+        <small style="color: var(--gray-400); font-size: 12px;">
+          关联 GitHub 仓库后，可在项目列表页一键部署/更新代码到 <code>deploy/projects/</code> 目录
+        </small>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" id="save-btn" onclick="saveProject()">
+          <%= project ? '💾 保存修改' : '➕ 创建项目' %>
+        </button>
+        <a href="/admin/projects" class="btn">取消</a>
+      </div>
+    </form>
+  </div>
+
+  <% if (project) { %>
+  <div class="card" style="border-color: #fecaca; background: #fef2f2; margin-top: 20px;">
+    <h2 style="color: #dc2626;">项目信息</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 12px;">
+      <div class="project-stat">
+        <span class="project-stat-label">项目 ID</span>
+        <span class="project-stat-value"><%= project.id %></span>
+      </div>
+      <div class="project-stat">
+        <span class="project-stat-label">数据表数</span>
+        <span class="project-stat-value"><%= project.tables ? project.tables.length : 0 %></span>
+      </div>
+      <div class="project-stat">
+        <span class="project-stat-label">文件目录数</span>
+        <span class="project-stat-value"><%= project.file_dirs ? project.file_dirs.length : 0 %></span>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <h3 style="color: #dc2626; font-size: 15px; margin-bottom: 12px;">🗑️ 删除项目</h3>
+      <p style="color: #991b1b; font-size: 13px; margin-bottom: 12px;">
+        删除项目仅移除项目定义，不会清除项目关联的数据。如需清除数据，请先使用重置功能。
+      </p>
+      <button type="button" class="btn btn-danger btn-small" onclick="deleteProject()">删除项目定义</button>
+    </div>
+  </div>
+  <% } %>
+</div>
+
+<style>
+.project-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}
+
+.project-stat-label {
+  font-size: 13px;
+  color: #991b1b;
+}
+
+.project-stat-value {
+  font-weight: 600;
+  color: #dc2626;
+}
+</style>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+var isEdit = <%= project ? 'true' : 'false' %>;
+var projectId = '<%= project ? project.id : '' %>';
+
+// 图标预览 + GitHub URL 实时验证
+document.addEventListener('DOMContentLoaded', function() {
+  var iconInput = document.getElementById('project-icon');
+  var iconPreview = document.getElementById('icon-preview');
+  if (iconInput && iconPreview) {
+    iconInput.addEventListener('input', function() {
+      iconPreview.textContent = iconInput.value || '📦';
+    });
+  }
+
+  // GitHub URL 实时验证
+  var githubUrlInput = document.getElementById('project-github-url');
+  var githubUrlStatus = document.getElementById('github-url-status');
+  if (githubUrlInput && githubUrlStatus) {
+    githubUrlInput.addEventListener('input', function() {
+      var url = githubUrlInput.value.trim();
+      if (!url) {
+        githubUrlStatus.textContent = '';
+        return;
+      }
+      var pattern = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/)?(\.git)?$/;
+      if (pattern.test(url)) {
+        githubUrlStatus.textContent = '✅';
+        githubUrlStatus.style.color = '#22c55e';
+      } else {
+        githubUrlStatus.textContent = '❌';
+        githubUrlStatus.style.color = '#ef4444';
+      }
+    });
+  }
+});
+
+function saveProject() {
+  var name = document.getElementById('project-name').value.trim();
+  var description = document.getElementById('project-description').value.trim();
+  var icon = document.getElementById('project-icon').value.trim();
+  var tablesText = document.getElementById('project-tables').value.trim();
+  var fileDirsText = document.getElementById('project-file-dirs').value.trim();
+  var githubUrl = document.getElementById('project-github-url').value.trim();
+
+  if (!name) {
+    alert('⚠️ 请输入项目名称');
+    document.getElementById('project-name').focus();
+    return;
+  }
+
+  // 解析表名列表
+  var tables = tablesText ? tablesText.split('\n').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; }) : [];
+  // 解析文件目录列表
+  var fileDirs = fileDirsText ? fileDirsText.split('\n').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; }) : [];
+
+  var btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+
+  var payload = {
+    name: name,
+    description: description,
+    icon: icon,
+    tables: tables,
+    file_dirs: fileDirs,
+    github_url: githubUrl
+  };
+
+  if (isEdit) {
+    // 更新项目
+    fetch('/admin/projects/api/' + projectId + '/update', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success) {
+        alert('✅ ' + (data.message || '项目更新成功'));
+        window.location.href = '/admin/projects';
+      } else {
+        alert('❌ ' + (data.error || '更新失败'));
+        btn.disabled = false;
+        btn.textContent = '💾 保存修改';
+      }
+    })
+    .catch(function(err) {
+      alert('❌ 网络错误: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = '💾 保存修改';
+    });
+  } else {
+    // 创建项目
+    var id = document.getElementById('project-id').value.trim();
+    if (!id) {
+      alert('⚠️ 请输入项目ID');
+      document.getElementById('project-id').focus();
+      btn.disabled = false;
+      btn.textContent = '➕ 创建项目';
+      return;
+    }
+
+    payload.id = id;
+
+    fetch('/admin/projects/api/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success) {
+        alert('✅ ' + (data.message || '项目创建成功'));
+        window.location.href = '/admin/projects';
+      } else {
+        alert('❌ ' + (data.error || '创建失败'));
+        btn.disabled = false;
+        btn.textContent = '➕ 创建项目';
+      }
+    })
+    .catch(function(err) {
+      alert('❌ 网络错误: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = '➕ 创建项目';
+    });
+  }
+}
+
+function deleteProject() {
+  if (!confirm('确定要删除项目定义「' + projectId + '」吗？\n\n注意：这不会清除项目关联的数据，仅移除项目定义。')) {
+    return;
+  }
+
+  fetch('/admin/projects/api/' + projectId + '/delete', {
+    method: 'DELETE',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    }
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      alert('✅ ' + (data.message || '项目已删除'));
+      window.location.href = '/admin/projects';
+    } else {
+      alert('❌ ' + (data.error || '删除失败'));
+    }
+  })
+  .catch(function(err) {
+    alert('❌ 网络错误: ' + err.message);
+  });
+}
+</script>

@@ -1,0 +1,652 @@
+<style>
+  /* ===== 操作日志管理页面样式 ===== */
+  .activity-page h1 {
+    margin-bottom: 24px;
+    font-size: 26px;
+    color: var(--gray-800);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* 统计卡片 */
+  .activity-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .activity-stat-card {
+    background: #fff;
+    border-radius: var(--border-radius);
+    padding: 16px 20px;
+    border: 1px solid var(--gray-100);
+    box-shadow: var(--shadow-sm);
+    text-align: center;
+    transition: var(--transition);
+  }
+
+  .activity-stat-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .activity-stat-number {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 2px;
+  }
+
+  .activity-stat-label {
+    font-size: 12px;
+    color: var(--gray-500);
+  }
+
+  /* 筛选和搜索区域 */
+  .activity-toolbar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 20px;
+    background: #fff;
+    padding: 16px 20px;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--gray-100);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .activity-toolbar select,
+  .activity-toolbar input {
+    padding: 8px 14px;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius-sm);
+    font-size: 13px;
+    background: #fff;
+    color: var(--gray-600);
+    transition: var(--transition);
+    font-family: inherit;
+  }
+
+  .activity-toolbar select:focus,
+  .activity-toolbar input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  }
+
+  .activity-toolbar .btn-search {
+    padding: 8px 18px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--border-radius-sm);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: var(--transition);
+  }
+
+  .activity-toolbar .btn-search:hover {
+    background: var(--primary-dark);
+  }
+
+  .activity-toolbar .btn-search:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .activity-toolbar .clear-btn {
+    padding: 8px 14px;
+    background: var(--gray-100);
+    color: var(--gray-600);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius-sm);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: var(--transition);
+    text-decoration: none;
+  }
+
+  .activity-toolbar .clear-btn:hover {
+    background: var(--gray-200);
+  }
+
+  /* 折叠式高级筛选 */
+  .advanced-filters-toggle {
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px dashed var(--gray-300);
+    border-radius: var(--border-radius-sm);
+    font-size: 12px;
+    color: var(--gray-500);
+    cursor: pointer;
+    font-family: inherit;
+    transition: var(--transition);
+  }
+
+  .advanced-filters-toggle:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  .advanced-filters {
+    display: none;
+    width: 100%;
+    padding-top: 12px;
+    border-top: 1px solid var(--gray-100);
+    margin-top: 4px;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .advanced-filters.show {
+    display: flex;
+  }
+
+  .advanced-filters label {
+    font-size: 12px;
+    color: var(--gray-500);
+  }
+
+  .advanced-filters input[type="date"] {
+    padding: 6px 10px;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius-sm);
+    font-size: 13px;
+    font-family: inherit;
+  }
+
+  /* 表格容器 */
+  .activity-table-wrap {
+    background: #fff;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--gray-100);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  .activity-page-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .activity-page-table thead th {
+    padding: 12px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--gray-500);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 2px solid var(--gray-100);
+    white-space: nowrap;
+    background: var(--gray-50);
+  }
+
+  .activity-page-table tbody td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--gray-50);
+    color: var(--gray-600);
+    vertical-align: middle;
+  }
+
+  .activity-page-table tbody tr {
+    transition: var(--transition);
+  }
+
+  .activity-page-table tbody tr:hover {
+    background: var(--gray-50);
+  }
+
+  .activity-page-table .td-user {
+    font-weight: 600;
+    color: var(--gray-700);
+    white-space: nowrap;
+  }
+
+  .activity-page-table .td-target-title {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .activity-page-table .td-detail {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--gray-400);
+    font-size: 12px;
+  }
+
+  .activity-page-table .td-time {
+    white-space: nowrap;
+    color: var(--gray-400);
+    font-size: 12px;
+  }
+
+  .activity-page-table .td-ip {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--gray-500);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .badge-success { background: #d1fae5; color: #065f46; }
+  .badge-primary { background: #eef2ff; color: #4338ca; }
+  .badge-danger { background: #fee2e2; color: #991b1b; }
+  .badge-warning { background: #fef3c7; color: #92400e; }
+  .badge-info { background: #dbeafe; color: #1e40af; }
+  .badge-secondary { background: var(--gray-100); color: var(--gray-600); }
+  .badge-purple { background: #f3e8ff; color: #6b21a8; }
+
+  /* 分页 */
+  .activity-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    padding: 16px;
+  }
+
+  .activity-pagination button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 14px;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius-sm);
+    background: #fff;
+    color: var(--gray-600);
+    font-size: 13px;
+    cursor: pointer;
+    transition: var(--transition);
+    font-family: inherit;
+  }
+
+  .activity-pagination button:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-bg);
+  }
+
+  .activity-pagination button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .activity-pagination button.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+
+  .activity-pagination .page-info {
+    font-size: 13px;
+    color: var(--gray-500);
+    margin: 0 8px;
+  }
+
+  .activity-no-data {
+    text-align: center;
+    color: var(--gray-400);
+    padding: 60px 20px;
+    font-size: 14px;
+  }
+
+  .activity-info {
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--gray-400);
+    border-bottom: 1px solid var(--gray-50);
+    background: var(--gray-50);
+  }
+
+  .activity-info strong {
+    color: var(--gray-600);
+  }
+
+  /* 加载状态 */
+  .loading-overlay {
+    text-align: center;
+    padding: 40px;
+    color: var(--gray-400);
+  }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--gray-100);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (max-width: 768px) {
+    .activity-stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .activity-toolbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .activity-toolbar select,
+    .activity-toolbar input {
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="activity-page">
+  <h1>📋 操作日志</h1>
+
+  <!-- 统计卡片 -->
+  <div class="activity-stats" id="statCards">
+    <div class="activity-stat-card">
+      <div class="activity-stat-number"><%= stats.total %></div>
+      <div class="activity-stat-label">总日志数</div>
+    </div>
+    <div class="activity-stat-card">
+      <div class="activity-stat-number"><%= stats.today %></div>
+      <div class="activity-stat-label">今日操作</div>
+    </div>
+    <div class="activity-stat-card">
+      <div class="activity-stat-number"><%= stats.auth %></div>
+      <div class="activity-stat-label">认证操作</div>
+    </div>
+    <div class="activity-stat-card">
+      <div class="activity-stat-number"><%= stats.others %></div>
+      <div class="activity-stat-label">其他操作</div>
+    </div>
+  </div>
+
+  <!-- 近7天操作统计（仅在有数据时显示） -->
+  <% if (stats7d && stats7d.total > 0) { %>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px;">
+    <div class="activity-stat-card" style="flex:1;min-width:120px;">
+      <div class="activity-stat-number"><%= stats7d.total %></div>
+      <div class="activity-stat-label">近7天操作</div>
+    </div>
+    <% if (stats7d.by_action) { %>
+      <% var topActions = Object.entries(stats7d.by_action).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 4); %>
+      <% topActions.forEach(function(entry) { %>
+      <div class="activity-stat-card" style="flex:1;min-width:100px;">
+        <div class="activity-stat-number" style="font-size:18px;"><%= entry[1] %></div>
+        <div class="activity-stat-label"><%= actionLabels[entry[0]] || entry[0] %></div>
+      </div>
+      <% }); %>
+    <% } %>
+  </div>
+  <% } %>
+
+  <!-- 工具栏 -->
+  <form class="activity-toolbar" method="GET" action="/admin/activity-logs">
+    <select name="action">
+      <option value="">全部操作</option>
+      <optgroup label="👁️ 页面访问">
+        <option value="view" <%= filters.action === 'view' ? 'selected' : '' %>>访问页面</option>
+        <option value="submit" <%= filters.action === 'submit' ? 'selected' : '' %>>提交表单</option>
+      </optgroup>
+      <optgroup label="📝 内容操作">
+        <option value="create" <%= filters.action === 'create' ? 'selected' : '' %>>创建</option>
+        <option value="update" <%= filters.action === 'update' ? 'selected' : '' %>>更新</option>
+        <option value="delete" <%= filters.action === 'delete' ? 'selected' : '' %>>删除</option>
+        <option value="upload" <%= filters.action === 'upload' ? 'selected' : '' %>>上传</option>
+      </optgroup>
+      <optgroup label="✅ 审核操作">
+        <option value="approve" <%= filters.action === 'approve' ? 'selected' : '' %>>批准</option>
+        <option value="reject" <%= filters.action === 'reject' ? 'selected' : '' %>>驳回</option>
+      </optgroup>
+      <optgroup label="🔐 认证操作">
+        <option value="login" <%= filters.action === 'login' ? 'selected' : '' %>>登录</option>
+        <option value="login_fail" <%= filters.action === 'login_fail' ? 'selected' : '' %>>登录失败</option>
+        <option value="logout" <%= filters.action === 'logout' ? 'selected' : '' %>>登出</option>
+        <option value="register" <%= filters.action === 'register' ? 'selected' : '' %>>注册</option>
+        <option value="register_info" <%= filters.action === 'register_info' ? 'selected' : '' %>>填写注册信息</option>
+        <option value="register_verify" <%= filters.action === 'register_verify' ? 'selected' : '' %>>验证注册邮箱</option>
+        <option value="register_success" <%= filters.action === 'register_success' ? 'selected' : '' %>>注册成功</option>
+      </optgroup>
+      <optgroup label="🔑 密码操作">
+        <option value="change_password" <%= filters.action === 'change_password' ? 'selected' : '' %>>修改密码</option>
+        <option value="force_change_password" <%= filters.action === 'force_change_password' ? 'selected' : '' %>>强制修改密码</option>
+        <option value="forgot_send_code" <%= filters.action === 'forgot_send_code' ? 'selected' : '' %>>发送重置验证码</option>
+        <option value="forgot_reset" <%= filters.action === 'forgot_reset' ? 'selected' : '' %>>重置密码成功</option>
+        <option value="reset" <%= filters.action === 'reset' ? 'selected' : '' %>>重置数据</option>
+      </optgroup>
+      <optgroup label="📧 邮件操作">
+        <option value="email_send" <%= filters.action === 'email_send' ? 'selected' : '' %>>发送邮件</option>
+        <option value="email_send_success" <%= filters.action === 'email_send_success' ? 'selected' : '' %>>邮件发送成功</option>
+        <option value="email_send_fail" <%= filters.action === 'email_send_fail' ? 'selected' : '' %>>邮件发送失败</option>
+        <option value="email_resend" <%= filters.action === 'email_resend' ? 'selected' : '' %>>重新发送验证码</option>
+        <option value="email_verify" <%= filters.action === 'email_verify' ? 'selected' : '' %>>邮箱验证</option>
+      </optgroup>
+      <optgroup label="🔧 权限与安全">
+        <option value="grant" <%= filters.action === 'grant' ? 'selected' : '' %>>授予权限</option>
+        <option value="revoke" <%= filters.action === 'revoke' ? 'selected' : '' %>>撤销权限</option>
+        <option value="disable" <%= filters.action === 'disable' ? 'selected' : '' %>>禁用</option>
+        <option value="captcha_fail" <%= filters.action === 'captcha_fail' ? 'selected' : '' %>>图形验证码失败</option>
+        <option value="email_domain_blocked" <%= filters.action === 'email_domain_blocked' ? 'selected' : '' %>>邮箱域名被拦截</option>
+        <option value="password_sha" <%= filters.action === 'password_sha' ? 'selected' : '' %>>SHA密码升级</option>
+      </optgroup>
+      <optgroup label="💬 站内信">
+        <option value="send_message" <%= filters.action === 'send_message' ? 'selected' : '' %>>发送站内信</option>
+        <option value="delete_message" <%= filters.action === 'delete_message' ? 'selected' : '' %>>删除站内信</option>
+      </optgroup>
+      <optgroup label="🚫 账号操作">
+        <option value="delete_account" <%= filters.action === 'delete_account' ? 'selected' : '' %>>注销账号</option>
+      </optgroup>
+      <!-- 新增服务器运维 -->
+      <optgroup label="🔧 服务器运维">
+        <option value="server_start" <%= filters.action === 'server_start' ? 'selected' : '' %>>服务启动</option>
+        <option value="server_stop" <%= filters.action === 'server_stop' ? 'selected' : '' %>>服务关闭</option>
+        <option value="server_restart" <%= filters.action === 'server_restart' ? 'selected' : '' %>>服务重启</option>
+        <option value="server_reload" <%= filters.action === 'server_reload' ? 'selected' : '' %>>服务重载</option>
+        <option value="backup_create" <%= filters.action === 'backup_create' ? 'selected' : '' %>>创建备份</option>
+        <option value="backup_restore" <%= filters.action === 'backup_restore' ? 'selected' : '' %>>恢复备份</option>
+        <option value="cache_clear" <%= filters.action === 'cache_clear' ? 'selected' : '' %>>清除缓存</option>
+        <option value="database_optimize" <%= filters.action === 'database_optimize' ? 'selected' : '' %>>数据库优化</option>
+      </optgroup>
+      <optgroup label="👥 用户管理">
+        <option value="user_enable" <%= filters.action === 'user_enable' ? 'selected' : '' %>>启用用户</option>
+        <option value="user_disable" <%= filters.action === 'user_disable' ? 'selected' : '' %>>禁用用户</option>
+        <option value="user_approve" <%= filters.action === 'user_approve' ? 'selected' : '' %>>审核通过</option>
+        <option value="user_lock" <%= filters.action === 'user_lock' ? 'selected' : '' %>>锁定用户</option>
+        <option value="user_unlock" <%= filters.action === 'user_unlock' ? 'selected' : '' %>>解锁用户</option>
+      </optgroup>
+      <optgroup label="🏷️ 权限角色">
+        <option value="role_create" <%= filters.action === 'role_create' ? 'selected' : '' %>>创建角色</option>
+        <option value="role_update" <%= filters.action === 'role_update' ? 'selected' : '' %>>编辑角色</option>
+        <option value="role_delete" <%= filters.action === 'role_delete' ? 'selected' : '' %>>删除角色</option>
+        <option value="perm_batch_update" <%= filters.action === 'perm_batch_update' ? 'selected' : '' %>>批量更新权限</option>
+      </optgroup>
+      <optgroup label="💬 评论批量操作">
+        <option value="comment_batch_approve" <%= filters.action === 'comment_batch_approve' ? 'selected' : '' %>>批量通过</option>
+        <option value="comment_batch_reject" <%= filters.action === 'comment_batch_reject' ? 'selected' : '' %>>批量驳回</option>
+        <option value="comment_batch_delete" <%= filters.action === 'comment_batch_delete' ? 'selected' : '' %>>批量删除</option>
+        <option value="comment_reply" <%= filters.action === 'comment_reply' ? 'selected' : '' %>>回复评论</option>
+      </optgroup>
+      <optgroup label="🗂️ 媒体操作">
+        <option value="media_batch_upload" <%= filters.action === 'media_batch_upload' ? 'selected' : '' %>>批量上传</option>
+        <option value="media_batch_delete" <%= filters.action === 'media_batch_delete' ? 'selected' : '' %>>批量删除</option>
+        <option value="media_replace" <%= filters.action === 'media_replace' ? 'selected' : '' %>>替换文件</option>
+        <option value="media_compress" <%= filters.action === 'media_compress' ? 'selected' : '' %>>压缩文件</option>
+      </optgroup>
+      <optgroup label="⚙️ 配置操作">
+        <option value="config_update" <%= filters.action === 'config_update' ? 'selected' : '' %>>更新配置</option>
+        <option value="config_reset" <%= filters.action === 'config_reset' ? 'selected' : '' %>>重置配置</option>
+        <option value="config_import" <%= filters.action === 'config_import' ? 'selected' : '' %>>导入配置</option>
+        <option value="config_export" <%= filters.action === 'config_export' ? 'selected' : '' %>>导出配置</option>
+      </optgroup>
+      <optgroup label="🖥️ 系统操作">
+        <option value="system_maintenance" <%= filters.action === 'system_maintenance' ? 'selected' : '' %>>系统维护</option>
+        <option value="system_update" <%= filters.action === 'system_update' ? 'selected' : '' %>>系统更新</option>
+        <option value="system_cleanup" <%= filters.action === 'system_cleanup' ? 'selected' : '' %>>系统清理</option>
+        <option value="system_log_clear" <%= filters.action === 'system_log_clear' ? 'selected' : '' %>>清理日志</option>
+      </optgroup>
+    </select>
+
+    <input type="text" name="target_type" placeholder="目标类型（如：auth,server）" value="<%= filters.target_type || '' %>" style="width:140px;">
+    <input type="text" name="username" placeholder="搜索用户名..." value="<%= filters.username || '' %>" style="width:140px;">
+    <input type="text" name="keyword" placeholder="搜索详情关键词..." value="<%= filters.keyword || '' %>" style="width:160px;">
+
+    <button type="submit" class="btn-search">🔍 筛选</button>
+    <a href="/admin/activity-logs" class="clear-btn">✕ 清除</a>
+
+    <!-- 高级筛选展开按钮 -->
+    <button type="button" class="advanced-filters-toggle" onclick="document.getElementById('advancedFilters').classList.toggle('show');this.textContent=this.textContent==='📂 高级筛选'?'📂 收起高级筛选':'📂 高级筛选'">📂 高级筛选</button>
+
+    <!-- 高级筛选区域 -->
+    <div class="advanced-filters" id="advancedFilters">
+      <label>日期范围：</label>
+      <input type="date" name="date_from" value="<%= filters.date_from || '' %>">
+      <span style="color:var(--gray-400);font-size:12px;">至</span>
+      <input type="date" name="date_to" value="<%= filters.date_to || '' %>">
+      <label>IP地址：</label>
+      <input type="text" name="ip" placeholder="输入IP地址..." value="<%= filters.ip || '' %>" style="width:150px;">
+      <label>路由：</label>
+      <input type="text" name="route" placeholder="路由路径..." value="<%= filters.route || '' %>" style="width:160px;" list="routeList">
+      <% if (availableRoutes && availableRoutes.length > 0) { %>
+      <datalist id="routeList">
+        <% availableRoutes.forEach(function(r) { %>
+        <option value="<%= r.route %>">
+        <% }); %>
+      </datalist>
+      <% } %>
+      <label>方法：</label>
+      <select name="method">
+        <option value="">全部</option>
+        <option value="GET" <%= filters.method === 'GET' ? 'selected' : '' %>>GET</option>
+        <option value="POST" <%= filters.method === 'POST' ? 'selected' : '' %>>POST</option>
+        <option value="PUT" <%= filters.method === 'PUT' ? 'selected' : '' %>>PUT</option>
+        <option value="DELETE" <%= filters.method === 'DELETE' ? 'selected' : '' %>>DELETE</option>
+      </select>
+      <label>每页：</label>
+      <select name="limit">
+        <option value="10" <%= pagination.limit === 10 ? 'selected' : '' %>>10条</option>
+        <option value="20" <%= pagination.limit === 20 ? 'selected' : '' %>>20条</option>
+        <option value="30" <%= pagination.limit === 30 ? 'selected' : '' %>>30条</option>
+        <option value="50" <%= pagination.limit === 50 ? 'selected' : '' %>>50条</option>
+        <option value="100" <%= pagination.limit === 100 ? 'selected' : '' %>>100条</option>
+      </select>
+    </div>
+  </form>
+
+  <!-- 日志列表 -->
+  <div class="activity-table-wrap">
+    <% if (logs.length > 0) { %>
+    <div class="activity-info">
+      共 <strong><%= pagination.total %></strong> 条记录，当前显示第 <strong><%= (pagination.page - 1) * pagination.limit + 1 %></strong> - <strong><%= Math.min(pagination.page * pagination.limit, pagination.total) %></strong> 条
+      (<%= pagination.page %> / <%= pagination.totalPages %> 页)
+    </div>
+    <table class="activity-page-table">
+      <thead>
+        <tr>
+          <th>用户名</th>
+          <th>操作类型</th>
+          <th>目标类型</th>
+          <th>目标标题</th>
+          <th>详情</th>
+          <th>路由</th>
+          <th>方法</th>
+          <th>时间</th>
+          <th>IP 地址</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% logs.forEach(function(log) { %>
+        <tr>
+          <td class="td-user"><%= log.username %></td>
+          <td>
+            <% var badgeCls = 'badge-secondary';
+               if (['create','upload','register','register_success','email_send_success','send_message','server_start','server_restart','backup_create'].includes(log.action)) { badgeCls = 'badge-success'; }
+               else if (['update','change_password','force_change_password','forgot_reset','server_reload','backup_restore','config_update','config_import'].includes(log.action)) { badgeCls = 'badge-primary'; }
+               else if (['delete','disable','login_fail','email_send_fail','captcha_fail','email_domain_blocked','delete_account','delete_message','server_stop','user_disable','user_lock','system_log_clear'].includes(log.action)) { badgeCls = 'badge-danger'; }
+               else if (['approve','grant','user_enable','user_approve','user_unlock','comment_batch_approve'].includes(log.action)) { badgeCls = 'badge-success'; }
+               else if (['reject','revoke','reset','user_reject','comment_batch_reject'].includes(log.action)) { badgeCls = 'badge-warning'; }
+               else if (['login','logout','register_verify','email_verify','forgot_send_code','email_send','email_resend','user_login','user_logout'].includes(log.action)) { badgeCls = 'badge-info'; }
+               else if (['register_info','password_sha','cache_clear','database_optimize','system_maintenance','system_update','system_cleanup'].includes(log.action)) { badgeCls = 'badge-purple'; }
+               else if (['view'].includes(log.action)) { badgeCls = 'badge-secondary'; }
+            %>
+            <span class="badge <%= badgeCls %>"><%= log.action_label || log.action %></span>
+          </td>
+          <td><span class="badge badge-secondary"><%= log.target_label || log.target_type || '-' %></span></td>
+          <td class="td-target-title" title="<%= log.target_title || '' %>"><%= log.target_title || '-' %></td>
+          <td class="td-detail" title="<%= log.detail || '' %>"><%= log.detail || '-' %></td>
+          <td style="font-size:12px;color:var(--gray-500);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<%= log.route || '' %>"><%= log.route || '-' %></td>
+          <td>
+            <% if (log.method) { %>
+              <span class="badge <%= log.method === 'GET' ? 'badge-info' : (log.method === 'POST' ? 'badge-success' : (log.method === 'DELETE' ? 'badge-danger' : 'badge-warning')) %>"><%= log.method %></span>
+            <% } else { %>
+              -
+            <% } %>
+          </td>
+          <td class="td-time"><%= log.created_at %></td>
+          <td class="td-ip"><%= log.ip || '-' %></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+
+    <!-- 分页 -->
+    <div class="activity-pagination">
+      <button
+        <%= pagination.page <= 1 ? 'disabled' : '' %>
+        onclick="location.href='<%= buildPageUrl(pagination.page - 1) %>'"
+      >上一页</button>
+
+      <% var startPage = Math.max(1, pagination.page - 2); %>
+      <% var endPage = Math.min(pagination.totalPages, startPage + 4); %>
+      <% if (endPage - startPage < 4) { startPage = Math.max(1, endPage - 4); } %>
+
+      <% if (startPage > 1) { %>
+        <button onclick="location.href='<%= buildPageUrl(1) %>'">1</button>
+        <% if (startPage > 2) { %><span class="page-info">...</span><% } %>
+      <% } %>
+
+      <% for (var i = startPage; i <= endPage; i++) { %>
+        <button class="<%= i === pagination.page ? 'active' : '' %>" onclick="location.href='<%= buildPageUrl(i) %>'"><%= i %></button>
+      <% } %>
+
+      <% if (endPage < pagination.totalPages) { %>
+        <% if (endPage < pagination.totalPages - 1) { %><span class="page-info">...</span><% } %>
+        <button onclick="location.href='<%= buildPageUrl(pagination.totalPages) %>'"><%= pagination.totalPages %></button>
+      <% } %>
+
+      <button
+        <%= pagination.page >= pagination.totalPages ? 'disabled' : '' %>
+        onclick="location.href='<%= buildPageUrl(pagination.page + 1) %>'"
+      >下一页</button>
+      <span class="page-info">第 <%= pagination.page %> / <%= pagination.totalPages %> 页</span>
+    </div>
+    <% } else { %>
+    <div class="activity-no-data">
+      <p style="font-size: 32px; margin-bottom: 12px;">📭</p>
+      <p>暂无匹配的操作日志记录</p>
+      <p style="font-size: 12px; margin-top: 8px; color: var(--gray-300);">尝试调整筛选条件或 <a href="/admin/activity-logs" style="color: var(--primary);">清除筛选</a></p>
+    </div>
+    <% } %>
+  </div>
+</div>

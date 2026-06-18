@@ -1,0 +1,163 @@
+<% var active = 'settings-smtp' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>SMTP 邮件配置</h1>
+    <p class="page-desc">配置邮件发送功能，用于密码重置、注册验证等操作</p>
+  </div>
+
+  <% if (typeof success !== 'undefined' && success) { %>
+    <div class="alert alert-success">SMTP配置已保存</div>
+  <% } %>
+
+  <form action="/admin/settings/smtp" method="POST" class="admin-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+    <div class="settings-section">
+      <h2>服务器配置</h2>
+
+      <div class="form-group">
+        <label for="smtp_host">SMTP 服务器地址</label>
+        <input type="text" id="smtp_host" name="smtp_host" value="<%= settings.smtp_host || '' %>" placeholder="例如：smtp.qq.com">
+        <p class="field-hint">常用的SMTP服务器：QQ邮箱 smtp.qq.com，163邮箱 smtp.163.com，Gmail smtp.gmail.com</p>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group half">
+          <label for="smtp_port">端口</label>
+          <input type="number" id="smtp_port" name="smtp_port" value="<%= settings.smtp_port || '465' %>" placeholder="465">
+        </div>
+        <div class="form-group half">
+          <label for="smtp_secure">SSL 加密</label>
+          <select id="smtp_secure" name="smtp_secure">
+            <option value="true" <%= settings.smtp_secure === 'true' ? 'selected' : '' %>>启用 SSL（端口 465）</option>
+            <option value="false" <%= settings.smtp_secure === 'false' ? 'selected' : '' %>>禁用 SSL（端口 25/587）</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>账户信息</h2>
+
+      <div class="form-group">
+        <label for="smtp_user">邮箱账号</label>
+        <input type="text" id="smtp_user" name="smtp_user" value="<%= settings.smtp_user || '' %>" placeholder="完整的邮箱地址">
+      </div>
+
+      <div class="form-group">
+        <label for="smtp_pass">邮箱密码 / 授权码</label>
+        <input type="password" id="smtp_pass" name="smtp_pass" value="<%= settings.smtp_pass || '' %>" placeholder="邮箱密码或SMTP授权码">
+        <p class="field-hint">部分邮箱（如QQ邮箱）需要使用授权码而非登录密码</p>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>发件人信息</h2>
+
+      <div class="form-row">
+        <div class="form-group half">
+          <label for="smtp_from_name">发件人名称</label>
+          <input type="text" id="smtp_from_name" name="smtp_from_name" value="<%= settings.smtp_from_name || settings.site_name || '' %>" placeholder="发件人显示名称">
+        </div>
+        <div class="form-group half">
+          <label for="smtp_from_email">发件人邮箱</label>
+          <input type="email" id="smtp_from_email" name="smtp_from_email" value="<%= settings.smtp_from_email || settings.smtp_user || '' %>" placeholder="留空则使用邮箱账号">
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>连接测试</h2>
+      <p class="field-hint">保存配置前，建议先测试SMTP连接是否正常</p>
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="testSmtpConnection()" id="test-smtp-btn">测试 SMTP 连接</button>
+        <span id="test-smtp-result" style="margin-left: 10px;"></span>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存配置</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function testSmtpConnection() {
+  const btn = document.getElementById('test-smtp-btn');
+  const result = document.getElementById('test-smtp-result');
+  
+  const host = document.getElementById('smtp_host').value;
+  const port = document.getElementById('smtp_port').value;
+  const secure = document.getElementById('smtp_secure').value;
+  const user = document.getElementById('smtp_user').value;
+  const pass = document.getElementById('smtp_pass').value;
+  
+  if (!host || !user || !pass) {
+    result.innerHTML = '<span style="color:red;">请填写服务器地址、账号和密码</span>';
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.textContent = '测试中...';
+  result.innerHTML = '';
+  
+  fetch('/admin/settings/smtp/test', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify({ smtp_host: host, smtp_port: port, smtp_secure: secure, smtp_user: user, smtp_pass: pass })
+  })
+  .then(response => response.json())
+  .then(data => {
+    btn.disabled = false;
+    btn.textContent = '测试 SMTP 连接';
+    if (data.success) {
+      result.innerHTML = '<span style="color:green;">✓ ' + data.message + '</span>';
+    } else {
+      result.innerHTML = '<span style="color:red;">✗ ' + (data.error || '测试失败') + '</span>';
+    }
+  })
+  .catch(err => {
+    btn.disabled = false;
+    btn.textContent = '测试 SMTP 连接';
+    result.innerHTML = '<span style="color:red;">✗ 连接失败，请检查配置</span>';
+  });
+}
+</script>
+
+<style>
+.settings-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px solid #eee;
+}
+.settings-section h2 {
+  font-size: 18px;
+  margin-bottom: 15px;
+}
+.page-desc {
+  color: #888;
+  font-size: 13px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+}
+.field-hint {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+.form-row {
+  display: flex;
+  gap: 15px;
+}
+.form-row .half {
+  flex: 1;
+}
+</style>

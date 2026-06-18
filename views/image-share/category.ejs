@@ -1,0 +1,30 @@
+<%- include('header') %>
+
+<div style="margin-bottom: 20px;">
+  <a href="/image-share" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回首页</a>
+</div>
+
+<h2 style="margin-bottom: 20px;"><i class="fas fa-folder"></i> <%= category.name %></h2>
+
+<% if (images.length > 0) { %>
+  <div class="image-grid">
+    <% images.forEach(function(img) { %>
+      <a href="/image-share/image?id=<%= img.id %>" class="image-card">
+        <img src="<%= img.url %>" alt="<%= img.title %>">
+        <div class="info">
+          <div class="title"><%= img.title %></div>
+          <div class="meta">
+            <span><i class="fas fa-user"></i> <%= img.nickname || '匿名' %></span>
+          </div>
+        </div>
+      </a>
+    <% }); %>
+  </div>
+<% } else { %>
+  <div class="card empty-state">
+    <i class="fas fa-images"></i>
+    <p>该分类下暂无图片</p>
+  </div>
+<% } %>
+
+<%- include('footer') %>

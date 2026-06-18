@@ -1,0 +1,149 @@
+{
+  "env": {
+    "node": true,
+    "es2021": true,
+    "commonjs": true
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "commonjs"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { 
+      "argsIgnorePattern": "^_",
+      "varsIgnorePattern": "^_"
+    }],
+    "no-undef": "error",
+    "no-redeclare": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-unreachable": "error",
+    "no-constant-condition": "error",
+    "no-dupe-args": "error",
+    "no-duplicate-imports": "error",
+    "no-import-assign": "error",
+    "no-setter-return": "error",
+    "no-template-curly-in-string": "warn",
+    "no-unmodified-loop-condition": "warn",
+    "no-self-assign": "error",
+    "no-self-compare": "error",
+    "no-sequences": "error",
+    "no-throw-literal": "error",
+    "no-useless-concat": "warn",
+    "no-useless-escape": "warn",
+    "no-void": "error",
+    "no-with": "error",
+    "no-async-promise-executor": "error",
+    "no-await-in-loop": "warn",
+    "no-promise-executor-return": "error",
+    "require-atomic-updates": "warn",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-script-url": "error",
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-caller": "error",
+    "no-extend-native": "error",
+    "no-extra-bind": "error",
+    "no-floating-decimal": "error",
+    "no-implicit-coercion": "warn",
+    "no-implicit-globals": "error",
+    "no-lone-blocks": "error",
+    "no-loop-func": "error",
+    "no-multi-spaces": "warn",
+    "no-multi-str": "error",
+    "no-new": "error",
+    "no-new-wrappers": "error",
+    "no-octal-escape": "error",
+    "no-param-reassign": "warn",
+    "no-proto": "error",
+    "no-return-assign": "warn",
+    "no-return-await": "warn",
+    "no-self-assign": "error",
+    "no-sequences": "error",
+    "no-useless-call": "warn",
+    "no-useless-return": "warn",
+    "prefer-promise-reject-errors": "error",
+    "radix": "warn",
+    "yoda": "error",
+    "indent": ["warn", 2, { "SwitchCase": 1 }],
+    "linebreak-style": "off",
+    "quotes": ["warn", "single", { "avoidEscape": true }],
+    "semi": ["warn", "always"],
+    "comma-dangle": ["warn", "only-multiline"],
+    "no-trailing-spaces": "warn",
+    "eol-last": "warn",
+    "no-multiple-empty-lines": ["warn", { "max": 2 }],
+    "space-before-blocks": "warn",
+    "keyword-spacing": "warn",
+    "space-infix-ops": "warn",
+    "comma-spacing": "warn",
+    "brace-style": ["warn", "1tbs", { "allowSingleLine": true }],
+    "max-len": ["warn", { 
+      "code": 120,
+      "ignoreComments": true,
+      "ignoreUrls": true,
+      "ignoreStrings": true,
+      "ignoreTemplateLiterals": true
+    }],
+    "handle-callback-err": "warn",
+    "no-buffer-constructor": "warn",
+    "no-new-require": "error",
+    "no-path-concat": "warn",
+    "no-process-exit": "warn",
+    "no-sync": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.mjs"],
+      "parserOptions": {
+        "sourceType": "module"
+      }
+    },
+    {
+      "files": ["scripts/**/*.js"],
+      "rules": {
+        "no-process-exit": "off",
+        "no-sync": "off"
+      }
+    },
+    {
+      "files": ["public/**/*.js"],
+      "env": {
+        "browser": true,
+        "jquery": true
+      },
+      "globals": {
+        "$": "readonly",
+        "jQuery": "readonly",
+        "axios": "readonly",
+        "Swal": "readonly",
+        "Toastify": "readonly",
+        "Quill": "readonly",
+        "marked": "readonly",
+        "hljs": "readonly",
+        "io": "readonly",
+        "moment": "readonly",
+        "Vue": "readonly",
+        "React": "readonly",
+        "ReactDOM": "readonly",
+        "layui": "readonly",
+        "layer": "readonly",
+        "define": "readonly",
+        "require": "readonly",
+        "module": "readonly",
+        "exports": "readonly"
+      }
+    },
+    {
+      "files": ["public/js/poems_data.js"],
+      "rules": {
+        "no-unused-vars": "off",
+        "max-len": "off"
+      }
+    }
+  ]
+}

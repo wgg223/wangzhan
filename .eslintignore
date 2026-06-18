@@ -1,0 +1,56 @@
+# 依赖目录
+node_modules/
+
+# 构建输出目录
+dist/
+build/
+
+# 上传文件目录
+public/uploads/
+
+# 日志文件
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE配置文件
+.vscode/
+.idea/
+
+# 临时文件
+*.tmp
+*.temp
+
+# 数据库文件
+*.db
+*.sqlite
+
+# 备份文件
+*.bak
+*.backup
+
+# 第三方库（已压缩或混淆）
+public/js/third-party/
+public/lib/
+
+# 第三方库和压缩文件
+public/rp-hub/
+RP-Hub/
+public/js/poems_data.js
+public/vendor/
+
+# EJS模板文件（ESLint不直接处理模板）
+views/
+
+# Python脚本（不属于ESLint检查范围）
+*.py
+scripts/*.py
+
+# 配置文件
+ecosystem.config.js
+deploy.py
+
+# 示例文件
+examples/

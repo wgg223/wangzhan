@@ -1,0 +1,144 @@
+<%- include('header') %>
+
+<% if (typeof error !== 'undefined' && error) { %>
+  <div class="alert alert-danger"><%= error %></div>
+<% } %>
+<% if (typeof success !== 'undefined' && success) { %>
+  <div class="alert alert-success"><%= success %></div>
+<% } %>
+
+<section style="margin-bottom: 30px;">
+  <div class="stats">
+    <div class="stat-card">
+      <div class="number"><%= stats.images || 0 %></div>
+      <div class="label">图片总数</div>
+    </div>
+    <div class="stat-card">
+      <div class="number"><%= stats.categories || 0 %></div>
+      <div class="label">分类数量</div>
+    </div>
+    <div class="stat-card">
+      <div class="number"><%= user ? '已登录' : '游客' %></div>
+      <div class="label">当前状态</div>
+    </div>
+  </div>
+</section>
+
+<% if (!user) { %>
+<div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; padding: 30px; margin-bottom: 30px;">
+  <h2>欢迎访问图片分享网</h2>
+  <p style="margin: 10px 0;">您当前以游客身份浏览，仅可查看访客分类的图片</p>
+  <p>登录后可查看所有图片、上传和管理自己的图片</p>
+  <div style="margin-top: 15px;">
+    <a href="/image-share/login" class="btn" style="margin-right: 10px; background: rgba(255,255,255,0.2); color: white;">立即登录</a>
+    <a href="/image-share/register" class="btn" style="background: rgba(255,255,255,0.2); color: white;">注册账号</a>
+  </div>
+</div>
+<% } %>
+
+<!-- 搜索栏 -->
+<div class="card" style="margin-bottom: 30px;">
+  <form action="/image-share/search" method="GET" style="display: flex; gap: 10px; align-items: center;">
+    <input type="text" name="q" placeholder="搜索图片标题、描述..." style="flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;">
+    <select name="cate_id" style="padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;">
+      <option value="">全部分类</option>
+      <% categories.forEach(function(cate) { %>
+        <option value="<%= cate.id %>"><%= cate.name %></option>
+      <% }); %>
+    </select>
+    <button type="submit" class="btn btn-primary" style="padding: 12px 24px;"><i class="fas fa-search"></i> 搜索</button>
+  </form>
+</div>
+
+<section style="margin-bottom: 30px;">
+  <h2 style="margin-bottom: 20px;"><i class="fas fa-th-large"></i> <%= user ? '热门分类' : '访客分类' %></h2>
+  <div class="category-grid">
+    <% if (categories.length > 0) { %>
+      <% categories.forEach(function(cate) { %>
+        <a href="/image-share/category?id=<%= cate.id %>" class="category-card">
+          <i class="fas fa-folder"></i>
+          <h3><%= cate.name %></h3>
+          <% if (user && cate.is_guest) { %>
+            <span class="badge badge-success" style="margin-top: 5px;">访客可见</span>
+          <% } %>
+        </a>
+      <% }); %>
+    <% } else { %>
+      <p>暂无分类</p>
+    <% } %>
+  </div>
+</section>
+
+<section>
+  <h2 style="margin-bottom: 20px;"><i class="fas fa-clock"></i> 最新上传</h2>
+  <% if (hotImages.length > 0) { %>
+    <div class="image-grid">
+      <% hotImages.forEach(function(img) { %>
+        <div class="image-card" onclick="openLightbox('<%= img.url %>', '<%= img.title %>', '<%= img.nickname || "匿名" %>', '<%= img.cate_name || "未分类" %>', '<%= img.description || "" %>')" style="cursor: pointer;">
+          <img src="<%= img.url %>" alt="<%= img.title %>" loading="lazy">
+          <div class="info">
+            <div class="title"><%= img.title %></div>
+            <div class="meta">
+              <span><i class="fas fa-user"></i> <%= img.nickname || '匿名' %></span>
+              <span style="margin-left: 10px;"><i class="fas fa-folder"></i> <%= img.cate_name || '未分类' %></span>
+            </div>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+  <% } else { %>
+    <div class="card" style="text-align: center; padding: 50px;">
+      <i class="fas fa-images" style="font-size: 48px; color: #ccc;"></i>
+      <p style="margin-top: 15px; color: #999;">暂无图片</p>
+    </div>
+  <% } %>
+</section>
+
+<!-- 图片预览灯箱 -->
+<div id="lightbox" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center; padding: 20px;" onclick="closeLightbox(event)">
+  <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center;">
+    <button onclick="closeLightbox(event)" style="position: absolute; top: -40px; right: 0; background: none; border: none; color: white; font-size: 30px; cursor: pointer; z-index: 10;">&times;</button>
+    <img id="lightbox-img" src="" alt="" style="max-width: 90vw; max-height: 75vh; border-radius: 8px; object-fit: contain;">
+    <div style="color: white; text-align: center; margin-top: 15px; max-width: 600px;">
+      <h3 id="lightbox-title" style="margin: 0 0 8px 0; font-size: 18px;"></h3>
+      <p id="lightbox-meta" style="margin: 0 0 8px 0; font-size: 14px; color: #aaa;"></p>
+      <p id="lightbox-desc" style="margin: 0; font-size: 14px; color: #ccc;"></p>
+    </div>
+  </div>
+</div>
+
+<style>
+.lightbox-enter { animation: lightboxFadeIn 0.3s ease; }
+@keyframes lightboxFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.image-card { transition: transform 0.2s, box-shadow 0.2s; }
+.image-card:hover { transform: translateY(-4px); box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
+</style>
+
+<script>
+function openLightbox(url, title, author, category, description) {
+  var lb = document.getElementById('lightbox');
+  document.getElementById('lightbox-img').src = url;
+  document.getElementById('lightbox-title').textContent = title;
+  document.getElementById('lightbox-meta').textContent = '上传者: ' + author + ' | 分类: ' + category;
+  document.getElementById('lightbox-desc').textContent = description || '';
+  lb.style.display = 'flex';
+  lb.classList.add('lightbox-enter');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox(e) {
+  if (e.target === document.getElementById('lightbox') || e.target.tagName === 'BUTTON') {
+    document.getElementById('lightbox').style.display = 'none';
+    document.body.style.overflow = '';
+  }
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.getElementById('lightbox').style.display = 'none';
+    document.body.style.overflow = '';
+  }
+});
+</script>
+
+<%- include('footer') %>

@@ -1,0 +1,37 @@
+<%- include('../header') %>
+
+<div style="margin-bottom: 20px;">
+  <a href="/image-share/user" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回我的图片</a>
+</div>
+
+<div class="card" style="max-width: 600px;">
+  <h2 style="margin-bottom: 20px;"><i class="fas fa-edit"></i> 编辑图片</h2>
+  
+  <div style="margin-bottom: 15px;">
+    <img src="<%= image.url %>" alt="<%= image.title %>" style="max-width: 100%; max-height: 300px; border-radius: 8px;">
+  </div>
+  
+  <form method="POST">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="id" value="<%= image.id %>">
+    <div class="form-group">
+      <label>图片标题 <span style="color: red;">*</span></label>
+      <input type="text" name="title" value="<%= image.title %>" required maxlength="100">
+    </div>
+    <div class="form-group">
+      <label>图片描述</label>
+      <textarea name="description"><%= image.description || '' %></textarea>
+    </div>
+    <div class="form-group">
+      <label>所属分类 <span style="color: red;">*</span></label>
+      <select name="cate_id" required>
+        <% categories.forEach(function(cat) { %>
+          <option value="<%= cat.id %>" <%= cat.id === image.cate_id ? 'selected' : '' %>><%= cat.name %></option>
+        <% }); %>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary" style="width: 100%;"><i class="fas fa-save"></i> 保存修改</button>
+  </form>
+</div>
+
+<%- include('../footer') %>

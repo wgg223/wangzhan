@@ -1,0 +1,727 @@
+<% var active = 'permissions' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>🔐 权限管理</h1>
+  </div>
+  
+  <div class="alert alert-info">
+    <span>💡</span> 权限管理说明：管理员无法直接授予用户权限，所有权限变更必须通过用户的权限申请流程。管理员可以撤销用户已有的权限。
+  </div>
+
+  <!-- 权限申请审核 -->
+  <div class="section-card accent-warning">
+    <div class="section-header bg-gradient-warning">
+      <h2>📋 待审核的权限申请 <span class="badge badge-warning"><%= pendingApplications.length %></span></h2>
+    </div>
+    <div class="section-body">
+      <% if (pendingApplications.length > 0) { %>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>申请人</th>
+              <th>邮箱</th>
+              <th>申请权限</th>
+              <th>申请理由</th>
+              <th>申请时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% pendingApplications.forEach(function(app) { %>
+              <tr>
+                <td><strong><%= app.username %></strong></td>
+                <td><%= app.email || '未填写' %></td>
+                <td><span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span></td>
+                <td><%= app.reason || '无' %></td>
+                <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
+                <td class="actions">
+                  <button class="btn btn-small btn-success" onclick="approveApplication(<%= app.id %>)">✓ 批准</button>
+                  <button class="btn btn-small btn-danger" onclick="rejectApplication(<%= app.id %>)">✗ 拒绝</button>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <div class="empty-state">
+          <span class="empty-state-icon">✅</span>
+          <p class="empty-state-text">暂无待审核的权限申请</p>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- 用户权限管理 -->
+  <div class="section-card accent-primary">
+    <div class="section-header bg-gradient-primary">
+      <h2>👥 用户权限管理</h2>
+    </div>
+    <div class="section-body">
+      <div class="alert alert-warning">
+        <span>⚠️</span> 注意：管理员无法直接授予用户权限，请引导用户提交权限申请。管理员可以撤销用户已有的权限。
+      </div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>用户</th>
+            <th>邮箱</th>
+            <th>角色</th>
+            <th>状态</th>
+            <th>已分配权限</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (users.length > 0) { %>
+            <% users.forEach(u => { %>
+              <tr>
+                <td><strong><%= u.username %></strong></td>
+                <td><%= u.email || '未填写' %></td>
+                <td>
+                  <span class="role-badge role-<%= u.role %>">
+                    <% if (u.role === 'super_admin') { %>👑 超级管理员<% } %>
+                    <% if (u.role === 'admin') { %>🛡️ 管理员<% } %>
+                    <% if (u.role === 'user') { %>👤 普通用户<% } %>
+                    <% if (u.role === 'visitor') { %>👁️ 访客<% } %>
+                  </span>
+                </td>
+                <td>
+                  <span class="status-badge status-<%= u.status %>">
+                    <% if (u.status === 'active') { %>✅ 已激活<% } %>
+                    <% if (u.status === 'pending') { %>⏳ 待审核<% } %>
+                    <% if (u.status === 'disabled') { %>🚫 已禁用<% } %>
+                  </span>
+                </td>
+                <td>
+                  <% if (u.role === 'super_admin') { %>
+                    <span style="color: var(--success); font-weight: 500;">🔑 所有权限（超级管理员）</span>
+                  <% } else { %>
+                    <% var _pMap = typeof userPerms !== 'undefined' ? userPerms : {}; var _perms = _pMap[u.id] || [] %>
+                    <% if (_perms.length > 0) { %>
+                      <div class="perms-list">
+                        <% _perms.forEach(function(pk) { %>
+                          <% var permInfo = permissions.find(function(p) { return p.perm_key === pk; }); %>
+                          <% var permCls = 'perm-default';
+                             if (pk.startsWith('articles.') || pk.startsWith('novels.')) permCls = 'perm-article';
+                             else if (pk.startsWith('image-share.')) permCls = 'perm-image';
+                             else if (pk.startsWith('community.') || pk.startsWith('messages.')) permCls = 'perm-community';
+                             else if (pk.startsWith('users.') || pk.startsWith('permissions.')) permCls = 'perm-admin';
+                             else if (pk.startsWith('pages.') || pk.startsWith('settings.')) permCls = 'perm-system';
+                             else if (pk.endsWith('.access') || pk.endsWith('.read')) permCls = 'perm-basic';
+                          %>
+                          <span class="perm-tag <%= permCls %>" title="<%= pk %>"><%= permInfo ? permInfo.perm_name : pk %></span>
+                        <% }) %>
+                      </div>
+                    <% } else { %>
+                      <span style="color: var(--gray-400); font-size: var(--text-sm);">无特殊权限</span>
+                    <% } %>
+                  <% } %>
+                </td>
+                <td class="actions">
+                  <% if (u.role !== 'super_admin') { %>
+                    <% var _pMap2 = typeof userPerms !== 'undefined' ? userPerms : {}; var _perms2 = _pMap2[u.id] || [] %>
+                    <% if (_perms2.length > 0) { %>
+                      <% 
+                        var permNamesMap = {};
+                        _perms2.forEach(function(pk) {
+                          var pInfo = permissions.find(function(p) { return p.perm_key === pk; });
+                          permNamesMap[pk] = pInfo ? pInfo.perm_name : pk;
+                        });
+                      %>
+                      <button class="btn btn-small btn-danger" onclick="showRevokeModal(<%= u.id %>, this)" 
+                        data-username="<%= u.username %>" 
+                        data-perms="<%- encodeURIComponent(JSON.stringify(_perms2)) %>"
+                        data-perm-names="<%- encodeURIComponent(JSON.stringify(permNamesMap)) %>">撤销权限</button>
+                    <% } else { %>
+                      <span style="color: var(--gray-400); font-size: var(--text-xs);">无权限可撤销</span>
+                    <% } %>
+                  <% } else { %>
+                    <span style="color: var(--gray-400); font-size: var(--text-xs);">超级管理员</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          <% } else { %>
+            <tr>
+              <td colspan="6" class="empty-row">暂无用户</td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 权限列表 -->
+  <div class="section-card accent-info">
+    <div class="section-header bg-gradient-info">
+      <h2>🗂️ 系统权限列表</h2>
+    </div>
+    <div class="section-body">
+      <div class="perm-tree">
+        <div class="perm-group perm-group-basic">
+          <h3>📌 基础访问权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.endsWith('.access') || p.perm_key.endsWith('.read') || p.perm_key.endsWith('.browse'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-article">
+          <h3>📝 文章权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('articles.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-novel">
+          <h3>📚 小说权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('novels.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-image">
+          <h3>🖼️ 图片分享权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('image-share.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-community">
+          <h3>💬 社区互动权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('community.') || p.perm_key.startsWith('messages.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-page">
+          <h3>📄 页面管理权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('pages.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-user">
+          <h3>👥 用户管理权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('users.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-permission">
+          <h3>🔐 权限管理权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('permissions.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-comment">
+          <h3>💬 评论管理权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('comments.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-media">
+          <h3>📁 媒体管理权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('media.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-setting">
+          <h3>⚙️ 系统设置权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('settings.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-data">
+          <h3>💾 数据管理权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('data.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-log">
+          <h3>📋 日志管理权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('logs.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+        
+        <div class="perm-group perm-group-leaderboard">
+          <h3>🏆 排行榜权限</h3>
+          <div class="perm-group-items">
+            <% permissions.filter(function(p) { return p.perm_key.startsWith('leaderboard.'); }).forEach(function(perm) { %>
+              <div class="perm-tree-item">
+                <span class="perm-key"><%= perm.perm_key %></span>
+                <span class="perm-name"><%= perm.perm_name %></span>
+                <span class="perm-desc"><%= perm.description %></span>
+              </div>
+            <% }); %>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 历史申请记录 -->
+  <div class="section-card accent-purple">
+    <div class="section-header bg-gradient-purple">
+      <h2>📜 申请历史记录</h2>
+    </div>
+    <div class="section-body">
+      <% if (allApplications.length > 0) { %>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>申请人</th>
+              <th>申请权限</th>
+              <th>申请理由</th>
+              <th>申请时间</th>
+              <th>状态</th>
+              <th>拒绝原因</th>
+              <th>审核人</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% allApplications.forEach(function(app) { %>
+              <tr>
+                <td><strong><%= app.username %></strong></td>
+                <td><span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span></td>
+                <td><%= app.reason || '无' %></td>
+                <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
+                <td>
+                  <span class="status-badge status-<%= app.status %>">
+                    <% if (app.status === 'pending') { %>⏳ 待审核<% } %>
+                    <% if (app.status === 'approved') { %>✅ 已批准<% } %>
+                    <% if (app.status === 'rejected') { %>❌ 已拒绝<% } %>
+                  </span>
+                </td>
+                <td><% if (app.status === 'rejected') { %><span style="color: var(--danger); font-size: var(--text-sm);"><%= app.reject_reason || '未填写' %></span><% } else { %><span style="color: var(--gray-300);">-</span><% } %></td>
+                <td><%= app.reviewer_name || '-' %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <div class="empty-state">
+          <span class="empty-state-icon">📭</span>
+          <p class="empty-state-text">暂无申请记录</p>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<!-- 撤销权限弹窗 -->
+<div id="revokeModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>撤销用户权限 - <span id="revokeUsername"></span></h3>
+      <button class="modal-close" onclick="closeRevokeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="revokeUserId">
+      <p>请选择要撤销的权限：</p>
+      <div id="revokePermList" class="perm-checkboxes"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="confirmRevoke()">确认撤销</button>
+      <button class="btn" onclick="closeRevokeModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 拒绝申请弹窗 -->
+<div id="rejectModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>拒绝权限申请</h3>
+      <button class="modal-close" onclick="closeRejectModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="rejectApplicationId">
+      <div class="form-group">
+        <label>拒绝原因（可选）</label>
+        <textarea id="rejectReasonInput" rows="4" placeholder="请输入拒绝原因，将展示给申请人..." style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);resize:vertical;font-family:inherit;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="confirmReject()">确认拒绝</button>
+      <button class="btn" onclick="closeRejectModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+// 显示撤销权限弹窗
+function showRevokeModal(userId, btn) {
+  var username = btn.getAttribute('data-username');
+  var permsEncoded = btn.getAttribute('data-perms');
+  var perms = JSON.parse(decodeURIComponent(permsEncoded));
+  var permNamesEncoded = btn.getAttribute('data-perm-names');
+  var permNames = permNamesEncoded ? JSON.parse(decodeURIComponent(permNamesEncoded)) : {};
+  
+  document.getElementById('revokeUserId').value = userId;
+  document.getElementById('revokeUsername').textContent = username;
+  
+  var categories = {
+    '访问权限': [],
+    '用户功能': [],
+    '后台管理': []
+  };
+  
+  perms.forEach(function(permKey) {
+    var displayName = permNames[permKey] || permKey;
+    var item = { key: permKey, name: displayName };
+    
+    if (permKey.endsWith('.access')) {
+      categories['访问权限'].push(item);
+    } else if (permKey.includes('.manage') || permKey.includes('.review') || 
+               permKey.includes('.categories') || permKey.includes('.users') ||
+               permKey.includes('.role') || permKey.includes('.view') ||
+               permKey.includes('.backup') || permKey.includes('.export') ||
+               permKey.includes('.seo') || permKey.includes('.settings')) {
+      categories['后台管理'].push(item);
+    } else {
+      categories['用户功能'].push(item);
+    }
+  });
+  
+  var permListHtml = '';
+  Object.keys(categories).forEach(function(catName) {
+    if (categories[catName].length > 0) {
+      permListHtml += '<div class="perm-category"><strong>' + catName + '</strong></div>';
+      categories[catName].forEach(function(perm) {
+        permListHtml += '<div class="perm-item"><label><input type="checkbox" name="revoke_perms" value="' + perm.key + '"> ' + perm.name + ' <span class="perm-key">(' + perm.key + ')</span></label></div>';
+      });
+    }
+  });
+  
+  document.getElementById('revokePermList').innerHTML = permListHtml;
+  document.getElementById('revokeModal').style.display = 'flex';
+}
+
+function closeRevokeModal() {
+  document.getElementById('revokeModal').style.display = 'none';
+}
+
+function confirmRevoke() {
+  var userId = document.getElementById('revokeUserId').value;
+  var checkboxes = document.querySelectorAll('input[name="revoke_perms"]:checked');
+  
+  if (checkboxes.length === 0) {
+    alert('请选择要撤销的权限');
+    return;
+  }
+  
+  if (!confirm('确定要撤销选中的 ' + checkboxes.length + ' 个权限吗？')) {
+    return;
+  }
+  
+  var requests = [];
+  checkboxes.forEach(function(cb) {
+    requests.push(
+      fetch('/admin/permissions/revoke', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': getCsrfToken()
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          perm_key: cb.value,
+          _csrf: getCsrfToken()
+        })
+      })
+    );
+  });
+  
+  Promise.all(requests).then(function() {
+    location.reload();
+  }).catch(function(err) {
+    alert('撤销权限失败: ' + err.message);
+  });
+}
+
+document.getElementById('revokeModal').addEventListener('click', function(e) {
+  if (e.target === this) closeRevokeModal();
+});
+document.getElementById('rejectModal').addEventListener('click', function(e) {
+  if (e.target === this) closeRejectModal();
+});
+
+function approveApplication(applicationId) {
+  if (!confirm('确定批准此权限申请吗？')) return;
+
+  fetch('/admin/permissions/approve', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: JSON.stringify({ application_id: applicationId, _csrf: getCsrfToken() })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      location.reload();
+    } else {
+      alert(data.error || '操作失败');
+    }
+  })
+  .catch(function(err) {
+    alert('操作失败: ' + err.message);
+  });
+}
+
+function rejectApplication(applicationId) {
+  document.getElementById('rejectApplicationId').value = applicationId;
+  document.getElementById('rejectReasonInput').value = '';
+  document.getElementById('rejectModal').style.display = 'flex';
+}
+
+function closeRejectModal() {
+  document.getElementById('rejectModal').style.display = 'none';
+}
+
+function confirmReject() {
+  var applicationId = document.getElementById('rejectApplicationId').value;
+  var reason = document.getElementById('rejectReasonInput').value.trim();
+
+  fetch('/admin/permissions/reject', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: JSON.stringify({ application_id: applicationId, reason: reason, _csrf: getCsrfToken() })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      location.reload();
+    } else {
+      alert(data.error || '操作失败');
+    }
+  })
+  .catch(function(err) {
+    alert('操作失败: ' + err.message);
+  });
+}
+</script>
+
+<style>
+.perms-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.perm-checkboxes {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.perm-item {
+  padding: 8px 12px;
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-100);
+  transition: var(--transition-fast);
+}
+
+.perm-item:hover {
+  background: var(--primary-bg);
+  border-color: var(--primary-light);
+}
+
+.perm-item label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.perm-key {
+  font-size: var(--text-xs);
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+}
+
+.perm-category {
+  padding: 8px 0;
+  margin-top: 8px;
+  border-top: 1px solid var(--gray-100);
+}
+
+.perm-category:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+.perm-category strong {
+  color: var(--gray-600);
+  font-size: var(--text-sm);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  width: 480px;
+  max-width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-xl);
+  animation: modalSlideIn 0.2s ease;
+}
+
+@keyframes modalSlideIn {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  padding: var(--space-4) var(--space-6);
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--gray-800);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--gray-400);
+  transition: var(--transition-fast);
+}
+
+.modal-close:hover {
+  color: var(--gray-600);
+}
+
+.modal-body {
+  padding: var(--space-6);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  padding: var(--space-4) var(--space-6);
+  background: var(--gray-50);
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+</style>

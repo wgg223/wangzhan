@@ -1,0 +1,53 @@
+<div class="container" style="max-width: 900px; margin: 0 auto;">
+  <div class="page-header">
+    <h1>文章搜索</h1>
+  </div>
+
+  <div class="search-bar" style="display: flex; gap: 10px; margin-bottom: 30px;">
+    <form action="/search" method="GET" style="display: flex; gap: 10px; width: 100%;">
+      <input type="text" name="q" value="<%= typeof keyword !== 'undefined' ? keyword : '' %>" placeholder="搜索文章标题或内容..."
+        style="flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 6px; font-size: 15px;">
+      <button type="submit" class="btn" style="background: #007bff; color: #fff; border: none; padding: 12px 25px; border-radius: 6px; font-size: 15px; cursor: pointer;">
+        搜索
+      </button>
+    </form>
+  </div>
+
+  <% if (typeof keyword !== 'undefined' && keyword) { %>
+    <% if (typeof articles !== 'undefined' && articles.length > 0) { %>
+      <p style="color: #666; margin-bottom: 20px;">找到 <strong><%= articles.length %></strong> 篇相关文章</p>
+      
+      <% articles.forEach(function(article) { %>
+        <div class="card" style="background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 15px;">
+          <h3 style="margin: 0 0 8px 0;">
+            <a href="/articles/<%= article.id %>" style="color: #007bff; text-decoration: none; font-size: 18px;">
+              <%= article.title %>
+            </a>
+          </h3>
+          <div style="color: #999; font-size: 13px; margin-bottom: 8px;">
+            <% if (article.author_name) { %>
+              <span>作者：<%= article.author_name %></span>
+            <% } %>
+            <span style="margin-left: 10px;"><%= new Date(article.created_at).toLocaleDateString('zh-CN') %></span>
+          </div>
+          <p style="color: #666; font-size: 14px; line-height: 1.6; margin: 0;">
+            <% var plainText = article.content.replace(/<[^>]*>/g, '').substring(0, 200); %>
+            <%= plainText %><% if (article.content.replace(/<[^>]*>/g, '').length > 200) { %>...<% } %>
+          </p>
+        </div>
+      <% }) %>
+    <% } else { %>
+      <div style="text-align: center; padding: 50px; color: #999;">
+        <div style="font-size: 48px; margin-bottom: 15px;">&#128269;</div>
+        <p style="font-size: 16px;">未找到与 "<strong><%= keyword %></strong>" 相关的文章</p>
+        <p style="font-size: 14px;">请尝试使用不同的关键词搜索</p>
+      </div>
+    <% } %>
+  <% } else { %>
+    <div style="text-align: center; padding: 50px; color: #999;">
+      <div style="font-size: 48px; margin-bottom: 15px;">&#128269;</div>
+      <p style="font-size: 16px;">输入关键词搜索文章</p>
+      <p style="font-size: 14px;">支持搜索文章标题和内容</p>
+    </div>
+  <% } %>
+</div>

@@ -1,0 +1,32 @@
+<div style="margin-bottom: 20px;">
+  <a href="/admin/image-share" style="color: #667eea;">← 返回图片分享管理</a>
+</div>
+
+<h2 style="margin-bottom: 20px;">📋 图片分享操作日志</h2>
+
+<div class="card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+  <% if (logs.length > 0) { %>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>管理员</th>
+          <th>操作内容</th>
+          <th>时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% logs.forEach(function(log) { %>
+          <tr>
+            <td><%= log.id %></td>
+            <td><%= log.admin_name || '未知' %></td>
+            <td><%= log.content %></td>
+            <td style="color: #999; font-size: 12px;"><%= log.created_at %></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  <% } else { %>
+    <p style="color: #999; text-align: center;">暂无操作日志</p>
+  <% } %>
+</div>

@@ -1,0 +1,151 @@
+<%- include('../header') %>
+
+<div style="margin-bottom: 20px;">
+  <a href="/image-share/admin" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回管理首页</a>
+</div>
+
+<h2 style="margin-bottom: 20px;"><i class="fas fa-cog"></i> 网站设置</h2>
+
+<div class="card">
+  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">基本设置</h3>
+  
+  <div class="form-group">
+    <label>网站名称</label>
+    <input type="text" id="site_name" value="<%= config.site_name || '图片分享网' %>">
+  </div>
+  
+  <div class="form-group">
+    <label>网站描述</label>
+    <textarea id="site_description" rows="3"><%= config.site_description || '分享精彩瞬间，记录美好生活' %></textarea>
+  </div>
+  
+  <div class="form-group">
+    <label>网站Logo路径</label>
+    <input type="text" id="site_logo" value="<%= config.site_logo || '/assets/images/default-avatar.png' %>">
+  </div>
+  
+  <div class="form-group">
+    <label>网站备案号</label>
+    <input type="text" id="icp_number" placeholder="例如：京ICP备12345678号-1" value="<%= config.icp_number || '' %>">
+  </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">内容审核设置</h3>
+  
+  <div class="form-group">
+    <label>图片审核开关</label>
+    <select id="review_enabled">
+      <option value="1" <%= config.review_enabled === '1' ? 'selected' : '' %>>开启（图片需审核）</option>
+      <option value="0" <%= config.review_enabled === '0' ? 'selected' : '' %>>关闭（图片直接通过）</option>
+    </select>
+  </div>
+  
+  <div class="form-group">
+    <label>评论功能开关</label>
+    <select id="comment_enabled">
+      <option value="1" <%= config.comment_enabled === '1' ? 'selected' : '' %>>开启（允许用户评论）</option>
+      <option value="0" <%= config.comment_enabled === '0' ? 'selected' : '' %>>关闭（禁止评论）</option>
+    </select>
+  </div>
+  
+  <div class="form-group">
+    <label>评论审核开关</label>
+    <select id="comment_review_enabled">
+      <option value="1" <%= config.comment_review_enabled === '1' ? 'selected' : '' %>>开启（评论需审核）</option>
+      <option value="0" <%= config.comment_review_enabled === '0' ? 'selected' : '' %>>关闭（评论直接显示）</option>
+    </select>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">访客权限设置</h3>
+  
+  <div class="form-group">
+    <label>允许访客查看</label>
+    <select id="guest_view_enabled">
+      <option value="1" <%= config.guest_view_enabled === '1' ? 'selected' : '' %>>开启（访客可浏览）</option>
+      <option value="0" <%= config.guest_view_enabled === '0' ? 'selected' : '' %>>关闭（仅登录用户可浏览）</option>
+    </select>
+  </div>
+  
+  <div class="form-group">
+    <label>允许访客上传</label>
+    <select id="guest_upload_enabled">
+      <option value="1" <%= config.guest_upload_enabled === '1' ? 'selected' : '' %>>开启（访客可上传）</option>
+      <option value="0" <%= config.guest_upload_enabled === '0' ? 'selected' : '' %>>关闭（仅登录用户可上传）</option>
+    </select>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">上传设置</h3>
+  
+  <div class="form-group">
+    <label>最大文件大小 (MB)</label>
+    <input type="number" id="max_size" value="<%= config.max_size || 10 %>">
+  </div>
+  
+  <div class="form-group">
+    <label>允许格式 (逗号分隔)</label>
+    <input type="text" id="allowed_formats" value="<%= config.allowed_formats || 'jpg,png,jpeg,gif,webp' %>">
+  </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">显示设置</h3>
+  
+  <div class="form-group">
+    <label>每页显示图片数量</label>
+    <input type="number" id="images_per_page" value="<%= config.images_per_page || 12 %>">
+  </div>
+  
+  <div class="form-group">
+    <label>热门图片显示数量</label>
+    <input type="number" id="hot_images_count" value="<%= config.hot_images_count || 12 %>">
+  </div>
+  
+  <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> 保存设置</button>
+</div>
+
+<script>
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function saveSettings() {
+  var data = {
+    site_name: document.getElementById('site_name').value,
+    site_description: document.getElementById('site_description').value,
+    site_logo: document.getElementById('site_logo').value,
+    icp_number: document.getElementById('icp_number').value,
+    review_enabled: document.getElementById('review_enabled').value === '1',
+    comment_enabled: document.getElementById('comment_enabled').value === '1',
+    comment_review_enabled: document.getElementById('comment_review_enabled').value === '1',
+    guest_view_enabled: document.getElementById('guest_view_enabled').value === '1',
+    guest_upload_enabled: document.getElementById('guest_upload_enabled').value === '1',
+    max_size: document.getElementById('max_size').value,
+    allowed_formats: document.getElementById('allowed_formats').value,
+    images_per_page: document.getElementById('images_per_page').value,
+    hot_images_count: document.getElementById('hot_images_count').value
+  };
+  
+  fetch('/image-share/admin/settings', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken() 
+    },
+    body: JSON.stringify(data)
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { 
+      alert('保存成功'); 
+    } else { 
+      alert(data.message); 
+    }
+  });
+}
+</script>
+
+<%- include('../footer') %>

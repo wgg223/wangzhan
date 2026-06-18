@@ -1,0 +1,10 @@
+  </div>
+  <footer class="footer">
+    <p style="margin-bottom: 8px;"><a href="/" style="color: #fff; text-decoration: underline;">🏠 返回主站</a></p>
+    <% if (config.icp_number) { %>
+      <p><%= config.icp_number %></p>
+    <% } %>
+    <p>&copy; 2024 <%= config.site_name || '图片分享网' %> - Powered by Node.js</p>
+  </footer>
+</body>
+</html>

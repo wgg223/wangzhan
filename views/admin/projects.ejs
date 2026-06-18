@@ -1,0 +1,628 @@
+<% var active = 'projects' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>📦 项目管理</h1>
+    <div class="actions">
+      <a href="/admin/projects/new" class="btn btn-primary">➕ 创建新项目</a>
+    </div>
+  </div>
+
+  <div class="alert alert-info">
+    管理系统的各个业务模块。每个项目对应一组独立的数据表和文件目录，支持单独重置。
+  </div>
+
+  <div class="projects-grid" id="projects-grid">
+    <!-- 项目卡片将通过JS动态加载 -->
+    <div class="empty-state" id="loading-state">
+      <p>⏳ 正在加载项目列表...</p>
+    </div>
+  </div>
+</div>
+
+<!-- 重置项目确认弹窗 -->
+<div id="reset-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>⚠️ 重置项目数据</h3>
+      <button class="modal-close" onclick="closeResetModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-danger" id="reset-modal-alert"></div>
+      
+      <div class="reset-stats" id="reset-modal-stats"></div>
+
+      <div class="form-group" style="margin-top: 20px;">
+        <label style="color: #991b1b; font-weight: 600;">
+          请输入 <strong style="color: #dc2626; font-size: 16px;">确认重置</strong> 以继续：
+        </label>
+        <input type="text" id="reset-confirm-text" placeholder="请输入" style="border-color: #fecaca; max-width: 300px;">
+      </div>
+      <div class="form-group">
+        <label style="color: #991b1b; font-weight: 600;">
+          🔑 请输入当前管理员密码以确认身份：
+        </label>
+        <input type="password" id="reset-admin-password" placeholder="请输入管理员密码" style="border-color: #fecaca; max-width: 300px;">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-danger" id="reset-confirm-btn" onclick="executeProjectReset()" disabled>执行重置</button>
+      <button type="button" class="btn" onclick="closeResetModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.project-card {
+  background: #fff;
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--gray-100);
+  overflow: hidden;
+  transition: var(--transition);
+}
+
+.project-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.project-card-header {
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.project-icon {
+  font-size: 36px;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-bg);
+  border-radius: var(--border-radius-sm);
+  flex-shrink: 0;
+}
+
+.project-info h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gray-800);
+  margin-bottom: 4px;
+}
+
+.project-info p {
+  font-size: 13px;
+  color: var(--gray-500);
+  margin: 0;
+}
+
+.project-card-body {
+  padding: 16px 24px;
+}
+
+.project-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.project-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--gray-50);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.project-stat-label {
+  color: var(--gray-500);
+}
+
+.project-stat-value {
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.project-total {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--primary-bg);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.project-total span {
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 18px;
+}
+
+.project-total-label {
+  font-size: 13px;
+  color: var(--gray-500);
+}
+
+.project-card-footer {
+  padding: 12px 24px;
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.project-tags {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.project-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--gray-100);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--gray-500);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--gray-400);
+  background: #fff;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--gray-100);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  max-width: 520px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalSlideIn 0.2s ease;
+}
+
+@keyframes modalSlideIn {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--gray-800);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--gray-400);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--gray-700);
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.reset-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.reset-stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fef2f2;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}
+
+.reset-stat-label {
+  font-size: 13px;
+  color: #991b1b;
+}
+
+.reset-stat-value {
+  font-weight: 700;
+  color: #dc2626;
+}
+
+.project-deploy-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #f0fdf4;
+  border-radius: 6px;
+  border: 1px solid #bbf7d0;
+  font-size: 13px;
+}
+
+.project-deploy-url a {
+  color: #1d4ed8;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.project-deploy-url a:hover {
+  text-decoration: underline;
+}
+
+.deploy-status-success {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.deploy-status-failed {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.deploy-status-none {
+  color: #92400e;
+  font-weight: 600;
+}
+
+.deploy-status-deploying {
+  color: #2563eb;
+  font-weight: 600;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.btn-deploy {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.btn-deploy:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.btn-deploy:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .projects-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .project-stats {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+
+<script>
+var currentResetProjectId = null;
+var currentDeployProjectId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadProjects();
+  
+  // 重置确认输入监听
+  var confirmInput = document.getElementById('reset-confirm-text');
+  var passwordInput = document.getElementById('reset-admin-password');
+  var resetBtn = document.getElementById('reset-confirm-btn');
+  
+  if (confirmInput && passwordInput && resetBtn) {
+    confirmInput.addEventListener('input', checkResetForm);
+    passwordInput.addEventListener('input', checkResetForm);
+  }
+});
+
+function loadProjects() {
+  fetch('/admin/projects/api/list')
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success && data.projects) {
+        renderProjects(data.projects);
+      }
+    })
+    .catch(function(err) {
+      console.error('加载项目列表失败:', err);
+      document.getElementById('projects-grid').innerHTML = '<div class="empty-state">❌ 加载项目列表失败</div>';
+    });
+}
+
+function renderProjects(projects) {
+  var grid = document.getElementById('projects-grid');
+  
+  if (projects.length === 0) {
+    grid.innerHTML = '<div class="empty-state">暂无项目，点击「创建新项目」添加</div>';
+    return;
+  }
+  
+  var html = '';
+  projects.forEach(function(project) {
+    var statsHtml = '';
+    var tables = project.tables || [];
+    
+    tables.forEach(function(table) {
+      var count = (project.stats && project.stats[table] !== undefined) ? project.stats[table] : 0;
+      statsHtml += '<div class="project-stat">';
+      statsHtml += '  <span class="project-stat-label">' + table + '</span>';
+      statsHtml += '  <span class="project-stat-value">' + count + '</span>';
+      statsHtml += '</div>';
+    });
+    
+    var totalRecords = project.totalRecords || 0;
+    
+    // 部署状态显示
+    var deployStatusHtml = '';
+    var githubUrl = project.github_url || '';
+    var deployStatus = project.deploy_status || 'none';
+    
+    if (githubUrl) {
+      var statusIcon = '⏳';
+      var statusText = '未部署';
+      var statusClass = 'deploy-status-none';
+      if (deployStatus === 'success') {
+        statusIcon = '✅';
+        statusText = '已部署';
+        statusClass = 'deploy-status-success';
+      } else if (deployStatus === 'failed') {
+        statusIcon = '❌';
+        statusText = '部署失败';
+        statusClass = 'deploy-status-failed';
+      } else if (deployStatus === 'deploying') {
+        statusIcon = '🔄';
+        statusText = '部署中...';
+        statusClass = 'deploy-status-deploying';
+      }
+      
+      deployStatusHtml = '<div class="project-deploy-info">';
+      deployStatusHtml += '  <span class="project-deploy-url" title="' + escapeHtml(githubUrl) + '">';
+      deployStatusHtml += '    <a href="' + escapeHtml(githubUrl) + '" target="_blank" rel="noopener">🔗 GitHub</a>';
+      deployStatusHtml += '  </span>';
+      deployStatusHtml += '  <span class="' + statusClass + '">' + statusIcon + ' ' + statusText + '</span>';
+      deployStatusHtml += '</div>';
+    }
+    
+    html += '<div class="project-card">';
+    html += '  <div class="project-card-header">';
+    html += '    <div class="project-icon">' + (project.icon || '📦') + '</div>';
+    html += '    <div class="project-info">';
+    html += '      <h3>' + escapeHtml(project.name) + '</h3>';
+    html += '      <p>' + escapeHtml(project.description || '') + '</p>';
+    html += '    </div>';
+    html += '  </div>';
+    html += '  <div class="project-card-body">';
+    html += '    <div class="project-stats">' + statsHtml + '</div>';
+    html += '    <div class="project-total">';
+    html += '      总记录数：<span>' + totalRecords + '</span>';
+    html += '    </div>';
+    if (deployStatusHtml) {
+      html += deployStatusHtml;
+    }
+    if (tables.length > 0) {
+      html += '    <div class="project-tags">';
+      tables.forEach(function(t) {
+        html += '<span class="project-tag">' + t + '</span>';
+      });
+      html += '    </div>';
+    }
+    html += '  </div>';
+    html += '  <div class="project-card-footer">';
+    html += '    <a href="/admin/projects/edit/' + project.id + '" class="btn btn-small">✏️ 编辑</a>';
+    if (githubUrl) {
+      html += '    <button class="btn btn-small btn-deploy" onclick="deployProject(\'' + project.id + '\', \'' + escapeHtml(project.name) + '\')">🚀 部署</button>';
+    }
+    if (project.id !== 'system') {
+      html += '    <button class="btn btn-small btn-danger" onclick="openResetModal(\'' + project.id + '\', \'' + escapeHtml(project.name) + '\')">🔄 重置</button>';
+    }
+    html += '  </div>';
+    html += '</div>';
+  });
+  
+  grid.innerHTML = html;
+}
+
+function openResetModal(projectId, projectName) {
+  currentResetProjectId = projectId;
+  
+  // 清空输入
+  document.getElementById('reset-confirm-text').value = '';
+  document.getElementById('reset-admin-password').value = '';
+  document.getElementById('reset-confirm-btn').disabled = true;
+  
+  // 显示项目名称
+  document.getElementById('reset-modal-alert').innerHTML = '<strong>⚠️ 危险操作：</strong>即将重置项目「<strong>' + escapeHtml(projectName) + '</strong>」的所有数据，此操作不可撤销！';
+  
+  // 加载统计数据
+  var statsDiv = document.getElementById('reset-modal-stats');
+  statsDiv.innerHTML = '<div style="text-align:center;color:#999;padding:10px;">加载统计数据中...</div>';
+  
+  document.getElementById('reset-modal').style.display = 'flex';
+  
+  fetch('/admin/projects/api/' + projectId + '/stats')
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success && data.project) {
+        var html = '';
+        var stats = data.project.stats || {};
+        Object.keys(stats).forEach(function(table) {
+          html += '<div class="reset-stat-item">';
+          html += '  <span class="reset-stat-label">' + table + '</span>';
+          html += '  <span class="reset-stat-value">' + stats[table] + '</span>';
+          html += '</div>';
+        });
+        statsDiv.innerHTML = html || '<div style="text-align:center;color:#999;">无数据</div>';
+      }
+    })
+    .catch(function() {
+      statsDiv.innerHTML = '<div style="text-align:center;color:#999;">加载失败</div>';
+    });
+}
+
+function closeResetModal() {
+  document.getElementById('reset-modal').style.display = 'none';
+  currentResetProjectId = null;
+}
+
+function checkResetForm() {
+  var confirmInput = document.getElementById('reset-confirm-text');
+  var passwordInput = document.getElementById('reset-admin-password');
+  var resetBtn = document.getElementById('reset-confirm-btn');
+  resetBtn.disabled = !(confirmInput.value.trim() === '确认重置' && passwordInput.value.trim().length >= 6);
+}
+
+function executeProjectReset() {
+  if (!currentResetProjectId) return;
+  
+  var password = document.getElementById('reset-admin-password').value.trim();
+  var confirmText = document.getElementById('reset-confirm-text').value.trim();
+  
+  if (!password) {
+    alert('⚠️ 请输入管理员密码');
+    return;
+  }
+  
+  if (!confirm('⚠️ 这是最后确认！\n\n确定要重置该项目的所有数据吗？此操作不可撤销！')) {
+    return;
+  }
+  
+  var resetBtn = document.getElementById('reset-confirm-btn');
+  resetBtn.disabled = true;
+  resetBtn.textContent = '重置中...';
+  
+  fetch('/admin/projects/api/' + currentResetProjectId + '/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: password, confirm: confirmText })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      alert('✅ 项目重置成功！\n\n' + (data.message || ''));
+      closeResetModal();
+      loadProjects();
+    } else {
+      alert('❌ 重置失败: ' + (data.error || '未知错误'));
+      resetBtn.disabled = false;
+      resetBtn.textContent = '执行重置';
+    }
+  })
+  .catch(function(err) {
+    alert('❌ 网络错误: ' + err.message);
+    resetBtn.disabled = false;
+    resetBtn.textContent = '执行重置';
+  });
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(text));
+  return div.innerHTML;
+}
+
+// ============ GitHub 部署相关 ============
+
+function deployProject(projectId, projectName) {
+  if (!confirm('🚀 确定要部署/更新项目「' + projectName + '」吗？\n\n将从 GitHub 拉取最新代码到 deploy/projects/' + projectId + '/ 目录。')) {
+    return;
+  }
+
+  var btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '部署中...';
+
+  fetch('/admin/projects/api/' + projectId + '/deploy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      alert('✅ 部署成功！\n\n' + (data.message || ''));
+      if (data.output) {
+        console.log('部署输出:', data.output);
+      }
+    } else {
+      alert('❌ 部署失败: ' + (data.error || '未知错误'));
+      if (data.output) {
+        console.log('错误输出:', data.output);
+      }
+    }
+    loadProjects();
+  })
+  .catch(function(err) {
+    alert('❌ 网络错误: ' + err.message);
+    loadProjects();
+  });
+}
+</script>

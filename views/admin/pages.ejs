@@ -1,0 +1,51 @@
+<% var active = 'pages' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>页面管理</h1>
+    <a href="/admin/pages/new" class="btn btn-primary">新建页面</a>
+  </div>
+  
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>标题</th>
+        <th>Slug</th>
+        <th>类型</th>
+        <th>状态</th>
+        <th>排序</th>
+        <th>更新时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (pages.length > 0) { %>
+        <% pages.forEach(page => { %>
+          <tr>
+            <td><%= page.id %></td>
+            <td><%= page.title %></td>
+            <td><%= page.slug %></td>
+            <td><%= page.type %></td>
+            <td><span class="status-badge status-<%= page.status %>"><%= page.status %></span></td>
+            <td><%= page.sort_order %></td>
+            <td><%= new Date(page.updated_at).toLocaleDateString('zh-CN') %></td>
+            <td class="actions">
+              <a href="/admin/pages/edit/<%= page.id %>" class="btn btn-small">编辑</a>
+              <a href="/page/<%= page.slug %>" target="_blank" class="btn btn-small">查看</a>
+              <% if (page.slug !== 'home') { %>
+                <form action="/admin/pages/delete/<%= page.id %>" method="POST" class="inline-form" onsubmit="return confirm('确定要删除这个页面吗？')">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button type="submit" class="btn btn-small btn-danger">删除</button>
+                </form>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      <% } else { %>
+        <tr>
+          <td colspan="8" class="empty-row">暂无页面</td>
+        </tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>

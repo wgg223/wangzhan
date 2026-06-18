@@ -1,0 +1,764 @@
+<div class="page-header">
+  <h1><%= novel ? '编辑小说' : '新建小说' %></h1>
+  <div class="actions">
+    <a href="/admin/novels" class="btn">返回列表</a>
+  </div>
+</div>
+
+<% if (typeof error !== 'undefined' && error) { %>
+  <div class="alert alert-error"><%= error %></div>
+<% } %>
+
+<div class="admin-form">
+  <form method="POST" action="/admin/novels/save" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <% if (novel) { %>
+      <input type="hidden" name="id" value="<%= novel.id %>">
+    <% } %>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="title">小说标题 *</label>
+        <input type="text" id="title" name="title" value="<%= novel ? novel.title : '' %>" required placeholder="输入小说标题">
+      </div>
+
+      <div class="form-group">
+        <label for="author">作者</label>
+        <input type="text" id="author" name="author" value="<%= novel ? novel.author : '' %>" placeholder="输入作者名">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="status">状态</label>
+        <select id="status" name="status">
+          <option value="published" <%= novel && novel.status === 'published' ? 'selected' : '' %>>已发布</option>
+          <option value="draft" <%= novel && novel.status === 'draft' ? 'selected' : '' %>>草稿</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="cover_image">封面图片</label>
+        <input type="file" id="cover_image" name="cover_image" accept="image/*">
+        <% if (novel && novel.cover_image) { %>
+          <div style="margin-top:8px;">
+            <img src="<%= novel.cover_image %>" alt="当前封面" style="max-width:120px;border-radius:6px;border:1px solid var(--gray-200);">
+            <p style="font-size:12px;color:var(--gray-400);margin-top:4px;">当前封面，上传新图片将替换</p>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="description">简介</label>
+      <textarea id="description" name="description" rows="4" placeholder="输入小说简介"><%= novel ? novel.description : '' %></textarea>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存小说信息</button>
+      <a href="/admin/novels" class="btn">取消</a>
+    </div>
+  </form>
+</div>
+
+<% if (novel) { %>
+  <!-- 章节管理 -->
+  <div class="card" style="margin-top:24px;">
+    <h2>章节管理</h2>
+
+    <div style="margin-bottom:20px;padding:20px;background:var(--gray-50);border-radius:var(--border-radius-sm);border:1px solid var(--gray-100);">
+      <h3 style="margin-top:0;margin-bottom:16px;">上传新章节 (TXT文件)</h3>
+      <form method="POST" action="/admin/novels/upload-chapter" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="novel_id" value="<%= novel.id %>">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="chapter_title">章节标题（可选，默认使用文件名）</label>
+            <input type="text" id="chapter_title" name="chapter_title" placeholder="如：第一章 初入江湖">
+          </div>
+          <div class="form-group">
+            <label for="chapter_file">选择TXT文件 *</label>
+            <input type="file" id="chapter_file" name="chapter_file" accept=".txt" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-success">上传章节</button>
+      </form>
+    </div>
+
+    <!-- 批量上传 -->
+    <div style="margin-bottom:20px;padding:20px;background:var(--gray-50);border-radius:var(--border-radius-sm);border:1px solid var(--gray-100);">
+      <h3 style="margin-top:0;margin-bottom:16px;">批量上传章节 (多TXT文件)</h3>
+      <p style="font-size:13px;color:var(--gray-500);margin-bottom:12px;">支持同时选择多个TXT文件，系统将自动识别文件内容中的章节标题（如 "第一章 xxx"）。<br>未识别到章节标题时将尝试使用第一行或文件名作为标题。</p>
+      <form id="batchUploadForm" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="novel_id" value="<%= novel.id %>">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="chapter_files">选择多个TXT文件 *</label>
+            <input type="file" id="chapter_files" name="chapter_files" accept=".txt" multiple required>
+            <p style="font-size:12px;color:var(--gray-400);margin-top:4px;">按住 Ctrl 或 Shift 键可选择多个文件</p>
+          </div>
+        </div>
+        <button type="button" class="btn btn-success" onclick="uploadBatchChapters()">批量上传</button>
+        <div id="batchProgress" style="margin-top:12px;display:none;">
+          <div style="padding:12px;background:#fff;border-radius:4px;border:1px solid var(--gray-200);">
+            <p id="batchStatus" style="margin:0 0 8px 0;font-size:14px;"></p>
+            <div id="batchResults" style="max-height:200px;overflow-y:auto;font-size:13px;"></div>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- TXT智能拆分上传 -->
+    <div style="margin-bottom:20px;padding:20px;background:var(--gray-50);border-radius:var(--border-radius-sm);border:1px solid var(--gray-100);">
+      <h3 style="margin-top:0;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:20px;">🧩</span> TXT大文件智能拆分上传
+      </h3>
+      <p style="font-size:13px;color:var(--gray-500);margin-bottom:12px;">
+        上传一个包含所有章节的大TXT文件，系统自动识别章节标题（如 "第一章 xxx"、"Chapter 1" 等）并拆分为独立章节，一键批量导入。
+      </p>
+      <form id="splitUploadForm" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="novel_id" value="<%= novel.id %>">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="split_file">选择TXT大文件 *</label>
+            <input type="file" id="split_file" name="split_file" accept=".txt" required>
+          </div>
+          <div class="form-group">
+            <label for="split_mode">章节匹配模式</label>
+            <select id="split_mode" style="width:100%;padding:10px 14px;border:1px solid var(--gray-200);border-radius:var(--border-radius-sm);font-size:14px;">
+              <option value="auto">自动检测（推荐）</option>
+              <option value="chapter_num">第X章 / 第X节</option>
+              <option value="chapter_en">Chapter X（英文）</option>
+              <option value="number">数字编号（1. 1.1 等）</option>
+              <option value="cn_num">中文数字（一、二、）</option>
+              <option value="custom">自定义模式</option>
+            </select>
+          </div>
+        </div>
+        <!-- 自定义正则 -->
+        <div id="split_custom_pattern_area" style="display:none;margin-bottom:16px;">
+          <label style="font-size:14px;font-weight:500;color:var(--gray-700);display:block;margin-bottom:6px;">自定义正则表达式（每行一个）</label>
+          <textarea id="split_custom_patterns" style="width:100%;padding:10px 14px;border:1px solid var(--gray-200);border-radius:var(--border-radius-sm);font-size:13px;font-family:Consolas,monospace;resize:vertical;min-height:50px;" placeholder="^第.+章\s*.*$&#10;^Part \d+.*$&#10;^\d+\. .*$"></textarea>
+          <p style="font-size:12px;color:var(--gray-400);margin-top:4px;">每行一个正则表达式，匹配到的行将被视为章节标题</p>
+        </div>
+        <div class="form-row" style="grid-template-columns:1fr auto;align-items:end;">
+          <div class="form-group" style="margin-bottom:0;">
+            <button type="button" class="btn btn-info" id="splitPreviewBtn" disabled>👁 预览拆分结果</button>
+            <button type="button" class="btn btn-success" id="splitUploadBtn" disabled>🚀 智能拆分并上传</button>
+            <button type="button" class="btn" id="splitResetBtn">🔄 重置</button>
+          </div>
+        </div>
+        <!-- 文件信息 -->
+        <div id="splitFileInfo" style="display:none;margin-top:12px;padding:12px 16px;background:#fff;border-radius:6px;border:1px solid var(--gray-200);font-size:13px;color:var(--gray-600);">
+          <span id="splitFileName"></span> · <span id="splitFileSize"></span> · <span id="splitFileLines"></span> 行
+        </div>
+        <!-- 错误信息 -->
+        <div id="splitErrorMsg" style="display:none;margin-top:12px;padding:10px 14px;background:#fef2f2;color:#991b1b;border-radius:6px;border:1px solid #fecaca;font-size:13px;"></div>
+        <!-- 预览区域 -->
+        <div id="splitPreviewArea" style="display:none;margin-top:16px;border:1px solid var(--gray-200);border-radius:var(--border-radius-sm);overflow:hidden;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+            <span style="font-size:14px;font-weight:500;color:var(--gray-700);">📖 拆分预览 <span id="splitPreviewCount" style="color:var(--primary);font-size:13px;"></span></span>
+            <button type="button" class="btn btn-small" id="splitPreviewCloseBtn">✕ 关闭</button>
+          </div>
+          <div style="max-height:300px;overflow-y:auto;background:#fafafa;">
+            <div id="splitPreviewContent" style="padding:14px;font-family:Consolas,monospace;font-size:13px;line-height:1.8;white-space:pre-wrap;word-wrap:break-word;color:#333;"></div>
+          </div>
+        </div>
+        <!-- 进度 -->
+        <div id="splitProgressArea" style="display:none;margin-top:16px;">
+          <div style="width:100%;height:8px;background:var(--gray-100);border-radius:4px;overflow:hidden;">
+            <div id="splitProgressBar" style="height:100%;background:linear-gradient(135deg,var(--primary),#8b5cf6);width:0%;transition:width 0.3s;border-radius:4px;"></div>
+          </div>
+          <p id="splitProgressText" style="text-align:center;font-size:13px;color:var(--gray-400);margin-top:6px;">准备中...</p>
+        </div>
+        <!-- 结果 -->
+        <div id="splitResultArea" style="display:none;margin-top:16px;padding:14px;background:#fff;border-radius:6px;border:1px solid var(--gray-200);max-height:300px;overflow-y:auto;"></div>
+      </form>
+    </div>
+
+    <script>
+    // 获取 CSRF 令牌的辅助函数
+    function getCsrfToken() {
+      const metaTag = document.querySelector('meta[name="csrf-token"]');
+      if (metaTag) return metaTag.getAttribute('content');
+      const inputTag = document.querySelector('input[name="_csrf"]');
+      if (inputTag) return inputTag.value;
+      return '';
+    }
+
+    function uploadBatchChapters() {
+      const form = document.getElementById('batchUploadForm');
+      const formData = new FormData(form);
+      const fileInput = document.getElementById('chapter_files');
+      
+      if (!fileInput.files || fileInput.files.length === 0) {
+        alert('请选择要上传的TXT文件');
+        return;
+      }
+
+      const progressDiv = document.getElementById('batchProgress');
+      const statusP = document.getElementById('batchStatus');
+      const resultsDiv = document.getElementById('batchResults');
+      
+      progressDiv.style.display = 'block';
+      statusP.textContent = '正在上传 ' + fileInput.files.length + ' 个文件...';
+      resultsDiv.innerHTML = '';
+      
+      const btn = form.querySelector('button[type="button"]');
+      btn.disabled = true;
+      btn.textContent = '上传中...';
+
+      fetch('/admin/novels/batch-upload-chapters', {
+        method: 'POST',
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        statusP.textContent = data.message;
+        let html = '';
+        if (data.results && data.results.success.length > 0) {
+          html += '<div style="color:#10b981;margin-bottom:8px;"><strong>成功：</strong></div>';
+          data.results.success.forEach(function(ch) {
+            html += '<div style="padding:4px 8px;margin:2px 0;background:#f0fdf4;border-radius:3px;">' +
+                    '第' + ch.chapterNumber + '章 - ' + escapeHtml(ch.title) + 
+                    ' <span style="color:var(--gray-400);font-size:12px;">(' + escapeHtml(ch.originalName) + ')</span></div>';
+          });
+        }
+        if (data.results && data.results.errors.length > 0) {
+          html += '<div style="color:#ef4444;margin-top:8px;"><strong>失败：</strong></div>';
+          data.results.errors.forEach(function(err) {
+            html += '<div style="padding:4px 8px;margin:2px 0;background:#fef2f2;border-radius:3px;">' + 
+                    escapeHtml(err.originalName) + ': ' + escapeHtml(err.error) + '</div>';
+          });
+        }
+        resultsDiv.innerHTML = html;
+
+        // 上传成功后刷新页面
+        setTimeout(function() {
+          location.reload();
+        }, 1500);
+      })
+      .catch(err => {
+        statusP.textContent = '上传失败: ' + err.message;
+        statusP.style.color = '#ef4444';
+      })
+      .finally(function() {
+        btn.disabled = false;
+        btn.textContent = '批量上传';
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ===== TXT智能拆分上传功能 =====
+    (function() {
+      if (!document.getElementById('split_file')) return; // 没有拆分模块时不执行
+
+      const splitFileInput = document.getElementById('split_file');
+      const splitMode = document.getElementById('split_mode');
+      const splitCustomPatternArea = document.getElementById('split_custom_pattern_area');
+      const splitCustomPatterns = document.getElementById('split_custom_patterns');
+      const splitPreviewBtn = document.getElementById('splitPreviewBtn');
+      const splitUploadBtn = document.getElementById('splitUploadBtn');
+      const splitResetBtn = document.getElementById('splitResetBtn');
+      const splitFileInfo = document.getElementById('splitFileInfo');
+      const splitFileName = document.getElementById('splitFileName');
+      const splitFileSize = document.getElementById('splitFileSize');
+      const splitFileLines = document.getElementById('splitFileLines');
+      const splitErrorMsg = document.getElementById('splitErrorMsg');
+      const splitPreviewArea = document.getElementById('splitPreviewArea');
+      const splitPreviewContent = document.getElementById('splitPreviewContent');
+      const splitPreviewCount = document.getElementById('splitPreviewCount');
+      const splitPreviewCloseBtn = document.getElementById('splitPreviewCloseBtn');
+      const splitProgressArea = document.getElementById('splitProgressArea');
+      const splitProgressBar = document.getElementById('splitProgressBar');
+      const splitProgressText = document.getElementById('splitProgressText');
+      const splitResultArea = document.getElementById('splitResultArea');
+
+      let splitCurrentFile = null;
+      let splitChapters = [];
+
+      // 显示/隐藏自定义正则区域
+      splitMode.addEventListener('change', function() {
+        splitCustomPatternArea.style.display = this.value === 'custom' ? 'block' : 'none';
+      });
+
+      // 文件选择
+      splitFileInput.addEventListener('change', function(e) {
+        if (e.target.files.length > 0) {
+          const file = e.target.files[0];
+          if (!file.name.toLowerCase().endsWith('.txt')) {
+            showSplitError('请选择 .txt 格式的文件！');
+            return;
+          }
+          splitCurrentFile = file;
+          hideSplitError();
+          splitPreviewArea.style.display = 'none';
+          splitResultArea.style.display = 'none';
+
+          // 读取文件显示信息
+          const reader = new FileReader();
+          reader.onload = function(ev) {
+            const text = ev.target.result;
+            const lines = text.split('\n');
+            splitFileName.textContent = file.name;
+            splitFileSize.textContent = formatSplitSize(file.size);
+            splitFileLines.textContent = lines.length;
+            splitFileInfo.style.display = 'block';
+            splitPreviewBtn.disabled = false;
+            splitUploadBtn.disabled = false;
+          };
+          reader.onerror = function() {
+            showSplitError('读取文件失败');
+          };
+          reader.readAsText(file);
+        }
+      });
+
+      // 获取章节匹配正则
+      function getSplitPatterns(mode) {
+        switch (mode) {
+          case 'chapter_num':
+            return [
+              /^第[一二三四五六七八九十百千万\d]+章\s*(.*)$/,
+              /^第[一二三四五六七八九十百千万\d]+节\s*(.*)$/,
+            ];
+          case 'chapter_en':
+            return [
+              /^[Cc][Hh][Aa][Pp][Tt][Ee][Rr]\s+\d+(?:[\.:、，,]\s*|\s+)(.*)$/,
+              /^[Cc][Hh][Aa][Pp][Tt][Ee][Rr]\s+\d+\s*$/,
+            ];
+          case 'number':
+            return [/^\d+(?:\.\d+)*[、.．\s]\s*(.*)$/];
+          case 'cn_num':
+            return [/^[一二三四五六七八九十百千万]+[、.．]\s*(.*)$/];
+          case 'custom':
+            const patterns = splitCustomPatterns.value.split('\n')
+              .map(function(p) { return p.trim(); })
+              .filter(function(p) { return p.length > 0; })
+              .map(function(p) { return new RegExp(p); });
+            return patterns.length > 0 ? patterns : getSplitPatterns('auto');
+          default:
+            return [
+              /^第[一二三四五六七八九十百千万\d]+章\s*(.*)$/,
+              /^第[一二三四五六七八九十百千万\d]+节\s*(.*)$/,
+              /^[Cc][Hh][Aa][Pp][Tt][Ee][Rr]\s+\d+(?:[\.:、，,]\s*|\s+)(.*)$/,
+              /^[Cc][Hh][Aa][Pp][Tt][Ee][Rr]\s+\d+\s*$/,
+              /^[一二三四五六七八九十百千万]+[、.．]\s*(.*)$/,
+              /^\d+(?:\.\d+)*[、.．\s]\s*(.*)$/,
+            ];
+        }
+      }
+
+      // 提取章节标题
+      function extractSplitChapter(line, patterns) {
+        const stripped = line.trim();
+        if (!stripped) return null;
+        for (const pattern of patterns) {
+          const match = stripped.match(pattern);
+          if (match) {
+            const suffix = match[1] ? match[1].trim() : '';
+            let title = stripped;
+            if (suffix) {
+              title = stripped.replace(suffix, '').trim();
+              title = title.replace(/[：:，,、.。\s]+$/, '');
+              title = title + ' ' + suffix;
+            }
+            title = title.replace(/[\\/:*?"<>|]/g, '');
+            return { title: title.trim(), raw: stripped };
+          }
+        }
+        return null;
+      }
+
+      // 拆分文件内容
+      function splitFileContent(text, patterns) {
+        const lines = text.split('\n');
+        const chapters = [];
+        let currentChapter = null;
+        let currentLines = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const chInfo = extractSplitChapter(line, patterns);
+
+          if (chInfo) {
+            if (currentChapter !== null) {
+              chapters.push({
+                title: currentChapter.title,
+                content: currentLines.join('\n').trim()
+              });
+            }
+            currentChapter = chInfo;
+            currentLines = [];
+          } else {
+            if (currentChapter !== null) {
+              currentLines.push(line);
+            } else {
+              // 章节前内容归入"前言"
+              if (chapters.length === 0 || chapters[0].title !== '前言') {
+                chapters.unshift({ title: '前言', content: '' });
+              }
+              chapters[0].content += line + '\n';
+            }
+          }
+        }
+
+        // 保存最后一章
+        if (currentChapter !== null) {
+          chapters.push({
+            title: currentChapter.title,
+            content: currentLines.join('\n').trim()
+          });
+        }
+
+        return chapters;
+      }
+
+      // 执行拆分
+      function performSplit(forPreview) {
+        if (!splitCurrentFile) return null;
+        return new Promise(function(resolve, reject) {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            try {
+              const text = e.target.result;
+              const patterns = getSplitPatterns(splitMode.value);
+              const chapters = splitFileContent(text, patterns);
+              if (forPreview) {
+                resolve({ text: text, chapters: chapters, patterns: patterns });
+              } else {
+                resolve(chapters);
+              }
+            } catch (err) {
+              reject(err);
+            }
+          };
+          reader.onerror = function() {
+            reject(new Error('读取文件失败'));
+          };
+          reader.readAsText(splitCurrentFile);
+        });
+      }
+
+      // 预览按钮
+      splitPreviewBtn.addEventListener('click', async function() {
+        if (!splitCurrentFile) return;
+        hideSplitError();
+        try {
+          const result = await performSplit(true);
+          splitChapters = result.chapters;
+
+          // 构建预览HTML
+          let html = '';
+          let chIdx = 0;
+          const lines = result.text.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const chInfo = extractSplitChapter(line, result.patterns);
+            if (chInfo) {
+              chIdx++;
+              html += '<span style="background:#e8edff;border-left:4px solid #6366f1;padding:3px 8px;margin:6px 0;display:block;font-weight:bold;color:#4833a0;border-radius:0 4px 4px 0;">';
+              html += '<span style="display:inline-block;background:#6366f1;color:#fff;font-size:11px;padding:1px 8px;border-radius:10px;margin-right:8px;font-weight:bold;">#' + chIdx + '</span>';
+              html += escapeHtml(line);
+              html += '</span>\n';
+            } else {
+              html += escapeHtml(line) + '\n';
+            }
+          }
+          splitPreviewContent.innerHTML = html;
+          splitPreviewCount.textContent = '（已识别 ' + splitChapters.length + ' 个章节）';
+          splitPreviewArea.style.display = 'block';
+        } catch (err) {
+          showSplitError('预览失败：' + err.message);
+        }
+      });
+
+      splitPreviewCloseBtn.addEventListener('click', function() {
+        splitPreviewArea.style.display = 'none';
+      });
+
+      // 智能拆分并上传（逐个上传章节到单文件上传接口）
+      splitUploadBtn.addEventListener('click', async function() {
+        if (!splitCurrentFile) return;
+        hideSplitError();
+        splitResultArea.style.display = 'none';
+        splitResultArea.innerHTML = '';
+        showSplitProgress();
+
+        try {
+          const chapters = await performSplit(false);
+          if (chapters.length === 0) {
+            showSplitError('未识别到任何章节标题！请尝试选择不同的匹配模式或使用自定义正则。');
+            hideSplitProgress();
+            return;
+          }
+
+          const novelId = document.querySelector('#splitUploadForm input[name="novel_id"]').value;
+          const csrfToken = document.querySelector('#splitUploadForm input[name="_csrf"]').value;
+          const total = chapters.length;
+          let successCount = 0;
+          let failCount = 0;
+          let resultHtml = '<div style="font-size:14px;font-weight:bold;margin-bottom:10px;">📋 拆分上传结果</div>';
+
+          updateSplitProgress(10, '开始逐个上传 ' + total + ' 个章节...');
+
+          // 逐个上传每个章节
+          for (let i = 0; i < total; i++) {
+            const ch = chapters[i];
+            const chNum = i + 1;
+
+            // 使用原始大文件名 + 序号作为文件名
+            const baseName = splitCurrentFile.name.replace(/\.txt$/i, '');
+            const safeName = baseName + '_' + chNum + '.txt';
+
+            // 更新进度
+            const pct = Math.round(10 + ((i / total) * 70));
+            updateSplitProgress(pct, '正在上传第 ' + chNum + '/' + total + ' 章：' + escapeHtml(ch.title));
+
+            // 为每个章节创建独立的FormData
+            const fd = new FormData();
+            fd.append('_csrf', csrfToken);
+            fd.append('novel_id', novelId);
+            fd.append('chapter_title', ch.title);
+            const blob = new Blob([ch.content], { type: 'text/plain;charset=utf-8' });
+            fd.append('chapter_file', blob, safeName);
+
+            try {
+              const res = await fetch('/admin/novels/upload-chapter', {
+                method: 'POST',
+                body: fd
+              });
+
+              if (res.redirected || res.ok) {
+                successCount++;
+                resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:#f0fdf4;border-radius:3px;font-size:13px;">' +
+                  '✅ ' + escapeHtml(ch.title) + '</div>';
+              } else {
+                const errData = await res.json().catch(function() { return { error: 'HTTP ' + res.status }; });
+                failCount++;
+                resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:#fef2f2;border-radius:3px;font-size:13px;">' +
+                  '❌ ' + escapeHtml(ch.title) + ': ' + escapeHtml(errData.error || '未知错误') + '</div>';
+              }
+            } catch (uploadErr) {
+              failCount++;
+              resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:#fef2f2;border-radius:3px;font-size:13px;">' +
+                '❌ ' + escapeHtml(ch.title) + ': ' + escapeHtml(uploadErr.message) + '</div>';
+            }
+
+            // 实时更新结果区域
+            splitResultArea.innerHTML = resultHtml + '<div style="color:var(--gray-400);font-size:12px;padding:4px;">正在处理... ' + chNum + '/' + total + '</div>';
+            splitResultArea.style.display = 'block';
+          }
+
+          // 完成
+          const summaryHtml = '<div style="margin-top:10px;padding:10px;background:' +
+            (failCount === 0 ? '#f0fdf4;color:#166534' : '#fefce8;color:#92400e') +
+            ';border-radius:6px;font-size:14px;font-weight:bold;">' +
+            '✅ 完成：成功 ' + successCount + ' 个' +
+            (failCount > 0 ? '，失败 ' + failCount + ' 个' : '') +
+            '</div>';
+          splitResultArea.innerHTML = resultHtml + summaryHtml;
+          splitResultArea.style.display = 'block';
+          updateSplitProgress(100, '✅ 完成！成功 ' + successCount + ' 个' + (failCount > 0 ? '，失败 ' + failCount + ' 个' : ''));
+
+          // 如果有成功上传，延迟刷新页面
+          if (successCount > 0) {
+            setTimeout(function() {
+              location.reload();
+            }, 2000);
+          } else {
+            hideSplitProgress();
+          }
+
+        } catch (err) {
+          showSplitError('拆分上传失败：' + err.message);
+          hideSplitProgress();
+        }
+      });
+
+      // 重置
+      splitResetBtn.addEventListener('click', function() {
+        splitCurrentFile = null;
+        splitChapters = [];
+        splitFileInfo.style.display = 'none';
+        splitPreviewArea.style.display = 'none';
+        splitResultArea.style.display = 'none';
+        splitResultArea.innerHTML = '';
+        hideSplitError();
+        hideSplitProgress();
+        splitPreviewBtn.disabled = true;
+        splitUploadBtn.disabled = true;
+        splitFileInput.value = '';
+      });
+
+      // 工具函数
+      function showSplitError(msg) {
+        splitErrorMsg.textContent = msg;
+        splitErrorMsg.style.display = 'block';
+      }
+      function hideSplitError() {
+        splitErrorMsg.style.display = 'none';
+      }
+      function showSplitProgress() {
+        splitProgressArea.style.display = 'block';
+        splitProgressBar.style.width = '0%';
+        splitProgressText.textContent = '准备中...';
+      }
+      function hideSplitProgress() {
+        setTimeout(function() {
+          splitProgressArea.style.display = 'none';
+        }, 500);
+      }
+      function updateSplitProgress(pct, text) {
+        splitProgressBar.style.width = pct + '%';
+        splitProgressText.textContent = text;
+      }
+      function formatSplitSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      }
+    })();
+    </script>
+
+    <% if (chapters && chapters.length > 0) { %>
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;color:var(--gray-600);cursor:pointer;">
+          <input type="checkbox" id="selectAllChapters" onchange="toggleSelectAllChapters(this.checked)" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;">
+          全选
+        </label>
+        <span id="selectedCount" style="font-size:13px;color:var(--gray-400);">已选 0 个章节</span>
+        <button type="button" id="batchDeleteChaptersBtn" class="btn btn-small btn-danger" onclick="batchDeleteChapters()" disabled style="opacity:0.5;pointer-events:none;">
+          🗑 批量删除选中
+        </button>
+      </div>
+      <table class="admin-table" id="chaptersTable">
+        <thead>
+          <tr>
+            <th style="width:40px;text-align:center;">
+              <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAllChapters(this.checked)" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;">
+            </th>
+            <th>章节号</th>
+            <th>标题</th>
+            <th>文件大小</th>
+            <th>上传时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% chapters.forEach(function(ch) { %>
+            <tr data-chapter-id="<%= ch.id %>">
+              <td style="text-align:center;">
+                <input type="checkbox" class="chapter-checkbox" value="<%= ch.id %>" onchange="updateBatchDeleteButton()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;">
+              </td>
+              <td>第 <%= ch.chapter_number %> 章</td>
+              <td><%= ch.title %></td>
+              <td><%= (ch.file_size / 1024).toFixed(1) %> KB</td>
+              <td><%= new Date(ch.created_at).toLocaleDateString('zh-CN') %></td>
+              <td class="actions">
+                <form method="POST" action="/admin/novels/reupload-chapter/<%= ch.id %>" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input type="file" name="chapter_file" accept=".txt" required style="font-size:12px;max-width:140px;">
+                  <button type="submit" class="btn btn-small btn-warning">重新上传</button>
+                </form>
+                <form method="POST" action="/admin/novels/delete-chapter/<%= ch.id %>" class="inline-form" onsubmit="return confirm('确定删除章节「<%= ch.title %>」？')">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button type="submit" class="btn btn-small btn-danger">删除</button>
+                </form>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+      <script>
+      function toggleSelectAllChapters(checked) {
+        document.querySelectorAll('.chapter-checkbox').forEach(function(cb) {
+          cb.checked = checked;
+        });
+        document.getElementById('selectAllChapters').checked = checked;
+        document.getElementById('selectAllCheckbox').checked = checked;
+        updateBatchDeleteButton();
+      }
+
+      function updateBatchDeleteButton() {
+        const checkedBoxes = document.querySelectorAll('.chapter-checkbox:checked');
+        const count = checkedBoxes.length;
+        const btn = document.getElementById('batchDeleteChaptersBtn');
+        const countLabel = document.getElementById('selectedCount');
+
+        countLabel.textContent = '已选 ' + count + ' 个章节';
+
+        if (count > 0) {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.pointerEvents = 'auto';
+        } else {
+          btn.disabled = true;
+          btn.style.opacity = '0.5';
+          btn.style.pointerEvents = 'none';
+        }
+      }
+
+      function batchDeleteChapters() {
+        const checkedBoxes = document.querySelectorAll('.chapter-checkbox:checked');
+        if (checkedBoxes.length === 0) {
+          alert('请先选择要删除的章节');
+          return;
+        }
+
+        if (!confirm('确定要批量删除选中的 ' + checkedBoxes.length + ' 个章节吗？此操作不可撤销！')) {
+          return;
+        }
+
+        const ids = Array.from(checkedBoxes).map(function(cb) { return parseInt(cb.value); });
+        const novelId = '<%= novel.id %>';
+        const csrfToken = '<%= csrfToken %>';
+        const btn = document.getElementById('batchDeleteChaptersBtn');
+        const originalText = btn.innerHTML;
+
+        btn.disabled = true;
+        btn.innerHTML = '⏳ 删除中...';
+        btn.style.opacity = '0.7';
+
+        fetch('/admin/novels/batch-delete-chapters', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken 
+          },
+          body: JSON.stringify({ ids: ids, novel_id: novelId })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.success) {
+            alert(data.message);
+            location.reload();
+          } else {
+            alert('删除失败：' + (data.error || '未知错误'));
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            btn.style.opacity = '1';
+          }
+        })
+        .catch(function(err) {
+          alert('请求失败：' + err.message);
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+          btn.style.opacity = '1';
+        });
+      }
+      </script>
+    <% } else { %>
+      <div style="text-align:center;padding:40px;color:var(--gray-400);">
+        <p>暂无章节，请上传TXT文件添加章节</p>
+      </div>
+    <% } %>
+  </div>
+<% } %>
