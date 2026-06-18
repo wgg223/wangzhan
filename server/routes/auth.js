@@ -185,20 +185,15 @@ router.get('/:source/login', (req, res) => {
   const db = req.db;
   const siteName = getSiteName(db, source);
   const modeInfo = getModeInfo('login', source);
-  res.render('auth/auth-page', {
+  res.render('auth/login', {
     source,
-    mode: 'login',
     modeTitle: modeInfo.title,
     modeSubtitle: modeInfo.subtitle,
     siteName,
     error: null,
     success: null,
     user: req.session.user || null,
-    username: '',
-    step: null,
-    email: '',
-    userAgreement: '',
-    privacyPolicy: ''
+    username: ''
   });
 });
 
@@ -398,20 +393,15 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
 
   function renderLogin(errorMsg) {
     const modeInfo = getModeInfo('login', source);
-    res.render('auth/auth-page', {
+    res.render('auth/login', {
       source,
-      mode: 'login',
       modeTitle: modeInfo.title,
       modeSubtitle: modeInfo.subtitle,
       siteName,
       error: errorMsg,
       success: null,
       user: null,
-      username: username || '',
-      step: null,
-      email: '',
-      userAgreement: '',
-      privacyPolicy: ''
+      username: username || ''
     });
   }
 

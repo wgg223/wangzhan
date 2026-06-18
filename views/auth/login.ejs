@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= modeTitle %> - <%= siteName %></title>
+  <meta name="csrf-token" content="<%= csrfToken %>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/auth.css">
+</head>
+<body class="auth-page <%= source %>-theme">
+  <div class="auth-container">
+    <div class="auth-header">
+      <h1><%= siteName %></h1>
+      <p><%= modeSubtitle %></p>
+    </div>
+    
+    <% if (error) { %>
+      <div class="auth-alert auth-alert-error">
+        <i class="fas fa-exclamation-circle"></i>
+        <span><%= error %></span>
+      </div>
+    <% } %>
+    <% if (success) { %>
+      <div class="auth-alert auth-alert-success">
+        <i class="fas fa-check-circle"></i>
+        <span><%= success %></span>
+      </div>
+    <% } %>
+
+    <form action="/auth/<%= source %>/login" method="POST" class="auth-form" id="loginForm">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="form-group">
+        <label for="username">用户名</label>
+        <input type="text" id="username" name="username" class="auth-input" placeholder="请输入用户名" required value="<%= typeof username !== 'undefined' ? username : '' %>">
+      </div>
+      
+      <div class="form-group">
+        <label for="password">密码</label>
+        <div class="password-field">
+          <input type="password" id="password" name="password" class="auth-input" placeholder="请输入密码" required>
+          <button type="button" class="toggle-password" onclick="togglePassword('password')">
+            <i class="fas fa-eye"></i>
+          </button>
+        </div>
+      </div>
+      
+      <label class="remember-me">
+        <input type="checkbox" name="remember" id="remember"> 记住密码
+      </label>
+      
+      <button type="submit" class="auth-btn auth-btn-primary">
+        <i class="fas fa-sign-in-alt"></i> 登录
+      </button>
+    </form>
+    
+    <div class="auth-links">
+      <p>还没有账号？<a href="/auth/<%= source %>/register">立即注册</a></p>
+      <p><a href="/auth/<%= source %>/forgot-password">忘记密码？</a></p>
+      <% if (source === 'image-share') { %>
+        <p><a href="/image-share">返回图片分享</a></p>
+      <% } else { %>
+        <p><a href="/">返回首页</a></p>
+      <% } %>
+    </div>
+  </div>
+
+  <script>
+    function togglePassword(inputId) {
+      var input = document.getElementById(inputId);
+      if (!input) return;
+      var icon = input.parentElement.querySelector('.toggle-password i');
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+      } else {
+        input.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+      }
+    }
+
+    function saveCredentials(username, password) {
+      try {
+        localStorage.setItem('auth_remember_<%= source %>', JSON.stringify({
+          username: btoa(unescape(encodeURIComponent(username))),
+          password: btoa(unescape(encodeURIComponent(password)))
+        }));
+      } catch(e) {}
+    }
+
+    function loadCredentials() {
+      try {
+        var data = localStorage.getItem('auth_remember_<%= source %>');
+        if (data) {
+          var parsed = JSON.parse(data);
+          return {
+            username: decodeURIComponent(escape(atob(parsed.username))),
+            password: decodeURIComponent(escape(atob(parsed.password)))
+          };
+        }
+      } catch(e) {}
+      return null;
+    }
+
+    function clearCredentials() {
+      localStorage.removeItem('auth_remember_<%= source %>');
+    }
+
+    (function() {
+      var creds = loadCredentials();
+      if (creds) {
+        var usernameInput = document.getElementById('username');
+        var passwordInput = document.getElementById('password');
+        var rememberCheck = document.getElementById('remember');
+        if (usernameInput && creds.username) usernameInput.value = creds.username;
+        if (passwordInput && creds.password) passwordInput.value = creds.password;
+        if (rememberCheck) rememberCheck.checked = true;
+      }
+    })();
+
+    var loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+      loginForm.addEventListener('submit', function(e) {
+        var rememberCheck = document.getElementById('remember');
+        var usernameInput = document.getElementById('username');
+        var passwordInput = document.getElementById('password');
+        if (rememberCheck && rememberCheck.checked) {
+          saveCredentials(usernameInput.value, passwordInput.value);
+        } else {
+          clearCredentials();
+        }
+      });
+    }
+  </script>
+</body>
+</html>
