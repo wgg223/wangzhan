@@ -281,6 +281,15 @@ python deploy.py --check
 
 ## 版本历史
 
+### v2.5.1 (2026-06-19)
+
+**CSS 异常修复**
+- 修复首页 `index.ejs` CSS 语法错误（`.page-list li a` 缺少闭合 `}`）
+- 修复 `style.css` 死选择器（`nav`/`.nav-links`/`.user-dropdown` 与实际 HTML 不匹配）
+- 修复小说页 `novels.ejs` 使用不存在的 CSS 变量（`--border-radius`/`--shadow`/`--transition`）
+- 将 `layout.ejs` 约 600 行内联 CSS 移入 `style.css` 和 `community.css`
+- 统一各页面硬编码颜色使用 CSS 变量（community/user-profile/articles）
+
 ### v2.5.0 (2026-06-19)
 
 **系统更新功能增强**

@@ -94,10 +94,10 @@
 }
 
 .profile-header {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-sm);
   margin-bottom: 30px;
 }
 
@@ -157,15 +157,15 @@
 }
 
 .profile-username {
-  color: #666;
+  color: var(--text-secondary);
   margin-bottom: 8px;
 }
 
 .profile-uid {
   font-family: monospace;
   font-size: 12px;
-  color: #999;
-  background: #f0f0f0;
+  color: var(--text-muted);
+  background: var(--gray-100);
   padding: 1px 6px;
   border-radius: 3px;
 }
@@ -178,7 +178,7 @@
 }
 
 .bio-text {
-  color: #555;
+  color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.6;
   margin: 0;
@@ -188,13 +188,13 @@
 }
 
 .bio-empty {
-  color: #999;
+  color: var(--text-muted);
   cursor: pointer;
   font-style: italic;
 }
 
 .bio-empty:hover {
-  color: #667eea;
+  color: var(--primary);
 }
 
 .btn-edit-bio {
@@ -224,7 +224,7 @@
 .bio-edit-form textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   font-size: 14px;
   line-height: 1.5;
@@ -236,7 +236,7 @@
 }
 
 .bio-edit-form textarea:focus {
-  border-color: #667eea;
+  border-color: var(--primary);
 }
 
 .bio-edit-actions {
@@ -249,7 +249,7 @@
 
 .bio-char-count {
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
   margin-right: auto;
 }
 
@@ -258,28 +258,28 @@
   font-size: 13px;
   border-radius: 6px;
   cursor: pointer;
-  border: 1px solid #ddd;
-  background: #fff;
-  color: #333;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
 .btn-small:hover {
-  background: #f5f5f5;
+  background: var(--gray-50);
 }
 
 .btn-small.btn-primary {
-  background: #667eea;
+  background: var(--primary);
   color: #fff;
-  border-color: #667eea;
+  border-color: var(--primary);
 }
 
 .btn-small.btn-primary:hover {
-  background: #5a67d8;
+  background: var(--primary-dark);
 }
 
 .profile-join {
   font-size: 14px;
-  color: #999;
+  color: var(--text-muted);
   margin-bottom: 20px;
 }
 
@@ -298,12 +298,12 @@
   display: block;
   font-size: 24px;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .stat-label {
   font-size: 14px;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .profile-actions {
@@ -323,44 +323,44 @@
 }
 
 .btn-follow {
-  background: #3498db;
+  background: var(--primary);
   color: #fff;
 }
 
 .btn-follow:hover {
-  background: #2980b9;
+  background: var(--primary-dark);
 }
 
 .btn-follow.following {
-  background: #f0f0f0;
-  color: #333;
+  background: var(--gray-100);
+  color: var(--text-primary);
 }
 
 .btn-follow.following:hover {
-  background: #e0e0e0;
+  background: var(--gray-200);
 }
 
 .btn-message {
-  background: #f0f0f0;
-  color: #333;
+  background: var(--gray-100);
+  color: var(--text-primary);
 }
 
 .btn-message:hover {
-  background: #e0e0e0;
+  background: var(--gray-200);
 }
 
 .profile-content {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 24px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .profile-content h2 {
   font-size: 20px;
   margin-bottom: 20px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .articles-list {
@@ -379,28 +379,28 @@
 }
 
 .article-item:hover {
-  background: #f5f5f5;
+  background: var(--gray-50);
 }
 
 .article-title {
   font-size: 16px;
-  color: #333;
+  color: var(--text-primary);
   text-decoration: none;
 }
 
 .article-title:hover {
-  color: #3498db;
+  color: var(--primary);
 }
 
 .article-time {
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .empty-state {
   text-align: center;
   padding: 40px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 /* 头像裁剪弹窗 */
@@ -434,7 +434,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .avatar-crop-header h3 {
@@ -447,7 +447,7 @@
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .avatar-crop-body {
@@ -465,7 +465,7 @@
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 20px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border-color);
 }
 
 .avatar-crop-footer .btn {
@@ -477,17 +477,17 @@
 }
 
 .btn-secondary {
-  background: #f0f0f0;
-  color: #333;
+  background: var(--gray-100);
+  color: var(--text-primary);
 }
 
 .btn-primary {
-  background: #667eea;
+  background: var(--primary);
   color: #fff;
 }
 
 .btn-primary:hover {
-  background: #5a67d8;
+  background: var(--primary-dark);
 }
 </style>
 
