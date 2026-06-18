@@ -101,7 +101,7 @@ async function checkForUpdates() {
     const response = await fetch(githubApiUrl, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'RP-Hub-Update-Checker'
+        'User-Agent': 'Website-Update-Checker'
       },
       signal: AbortSignal.timeout(10000)
     });
@@ -160,7 +160,7 @@ async function performAutoUpdate() {
       const downloadFile = (url) => {
         const protocol = url.startsWith('https') ? https : http;
         const request = protocol.get(url, {
-          headers: { 'User-Agent': 'RP-Hub-Updater', 'Accept': 'application/zip, application/octet-stream, */*' }
+          headers: { 'User-Agent': 'Website-Updater', 'Accept': 'application/zip, application/octet-stream, */*' }
         }, (response) => {
           if (response.statusCode === 302 || response.statusCode === 301 || response.statusCode === 307) {
             downloadFile(response.headers.location);
@@ -986,7 +986,7 @@ router.get('/maintenance/check-update', isAuthenticated, isSuperAdmin, async (re
     const response = await fetch(githubApiUrl, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'RP-Hub-Update-Checker'
+        'User-Agent': 'Website-Update-Checker'
       },
       signal: AbortSignal.timeout(10000)
     });
@@ -1079,7 +1079,7 @@ router.post('/maintenance/download-update', isAuthenticated, isSuperAdmin, async
       const downloadFile = (url) => {
         const protocol = url.startsWith('https') ? https : http;
         const request = protocol.get(url, {
-          headers: { 'User-Agent': 'RP-Hub-Updater', 'Accept': 'application/zip, application/octet-stream, */*' }
+          headers: { 'User-Agent': 'Website-Updater', 'Accept': 'application/zip, application/octet-stream, */*' }
         }, (response) => {
           if (response.statusCode === 302 || response.statusCode === 301 || response.statusCode === 307) {
             downloadFile(response.headers.location);

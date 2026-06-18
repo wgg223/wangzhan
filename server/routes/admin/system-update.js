@@ -202,7 +202,7 @@ router.post('/download', async (req, res) => {
         const protocol = url.startsWith('https') ? https : http;
         const request = protocol.get(url, {
           headers: {
-            'User-Agent': 'RP-Hub-Updater',
+            'User-Agent': 'Website-Updater',
             'Accept': 'application/zip, application/octet-stream, */*'
           }
         }, (response) => {
