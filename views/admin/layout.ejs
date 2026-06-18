@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>后台管理 - 网站管理系统</title>
-  <meta name="csrf-token" content="<%= csrfToken %>">
   <link rel="stylesheet" href="/css/admin.css">
   <!-- Quill rich text editor CSS + JS - 使用本地版本，备用 CDN -->
   <link href="/vendor/quill/quill.snow.css" rel="stylesheet" id="quill-css">
@@ -118,57 +117,5 @@
   });
   </script>
   <script src="/js/admin.js"></script>
-  <script>
-  // CSRF token injection for AJAX requests
-  document.addEventListener('DOMContentLoaded', function() {
-    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-    const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
-    
-    // ---- Global fetch wrapping for CSRF ----
-    const originalFetch = window.fetch;
-    window.fetch = function(input, init) {
-      init = init || {};
-      init.headers = init.headers || {};
-      const method = (init.method || 'GET').toUpperCase();
-      if (method !== 'GET' && csrfToken) {
-        init.headers['x-csrf-token'] = csrfToken;
-      }
-      return originalFetch.call(window, input, init).then(function(response) {
-        if (response.status === 403) {
-          response.clone().json().then(function(data) {
-            if (data.error && data.error.includes('非法操作')) {
-              alert('⚠️ ' + data.error);
-            }
-          }).catch(function() {});
-        }
-        return response;
-      });
-    };
-    
-    // ---- Global XHR wrapping for CSRF ----
-    const originalXHROpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
-      this._csrfMethod = method;
-      return originalXHROpen.apply(this, arguments);
-    };
-    const originalXHRSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.send = function(body) {
-      if (this._csrfMethod && this._csrfMethod.toUpperCase() !== 'GET' && csrfToken) {
-        this.setRequestHeader('x-csrf-token', csrfToken);
-      }
-      this.addEventListener('load', function() {
-        if (this.status === 403) {
-          try {
-            const data = JSON.parse(this.responseText);
-            if (data.error && data.error.includes('非法操作')) {
-              alert('⚠️ ' + data.error);
-            }
-          } catch(e) {}
-        }
-      });
-      return originalXHRSend.apply(this, arguments);
-    };
-  });
-  </script>
 </body>
 </html>

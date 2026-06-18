@@ -41,11 +41,6 @@ function getMaintenanceStatus() {
 }
 
 function maintenanceMiddleware(req, res, next) {
-  // Always set csrfToken for templates
-  if (!res.locals.csrfToken) {
-    res.locals.csrfToken = req.session?.doubleSubmitToken || '';
-  }
-
   const status = getMaintenanceStatus();
 
   if (!status.enabled) {

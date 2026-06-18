@@ -1,6 +1,6 @@
 {
   "name": "website-with-admin",
-  "version": "3.3.3",
+  "version": "3.3.4",
   "description": "网站前端和后台管理系统 - 针对2核2G服务器优化",
   "main": "server/app.js",
   "scripts": {
