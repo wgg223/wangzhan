@@ -67,7 +67,7 @@ router.post('/media/upload', isAuthenticated, hasPermission('media.upload'), (re
         return res.status(400).json({ success: false, message: '没有上传文件' });
       }
 
-      const originalName = req.file.originalname;
+      const originalName = req.file.originalname || 'untitled';
       const filePath = '/uploads/images/' + req.file.filename;
       const fileType = req.file.mimetype;
       const fileSize = req.file.size;
