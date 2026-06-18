@@ -69,27 +69,42 @@ router.get('/', (req, res) => {
 router.post('/check', async (req, res) => {
   try {
     const { owner: githubOwner, repo: githubRepo } = GITHUB_REPOS.main;
-    const currentVersion = process.env.APP_VERSION || '1.6.1';
-    
+
+    // 从 package.json 读取当前版本
+    const projectRoot = path.resolve(__dirname, '../../..');
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+    let currentVersion = '0.0.0';
+    try {
+      if (fs.existsSync(packageJsonPath)) {
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+        currentVersion = packageJson.version || currentVersion;
+      }
+    } catch (e) {
+      console.error('[system-update] 读取package.json失败:', e.message);
+    }
+
     const githubApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
-    
-    const response = await fetch(githubApiUrl, {
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'RP-Hub-Update-Checker'
-      },
-      timeout: 10000
-    });
-    
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    let response;
+    try {
+      response = await fetch(githubApiUrl, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'RP-Hub-Update-Checker'
+        },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     if (!response.ok) {
-      return res.json({
-        success: true,
-        data: {
-          hasUpdate: false,
-          currentVersion: currentVersion,
-          latestVersion: currentVersion,
-          message: '无法连接到 GitHub，使用本地版本信息'
-        }
+      return res.status(502).json({
+        success: false,
+        error: `GitHub API 请求失败 (${response.status})，请检查网络连接或稍后重试`
       });
     }
     
@@ -128,7 +143,8 @@ router.post('/check', async (req, res) => {
     });
   } catch (err) {
     console.error('[Admin] 检查更新失败:', err);
-    res.status(500).json({ success: false, error: '检查更新失败: ' + err.message });
+    const msg = err.name === 'AbortError' ? '请求超时，无法连接到 GitHub' : '检查更新失败: ' + err.message;
+    res.status(500).json({ success: false, error: msg });
   }
 });
 
@@ -470,7 +486,7 @@ router.get('/status', (req, res) => {
   const projectRoot = path.resolve(__dirname, '../../..');
   const packageJsonPath = path.join(projectRoot, 'package.json');
   
-  let currentVersion = '1.6.1';
+  let currentVersion = '0.0.0';
   try {
     if (fs.existsSync(packageJsonPath)) {
       const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
