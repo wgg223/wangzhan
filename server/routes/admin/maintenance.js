@@ -50,6 +50,12 @@ function compareVersions(v1, v2) {
 // Scheduled backup task
 let scheduledBackupTask = null;
 
+// GitHub repo config
+const GITHUB_REPOS = {
+  main: { owner: process.env.GITHUB_OWNER || 'wgg223', repo: process.env.GITHUB_REPO || 'wangzhan' },
+  rphub: { owner: 'STA1N156', repo: 'RP-Hub' }
+};
+
 // Initialize scheduled backup from settings
 function initScheduledBackup(db) {
   if (scheduledBackupTask) {
@@ -81,8 +87,7 @@ async function checkForUpdates() {
   autoUpdateState.checking = true;
 
   try {
-    const githubOwner = process.env.GITHUB_OWNER || 'wgg223';
-    const githubRepo = process.env.GITHUB_REPO || 'wangzhan';
+    const { owner: githubOwner, repo: githubRepo } = GITHUB_REPOS.main;
     const packageJsonPath = path.join(projectRoot, 'package.json');
     let currentVersion = '2.2.0';
     try {
@@ -967,10 +972,9 @@ router.post('/maintenance/auto-update', isAuthenticated, isSuperAdmin, async (re
 // GET - Check for updates
 router.get('/maintenance/check-update', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
-    const githubOwner = process.env.GITHUB_OWNER || 'wgg223';
-    const githubRepo = process.env.GITHUB_REPO || 'wangzhan';
+    const { owner: githubOwner, repo: githubRepo } = GITHUB_REPOS.main;
     const packageJsonPath = path.join(projectRoot, 'package.json');
-    let currentVersion = '2.1.0';
+    let currentVersion = '2.4.0';
     try {
       if (fs.existsSync(packageJsonPath)) {
         const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
@@ -1021,6 +1025,51 @@ router.get('/maintenance/check-update', isAuthenticated, isSuperAdmin, async (re
   } catch (err) {
     console.error('[maintenance] Check update error:', err);
     res.status(500).json({ success: false, error: '检查更新失败: ' + err.message });
+  }
+});
+
+// GET - Check RP-Hub updates
+router.get('/maintenance/check-rphub-update', isAuthenticated, isSuperAdmin, async (req, res) => {
+  try {
+    const { owner: githubOwner, repo: githubRepo } = GITHUB_REPOS.rphub;
+    
+    const githubApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
+
+    const response = await fetch(githubApiUrl, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'RP-Hub-Update-Checker'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      return res.json({
+        success: true,
+        data: {
+          hasUpdate: false,
+          message: '无法连接到 GitHub'
+        }
+      });
+    }
+
+    const releaseData = await response.json();
+    const latestVersion = releaseData.tag_name?.replace(/^v/, '') || '0.0.0';
+
+    res.json({
+      success: true,
+      data: {
+        latestVersion,
+        releaseName: releaseData.name || '',
+        releaseBody: releaseData.body || '',
+        releaseUrl: releaseData.html_url || '',
+        publishedAt: releaseData.published_at || '',
+        downloadUrl: releaseData.zipball_url || ''
+      }
+    });
+  } catch (err) {
+    console.error('[maintenance] Check RP-Hub update error:', err);
+    res.status(500).json({ success: false, error: '检查RP-Hub更新失败: ' + err.message });
   }
 });
 

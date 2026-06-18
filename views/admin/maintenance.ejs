@@ -187,6 +187,7 @@
   <div class="settings-section">
     <h2>系统更新</h2>
     <div class="update-info-card">
+      <h3 style="margin-bottom: 16px;">📦 主项目更新</h3>
       <div class="version-display">
         <div class="current-version">
           <span class="label">当前版本</span>
@@ -220,6 +221,33 @@
         </button>
       </div>
       <div id="updateActionResult" style="display: none; margin-top: 12px;"></div>
+    </div>
+    
+    <div class="update-info-card" style="margin-top: 16px;">
+      <h3 style="margin-bottom: 16px;">🎮 RP-Hub 更新</h3>
+      <div class="version-display">
+        <div class="latest-version">
+          <span class="label">最新版本</span>
+          <span class="version" id="rphubLatestVersion">-</span>
+        </div>
+      </div>
+      <div class="update-status" id="rphubUpdateStatus">
+        <div class="status-message">点击下方按钮检查 RP-Hub 更新</div>
+      </div>
+      <div class="release-info" id="rphubReleaseInfo" style="display: none;">
+        <h4 id="rphubReleaseName"></h4>
+        <div class="release-meta"><span id="rphubPublishedAt"></span></div>
+        <div class="release-body" id="rphubReleaseBody"></div>
+      </div>
+      <div class="update-actions" style="margin-top: 16px;">
+        <button type="button" class="btn btn-primary" id="checkRphubUpdateBtn" onclick="checkRphubUpdate()">
+          <span class="btn-text">检查 RP-Hub 更新</span>
+          <span class="btn-loading" style="display: none;">检查中...</span>
+        </button>
+        <a href="https://github.com/STA1N156/RP-Hub/releases" target="_blank" class="btn btn-info">
+          📥 前往下载
+        </a>
+      </div>
     </div>
   </div>
 
@@ -1166,6 +1194,53 @@ async function restartServer() {
     }
   } catch (err) {
     resultDiv.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+// ==================== RP-Hub Update Functions ====================
+
+async function checkRphubUpdate() {
+  const btn = document.getElementById('checkRphubUpdateBtn');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('rphubUpdateStatus');
+  const releaseInfo = document.getElementById('rphubReleaseInfo');
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.innerHTML = '<div class="status-message">检查 RP-Hub 更新中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/check-rphub-update', {
+      headers: {
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      document.getElementById('rphubLatestVersion').textContent = 'v' + result.data.latestVersion;
+      status.className = 'update-status has-update';
+      status.innerHTML = '<div class="status-message">RP-Hub 最新版本: v' + result.data.latestVersion + '</div>';
+
+      if (result.data.releaseName) {
+        releaseInfo.style.display = 'block';
+        document.getElementById('rphubReleaseName').textContent = result.data.releaseName;
+        document.getElementById('rphubPublishedAt').textContent = '发布时间: ' + new Date(result.data.publishedAt).toLocaleString('zh-CN');
+        document.getElementById('rphubReleaseBody').textContent = result.data.releaseBody;
+      }
+    } else {
+      status.innerHTML = '<div class="status-message">检查失败: ' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="status-message">请求失败: ' + err.message + '</div>';
   } finally {
     btn.disabled = false;
     btnText.style.display = 'inline';

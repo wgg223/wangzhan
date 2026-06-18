@@ -10,6 +10,12 @@ const AdmZip = require('adm-zip');
 
 const isWindows = process.platform === 'win32';
 
+// GitHub repo config
+const GITHUB_REPOS = {
+  main: { owner: process.env.GITHUB_OWNER || 'wgg223', repo: process.env.GITHUB_REPO || 'wangzhan' },
+  rphub: { owner: 'STA1N156', repo: 'RP-Hub' }
+};
+
 function copyDirCrossPlatform(src, dest) {
   return new Promise((resolve) => {
     if (isWindows) {
@@ -63,8 +69,7 @@ router.get('/', (req, res) => {
 // POST - 检查GitHub更新
 router.post('/check', async (req, res) => {
   try {
-    const githubOwner = process.env.GITHUB_OWNER || 'wgg223';
-    const githubRepo = process.env.GITHUB_REPO || 'wangzhan';
+    const { owner: githubOwner, repo: githubRepo } = GITHUB_REPOS.main;
     const currentVersion = process.env.APP_VERSION || '1.6.1';
     
     const githubApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
