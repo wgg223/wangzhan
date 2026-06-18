@@ -506,6 +506,12 @@
         <option value="system_cleanup" <%= filters.action === 'system_cleanup' ? 'selected' : '' %>>系统清理</option>
         <option value="system_log_clear" <%= filters.action === 'system_log_clear' ? 'selected' : '' %>>清理日志</option>
       </optgroup>
+      <optgroup label="🔧 维护工具">
+        <option value="clear_cache" <%= filters.action === 'clear_cache' ? 'selected' : '' %>>清除缓存</option>
+        <option value="clean_temp" <%= filters.action === 'clean_temp' ? 'selected' : '' %>>清理临时文件</option>
+        <option value="optimize_db" <%= filters.action === 'optimize_db' ? 'selected' : '' %>>优化数据库</option>
+        <option value="clean_logs" <%= filters.action === 'clean_logs' ? 'selected' : '' %>>清理活动日志</option>
+      </optgroup>
     </select>
 
     <input type="text" name="target_type" placeholder="目标类型（如：auth,server）" value="<%= filters.target_type || '' %>" style="width:140px;">

@@ -267,7 +267,12 @@ const actionLabels = {
   system_maintenance: '系统维护',
   system_update: '系统更新',
   system_cleanup: '系统清理',
-  system_log_clear: '清理日志'
+  system_log_clear: '清理日志',
+  // ===== 新增：维护工具操作 =====
+  clear_cache: '清除缓存',
+  clean_temp: '清理临时文件',
+  optimize_db: '优化数据库',
+  clean_logs: '清理活动日志'
 };
 
 // 操作对象类型对应的中文描述
@@ -298,7 +303,7 @@ const targetLabels = {
   // ===== 新增：运维相关 =====
   server: '服务器',
   backup: '数据备份',
-  cache: '缓存系统',
+  cache_system: '缓存系统',
   database: '数据库',
   // ===== 新增：权限角色 =====
   role: '角色',
@@ -316,7 +321,11 @@ const targetLabels = {
   poem_game: '诗词游戏',
   profile: '个人资料',
   search: '搜索',
-  setup: '系统安装'
+  setup: '系统安装',
+  // ===== 新增：维护工具目标类型 =====
+  cache: '缓存',
+  temp_files: '临时文件',
+  activity_logs: '活动日志'
 };
 
 /**

@@ -2,7 +2,7 @@
 <div class="admin-page">
   <div class="page-header">
     <h1>🔧 服务器维护</h1>
-    <p class="page-desc">管理服务器维护模式状态</p>
+    <p class="page-desc">管理服务器维护模式和系统工具</p>
   </div>
 
   <div class="settings-section">
@@ -55,6 +55,80 @@
       </div>
 
       <div id="saveStatus" style="display: none; margin-top: 12px;"></div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <h2>系统工具</h2>
+    <div class="tools-grid">
+      <div class="tool-card">
+        <div class="tool-icon">🗑️</div>
+        <div class="tool-info">
+          <h3>清除缓存</h3>
+          <p>清除所有内存缓存，包括设置缓存、查询缓存和页面缓存</p>
+        </div>
+        <button type="button" class="btn btn-warning" onclick="clearCache()">
+          <span class="btn-text">清除缓存</span>
+          <span class="btn-loading" style="display: none;">处理中...</span>
+        </button>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-icon">📁</div>
+        <div class="tool-info">
+          <h3>清理临时文件</h3>
+          <p>清理临时目录和过期日志文件，释放磁盘空间</p>
+        </div>
+        <button type="button" class="btn btn-warning" onclick="cleanTemp()">
+          <span class="btn-text">清理临时文件</span>
+          <span class="btn-loading" style="display: none;">处理中...</span>
+        </button>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-icon">📊</div>
+        <div class="tool-info">
+          <h3>优化数据库</h3>
+          <p>运行 VACUUM 命令优化数据库，减少数据库文件大小</p>
+        </div>
+        <button type="button" class="btn btn-warning" onclick="optimizeDb()">
+          <span class="btn-text">优化数据库</span>
+          <span class="btn-loading" style="display: none;">处理中...</span>
+        </button>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-icon">📋</div>
+        <div class="tool-info">
+          <h3>清理活动日志</h3>
+          <p>清理指定天数前的活动日志记录</p>
+        </div>
+        <div class="tool-actions">
+          <select id="logDays" class="form-control" style="width: auto; margin-right: 8px;">
+            <option value="7">7天前</option>
+            <option value="30" selected>30天前</option>
+            <option value="90">90天前</option>
+            <option value="180">180天前</option>
+          </select>
+          <button type="button" class="btn btn-warning" onclick="cleanLogs()">
+            <span class="btn-text">清理日志</span>
+            <span class="btn-loading" style="display: none;">处理中...</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="toolStatus" style="display: none; margin-top: 16px;"></div>
+  </div>
+
+  <div class="settings-section">
+    <h2>系统信息</h2>
+    <div class="update-info-card">
+      <button type="button" class="btn btn-info" onclick="loadSystemInfo()" style="margin-bottom: 16px;">
+        <span class="btn-text">刷新系统信息</span>
+      </button>
+      <div id="systemInfo" class="system-info-grid">
+        <div class="info-loading">点击按钮加载系统信息</div>
+      </div>
     </div>
   </div>
 
@@ -198,6 +272,78 @@ input:checked + .toggle-slider:before {
 .text-muted {
   color: #6b7280;
 }
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.tool-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tool-icon {
+  font-size: 32px;
+}
+.tool-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  color: #1f2937;
+}
+.tool-info p {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+.tool-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tool-actions .form-control {
+  flex: 1;
+}
+.system-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+.info-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+.info-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #374151;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 8px;
+}
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.info-row .label {
+  color: #6b7280;
+}
+.info-row .value {
+  color: #1f2937;
+  font-weight: 500;
+}
+.info-loading {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 20px;
+  color: #6b7280;
+}
 </style>
 
 <script>
@@ -328,5 +474,246 @@ async function toggleMaintenance() {
     btnText.style.display = 'inline';
     btnLoading.style.display = 'none';
   }
+}
+
+// Tool functions
+async function clearCache() {
+  const btn = event.target.closest('button');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('toolStatus');
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">清除缓存中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/clear-cache', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+    } else {
+      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+async function cleanTemp() {
+  const btn = event.target.closest('button');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('toolStatus');
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">清理临时文件中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/clean-temp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+    } else {
+      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+async function optimizeDb() {
+  const btn = event.target.closest('button');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('toolStatus');
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">优化数据库中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/optimize-db', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      status.innerHTML = '<div class="alert alert-success">' + result.message + ' (释放 ' + result.saved + ')</div>';
+    } else {
+      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+async function cleanLogs() {
+  const btn = event.target.closest('button');
+  const btnText = btn.querySelector('.btn-text');
+  const btnLoading = btn.querySelector('.btn-loading');
+  const status = document.getElementById('toolStatus');
+  const days = document.getElementById('logDays').value;
+
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoading.style.display = 'inline';
+  status.style.display = 'block';
+  status.innerHTML = '<div class="alert alert-info">清理日志中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/clean-logs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ days: parseInt(days) })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      status.innerHTML = '<div class="alert alert-success">' + result.message + '，删除 ' + result.deleted + ' 条记录</div>';
+    } else {
+      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+    }
+  } catch (err) {
+    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoading.style.display = 'none';
+  }
+}
+
+async function loadSystemInfo() {
+  const container = document.getElementById('systemInfo');
+  container.innerHTML = '<div class="info-loading">加载中...</div>';
+
+  try {
+    const response = await fetch('/admin/maintenance/system-info', {
+      headers: {
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      const data = result.data;
+      let html = '';
+
+      // Server info
+      html += '<div class="info-section">';
+      html += '<h4>服务器信息</h4>';
+      html += '<div class="info-row"><span class="label">平台</span><span class="value">' + data.server.platform + ' ' + data.server.arch + '</span></div>';
+      html += '<div class="info-row"><span class="label">Node.js</span><span class="value">' + data.server.nodeVersion + '</span></div>';
+      html += '<div class="info-row"><span class="label">运行时间</span><span class="value">' + formatUptime(data.server.uptime) + '</span></div>';
+      html += '<div class="info-row"><span class="label">CPU核心</span><span class="value">' + data.server.cpus + ' 核</span></div>';
+      html += '<div class="info-row"><span class="label">系统内存</span><span class="value">' + formatSize(data.server.totalMemory) + '</span></div>';
+      html += '<div class="info-row"><span class="label">可用内存</span><span class="value">' + formatSize(data.server.freeMemory) + '</span></div>';
+      html += '<div class="info-row"><span class="label">内存使用</span><span class="value">' + formatSize(data.server.memoryUsage.rss) + '</span></div>';
+      html += '</div>';
+
+      // Database info
+      html += '<div class="info-section">';
+      html += '<h4>数据库信息</h4>';
+      html += '<div class="info-row"><span class="label">数据库大小</span><span class="value">' + data.database.sizeFormatted + '</span></div>';
+      const tableCount = Object.keys(data.database.tableStats).length;
+      html += '<div class="info-row"><span class="label">数据表数量</span><span class="value">' + tableCount + ' 个</span></div>';
+      html += '</div>';
+
+      // Storage info
+      html += '<div class="info-section">';
+      html += '<h4>存储空间</h4>';
+      html += '<div class="info-row"><span class="label">上传文件</span><span class="value">' + data.storage.uploads.formatted + '</span></div>';
+      html += '<div class="info-row"><span class="label">备份文件</span><span class="value">' + data.storage.backups.formatted + '</span></div>';
+      html += '<div class="info-row"><span class="label">临时文件</span><span class="value">' + data.storage.temp.formatted + '</span></div>';
+      html += '</div>';
+
+      // Cache info
+      html += '<div class="info-section">';
+      html += '<h4>缓存状态</h4>';
+      html += '<div class="info-row"><span class="label">设置缓存</span><span class="value">' + data.cache.settings.size + '/' + data.cache.settings.maxSize + ' (命中率 ' + data.cache.settings.hitRate + ')</span></div>';
+      html += '<div class="info-row"><span class="label">查询缓存</span><span class="value">' + data.cache.query.size + '/' + data.cache.query.maxSize + ' (命中率 ' + data.cache.query.hitRate + ')</span></div>';
+      html += '<div class="info-row"><span class="label">页面缓存</span><span class="value">' + data.cache.page.size + '/' + data.cache.page.maxSize + ' (命中率 ' + data.cache.page.hitRate + ')</span></div>';
+      html += '</div>';
+
+      container.innerHTML = html;
+    } else {
+      container.innerHTML = '<div class="info-loading">加载失败: ' + result.error + '</div>';
+    }
+  } catch (err) {
+    container.innerHTML = '<div class="info-loading">请求失败: ' + err.message + '</div>';
+  }
+}
+
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function formatUptime(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  let result = '';
+  if (days > 0) result += days + '天 ';
+  if (hours > 0) result += hours + '小时 ';
+  if (minutes > 0) result += minutes + '分钟 ';
+  result += secs + '秒';
+  
+  return result;
 }
 </script>
