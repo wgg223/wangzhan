@@ -301,12 +301,6 @@ router.get('/page/:slug', (req, res) => {
   });
 });
 
-// ============ RP-Hub (Roleplay Hub) ============
-router.get('/rp-hub', isAuthenticated, hasFrontendPermission('rp-hub.access'), (req, res) => {
-  // Serve RP-Hub as a static SPA - session user is fetched via /auth/session-user API
-  res.sendFile(path.join(__dirname, '../../public/rp-hub/index.html'));
-});
-
 // ============ 小说（需登录） ============
 // 小说列表（需登录 + 小说访问权限）
 router.get('/novels', isAuthenticated, hasFrontendPermission('novels.access'), (req, res) => {

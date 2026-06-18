@@ -324,7 +324,6 @@ const targetLabels = {
   // ===== 新增：全局日志目标类型 =====
   admin: '后台管理',
   ai_chat: 'AI聊天',
-  rp_hub: '角色扮演',
   frontend: '前台页面',
   poem_game: '诗词游戏',
   profile: '个人资料',

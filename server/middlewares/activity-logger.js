@@ -11,7 +11,6 @@ const ROUTE_TARGET_MAP = {
   '/admin': 'admin',
   '/auth': 'auth',
   '/chat': 'ai_chat',
-  '/chat/rp-hub': 'rp_hub',
   '/home': 'frontend',
   '/articles': 'article',
   '/novels': 'novel',
@@ -27,7 +26,6 @@ const ROUTE_TARGET_MAP = {
 const SKIP_PATHS = [
   '/css/', '/js/', '/uploads/', '/assets/',
   '/health', '/favicon.ico',
-  '/rp-hub/', // RP-Hub SPA 静态资源
 ];
 
 // 不需要记录的 GET 路径（纯静态页面或频繁轮询的接口）

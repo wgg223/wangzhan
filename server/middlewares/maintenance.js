@@ -63,7 +63,6 @@ function maintenanceMiddleware(req, res, next) {
       path.startsWith('/js/') ||
       path.startsWith('/uploads/') ||
       path.startsWith('/assets/') ||
-      path.startsWith('/rp-hub/') ||
       req.xhr ||
       req.headers['x-requested-with'] === 'XMLHttpRequest') {
     return next();

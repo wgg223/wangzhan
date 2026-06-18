@@ -18,7 +18,6 @@
 - 图片分享（上传/浏览/分类/评论/收藏）
 - 小说阅读（章节管理）
 - 诗词游戏（排行榜）
-- RP-Hub 角色扮演（Vue 3 SPA，v1.7.0）
 - 用户注册与登录
 - 个人中心
 - 站内信系统
@@ -140,7 +139,7 @@ mi/
 ├── public/                          # 静态资源
 │   ├── css/                         # 样式文件（含 CSS 变量系统）
 │   ├── js/                          # 前端脚本
-│   ├── rp-hub/                      # RP-Hub v1.7.0（Vue 3 SPA）
+│   ├── rp-hub/                      # （已移除）
 │   ├── uploads/                     # 用户上传文件
 │   └── assets/                      # 图片资源
 │
@@ -190,7 +189,6 @@ npm run health           # 健康检查
 - 管理后台: `http://localhost:3000/admin`
 - 图片分享: `http://localhost:3000/image-share`
 - 诗词游戏: `http://localhost:3000/poem-game`
-- RP-Hub: `http://localhost:3000/rp-hub/`
 - 安装向导: `http://localhost:3000/setup`
 
 ## 后台管理功能
@@ -283,12 +281,17 @@ python deploy.py --check
 
 ### v2.5.1 (2026-06-19)
 
+**RP-Hub 移除**
+- 移除 RP-Hub 角色扮演第三方项目（静态文件、路由、数据库表、权限）
+- 移除系统更新和维护页面中的 RP-Hub 更新检查功能
+- 清理所有 RP-Hub 相关引用
+
 **CSS 异常修复**
-- 修复首页 `index.ejs` CSS 语法错误（`.page-list li a` 缺少闭合 `}`）
-- 修复 `style.css` 死选择器（`nav`/`.nav-links`/`.user-dropdown` 与实际 HTML 不匹配）
-- 修复小说页 `novels.ejs` 使用不存在的 CSS 变量（`--border-radius`/`--shadow`/`--transition`）
-- 将 `layout.ejs` 约 600 行内联 CSS 移入 `style.css` 和 `community.css`
-- 统一各页面硬编码颜色使用 CSS 变量（community/user-profile/articles）
+- 修复首页 index.ejs CSS 语法错误
+- 修复 style.css 死选择器
+- 修复 novels.ejs CSS 变量名
+- 整合 layout.ejs 内联样式到 CSS 文件
+- 统一各页面颜色使用 CSS 变量
 
 ### v2.5.0 (2026-06-19)
 

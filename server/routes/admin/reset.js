@@ -229,8 +229,7 @@ router.post('/reset/execute', isAuthenticated, isSuperAdmin, (req, res) => {
     'activity_logs',
     'image_categories', 'image_configs', 'image_favorites', 'image_tags', 'image_tag_relations',
     'ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings',
-    'ai_knowledge_docs', 'ai_knowledge_chunks',
-    'rp_hub_characters', 'rp_hub_chat_history', 'rp_hub_user_data'
+    'ai_knowledge_docs', 'ai_knowledge_chunks'
   ];
   extraTables.forEach(table => {
     try { db.run('DELETE FROM ' + table); } catch (e) { /* 表可能不存在 */ }

@@ -85,7 +85,6 @@ function insertDefaultDataIfNeeded(db) {
     ['poem-game.access', '诗词游戏访问', '访问诗词游戏模块'],
     ['image-share.access', '图片分享访问', '访问图片分享模块'],
     ['image-share.browse', '图片浏览', '浏览图片列表和详情'],
-    ['rp-hub.access', 'RP-Hub访问', '访问RP-Hub角色扮演模块'],
     ['articles.view', '查看文章', '查看文章列表和详情'],
     ['articles.create', '发布文章', '创建新文章'],
     ['articles.edit.own', '编辑自己的文章', '编辑自己发布的文章'],

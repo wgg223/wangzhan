@@ -2134,21 +2134,4 @@ router.get('/admin/login-anomalies', (req, res) => {
   res.json({ anomalies, topIps });
 });
 
-// ============ RP-Hub Session User API ============
-// Provide session user info for RP-Hub integration
-router.get('/session-user', (req, res) => {
-  if (req.session && req.session.user) {
-    res.json({
-      user: {
-        id: req.session.user.id,
-        username: req.session.user.username,
-        role: req.session.user.role,
-        avatar: req.session.user.avatar || null
-      }
-    });
-  } else {
-    res.json({ user: null });
-  }
-});
-
 module.exports = router;

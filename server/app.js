@@ -67,7 +67,7 @@ app.use(session({
   rolling: true,
   name: 'connect.sid',
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: 'auto',
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
@@ -172,8 +172,6 @@ app.use((req, res, next) => {
   } else if (req.path.startsWith('/poem-game')) {
     res.locals.layout = false;
   } else if (req.path.startsWith('/image-share')) {
-    res.locals.layout = false;
-  } else if (req.path.startsWith('/rp-hub')) {
     res.locals.layout = false;
   } else if (req.path.startsWith('/auth/') && !req.path.startsWith('/auth/delete-account')) {
     res.locals.layout = false;

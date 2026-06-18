@@ -615,47 +615,6 @@ function createTables(db) {
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_docs_source ON ai_knowledge_docs(source_type, source_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_docs_created ON ai_knowledge_docs(created_at)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunks_doc ON ai_knowledge_chunks(doc_id, chunk_index)');
-
-  // ============ RP-Hub 角色扮演模块表 ============
-
-  // RP-Hub 角色卡表
-  db.run(`CREATE TABLE IF NOT EXISTS rp_hub_characters (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    character_uuid TEXT NOT NULL,
-    character_data TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  )`);
-  db.run('CREATE INDEX IF NOT EXISTS idx_rp_hub_characters_user ON rp_hub_characters(user_id)');
-  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_rp_hub_characters_uuid ON rp_hub_characters(user_id, character_uuid)');
-
-  // RP-Hub 聊天历史表
-  db.run(`CREATE TABLE IF NOT EXISTS rp_hub_chat_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    character_uuid TEXT NOT NULL,
-    messages TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  )`);
-  db.run('CREATE INDEX IF NOT EXISTS idx_rp_hub_chat_user ON rp_hub_chat_history(user_id)');
-  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_rp_hub_chat_char ON rp_hub_chat_history(user_id, character_uuid)');
-
-  // RP-Hub 用户数据表
-  db.run(`CREATE TABLE IF NOT EXISTS rp_hub_user_data (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    data_key TEXT NOT NULL,
-    data_value TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  )`);
-  db.run('CREATE INDEX IF NOT EXISTS idx_rp_hub_user_data_user ON rp_hub_user_data(user_id)');
-  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_rp_hub_user_data_key ON rp_hub_user_data(user_id, data_key)');
 }
 
 module.exports = { createTables };

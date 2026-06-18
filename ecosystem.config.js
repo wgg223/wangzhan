@@ -51,10 +51,7 @@ module.exports = {
     env: {
       NODE_ENV: 'production',
       PORT: 3000,
-      SESSION_SECRET: sessionSecret,
-      APP_VERSION: '1.7.0',
-      GITHUB_OWNER: 'STA1N156',
-      GITHUB_REPO: 'RP-Hub'
+      SESSION_SECRET: sessionSecret
     },
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
     error_file: './logs/pm2-error.log',

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rp-hub-v1';
+const CACHE_NAME = 'website-v1';
 const urlsToCache = [
   '/',
   '/css/style.css',

@@ -12,8 +12,7 @@ const isWindows = process.platform === 'win32';
 
 // GitHub repo config
 const GITHUB_REPOS = {
-  main: { owner: process.env.GITHUB_OWNER || 'wgg223', repo: process.env.GITHUB_REPO || 'wangzhan' },
-  rphub: { owner: 'STA1N156', repo: 'RP-Hub' }
+  main: { owner: process.env.GITHUB_OWNER || 'wgg223', repo: process.env.GITHUB_REPO || 'wangzhan' }
 };
 
 function copyDirCrossPlatform(src, dest) {
@@ -463,67 +462,6 @@ router.post('/restart', (req, res) => {
   } catch (err) {
     console.error('[Admin] 重启服务器失败:', err);
     res.status(500).json({ success: false, error: '重启服务器失败: ' + err.message });
-  }
-});
-
-// POST - 检查 RP-Hub 更新
-router.post('/check-rphub', async (req, res) => {
-  try {
-    const { owner: githubOwner, repo: githubRepo } = GITHUB_REPOS.rphub;
-    
-    const githubApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
-    
-    const response = await fetch(githubApiUrl, {
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'RP-Hub-Update-Checker'
-      },
-      timeout: 10000
-    });
-    
-    if (!response.ok) {
-      return res.json({
-        success: true,
-        data: {
-          latestVersion: '未知',
-          message: '无法连接到 GitHub'
-        }
-      });
-    }
-    
-    const releaseData = await response.json();
-    const latestVersion = releaseData.tag_name?.replace(/^v/, '') || '未知';
-    
-    // 记录检查更新操作
-    try {
-      const db = req.db;
-      logActivity(db, {
-        user_id: req.session.user.id,
-        username: req.session.user.username,
-        action: 'check_rphub_update',
-        target_type: 'system',
-        target_title: 'RP-Hub 更新',
-        detail: `用户 ${req.session.user.username} 检查了 RP-Hub 更新`,
-        ip: req.ip
-      });
-    } catch (logErr) {
-      console.error('[system-update] logActivity 错误:', logErr.message);
-    }
-    
-    res.json({
-      success: true,
-      data: {
-        latestVersion: latestVersion,
-        releaseName: releaseData.name || '',
-        releaseBody: releaseData.body || '',
-        releaseUrl: releaseData.html_url || '',
-        publishedAt: releaseData.published_at || '',
-        downloadUrl: releaseData.zipball_url || ''
-      }
-    });
-  } catch (err) {
-    console.error('[Admin] 检查 RP-Hub 更新失败:', err);
-    res.status(500).json({ success: false, error: '检查 RP-Hub 更新失败: ' + err.message });
   }
 });
 

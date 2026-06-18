@@ -57,7 +57,6 @@ function getPermCategory(permKey) {
     'novels': 'content',
     'poem-game': 'basic',
     'image-share': 'content',
-    'rp-hub': 'basic',
     'articles': 'content',
     'pages': 'content',
     'comments': 'community',

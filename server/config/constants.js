@@ -44,14 +44,6 @@ const PROJECT_DEFINITIONS = {
     tables: ['ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings'],
     file_dirs: [],
     icon: '🤖'
-  },
-  rp_hub: {
-    id: 'rp_hub',
-    name: 'RP-Hub 角色扮演',
-    description: '角色卡、聊天历史、角色扮演数据',
-    tables: ['rp_hub_characters', 'rp_hub_chat_history', 'rp_hub_user_data'],
-    file_dirs: [],
-    icon: '🎭'
   }
 };
 
@@ -89,8 +81,6 @@ const ALL_TABLES = [
   'ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings',
   // AI 知识库
   'ai_knowledge_docs', 'ai_knowledge_chunks',
-  // RP-Hub
-  'rp_hub_characters', 'rp_hub_chat_history', 'rp_hub_user_data',
   // 活动日志
   'activity_logs',
   // 用户权限
