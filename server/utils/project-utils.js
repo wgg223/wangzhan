@@ -53,25 +53,30 @@ function getProjectStats(db, tables) {
 /**
  * 清理项目关联的文件
  * @param {string[]} fileDirs - 文件目录列表
- * @returns {number} 已删除的文件数量
+ * @returns {Promise<number>} 已删除的文件数量
  */
-function cleanProjectFiles(fileDirs) {
+async function cleanProjectFiles(fileDirs) {
   let deletedFiles = 0;
   const uploadsDir = path.join(__dirname, '../../public');
-  fileDirs.forEach(dir => {
+  for (const dir of fileDirs) {
     const dirPath = path.join(uploadsDir, dir);
-    if (fs.existsSync(dirPath)) {
-      const files = fs.readdirSync(dirPath);
-      files.forEach(file => {
+    try {
+      const stat = await fs.promises.stat(dirPath).catch(() => null);
+      if (!stat || !stat.isDirectory()) continue;
+      const files = await fs.promises.readdir(dirPath);
+      for (const file of files) {
         const filePath = path.join(dirPath, file);
-        if (fs.lstatSync(filePath).isFile()) {
-          if (fsSafe.safeUnlinkSync(filePath)) {
-            deletedFiles++;
+        try {
+          const fileStat = await fs.promises.lstat(filePath);
+          if (fileStat.isFile()) {
+            if (await fsSafe.safeUnlink(filePath)) {
+              deletedFiles++;
+            }
           }
-        }
-      });
-    }
-  });
+        } catch (e) { /* skip */ }
+      }
+    } catch (e) { /* skip */ }
+  }
   return deletedFiles;
 }
 

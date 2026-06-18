@@ -245,7 +245,7 @@ router.delete('/projects/api/:id/delete', isAuthenticated, isSuperAdmin, (req, r
 });
 
 // 重置指定项目数据
-router.post('/projects/api/:id/reset', isAuthenticated, isSuperAdmin, (req, res) => {
+router.post('/projects/api/:id/reset', isAuthenticated, isSuperAdmin, async (req, res) => {
   const db = req.db;
   const { password, confirm } = req.body;
   const projectId = req.params.id;
@@ -276,7 +276,7 @@ router.post('/projects/api/:id/reset', isAuthenticated, isSuperAdmin, (req, res)
   const fileDirs = project.file_dirs;
   const deletedRecords = {};
 
-  const deletedFiles = cleanProjectFiles(fileDirs);
+  const deletedFiles = await cleanProjectFiles(fileDirs);
 
   const dependentTables = tables.filter(t => DEPENDENT_TABLES.includes(t));
   const mainTables = tables.filter(t => !DEPENDENT_TABLES.includes(t));

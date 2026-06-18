@@ -11,7 +11,7 @@ const fsSafe = require('../../utils/fs-safe');
 
 // ============ 选择性重置 ============
 
-router.post('/reset/selective', isAuthenticated, isSuperAdmin, (req, res) => {
+router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) => {
   const db = req.db;
   const { password, types } = req.body;
 
@@ -53,15 +53,15 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, (req, res) => {
     if (types.includes('media')) {
       // 删除文件
       const mediaFiles = queryAll(db, 'SELECT file_path FROM media');
-      mediaFiles.forEach(m => {
+      for (const m of mediaFiles) {
         const filePath = path.join(__dirname, '../../public', m.file_path);
-        fsSafe.safeUnlinkSync(filePath);
-      });
+        await fsSafe.safeUnlink(filePath);
+      }
       const imageFiles = queryAll(db, 'SELECT url AS file_path FROM images');
-      imageFiles.forEach(m => {
+      for (const m of imageFiles) {
         const filePath = path.join(__dirname, '../../public', m.file_path);
-        fsSafe.safeUnlinkSync(filePath);
-      });
+        await fsSafe.safeUnlink(filePath);
+      }
       db.run('DELETE FROM media');
       db.run('DELETE FROM images');
       db.run('DELETE FROM image_favorites');
@@ -165,7 +165,7 @@ router.get('/reset', isAuthenticated, canAccessAdmin, isSuperAdmin, (req, res) =
   });
 });
 
-router.post('/reset/execute', isAuthenticated, isSuperAdmin, (req, res) => {
+router.post('/reset/execute', isAuthenticated, isSuperAdmin, async (req, res) => {
   const db = req.db;
   const { password } = req.body;
 
@@ -181,31 +181,31 @@ router.post('/reset/execute', isAuthenticated, isSuperAdmin, (req, res) => {
   // 1. 清理所有项目关联的文件
   const allProjectDefs = getAllProjectDefinitions(db);
   let totalDeletedFiles = 0;
-  allProjectDefs.forEach(project => {
-    const deleted = cleanProjectFiles(project.file_dirs);
+  for (const project of allProjectDefs) {
+    const deleted = await cleanProjectFiles(project.file_dirs);
     totalDeletedFiles += deleted;
-  });
+  }
 
   // 清理 media 表中的文件
   const mediaFiles = queryAll(db, 'SELECT file_path FROM media');
-  mediaFiles.forEach(m => {
+  for (const m of mediaFiles) {
     const filePath = path.join(__dirname, '../../public', m.file_path);
-    fsSafe.safeUnlinkSync(filePath);
-  });
+    await fsSafe.safeUnlink(filePath);
+  }
 
   // 清理 novel_chapters 中的文件
   const novelFiles = queryAll(db, 'SELECT file_path FROM novel_chapters');
-  novelFiles.forEach(ch => {
+  for (const ch of novelFiles) {
     const filePath = path.join(__dirname, '../../public', ch.file_path);
-    fsSafe.safeUnlinkSync(filePath);
-  });
+    await fsSafe.safeUnlink(filePath);
+  }
 
   // 清理 images 表中的文件
   const imageFiles = queryAll(db, 'SELECT url AS file_path FROM images');
-  imageFiles.forEach(m => {
+  for (const m of imageFiles) {
     const filePath = path.join(__dirname, '../../public', m.file_path);
-    fsSafe.safeUnlinkSync(filePath);
-  });
+    await fsSafe.safeUnlink(filePath);
+  }
 
   // 2. 按依赖顺序删除所有业务数据表
   // 先删除有外键依赖的子表
@@ -309,7 +309,7 @@ router.get('/reset/factory', isAuthenticated, isSuperAdmin, (req, res) => {
   });
 });
 
-router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, (req, res) => {
+router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, async (req, res) => {
   const db = req.db;
   const { password } = req.body;
 
@@ -324,16 +324,16 @@ router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, (req, res) 
 
   try {
     const mediaFiles = queryAll(db, 'SELECT url AS file_path FROM images');
-    mediaFiles.forEach(m => {
+    for (const m of mediaFiles) {
       const filePath = path.join(__dirname, '../../public', m.file_path);
-      fsSafe.safeUnlinkSync(filePath);
-    });
+      await fsSafe.safeUnlink(filePath);
+    }
 
     const novelFiles = queryAll(db, 'SELECT file_path FROM novel_chapters');
-    novelFiles.forEach(ch => {
+    for (const ch of novelFiles) {
       const filePath = path.join(__dirname, '../../public', ch.file_path);
-      fsSafe.safeUnlinkSync(filePath);
-    });
+      await fsSafe.safeUnlink(filePath);
+    }
 
     const deletedCount = closeAndDeleteDatabase();
 
