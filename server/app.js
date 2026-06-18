@@ -163,6 +163,7 @@ app.use((req, res, next) => {
   res.locals.user = req.session.user || null;
   res.locals.settings = getCachedSettings(req.db);
   res.locals.navPages = getCachedNavPages(req.db);
+  res.locals.csrfToken = '';
 
   // 使用 res.locals.layout 替代 app.set('layout') 避免并发竞态条件
   if (req.path.startsWith('/admin')) {

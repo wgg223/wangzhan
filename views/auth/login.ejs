@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= modeTitle %> - <%= siteName %></title>
-  <meta name="csrf-token" content="<%= csrfToken %>">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="/css/auth.css">
 </head>
@@ -29,7 +28,6 @@
     <% } %>
 
     <form action="/auth/<%= source %>/login" method="POST" class="auth-form" id="loginForm">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="form-group">
         <label for="username">用户名</label>
         <input type="text" id="username" name="username" class="auth-input" placeholder="请输入用户名" required value="<%= typeof username !== 'undefined' ? username : '' %>">
