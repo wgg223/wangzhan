@@ -693,8 +693,8 @@ router.post('/maintenance/backup-now', isAuthenticated, isSuperAdmin, async (req
 // GET - Check for updates
 router.get('/maintenance/check-update', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
-    const githubOwner = process.env.GITHUB_OWNER || 'STA1N156';
-    const githubRepo = process.env.GITHUB_REPO || 'RP-Hub';
+    const githubOwner = process.env.GITHUB_OWNER || 'wgg223';
+    const githubRepo = process.env.GITHUB_REPO || 'wangzhan';
     const packageJsonPath = path.join(projectRoot, 'package.json');
     let currentVersion = '2.1.0';
     try {

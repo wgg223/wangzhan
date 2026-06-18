@@ -63,8 +63,8 @@ router.get('/', (req, res) => {
 // POST - 检查GitHub更新
 router.post('/check', async (req, res) => {
   try {
-    const githubOwner = process.env.GITHUB_OWNER || 'STA1N156';
-    const githubRepo = process.env.GITHUB_REPO || 'RP-Hub';
+    const githubOwner = process.env.GITHUB_OWNER || 'wgg223';
+    const githubRepo = process.env.GITHUB_REPO || 'wangzhan';
     const currentVersion = process.env.APP_VERSION || '1.6.1';
     
     const githubApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
