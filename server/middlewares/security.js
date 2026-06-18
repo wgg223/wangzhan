@@ -37,14 +37,6 @@ function doubleSubmitCookie(req, res, next) {
     req.session.doubleSubmitToken = generateToken();
   }
 
-  // 将令牌写入 Cookie（httpOnly: false 以便前端 JS 读取）
-  res.cookie('XSRF-TOKEN', req.session.doubleSubmitToken, {
-    httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    path: '/'
-  });
-
   // 暴露给模板
   res.locals.csrfToken = req.session.doubleSubmitToken;
 

@@ -218,22 +218,20 @@ const communityRoutes = require('./routes/community');
 const contentRoutes = require('./routes/content');
 const permissionApplicationsRoutes = require('./routes/permission-applications');
 const privateMessageRoutes = require('./routes/private-message');
-const { securityMiddleware } = require('./middlewares/security');
-
 app.use('/setup', setupRoutes);
-app.use('/auth', globalLimiter, securityMiddleware, authRoutes);
-app.use('/admin', globalLimiter, securityMiddleware, adminRoutes);
-app.use('/', globalLimiter, securityMiddleware, permissionApplicationsRoutes);
+app.use('/auth', globalLimiter, authRoutes);
+app.use('/admin', globalLimiter, adminRoutes);
+app.use('/', globalLimiter, permissionApplicationsRoutes);
 
 // Maintenance mode middleware - only affects frontend routes
 app.use(maintenanceMiddleware);
 
-app.use('/poem-game', globalLimiter, securityMiddleware, poemGameRoutes);
-app.use('/image-share', globalLimiter, securityMiddleware, imageShareRoutes);
-app.use('/', globalLimiter, securityMiddleware, frontendRoutes);
-app.use('/', globalLimiter, securityMiddleware, communityRoutes);
-app.use('/', globalLimiter, securityMiddleware, privateMessageRoutes);
-app.use('/', globalLimiter, securityMiddleware, contentRoutes);
+app.use('/poem-game', globalLimiter, poemGameRoutes);
+app.use('/image-share', globalLimiter, imageShareRoutes);
+app.use('/', globalLimiter, frontendRoutes);
+app.use('/', globalLimiter, communityRoutes);
+app.use('/', globalLimiter, privateMessageRoutes);
+app.use('/', globalLimiter, contentRoutes);
 
 app.get('/health', (req, res) => {
   const db = getDb();

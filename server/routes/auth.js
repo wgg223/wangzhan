@@ -185,7 +185,7 @@ router.get('/:source/login', (req, res) => {
   const db = req.db;
   const siteName = getSiteName(db, source);
   const modeInfo = getModeInfo('login', source);
-  res.render('auth/login', {
+  res.render('auth/login', { layout: false,
     source,
     modeTitle: modeInfo.title,
     modeSubtitle: modeInfo.subtitle,
@@ -242,7 +242,7 @@ router.get('/:source/register', (req, res) => {
     captchaSvg = captcha.data;
   }
 
-  res.render('auth/auth-page', {
+  res.render('auth/auth-page', { layout: false,
     source,
     mode: 'register',
     modeTitle: modeInfo.title,
@@ -276,7 +276,7 @@ router.get('/:source/forgot-password', (req, res) => {
   req.session.captchaText = captcha.text;
   req.session.captchaExpires = Date.now() + 5 * 60 * 1000;
 
-  res.render('auth/auth-page', {
+  res.render('auth/auth-page', { layout: false,
     source,
     mode: 'forgot-password',
     step: 'email',
@@ -303,7 +303,7 @@ router.get('/:source/change-password', (req, res) => {
   const db = req.db;
   const siteName = getSiteName(db, source);
   const modeInfo = getModeInfo('change-password', source);
-  res.render('auth/auth-page', {
+  res.render('auth/auth-page', { layout: false,
     source,
     mode: 'change-password',
     modeTitle: modeInfo.title,
@@ -331,7 +331,7 @@ router.get('/:source/change-username', (req, res) => {
   }
   const db = req.db;
   const siteName = getSiteName(db, source);
-  res.render('auth/auth-page', {
+  res.render('auth/auth-page', { layout: false,
     source,
     mode: 'change-username',
     modeTitle: '修改用户名',
@@ -360,7 +360,7 @@ router.get('/:source/force-change-password', (req, res) => {
   const db = req.db;
   const siteName = getSiteName(db, source);
   const modeInfo = getModeInfo('force-change-password', source);
-  res.render('auth/auth-page', {
+  res.render('auth/auth-page', { layout: false,
     source,
     mode: 'force-change-password',
     modeTitle: modeInfo.title,
@@ -393,7 +393,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
 
   function renderLogin(errorMsg) {
     const modeInfo = getModeInfo('login', source);
-    res.render('auth/login', {
+    res.render('auth/login', { layout: false,
       source,
       modeTitle: modeInfo.title,
       modeSubtitle: modeInfo.subtitle,
@@ -594,7 +594,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
           ip: req.ip
         });
       } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
-      return res.render('auth/auth-page', {
+      return res.render('auth/auth-page', { layout: false,
         source,
         mode: 'register',
         modeTitle: modeInfo.title,
@@ -630,7 +630,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
       // 验证码过期，回到信息填写页
       delete req.session.tempRegister;
       const modeInfoRegister = getModeInfo('register', source);
-      return res.render('auth/auth-page', {
+      return res.render('auth/auth-page', { layout: false,
         source,
         mode: 'register',
         modeTitle: modeInfoRegister.title,
@@ -680,7 +680,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     delete req.session.tempRegister;
 
     const modeInfoLogin = getModeInfo('login', source);
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'login',
       modeTitle: modeInfoLogin.title,
@@ -704,7 +704,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     const captcha = generateCaptcha();
     req.session.captchaText = captcha.text;
     req.session.captchaExpires = Date.now() + 5 * 60 * 1000;
-    res.render('auth/auth-page', {
+    res.render('auth/auth-page', { layout: false,
       source,
       mode: 'register',
       modeTitle: modeInfo.title,
@@ -836,7 +836,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
 
     const modeInfo = getModeInfo('login', source);
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'login',
       modeTitle: modeInfo.title,
@@ -878,7 +878,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
 
     const modeInfo = getModeInfo('login', source);
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'login',
       modeTitle: modeInfo.title,
@@ -927,7 +927,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
       if (!logger.isProd) logger.debug(`[dev] 注册验证码已生成 for ${username}`);
       // 即使邮件发送失败，在开发模式下也跳转到验证步骤
       const modeInfo = getModeInfo('register', source);
-      return res.render('auth/auth-page', {
+      return res.render('auth/auth-page', { layout: false,
         source,
         mode: 'register',
         modeTitle: modeInfo.title,
@@ -946,7 +946,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     }
     // 跳转到验证码步骤
     const modeInfo = getModeInfo('register', source);
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'register',
       modeTitle: modeInfo.title,
@@ -1004,7 +1004,7 @@ router.post('/:source/register/resend-code', sendCodeLimiter, (req, res) => {
       if (!logger.isProd) logger.debug(`[dev] 重新生成验证码 for ${tempData.username}`);
     }
     const modeInfo = getModeInfo('register', source);
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'register',
       modeTitle: modeInfo.title,
@@ -1043,7 +1043,7 @@ router.post('/:source/forgot-password/send-code', sendCodeLimiter, (req, res) =>
       req.session.captchaExpires = Date.now() + 5 * 60 * 1000;
       captchaSvg = newCaptcha.data;
     }
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'forgot-password',
       step,
@@ -1145,7 +1145,7 @@ router.post('/:source/forgot-password/reset', resetPasswordLimiter, (req, res) =
 
   function renderVerify(errorMsg, successMsg) {
     const modeInfo = getModeInfo('forgot-password', source, 'verify');
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'forgot-password',
       step: 'verify',
@@ -1177,7 +1177,7 @@ router.post('/:source/forgot-password/reset', resetPasswordLimiter, (req, res) =
   const user = queryOne(db, 'SELECT * FROM users WHERE email = ?', [email]);
   if (!user) {
     const modeInfo = getModeInfo('forgot-password', source, 'email');
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'forgot-password',
       step: 'email',
@@ -1247,7 +1247,7 @@ router.post('/:source/forgot-password/reset', resetPasswordLimiter, (req, res) =
   } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
 
   const modeInfo = getModeInfo('login', source);
-  res.render('auth/auth-page', {
+  res.render('auth/auth-page', { layout: false,
     source,
     mode: 'login',
     modeTitle: modeInfo.title,
@@ -1276,7 +1276,7 @@ router.post('/:source/change-password', changePasswordLimiter, (req, res) => {
 
   function renderChangePassword(errorMsg, successMsg) {
     const modeInfo = getModeInfo('change-password', source);
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'change-password',
       modeTitle: modeInfo.title,
@@ -1377,7 +1377,7 @@ router.post('/:source/change-username', (req, res) => {
   const siteName = getSiteName(db, source);
 
   function renderChangeUsername(errorMsg, successMsg) {
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'change-username',
       modeTitle: '修改用户名',
@@ -1473,7 +1473,7 @@ router.post('/:source/force-change-password', changePasswordLimiter, (req, res) 
 
   function renderForceChange(errorMsg) {
     const modeInfo = getModeInfo('force-change-password', source);
-    return res.render('auth/auth-page', {
+    return res.render('auth/auth-page', { layout: false,
       source,
       mode: 'force-change-password',
       modeTitle: modeInfo.title,

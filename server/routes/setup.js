@@ -65,7 +65,7 @@ router.use((req, res, next) => {
  * GET /setup - 显示安装页面
  */
 router.get('/', (req, res) => {
-  res.render('setup/setup', {
+  res.render('setup/setup', { layout: false,
     error: null,
     presets: PRAGMA_PRESETS,
     formData: {
@@ -105,7 +105,7 @@ router.post('/', (req, res) => {
   // 验证表单
   const validationError = validateForm({ username, password, confirm_password, email, db_mode });
   if (validationError) {
-    return res.render('setup/setup', {
+    return res.render('setup/setup', { layout: false,
       error: validationError,
       presets: PRAGMA_PRESETS,
       formData: { username, email, db_mode, ...req.body }
@@ -157,7 +157,7 @@ router.post('/', (req, res) => {
     return res.redirect('/admin?setup=complete');
   } catch (err) {
     console.error('安装失败:', err);
-    return res.render('setup/setup', {
+    return res.render('setup/setup', { layout: false,
       error: '安装过程出错: ' + err.message,
       presets: PRAGMA_PRESETS,
       formData: { username, email, db_mode, ...req.body }
