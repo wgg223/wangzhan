@@ -90,7 +90,7 @@ router.post('/media/upload', isAuthenticated, hasPermission('media.upload'), (re
       const cateId = ensureMediaDefaultCategory(db);
 
       const result = db.run(
-        'INSERT INTO images (title, description, url, cate_id, user_id, status) VALUES (, ?, ?, ?, ?, ?)',
+        'INSERT INTO images (title, description, url, cate_id, user_id, status) VALUES (?, ?, ?, ?, ?, ?)',
         [originalName, '', filePath, cateId, uploadedBy, 1]
       );
 
