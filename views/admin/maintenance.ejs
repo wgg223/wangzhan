@@ -7,23 +7,24 @@
 
   <div class="settings-section">
     <h2>维护状态</h2>
-    <div class="update-info-card">
-      <div class="maintenance-status-display" id="statusDisplay">
+    <div class="card">
+      <div class="maintenance-status" id="statusDisplay">
         <div class="status-icon" id="statusIcon">🟢</div>
         <div class="status-info">
           <h3 id="statusTitle">当前状态：正常运行</h3>
           <p id="statusDesc" class="text-muted">网站可正常访问</p>
         </div>
+        <div class="status-badge" id="statusBadge">运行中</div>
       </div>
     </div>
   </div>
 
   <div class="settings-section">
     <h2>维护设置</h2>
-    <div class="update-info-card">
+    <div class="card">
       <div class="form-group">
         <label>维护模式</label>
-        <div class="toggle-switch-container">
+        <div class="toggle-row">
           <label class="toggle-switch">
             <input type="checkbox" id="maintenanceEnabled" <%= settings.maintenance_mode === 'true' ? 'checked' : '' %>>
             <span class="toggle-slider"></span>
@@ -40,21 +41,21 @@
 
       <div class="form-group">
         <label for="maintenanceMessage">维护消息</label>
-        <textarea id="maintenanceMessage" class="form-control" rows="4" placeholder="系统正在进行维护升级，请稍后再试。"><%= settings.maintenance_message || '系统正在进行维护升级，请稍后再试。' %></textarea>
+        <textarea id="maintenanceMessage" class="form-control" rows="3" placeholder="系统正在进行维护升级，请稍后再试。"><%= settings.maintenance_message || '系统正在进行维护升级，请稍后再试。' %></textarea>
       </div>
 
-      <div class="update-actions">
+      <div class="form-actions">
         <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveMaintenance()">
           <span class="btn-text">保存设置</span>
           <span class="btn-loading" style="display: none;">保存中...</span>
         </button>
-        <button type="button" class="btn btn-success" id="toggleBtn" onclick="toggleMaintenance()">
+        <button type="button" class="btn" id="toggleBtn" onclick="toggleMaintenance()">
           <span class="btn-text" id="toggleBtnText"><%= settings.maintenance_mode === 'true' ? '关闭维护模式' : '开启维护模式' %></span>
           <span class="btn-loading" style="display: none;">处理中...</span>
         </button>
       </div>
 
-      <div id="saveStatus" style="display: none; margin-top: 12px;"></div>
+      <div id="saveStatus" class="status-msg" style="display: none;"></div>
     </div>
   </div>
 
@@ -62,183 +63,192 @@
     <h2>系统工具</h2>
     <div class="tools-grid">
       <div class="tool-card">
-        <div class="tool-icon">🗑️</div>
-        <div class="tool-info">
-          <h3>清除缓存</h3>
-          <p>清除所有内存缓存，包括设置缓存、查询缓存和页面缓存</p>
+        <div class="tool-header">
+          <span class="tool-icon">🗑️</span>
+          <div>
+            <h3>清除缓存</h3>
+            <p>清除所有内存缓存（设置/查询/页面）</p>
+          </div>
         </div>
-        <button type="button" class="btn btn-warning" onclick="clearCache()">
+        <button type="button" class="btn btn-warning btn-sm" onclick="runTool('clear-cache', this)">
           <span class="btn-text">清除缓存</span>
           <span class="btn-loading" style="display: none;">处理中...</span>
         </button>
       </div>
 
       <div class="tool-card">
-        <div class="tool-icon">📁</div>
-        <div class="tool-info">
-          <h3>清理临时文件</h3>
-          <p>清理临时目录和过期日志文件，释放磁盘空间</p>
+        <div class="tool-header">
+          <span class="tool-icon">📁</span>
+          <div>
+            <h3>清理临时文件</h3>
+            <p>清理临时目录和过期日志文件</p>
+          </div>
         </div>
-        <button type="button" class="btn btn-warning" onclick="cleanTemp()">
+        <button type="button" class="btn btn-warning btn-sm" onclick="runTool('clean-temp', this)">
           <span class="btn-text">清理临时文件</span>
           <span class="btn-loading" style="display: none;">处理中...</span>
         </button>
       </div>
 
       <div class="tool-card">
-        <div class="tool-icon">📊</div>
-        <div class="tool-info">
-          <h3>优化数据库</h3>
-          <p>运行 VACUUM 命令优化数据库，减少数据库文件大小</p>
+        <div class="tool-header">
+          <span class="tool-icon">📊</span>
+          <div>
+            <h3>优化数据库</h3>
+            <p>运行 VACUUM 命令压缩数据库文件</p>
+          </div>
         </div>
-        <button type="button" class="btn btn-warning" onclick="optimizeDb()">
+        <button type="button" class="btn btn-warning btn-sm" onclick="runTool('optimize-db', this)">
           <span class="btn-text">优化数据库</span>
           <span class="btn-loading" style="display: none;">处理中...</span>
         </button>
       </div>
 
       <div class="tool-card">
-        <div class="tool-icon">📋</div>
-        <div class="tool-info">
-          <h3>清理活动日志</h3>
-          <p>清理指定天数前的活动日志记录</p>
+        <div class="tool-header">
+          <span class="tool-icon">📋</span>
+          <div>
+            <h3>清理活动日志</h3>
+            <p>清理指定天数前的日志记录</p>
+          </div>
         </div>
         <div class="tool-actions">
-          <select id="logDays" class="form-control" style="width: auto; margin-right: 8px;">
+          <select id="logDays" class="form-control" style="width: auto;">
             <option value="7">7天前</option>
             <option value="30" selected>30天前</option>
             <option value="90">90天前</option>
             <option value="180">180天前</option>
           </select>
-          <button type="button" class="btn btn-warning" onclick="cleanLogs()">
+          <button type="button" class="btn btn-warning btn-sm" onclick="cleanLogs(this)">
             <span class="btn-text">清理日志</span>
             <span class="btn-loading" style="display: none;">处理中...</span>
           </button>
         </div>
       </div>
     </div>
-    <div id="toolStatus" style="display: none; margin-top: 16px;"></div>
+    <div id="toolStatus" class="status-msg" style="display: none; margin-top: 16px;"></div>
   </div>
 
   <div class="settings-section">
     <h2>备份管理</h2>
-    <div class="update-info-card">
+    <div class="card">
       <div class="form-group">
         <label>手动备份</label>
-        <div class="backup-options">
-          <div class="backup-type-selector">
-            <select id="backupType" class="form-control">
-              <option value="database">数据库备份</option>
-              <option value="uploads">上传文件备份</option>
-              <option value="config">配置文件备份</option>
-              <option value="full">完整备份</option>
-            </select>
-            <label class="checkbox-label">
-              <input type="checkbox" id="backupSendEmail"> 备份后发送邮件通知
-            </label>
-          </div>
-          <button type="button" class="btn btn-primary" onclick="backupNow()">
+        <div class="backup-row">
+          <select id="backupType" class="form-control" style="width: auto; min-width: 160px;">
+            <option value="database">数据库备份</option>
+            <option value="uploads">上传文件备份</option>
+            <option value="config">配置文件备份</option>
+            <option value="full">完整备份</option>
+          </select>
+          <label class="checkbox-label">
+            <input type="checkbox" id="backupSendEmail"> 发送邮件通知
+          </label>
+          <button type="button" class="btn btn-primary" onclick="backupNow(this)">
             <span class="btn-text">立即备份</span>
             <span class="btn-loading" style="display: none;">备份中...</span>
           </button>
         </div>
-        <div id="backupStatus" style="display: none; margin-top: 12px;"></div>
+        <div id="backupStatus" class="status-msg" style="display: none; margin-top: 12px;"></div>
       </div>
 
-      <div class="form-group" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
+      <div class="divider"></div>
+
+      <div class="form-group">
         <label>定时备份</label>
-        <div class="toggle-switch-container">
+        <div class="toggle-row">
           <label class="toggle-switch">
             <input type="checkbox" id="scheduledBackupEnabled">
             <span class="toggle-slider"></span>
           </label>
           <span class="toggle-label" id="scheduledToggleLabel">已关闭</span>
         </div>
-        <div class="scheduled-backup-settings" style="margin-top: 16px;">
-          <div class="form-group">
-            <label for="scheduledCron">Cron 表达式</label>
-            <input type="text" id="scheduledCron" class="form-control" value="0 3 * * *" placeholder="0 3 * * *">
-            <p class="help-text">默认每天凌晨3点执行。格式：分 时 日 月 周</p>
-          </div>
-          <div class="form-group">
-            <label for="scheduledType">备份类型</label>
-            <select id="scheduledType" class="form-control">
-              <option value="database">数据库备份</option>
-              <option value="uploads">上传文件备份</option>
-              <option value="config">配置文件备份</option>
-              <option value="full">完整备份</option>
-            </select>
+        <div class="scheduled-settings" id="scheduledSettings">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="scheduledCron">Cron 表达式</label>
+              <input type="text" id="scheduledCron" class="form-control" value="0 3 * * *" placeholder="0 3 * * *">
+              <p class="help-text">默认每天凌晨3点。格式：分 时 日 月 周</p>
+            </div>
+            <div class="form-group">
+              <label for="scheduledType">备份类型</label>
+              <select id="scheduledType" class="form-control">
+                <option value="database">数据库备份</option>
+                <option value="uploads">上传文件备份</option>
+                <option value="config">配置文件备份</option>
+                <option value="full">完整备份</option>
+              </select>
+            </div>
           </div>
           <div class="form-group">
             <label for="scheduledNotifyEmail">通知邮箱</label>
             <input type="email" id="scheduledNotifyEmail" class="form-control" placeholder="admin@example.com">
-            <p class="help-text">备份完成后发送通知邮件到此邮箱（需配置SMTP）</p>
+            <p class="help-text">备份完成后发送通知邮件（需配置SMTP）</p>
           </div>
-          <button type="button" class="btn btn-primary" onclick="saveScheduledBackup()">
+          <button type="button" class="btn btn-primary" onclick="saveScheduledBackup(this)">
             <span class="btn-text">保存定时备份设置</span>
             <span class="btn-loading" style="display: none;">保存中...</span>
           </button>
         </div>
-        <div id="scheduledStatus" style="display: none; margin-top: 12px;"></div>
+        <div id="scheduledStatus" class="status-msg" style="display: none; margin-top: 12px;"></div>
       </div>
     </div>
   </div>
 
   <div class="settings-section">
     <h2>系统更新</h2>
-    <div class="update-info-card">
-      <h3 style="margin-bottom: 16px;">📦 主项目更新</h3>
-      <div class="version-display">
-        <div class="current-version">
-          <span class="label">当前版本</span>
-          <span class="version" id="currentVersion">加载中...</span>
+    <div class="card">
+      <div class="version-row">
+        <div class="version-item">
+          <span class="version-label">当前版本</span>
+          <span class="version-value" id="currentVersion">加载中...</span>
         </div>
-        <div class="latest-version" id="latestVersionContainer" style="display: none;">
-          <span class="label">最新版本</span>
-          <span class="version" id="latestVersion">-</span>
+        <div class="version-item" id="latestVersionContainer" style="display: none;">
+          <span class="version-label">最新版本</span>
+          <span class="version-value" id="latestVersion">-</span>
         </div>
       </div>
       <div class="update-status" id="updateStatus">
-        <div class="status-message">点击下方按钮检查更新</div>
+        <span class="status-message">点击下方按钮检查更新</span>
       </div>
       <div class="release-info" id="releaseInfo" style="display: none;">
         <h4 id="releaseName"></h4>
         <div class="release-meta"><span id="publishedAt"></span></div>
         <div class="release-body" id="releaseBody"></div>
       </div>
-      <div class="update-actions" style="margin-top: 16px;">
-        <button type="button" class="btn btn-primary" id="checkUpdateBtn" onclick="checkUpdate()">
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" id="checkUpdateBtn" onclick="checkUpdate(this)">
           <span class="btn-text">检查更新</span>
           <span class="btn-loading" style="display: none;">检查中...</span>
         </button>
-        <button type="button" class="btn btn-success" id="downloadBtn" onclick="downloadUpdate()" style="display: none;">
+        <button type="button" class="btn btn-success" id="downloadBtn" onclick="downloadUpdate(this)" style="display: none;">
           <span class="btn-text">下载并安装更新</span>
           <span class="btn-loading" style="display: none;">下载中...</span>
         </button>
-        <button type="button" class="btn btn-warning" id="restartBtn" onclick="restartServer()">
+        <button type="button" class="btn btn-warning" id="restartBtn" onclick="restartServer(this)">
           <span class="btn-text">重启服务器</span>
           <span class="btn-loading" style="display: none;">重启中...</span>
         </button>
       </div>
-      <div id="updateActionResult" style="display: none; margin-top: 12px;"></div>
+      <div id="updateActionResult" class="status-msg" style="display: none; margin-top: 12px;"></div>
     </div>
   </div>
 
   <div class="settings-section">
     <h2>系统信息</h2>
-    <div class="update-info-card">
-      <button type="button" class="btn btn-info" onclick="loadSystemInfo()" style="margin-bottom: 16px;">
+    <div class="card">
+      <button type="button" class="btn btn-info btn-sm" onclick="loadSystemInfo()" style="margin-bottom: 16px;">
         <span class="btn-text">刷新系统信息</span>
       </button>
       <div id="systemInfo" class="system-info-grid">
-        <div class="info-loading">点击按钮加载系统信息</div>
+        <div class="info-loading">加载中...</div>
       </div>
     </div>
   </div>
 
   <div class="settings-section">
     <h2>说明</h2>
-    <div class="info-card">
+    <div class="card">
       <ul class="info-list">
         <li>开启维护模式后，前端所有页面将显示维护页面</li>
         <li>管理员仍然可以正常访问后台管理面板</li>
@@ -251,34 +261,42 @@
 </div>
 
 <style>
-.maintenance-status-display {
+.maintenance-status {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 20px;
-  border-radius: 8px;
-  transition: all 0.3s;
+  gap: 16px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  transition: var(--transition-base);
 }
-.maintenance-status-display.active {
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
+.maintenance-status.active {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
 }
-.maintenance-status-display.inactive {
-  background: #d1fae5;
-  border: 1px solid #a7f3d0;
+.maintenance-status.inactive {
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
 }
-.status-icon {
-  font-size: 48px;
+.status-icon { font-size: 40px; }
+.status-info { flex: 1; }
+.status-info h3 { margin: 0 0 4px; font-size: 16px; color: var(--text-primary); }
+.status-info p { margin: 0; font-size: 13px; color: var(--text-muted); }
+.status-badge {
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
 }
-.status-info h3 {
-  margin: 0 0 4px 0;
-  font-size: 18px;
+.maintenance-status.active .status-badge {
+  background: var(--warning);
+  color: #fff;
 }
-.status-info p {
-  margin: 0;
-  color: #6b7280;
+.maintenance-status.inactive .status-badge {
+  background: var(--success);
+  color: #fff;
 }
-.toggle-switch-container {
+
+.toggle-row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -287,250 +305,185 @@
 .toggle-switch {
   position: relative;
   display: inline-block;
-  width: 60px;
-  height: 34px;
+  width: 48px;
+  height: 26px;
 }
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
 .toggle-slider {
   position: absolute;
   cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #ccc;
-  transition: .4s;
-  border-radius: 34px;
+  inset: 0;
+  background: var(--gray-300);
+  transition: var(--transition-base);
+  border-radius: 26px;
 }
 .toggle-slider:before {
   position: absolute;
   content: "";
-  height: 26px;
-  width: 26px;
-  left: 4px;
-  bottom: 4px;
-  background-color: white;
-  transition: .4s;
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background: #fff;
+  transition: var(--transition-base);
   border-radius: 50%;
 }
-input:checked + .toggle-slider {
-  background-color: #ef4444;
-}
-input:checked + .toggle-slider:before {
-  transform: translateX(26px);
-}
-.toggle-label {
-  font-weight: 500;
-  color: #374151;
-}
-.help-text {
-  font-size: 13px;
-  color: #6b7280;
-  margin-top: 4px;
-}
-.form-control {
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  font-size: 14px;
-  transition: border-color 0.2s;
-  font-family: inherit;
-}
-.form-control:focus {
-  outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-}
-.form-group {
-  margin-bottom: 20px;
-}
-.form-group label {
-  display: block;
-  font-weight: 500;
-  margin-bottom: 6px;
-  color: #374151;
-}
-.info-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 20px;
-}
-.info-list {
-  margin: 0;
-  padding-left: 20px;
-  color: #475569;
-  line-height: 1.8;
-}
-.info-list code {
-  background: #e2e8f0;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 13px;
-}
-.text-muted {
-  color: #6b7280;
-}
+input:checked + .toggle-slider { background: var(--danger); }
+input:checked + .toggle-slider:before { transform: translateX(22px); }
+.toggle-label { font-weight: 500; color: var(--text-primary); font-size: 14px; }
+
+.help-text { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.text-muted { color: var(--text-muted); }
+
 .tools-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
 .tool-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  transition: var(--transition-base);
 }
-.tool-icon {
-  font-size: 32px;
-}
-.tool-info h3 {
-  margin: 0 0 4px 0;
-  font-size: 16px;
-  color: #1f2937;
-}
-.tool-info p {
-  margin: 0;
-  font-size: 13px;
-  color: #6b7280;
-}
-.tool-actions {
+.tool-card:hover { box-shadow: var(--shadow-md); }
+.tool-header { display: flex; align-items: flex-start; gap: 12px; }
+.tool-icon { font-size: 28px; flex-shrink: 0; }
+.tool-header h3 { margin: 0 0 4px; font-size: 14px; color: var(--text-primary); }
+.tool-header p { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.tool-actions { display: flex; align-items: center; gap: 8px; }
+.tool-actions .form-control { flex: 1; }
+
+.backup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.checkbox-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-secondary);
 }
-.tool-actions .form-control {
-  flex: 1;
+.checkbox-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); }
+
+.divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 20px 0;
 }
-.system-info-grid {
+
+.scheduled-settings {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--gray-50);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.form-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
+
+.version-row {
+  display: flex;
+  gap: 32px;
+  margin-bottom: 16px;
+}
+.version-item { display: flex; flex-direction: column; }
+.version-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.version-value { font-size: 20px; font-weight: 700; color: var(--text-primary); }
+
+.update-status {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  background: var(--gray-50);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.update-status.has-update {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  color: var(--warning-dark);
+}
+.update-status.no-update {
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--success-dark);
+}
+
+.release-info {
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-color);
+}
+.release-info h4 { margin: 0 0 8px; font-size: 14px; color: var(--text-primary); }
+.release-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.release-body { font-size: 13px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; }
+
+.system-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
 .info-section {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px;
+  background: var(--gray-50);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 14px;
 }
 .info-section h4 {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  color: #374151;
-  border-bottom: 1px solid #e2e8f0;
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
   padding-bottom: 8px;
 }
 .info-row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: 6px;
+  font-size: 12px;
 }
-.info-row .label {
-  color: #6b7280;
-}
-.info-row .value {
-  color: #1f2937;
-  font-weight: 500;
-}
+.info-row .label { color: var(--text-muted); }
+.info-row .value { color: var(--text-primary); font-weight: 500; }
 .info-loading {
   grid-column: 1 / -1;
   text-align: center;
   padding: 20px;
-  color: #6b7280;
-}
-.backup-options {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.backup-type-selector {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.backup-type-selector .form-control {
-  width: auto;
-  min-width: 180px;
-}
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  cursor: pointer;
-}
-.checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-}
-.version-display {
-  display: flex;
-  gap: 40px;
-  margin-bottom: 16px;
-}
-.current-version, .latest-version {
-  display: flex;
-  flex-direction: column;
-}
-.version-display .label {
-  font-size: 12px;
-  color: #6c757d;
-  margin-bottom: 4px;
-}
-.version-display .version {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1f2937;
-}
-.update-status {
-  padding: 12px;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  background: #f8f9fa;
-}
-.update-status.has-update {
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
-}
-.update-status.no-update {
-  background: #d1fae5;
-  border: 1px solid #a7f3d0;
-}
-.release-info {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-.release-info h4 {
-  margin: 0 0 8px 0;
-}
-.release-meta {
+  color: var(--text-muted);
   font-size: 13px;
-  color: #6c757d;
-  margin-bottom: 12px;
 }
-.release-body {
-  font-size: 14px;
-  line-height: 1.6;
-  color: #374151;
-  white-space: pre-wrap;
+
+.info-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  font-size: 13px;
 }
-.update-actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+.info-list code {
+  background: var(--gray-100);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--primary);
+}
+
+.status-msg { margin-top: 12px; }
+
+@media (max-width: 768px) {
+  .tools-grid { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr; }
+  .backup-row { flex-direction: column; align-items: stretch; }
+  .version-row { flex-direction: column; gap: 12px; }
 }
 </style>
 
@@ -540,426 +493,203 @@ function getCsrfToken() {
   return meta ? meta.getAttribute('content') : '';
 }
 
-// Update status display
 function updateStatusDisplay(enabled) {
   const display = document.getElementById('statusDisplay');
   const icon = document.getElementById('statusIcon');
   const title = document.getElementById('statusTitle');
   const desc = document.getElementById('statusDesc');
+  const badge = document.getElementById('statusBadge');
   const toggleLabel = document.getElementById('toggleLabel');
   const toggleBtnText = document.getElementById('toggleBtnText');
 
   if (enabled) {
-    display.className = 'maintenance-status-display active';
+    display.className = 'maintenance-status active';
     icon.textContent = '🔴';
     title.textContent = '当前状态：维护中';
     desc.textContent = '前端页面显示维护页面，仅管理员可访问后台';
+    badge.textContent = '维护中';
     toggleLabel.textContent = '已开启';
     toggleBtnText.textContent = '关闭维护模式';
   } else {
-    display.className = 'maintenance-status-display inactive';
+    display.className = 'maintenance-status inactive';
     icon.textContent = '🟢';
     title.textContent = '当前状态：正常运行';
     desc.textContent = '网站可正常访问';
+    badge.textContent = '运行中';
     toggleLabel.textContent = '已关闭';
     toggleBtnText.textContent = '开启维护模式';
   }
 }
 
-// Initialize
 updateStatusDisplay(document.getElementById('maintenanceEnabled').checked);
-
-// Toggle change event
 document.getElementById('maintenanceEnabled').addEventListener('change', function() {
   updateStatusDisplay(this.checked);
 });
 
+function setBtnLoading(btn, loading) {
+  const text = btn.querySelector('.btn-text');
+  const spinner = btn.querySelector('.btn-loading');
+  btn.disabled = loading;
+  if (text) text.style.display = loading ? 'none' : '';
+  if (spinner) spinner.style.display = loading ? 'inline' : 'none';
+}
+
+function showStatus(el, type, msg) {
+  el.style.display = 'block';
+  const cls = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+  el.innerHTML = '<div class="alert ' + cls + '">' + msg + '</div>';
+  if (type !== 'info') {
+    setTimeout(() => { el.style.display = 'none'; }, 5000);
+  }
+}
+
 async function saveMaintenance() {
   const btn = document.getElementById('saveBtn');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
   const status = document.getElementById('saveStatus');
-
   const enabled = document.getElementById('maintenanceEnabled').checked;
   const title = document.getElementById('maintenanceTitle').value;
   const message = document.getElementById('maintenanceMessage').value;
 
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.style.display = 'block';
-  status.innerHTML = '<div class="alert alert-info">保存中...</div>';
+  setBtnLoading(btn, true);
+  showStatus(status, 'info', '保存中...');
 
   try {
-    const response = await fetch('/admin/maintenance/update', {
+    const res = await fetch('/admin/maintenance/update', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      },
+      headers: { 'Content-Type': 'application/json', 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
       body: JSON.stringify({ enabled, title, message })
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
-      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+      showStatus(status, 'success', result.message);
       updateStatusDisplay(enabled);
     } else {
-      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+      showStatus(status, 'error', result.error);
     }
   } catch (err) {
-    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+    showStatus(status, 'error', '请求失败: ' + err.message);
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
 async function toggleMaintenance() {
   const btn = document.getElementById('toggleBtn');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
   const status = document.getElementById('saveStatus');
-
   const checkbox = document.getElementById('maintenanceEnabled');
   const newEnabled = !checkbox.checked;
   const title = document.getElementById('maintenanceTitle').value;
   const message = document.getElementById('maintenanceMessage').value;
 
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.style.display = 'block';
-  status.innerHTML = '<div class="alert alert-info">处理中...</div>';
+  setBtnLoading(btn, true);
+  showStatus(status, 'info', '处理中...');
 
   try {
-    const response = await fetch('/admin/maintenance/update', {
+    const res = await fetch('/admin/maintenance/update', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      },
+      headers: { 'Content-Type': 'application/json', 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
       body: JSON.stringify({ enabled: newEnabled, title, message })
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
       checkbox.checked = newEnabled;
       updateStatusDisplay(newEnabled);
-      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+      showStatus(status, 'success', result.message);
     } else {
-      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+      showStatus(status, 'error', result.error);
     }
   } catch (err) {
-    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+    showStatus(status, 'error', '请求失败: ' + err.message);
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
-// Tool functions
-async function clearCache() {
-  const btn = event.target.closest('button');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
+async function runTool(action, btn) {
+  if (!confirm('确定要执行此操作吗？')) return;
   const status = document.getElementById('toolStatus');
-
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.style.display = 'block';
-  status.innerHTML = '<div class="alert alert-info">清除缓存中...</div>';
+  setBtnLoading(btn, true);
+  showStatus(status, 'info', '处理中...');
 
   try {
-    const response = await fetch('/admin/maintenance/clear-cache', {
+    const res = await fetch('/admin/maintenance/' + action, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      }
+      headers: { 'Content-Type': 'application/json', 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' }
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
-      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+      const msg = result.saved ? result.message + ' (释放 ' + result.saved + ')' : result.message;
+      showStatus(status, 'success', msg);
     } else {
-      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+      showStatus(status, 'error', result.error);
     }
   } catch (err) {
-    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+    showStatus(status, 'error', '请求失败: ' + err.message);
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
-async function cleanTemp() {
-  const btn = event.target.closest('button');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
-  const status = document.getElementById('toolStatus');
-
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.style.display = 'block';
-  status.innerHTML = '<div class="alert alert-info">清理临时文件中...</div>';
-
-  try {
-    const response = await fetch('/admin/maintenance/clean-temp', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    });
-
-    const result = await response.json();
-
-    if (result.success) {
-      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
-    } else {
-      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
-    }
-  } catch (err) {
-    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
-  } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
-  }
-}
-
-async function optimizeDb() {
-  const btn = event.target.closest('button');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
-  const status = document.getElementById('toolStatus');
-
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.style.display = 'block';
-  status.innerHTML = '<div class="alert alert-info">优化数据库中...</div>';
-
-  try {
-    const response = await fetch('/admin/maintenance/optimize-db', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    });
-
-    const result = await response.json();
-
-    if (result.success) {
-      status.innerHTML = '<div class="alert alert-success">' + result.message + ' (释放 ' + result.saved + ')</div>';
-    } else {
-      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
-    }
-  } catch (err) {
-    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
-  } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
-  }
-}
-
-async function cleanLogs() {
-  const btn = event.target.closest('button');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
+async function cleanLogs(btn) {
+  if (!confirm('确定要清理活动日志吗？')) return;
   const status = document.getElementById('toolStatus');
   const days = document.getElementById('logDays').value;
 
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.style.display = 'block';
-  status.innerHTML = '<div class="alert alert-info">清理日志中...</div>';
+  setBtnLoading(btn, true);
+  showStatus(status, 'info', '清理日志中...');
 
   try {
-    const response = await fetch('/admin/maintenance/clean-logs', {
+    const res = await fetch('/admin/maintenance/clean-logs', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      },
+      headers: { 'Content-Type': 'application/json', 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
       body: JSON.stringify({ days: parseInt(days) })
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
-      status.innerHTML = '<div class="alert alert-success">' + result.message + '，删除 ' + result.deleted + ' 条记录</div>';
+      showStatus(status, 'success', result.message + '，删除 ' + result.deleted + ' 条记录');
     } else {
-      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+      showStatus(status, 'error', result.error);
     }
   } catch (err) {
-    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+    showStatus(status, 'error', '请求失败: ' + err.message);
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
-async function loadSystemInfo() {
-  const container = document.getElementById('systemInfo');
-  container.innerHTML = '<div class="info-loading">加载中...</div>';
-
-  try {
-    const response = await fetch('/admin/maintenance/system-info', {
-      headers: {
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    });
-
-    const result = await response.json();
-
-    if (result.success) {
-      const data = result.data;
-      let html = '';
-
-      // Server info
-      html += '<div class="info-section">';
-      html += '<h4>服务器信息</h4>';
-      html += '<div class="info-row"><span class="label">平台</span><span class="value">' + data.server.platform + ' ' + data.server.arch + '</span></div>';
-      html += '<div class="info-row"><span class="label">Node.js</span><span class="value">' + data.server.nodeVersion + '</span></div>';
-      html += '<div class="info-row"><span class="label">运行时间</span><span class="value">' + formatUptime(data.server.uptime) + '</span></div>';
-      html += '<div class="info-row"><span class="label">CPU核心</span><span class="value">' + data.server.cpus + ' 核</span></div>';
-      html += '<div class="info-row"><span class="label">系统内存</span><span class="value">' + formatSize(data.server.totalMemory) + '</span></div>';
-      html += '<div class="info-row"><span class="label">可用内存</span><span class="value">' + formatSize(data.server.freeMemory) + '</span></div>';
-      html += '<div class="info-row"><span class="label">内存使用</span><span class="value">' + formatSize(data.server.memoryUsage.rss) + '</span></div>';
-      html += '</div>';
-
-      // Database info
-      html += '<div class="info-section">';
-      html += '<h4>数据库信息</h4>';
-      html += '<div class="info-row"><span class="label">数据库大小</span><span class="value">' + data.database.sizeFormatted + '</span></div>';
-      const tableCount = Object.keys(data.database.tableStats).length;
-      html += '<div class="info-row"><span class="label">数据表数量</span><span class="value">' + tableCount + ' 个</span></div>';
-      html += '</div>';
-
-      // Storage info
-      html += '<div class="info-section">';
-      html += '<h4>存储空间</h4>';
-      html += '<div class="info-row"><span class="label">上传文件</span><span class="value">' + data.storage.uploads.formatted + '</span></div>';
-      html += '<div class="info-row"><span class="label">备份文件</span><span class="value">' + data.storage.backups.formatted + '</span></div>';
-      html += '<div class="info-row"><span class="label">临时文件</span><span class="value">' + data.storage.temp.formatted + '</span></div>';
-      html += '</div>';
-
-      // Cache info
-      html += '<div class="info-section">';
-      html += '<h4>缓存状态</h4>';
-      html += '<div class="info-row"><span class="label">设置缓存</span><span class="value">' + data.cache.settings.size + '/' + data.cache.settings.maxSize + ' (命中率 ' + data.cache.settings.hitRate + ')</span></div>';
-      html += '<div class="info-row"><span class="label">查询缓存</span><span class="value">' + data.cache.query.size + '/' + data.cache.query.maxSize + ' (命中率 ' + data.cache.query.hitRate + ')</span></div>';
-      html += '<div class="info-row"><span class="label">页面缓存</span><span class="value">' + data.cache.page.size + '/' + data.cache.page.maxSize + ' (命中率 ' + data.cache.page.hitRate + ')</span></div>';
-      html += '</div>';
-
-      container.innerHTML = html;
-    } else {
-      container.innerHTML = '<div class="info-loading">加载失败: ' + result.error + '</div>';
-    }
-  } catch (err) {
-    container.innerHTML = '<div class="info-loading">请求失败: ' + err.message + '</div>';
-  }
-}
-
-function formatSize(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatUptime(seconds) {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  
-  let result = '';
-  if (days > 0) result += days + '天 ';
-  if (hours > 0) result += hours + '小时 ';
-  if (minutes > 0) result += minutes + '分钟 ';
-  result += secs + '秒';
-  
-  return result;
-}
-
-// ==================== Backup Functions ====================
-
-async function backupNow() {
-  const btn = event.target.closest('button');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
+async function backupNow(btn) {
   const status = document.getElementById('backupStatus');
   const type = document.getElementById('backupType').value;
   const sendEmail = document.getElementById('backupSendEmail').checked;
 
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.style.display = 'block';
-  status.innerHTML = '<div class="alert alert-info">备份中...</div>';
+  setBtnLoading(btn, true);
+  showStatus(status, 'info', '备份中...');
 
   try {
-    const response = await fetch('/admin/maintenance/backup-now', {
+    const res = await fetch('/admin/maintenance/backup-now', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      },
+      headers: { 'Content-Type': 'application/json', 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
       body: JSON.stringify({ type, sendNotification: sendEmail })
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
-      status.innerHTML = '<div class="alert alert-success">' + result.message + ' (大小: ' + result.size + ')</div>';
+      showStatus(status, 'success', result.message + ' (大小: ' + result.size + ')');
     } else {
-      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+      showStatus(status, 'error', result.error);
     }
   } catch (err) {
-    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+    showStatus(status, 'error', '请求失败: ' + err.message);
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
-// Load scheduled backup settings
 async function loadScheduledBackup() {
   try {
-    const response = await fetch('/admin/maintenance/scheduled-backup', {
-      headers: {
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      }
+    const res = await fetch('/admin/maintenance/scheduled-backup', {
+      headers: { 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' }
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
       document.getElementById('scheduledBackupEnabled').checked = result.data.enabled;
       document.getElementById('scheduledToggleLabel').textContent = result.data.enabled ? '已开启' : '已关闭';
@@ -976,76 +706,51 @@ document.getElementById('scheduledBackupEnabled').addEventListener('change', fun
   document.getElementById('scheduledToggleLabel').textContent = this.checked ? '已开启' : '已关闭';
 });
 
-async function saveScheduledBackup() {
-  const btn = event.target.closest('button');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
+async function saveScheduledBackup(btn) {
   const status = document.getElementById('scheduledStatus');
-
   const enabled = document.getElementById('scheduledBackupEnabled').checked;
   const cronExpr = document.getElementById('scheduledCron').value;
   const type = document.getElementById('scheduledType').value;
   const notifyEmail = document.getElementById('scheduledNotifyEmail').value;
 
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.style.display = 'block';
-  status.innerHTML = '<div class="alert alert-info">保存中...</div>';
+  setBtnLoading(btn, true);
+  showStatus(status, 'info', '保存中...');
 
   try {
-    const response = await fetch('/admin/maintenance/scheduled-backup', {
+    const res = await fetch('/admin/maintenance/scheduled-backup', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      },
+      headers: { 'Content-Type': 'application/json', 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
       body: JSON.stringify({ enabled, cron: cronExpr, type, notifyEmail })
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
-      status.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+      showStatus(status, 'success', result.message);
     } else {
-      status.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+      showStatus(status, 'error', result.error);
     }
   } catch (err) {
-    status.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+    showStatus(status, 'error', '请求失败: ' + err.message);
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
-// ==================== Update Functions ====================
-
 let updateData = null;
 
-async function checkUpdate() {
-  const btn = document.getElementById('checkUpdateBtn');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
+async function checkUpdate(btn) {
   const status = document.getElementById('updateStatus');
   const releaseInfo = document.getElementById('releaseInfo');
   const downloadBtn = document.getElementById('downloadBtn');
 
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  status.innerHTML = '<div class="status-message">检查更新中...</div>';
+  setBtnLoading(btn, true);
+  status.className = 'update-status';
+  status.innerHTML = '<span class="status-message">检查更新中...</span>';
 
   try {
-    const response = await fetch('/admin/maintenance/check-update', {
-      headers: {
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      }
+    const res = await fetch('/admin/maintenance/check-update', {
+      headers: { 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' }
     });
-
-    const result = await response.json();
+    const result = await res.json();
 
     if (result.success) {
       updateData = result.data;
@@ -1055,7 +760,7 @@ async function checkUpdate() {
         document.getElementById('latestVersionContainer').style.display = 'flex';
         document.getElementById('latestVersion').textContent = 'v' + result.data.latestVersion;
         status.className = 'update-status has-update';
-        status.innerHTML = '<div class="status-message">发现新版本 v' + result.data.latestVersion + '</div>';
+        status.innerHTML = '<span class="status-message">发现新版本 v' + result.data.latestVersion + '</span>';
         downloadBtn.style.display = 'inline-flex';
 
         if (result.data.releaseName) {
@@ -1067,113 +772,150 @@ async function checkUpdate() {
       } else {
         document.getElementById('latestVersionContainer').style.display = 'none';
         status.className = 'update-status no-update';
-        status.innerHTML = '<div class="status-message">当前已是最新版本</div>';
+        status.innerHTML = '<span class="status-message">当前已是最新版本</span>';
         downloadBtn.style.display = 'none';
         releaseInfo.style.display = 'none';
       }
     } else {
-      status.innerHTML = '<div class="status-message">检查失败: ' + result.error + '</div>';
+      status.innerHTML = '<span class="status-message">检查失败: ' + result.error + '</span>';
     }
   } catch (err) {
-    status.innerHTML = '<div class="status-message">请求失败: ' + err.message + '</div>';
+    status.innerHTML = '<span class="status-message">请求失败: ' + err.message + '</span>';
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
-async function downloadUpdate() {
-  if (!updateData || !updateData.downloadUrl) {
-    alert('请先检查更新');
-    return;
-  }
-
+async function downloadUpdate(btn) {
+  if (!updateData || !updateData.downloadUrl) { alert('请先检查更新'); return; }
   if (!confirm('确定要下载并安装更新吗？建议先备份数据。')) return;
 
-  const btn = document.getElementById('downloadBtn');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
   const resultDiv = document.getElementById('updateActionResult');
-
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  resultDiv.style.display = 'block';
-  resultDiv.innerHTML = '<div class="alert alert-info">下载并安装更新中...</div>';
+  setBtnLoading(btn, true);
+  showStatus(resultDiv, 'info', '下载并安装更新中...');
 
   try {
-    const response = await fetch('/admin/maintenance/download-update', {
+    const res = await fetch('/admin/maintenance/download-update', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      body: JSON.stringify({
-        downloadUrl: updateData.downloadUrl,
-        version: updateData.latestVersion
-      })
+      headers: { 'Content-Type': 'application/json', 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ downloadUrl: updateData.downloadUrl, version: updateData.latestVersion })
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
-      resultDiv.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+      showStatus(resultDiv, 'success', result.message);
       document.getElementById('currentVersion').textContent = 'v' + updateData.latestVersion;
       btn.style.display = 'none';
     } else {
-      resultDiv.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+      showStatus(resultDiv, 'error', result.error);
     }
   } catch (err) {
-    resultDiv.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+    showStatus(resultDiv, 'error', '请求失败: ' + err.message);
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
-async function restartServer() {
+async function restartServer(btn) {
   if (!confirm('确定要重启服务器吗？')) return;
 
-  const btn = document.getElementById('restartBtn');
-  const btnText = btn.querySelector('.btn-text');
-  const btnLoading = btn.querySelector('.btn-loading');
   const resultDiv = document.getElementById('updateActionResult');
-
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-  resultDiv.style.display = 'block';
-  resultDiv.innerHTML = '<div class="alert alert-info">重启中...</div>';
+  setBtnLoading(btn, true);
+  showStatus(resultDiv, 'info', '重启中...');
 
   try {
-    const response = await fetch('/admin/maintenance/restart', {
+    const res = await fetch('/admin/maintenance/restart', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      }
+      headers: { 'Content-Type': 'application/json', 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' }
     });
-
-    const result = await response.json();
-
+    const result = await res.json();
     if (result.success) {
-      resultDiv.innerHTML = '<div class="alert alert-success">' + result.message + '</div>';
+      showStatus(resultDiv, 'success', result.message);
     } else {
-      resultDiv.innerHTML = '<div class="alert alert-error">' + result.error + '</div>';
+      showStatus(resultDiv, 'error', result.error);
     }
   } catch (err) {
-    resultDiv.innerHTML = '<div class="alert alert-error">请求失败: ' + err.message + '</div>';
+    showStatus(resultDiv, 'error', '请求失败: ' + err.message);
   } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    setBtnLoading(btn, false);
   }
 }
 
-// Initialize
+async function loadSystemInfo() {
+  const container = document.getElementById('systemInfo');
+  container.innerHTML = '<div class="info-loading">加载中...</div>';
+
+  try {
+    const res = await fetch('/admin/maintenance/system-info', {
+      headers: { 'CSRF-Token': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    const result = await res.json();
+
+    if (result.success) {
+      const d = result.data;
+      let html = '';
+
+      html += '<div class="info-section"><h4>服务器信息</h4>';
+      html += infoRow('平台', d.server.platform + ' ' + d.server.arch);
+      html += infoRow('Node.js', d.server.nodeVersion);
+      html += infoRow('运行时间', formatUptime(d.server.uptime));
+      html += infoRow('CPU核心', d.server.cpus + ' 核');
+      html += infoRow('系统内存', formatSize(d.server.totalMemory));
+      html += infoRow('可用内存', formatSize(d.server.freeMemory));
+      html += infoRow('内存占用', formatSize(d.server.memoryUsage.rss));
+      html += '</div>';
+
+      html += '<div class="info-section"><h4>数据库信息</h4>';
+      html += infoRow('数据库大小', d.database.sizeFormatted);
+      html += infoRow('数据表数量', Object.keys(d.database.tableStats).length + ' 个');
+      html += '</div>';
+
+      html += '<div class="info-section"><h4>存储空间</h4>';
+      html += infoRow('上传文件', d.storage.uploads.formatted);
+      html += infoRow('备份文件', d.storage.backups.formatted);
+      html += infoRow('临时文件', d.storage.temp.formatted);
+      html += '</div>';
+
+      html += '<div class="info-section"><h4>缓存状态</h4>';
+      html += infoRow('设置缓存', d.cache.settings.size + '/' + d.cache.settings.maxSize + ' (' + d.cache.settings.hitRate + ')');
+      html += infoRow('查询缓存', d.cache.query.size + '/' + d.cache.query.maxSize + ' (' + d.cache.query.hitRate + ')');
+      html += infoRow('页面缓存', d.cache.page.size + '/' + d.cache.page.maxSize + ' (' + d.cache.page.hitRate + ')');
+      html += '</div>';
+
+      container.innerHTML = html;
+    } else {
+      container.innerHTML = '<div class="info-loading">加载失败: ' + result.error + '</div>';
+    }
+  } catch (err) {
+    container.innerHTML = '<div class="info-loading">请求失败: ' + err.message + '</div>';
+  }
+}
+
+function infoRow(label, value) {
+  return '<div class="info-row"><span class="label">' + label + '</span><span class="value">' + value + '</span></div>';
+}
+
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  let r = '';
+  if (d > 0) r += d + '天 ';
+  if (h > 0) r += h + '时 ';
+  if (m > 0) r += m + '分 ';
+  r += s + '秒';
+  return r;
+}
+
+// 初始化
 loadScheduledBackup();
+loadSystemInfo();
 </script>
