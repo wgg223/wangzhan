@@ -58,14 +58,20 @@ html {
   --auth-gradient-end: #764ba2;
 }
 
+/* 默认主题渐变 */
+.auth-page:not(.image-share-theme):not(.frontend-theme) {
+  --auth-gradient-start: var(--primary);
+  --auth-gradient-end: var(--accent);
+}
+
 /* 主站点主题 (frontend) */
 .frontend-theme {
   --auth-primary: var(--success);
-  --auth-primary-light: #66BB6A;
-  --auth-primary-dark: #388E3C;
-  --auth-primary-bg: rgba(76, 175, 80, 0.08);
-  --auth-gradient-start: #43a047;
-  --auth-gradient-end: #1b5e20;
+  --auth-primary-light: var(--success-light);
+  --auth-primary-dark: var(--success-dark);
+  --auth-primary-bg: var(--success-bg);
+  --auth-gradient-start: var(--success);
+  --auth-gradient-end: var(--success-dark);
 }
 
 /* 默认主题渐变 */
@@ -226,7 +232,7 @@ html {
 
 .auth-alert-warning {
   background: var(--auth-warning-bg);
-  color: #e67e00;
+  color: var(--auth-warning);
   border: 1px solid rgba(245, 158, 11, 0.12);
   border-left: 3px solid var(--auth-warning);
 }
