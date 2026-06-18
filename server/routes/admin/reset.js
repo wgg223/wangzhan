@@ -9,6 +9,112 @@ const { getProjectStats, cleanProjectFiles } = require('../../utils/project-util
 const { PROJECT_DEFINITIONS, DEPENDENT_TABLES, ALL_TABLES } = require('../../config/constants');
 const fsSafe = require('../../utils/fs-safe');
 
+// ============ 选择性重置 ============
+
+router.post('/reset/selective', isAuthenticated, isSuperAdmin, (req, res) => {
+  const db = req.db;
+  const { password, types } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ success: false, error: '请输入管理员密码' });
+  }
+
+  if (!types || !Array.isArray(types) || types.length === 0) {
+    return res.status(400).json({ success: false, error: '请选择要重置的数据类型' });
+  }
+
+  const admin = queryOne(db, 'SELECT * FROM users WHERE id = ?', [req.session.user.id]);
+  if (!admin || !bcrypt.compareSync(password, admin.password)) {
+    return res.status(403).json({ success: false, error: '密码验证失败' });
+  }
+
+  const results = [];
+
+  try {
+    // 用户数据
+    if (types.includes('users')) {
+      db.run("DELETE FROM users WHERE role != 'super_admin'");
+      db.run('DELETE FROM user_permissions WHERE user_id NOT IN (SELECT id FROM users)');
+      db.run('DELETE FROM user_follows');
+      results.push('用户数据');
+    }
+
+    // 内容数据
+    if (types.includes('content')) {
+      db.run('DELETE FROM articles');
+      db.run('DELETE FROM pages');
+      db.run('DELETE FROM comments');
+      db.run('DELETE FROM article_drafts');
+      db.run('DELETE FROM content_versions');
+      results.push('内容数据');
+    }
+
+    // 媒体文件
+    if (types.includes('media')) {
+      // 删除文件
+      const mediaFiles = queryAll(db, 'SELECT file_path FROM media');
+      mediaFiles.forEach(m => {
+        const filePath = path.join(__dirname, '../../public', m.file_path);
+        fsSafe.safeUnlinkSync(filePath);
+      });
+      const imageFiles = queryAll(db, 'SELECT url AS file_path FROM images');
+      imageFiles.forEach(m => {
+        const filePath = path.join(__dirname, '../../public', m.file_path);
+        fsSafe.safeUnlinkSync(filePath);
+      });
+      db.run('DELETE FROM media');
+      db.run('DELETE FROM images');
+      db.run('DELETE FROM image_favorites');
+      results.push('媒体文件');
+    }
+
+    // 社交数据
+    if (types.includes('social')) {
+      db.run('DELETE FROM internal_messages');
+      db.run('DELETE FROM notifications');
+      db.run('DELETE FROM content_likes');
+      db.run('DELETE FROM media_comments');
+      db.run('DELETE FROM image_comments');
+      results.push('社交数据');
+    }
+
+    // 日志数据
+    if (types.includes('logs')) {
+      db.run('DELETE FROM activity_logs');
+      results.push('日志数据');
+    }
+
+    // 标签数据
+    if (types.includes('tags')) {
+      db.run('DELETE FROM tags');
+      db.run('DELETE FROM content_tags');
+      results.push('标签数据');
+    }
+
+    saveDatabase();
+
+    logActivity(db, {
+      user_id: req.session.user.id,
+      username: req.session.user.username,
+      action: 'selective_reset',
+      target_type: 'system',
+      target_id: null,
+      target_title: '选择性重置',
+      detail: '选择性重置了：' + results.join(', '),
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      message: '已重置：' + results.join(', '),
+      resetItems: results
+    });
+  } catch (err) {
+    console.error('选择性重置失败:', err);
+    res.status(500).json({ success: false, error: '选择性重置失败: ' + err.message });
+  }
+});
+
 // ============ 重置服务器 ============
 
 router.get('/reset', isAuthenticated, canAccessAdmin, isSuperAdmin, (req, res) => {

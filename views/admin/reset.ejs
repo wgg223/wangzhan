@@ -2,6 +2,7 @@
 <div class="admin-page">
   <div class="page-header">
     <h1>⚠️ 重置服务器</h1>
+    <p class="page-desc">管理服务器数据重置，支持项目重置、选择性重置和全局重置</p>
   </div>
 
   <!-- 项目选择器 -->
@@ -24,6 +25,93 @@
     <div id="project-stats-area" style="display: none;">
       <div class="reset-stats" id="project-stats-grid"></div>
       <div class="project-total" id="project-total-area"></div>
+    </div>
+  </div>
+
+  <!-- 选择性重置 -->
+  <div class="card">
+    <h2>🎯 选择性重置</h2>
+    <p style="margin-bottom: 16px; color: var(--gray-500);">选择要重置的数据类型，仅清除选中的数据：</p>
+    
+    <div class="selective-reset-grid">
+      <label class="selective-reset-item">
+        <input type="checkbox" name="reset-items" value="users" data-count="<%= globalStats.users %>">
+        <div class="selective-reset-content">
+          <span class="selective-reset-icon">👤</span>
+          <div>
+            <span class="selective-reset-name">用户数据</span>
+            <span class="selective-reset-desc">普通用户、权限、关注</span>
+          </div>
+          <span class="selective-reset-count"><%= globalStats.users %></span>
+        </div>
+      </label>
+      
+      <label class="selective-reset-item">
+        <input type="checkbox" name="reset-items" value="content" data-count="<%= globalStats.media %>">
+        <div class="selective-reset-content">
+          <span class="selective-reset-icon">📝</span>
+          <div>
+            <span class="selective-reset-name">内容数据</span>
+            <span class="selective-reset-desc">文章、页面、评论、草稿</span>
+          </div>
+          <span class="selective-reset-count"><%= globalStats.media %></span>
+        </div>
+      </label>
+      
+      <label class="selective-reset-item">
+        <input type="checkbox" name="reset-items" value="media" data-count="<%= globalStats.media %>">
+        <div class="selective-reset-content">
+          <span class="selective-reset-icon">🖼️</span>
+          <div>
+            <span class="selective-reset-name">媒体文件</span>
+            <span class="selective-reset-desc">上传的图片、文件</span>
+          </div>
+          <span class="selective-reset-count"><%= globalStats.media %></span>
+        </div>
+      </label>
+      
+      <label class="selective-reset-item">
+        <input type="checkbox" name="reset-items" value="social" data-count="<%= globalStats.content_likes + globalStats.user_follows %>">
+        <div class="selective-reset-content">
+          <span class="selective-reset-icon">💬</span>
+          <div>
+            <span class="selective-reset-name">社交数据</span>
+            <span class="selective-reset-desc">站内信、通知、点赞、关注</span>
+          </div>
+          <span class="selective-reset-count"><%= globalStats.content_likes + globalStats.user_follows %></span>
+        </div>
+      </label>
+      
+      <label class="selective-reset-item">
+        <input type="checkbox" name="reset-items" value="logs" data-count="<%= globalStats.activity_logs %>">
+        <div class="selective-reset-content">
+          <span class="selective-reset-icon">📋</span>
+          <div>
+            <span class="selective-reset-name">日志数据</span>
+            <span class="selective-reset-desc">活动日志、操作记录</span>
+          </div>
+          <span class="selective-reset-count"><%= globalStats.activity_logs %></span>
+        </div>
+      </label>
+      
+      <label class="selective-reset-item">
+        <input type="checkbox" name="reset-items" value="tags" data-count="<%= globalStats.tags + globalStats.content_tags %>">
+        <div class="selective-reset-content">
+          <span class="selective-reset-icon">🏷️</span>
+          <div>
+            <span class="selective-reset-name">标签数据</span>
+            <span class="selective-reset-desc">标签、标签关联</span>
+          </div>
+          <span class="selective-reset-count"><%= globalStats.tags + globalStats.content_tags %></span>
+        </div>
+      </label>
+    </div>
+    
+    <div class="selective-reset-summary" id="selective-summary" style="display: none;">
+      <span>已选择 <strong id="selected-count">0</strong> 项，共 <strong id="selected-records">0</strong> 条记录</span>
+      <button type="button" class="btn btn-warning btn-small" id="selective-reset-btn" onclick="openSelectiveResetModal()" disabled>
+        🔄 执行选择性重置
+      </button>
     </div>
   </div>
 
@@ -193,6 +281,40 @@
   </div>
 </div>
 
+<!-- 选择性重置确认弹窗 -->
+<div id="selective-reset-modal" class="modal-overlay selective-reset-modal" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>⚠️ 选择性重置</h3>
+      <button class="modal-close" onclick="closeSelectiveResetModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-danger">
+        <strong>⚠️ 危险操作：</strong>即将重置以下数据，此操作不可撤销！
+      </div>
+      
+      <div class="selected-items" id="sr-selected-items"></div>
+      
+      <div class="form-group" style="margin-top: 20px;">
+        <label style="color: #991b1b; font-weight: 600;">
+          请输入 <strong style="color: #dc2626; font-size: 16px;">确认重置</strong> 以继续：
+        </label>
+        <input type="text" id="sr-confirm-text" placeholder="请输入" style="border-color: #fecaca; max-width: 300px;">
+      </div>
+      <div class="form-group">
+        <label style="color: #991b1b; font-weight: 600;">
+          🔑 请输入当前管理员密码以确认身份：
+        </label>
+        <input type="password" id="sr-admin-password" placeholder="请输入管理员密码" style="border-color: #fecaca; max-width: 300px;">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-danger" id="sr-confirm-btn" onclick="executeSelectiveReset()" disabled>执行重置</button>
+      <button type="button" class="btn" onclick="closeSelectiveResetModal()">取消</button>
+    </div>
+  </div>
+</div>
+
 <div id="reset-progress-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
   <div style="background:#fff; padding:40px; border-radius:16px; text-align:center; max-width:400px; box-shadow:0 25px 50px rgba(0,0,0,0.3);">
     <div class="spinner" style="width:48px; height:48px; border:4px solid #e2e8f0; border-top-color:#ef4444; border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 20px;"></div>
@@ -218,7 +340,7 @@
   align-items: center;
   padding: 12px 16px;
   background: var(--gray-50);
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--gray-100);
 }
 
@@ -259,6 +381,118 @@
   border-bottom: none;
   margin-bottom: 0;
   padding-bottom: 0;
+}
+
+/* 选择性重置样式 */
+.selective-reset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.selective-reset-item {
+  display: block;
+  cursor: pointer;
+  border: 2px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  transition: var(--transition-base);
+  background: var(--bg-card);
+}
+
+.selective-reset-item:hover {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.selective-reset-item:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.selective-reset-item input[type="checkbox"] {
+  display: none;
+}
+
+.selective-reset-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.selective-reset-icon {
+  font-size: 24px;
+}
+
+.selective-reset-name {
+  display: block;
+  font-weight: 600;
+  color: var(--gray-800);
+  font-size: 14px;
+}
+
+.selective-reset-desc {
+  display: block;
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-top: 2px;
+}
+
+.selective-reset-count {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--danger);
+  font-size: 16px;
+}
+
+.selective-reset-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-200);
+  font-size: 14px;
+  color: var(--gray-600);
+}
+
+.selective-reset-summary strong {
+  color: var(--primary);
+}
+
+/* 选择性重置弹窗样式 */
+.selective-reset-modal .modal-content {
+  max-width: 600px;
+}
+
+.selective-reset-modal .selected-items {
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+}
+
+.selective-reset-modal .selected-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.selective-reset-modal .selected-item:last-child {
+  border-bottom: none;
+}
+
+.selective-reset-modal .selected-item-name {
+  font-weight: 500;
+  color: var(--gray-700);
+}
+
+.selective-reset-modal .selected-item-count {
+  font-weight: 700;
+  color: var(--danger);
 }
 
 /* 项目重置弹窗样式 */
@@ -377,7 +611,155 @@ document.addEventListener('DOMContentLoaded', function() {
     prConfirmInput.addEventListener('input', checkPrForm);
     prPasswordInput.addEventListener('input', checkPrForm);
   }
+
+  // 选择性重置表单监听
+  var srConfirmInput = document.getElementById('sr-confirm-text');
+  var srPasswordInput = document.getElementById('sr-admin-password');
+  var srResetBtn = document.getElementById('sr-confirm-btn');
+
+  function checkSrForm() {
+    srResetBtn.disabled = !(srConfirmInput.value.trim() === '确认重置' && srPasswordInput.value.trim().length >= 6);
+  }
+
+  if (srConfirmInput && srPasswordInput && srResetBtn) {
+    srConfirmInput.addEventListener('input', checkSrForm);
+    srPasswordInput.addEventListener('input', checkSrForm);
+  }
+
+  // 选择性重置复选框监听
+  var resetCheckboxes = document.querySelectorAll('input[name="reset-items"]');
+  resetCheckboxes.forEach(function(checkbox) {
+    checkbox.addEventListener('change', updateSelectiveSummary);
+  });
 });
+
+// 更新选择性重置摘要
+function updateSelectiveSummary() {
+  var checkboxes = document.querySelectorAll('input[name="reset-items"]:checked');
+  var summary = document.getElementById('selective-summary');
+  var countEl = document.getElementById('selected-count');
+  var recordsEl = document.getElementById('selected-records');
+  var resetBtn = document.getElementById('selective-reset-btn');
+
+  if (checkboxes.length > 0) {
+    var totalRecords = 0;
+    checkboxes.forEach(function(cb) {
+      totalRecords += parseInt(cb.dataset.count) || 0;
+    });
+
+    countEl.textContent = checkboxes.length;
+    recordsEl.textContent = totalRecords;
+    summary.style.display = 'flex';
+    resetBtn.disabled = false;
+  } else {
+    summary.style.display = 'none';
+    resetBtn.disabled = true;
+  }
+}
+
+// 打开选择性重置弹窗
+function openSelectiveResetModal() {
+  var checkboxes = document.querySelectorAll('input[name="reset-items"]:checked');
+  if (checkboxes.length === 0) return;
+
+  // 显示已选择的项目
+  var itemsDiv = document.getElementById('sr-selected-items');
+  var html = '';
+  var totalRecords = 0;
+
+  var itemNames = {
+    'users': '👤 用户数据',
+    'content': '📝 内容数据',
+    'media': '🖼️ 媒体文件',
+    'social': '💬 社交数据',
+    'logs': '📋 日志数据',
+    'tags': '🏷️ 标签数据'
+  };
+
+  checkboxes.forEach(function(cb) {
+    var name = itemNames[cb.value] || cb.value;
+    var count = parseInt(cb.dataset.count) || 0;
+    totalRecords += count;
+    html += '<div class="selected-item">';
+    html += '  <span class="selected-item-name">' + name + '</span>';
+    html += '  <span class="selected-item-count">' + count + ' 条</span>';
+    html += '</div>';
+  });
+
+  html += '<div style="margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--gray-300); display: flex; justify-content: space-between; font-weight: 700;">';
+  html += '  <span>总计</span>';
+  html += '  <span style="color: var(--danger);">' + totalRecords + ' 条</span>';
+  html += '</div>';
+
+  itemsDiv.innerHTML = html;
+
+  // 清空输入
+  document.getElementById('sr-confirm-text').value = '';
+  document.getElementById('sr-admin-password').value = '';
+  document.getElementById('sr-confirm-btn').disabled = true;
+
+  document.getElementById('selective-reset-modal').style.display = 'flex';
+}
+
+// 关闭选择性重置弹窗
+function closeSelectiveResetModal() {
+  document.getElementById('selective-reset-modal').style.display = 'none';
+}
+
+// 执行选择性重置
+function executeSelectiveReset() {
+  var checkboxes = document.querySelectorAll('input[name="reset-items"]:checked');
+  if (checkboxes.length === 0) return;
+
+  var password = document.getElementById('sr-admin-password').value.trim();
+  if (!password) {
+    alert('⚠️ 请输入管理员密码');
+    return;
+  }
+
+  var selectedTypes = [];
+  checkboxes.forEach(function(cb) {
+    selectedTypes.push(cb.value);
+  });
+
+  if (!confirm('⚠️ 这是最后确认！\n\n即将重置以下数据类型：' + selectedTypes.join(', ') + '\n\n此操作不可撤销！')) {
+    return;
+  }
+
+  var resetBtn = document.getElementById('sr-confirm-btn');
+  resetBtn.disabled = true;
+  resetBtn.textContent = '重置中...';
+
+  fetch('/admin/reset/selective', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-csrf-token': getCsrfToken()
+    },
+    body: JSON.stringify({ password: password, types: selectedTypes })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      alert('✅ 选择性重置成功！\n\n' + (data.message || ''));
+      closeSelectiveResetModal();
+      // 取消所有复选框
+      checkboxes.forEach(function(cb) { cb.checked = false; });
+      updateSelectiveSummary();
+      // 重新加载项目列表
+      loadProjectsForSelect();
+    } else {
+      alert('❌ 重置失败: ' + (data.error || '未知错误'));
+      resetBtn.disabled = false;
+      resetBtn.textContent = '执行重置';
+    }
+  })
+  .catch(function(err) {
+    alert('❌ 网络错误: ' + err.message);
+    resetBtn.disabled = false;
+    resetBtn.textContent = '执行重置';
+  });
+}
 
 function loadProjectsForSelect() {
   fetch('/admin/projects/api/list')
