@@ -78,19 +78,19 @@
     <div class="media-modal-body">
       <div class="media-upload-zone" id="media-upload-zone">
         <div class="media-upload-inner">
-          <i class="fas fa-cloud-upload-alt" style="font-size:28px;color:#007bff;margin-bottom:8px;display:block;"></i>
+          <i class="fas fa-cloud-upload-alt" style="font-size:28px;color:var(--primary);margin-bottom:8px;display:block;"></i>
           <p style="font-weight:600;margin:0 0 4px 0;">拖拽图片到此处上传</p>
-          <p style="color:#999;font-size:12px;margin:0;">或 <button type="button" class="upload-browse-btn" onclick="document.getElementById('media-file-input').click()">点击浏览文件</button></p>
-          <p style="color:#999;font-size:11px;margin:4px 0 0 0;">支持 JPG、PNG、GIF，最大 10MB</p>
+          <p style="color:var(--text-muted);font-size:12px;margin:0;">或 <button type="button" class="upload-browse-btn" onclick="document.getElementById('media-file-input').click()">点击浏览文件</button></p>
+          <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0 0;">支持 JPG、PNG、GIF，最大 10MB</p>
         </div>
         <div class="media-upload-progress" id="media-upload-progress" style="display:none;">
           <div class="progress-bar-track"><div class="progress-bar-fill" id="upload-bar"></div></div>
-          <span id="upload-status-text" style="font-size:12px;color:#666;"></span>
+          <span id="upload-status-text" style="font-size:12px;color:var(--text-secondary);"></span>
         </div>
       </div>
       <input type="file" id="media-file-input" accept="image/jpeg,image/png,image/gif" style="display:none;" onchange="handleFileSelect(event)">
       <div class="media-list" id="media-list">
-        <p style="text-align:center;padding:20px;color:#999;">加载中...</p>
+<p style="text-align:center;padding:20px;color:var(--text-muted);">加载中...</p>
       </div>
     </div>
   </div>
@@ -141,11 +141,11 @@ try {
       openMediaSelectorForEditor();
     });
   } else {
-    document.getElementById('editor-container').innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + (document.getElementById('content').value || '') + '</textarea>';
+    document.getElementById('editor-container').innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid var(--border-color);border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + (document.getElementById('content').value || '') + '</textarea>';
   }
 } catch (e) {
   console.error('Quill编辑器初始化失败:', e);
-  document.getElementById('editor-container').innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + (document.getElementById('content').value || '') + '</textarea>';
+  document.getElementById('editor-container').innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid var(--border-color);border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + (document.getElementById('content').value || '') + '</textarea>';
 }
 
 // 自动生成 slug
@@ -305,7 +305,7 @@ function uploadMediaFile(file) {
 
 function loadMediaFiles() {
   var mediaList = document.getElementById('media-list');
-  mediaList.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">加载中...</p>';
+  mediaList.innerHTML = '<p style="text-align:center;padding:20px;color:var(--text-muted);">加载中...</p>';
 
   fetch('/admin/media/list')
     .then(response => response.json())
@@ -321,10 +321,10 @@ function loadMediaFiles() {
           }
         });
       }
-      mediaList.innerHTML = html || '<p style="text-align:center;padding:20px;color:#999;">没有图片文件</p>';
+      mediaList.innerHTML = html || '<p style="text-align:center;padding:20px;color:var(--text-muted);">没有图片文件</p>';
     })
     .catch(function(err) {
-      mediaList.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">加载失败，请重试</p>';
+      mediaList.innerHTML = '<p style="text-align:center;padding:20px;color:var(--text-muted);">加载失败，请重试</p>';
     });
 }
 
@@ -359,14 +359,14 @@ window.onclick = function(event) {
   height: 40px !important;
   padding: 2px !important;
   cursor: pointer;
-  border: 1px solid #ddd !important;
+  border: 1px solid var(--border-color) !important;
   border-radius: 6px !important;
 }
 
 .color-text-input {
   width: 120px !important;
   padding: 8px 12px !important;
-  border: 1px solid #ddd !important;
+  border: 1px solid var(--border-color) !important;
   border-radius: 6px !important;
   font-size: 14px;
   font-family: monospace;
@@ -374,7 +374,7 @@ window.onclick = function(event) {
 
 .color-preview-label {
   font-size: 12px;
-  color: #888;
+  color: var(--gray-400);
 }
 
 /* 媒体选择器模态框 */
@@ -389,10 +389,10 @@ window.onclick = function(event) {
   background-color: rgba(0,0,0,0.5);
 }
 .media-modal-content {
-  background-color: #fefefe;
+  background-color: var(--bg-card);
   margin: 5% auto;
   padding: 20px;
-  border: 1px solid #888;
+  border: 1px solid var(--gray-400);
   width: 80%;
   max-width: 800px;
   max-height: 80vh;
@@ -405,7 +405,7 @@ window.onclick = function(event) {
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--gray-100);
 }
 .media-modal-header h2 {
   margin: 0;
@@ -415,11 +415,11 @@ window.onclick = function(event) {
   border: none;
   font-size: 28px;
   cursor: pointer;
-  color: #999;
+  color: var(--text-muted);
   padding: 0 5px;
 }
 .close-modal:hover {
-  color: #333;
+  color: var(--text-primary);
 }
 .media-list {
   display: grid;
@@ -427,7 +427,7 @@ window.onclick = function(event) {
   gap: 15px;
 }
 .media-item {
-  border: 2px solid #ddd;
+  border: 2px solid var(--border-color);
   padding: 10px;
   cursor: pointer;
   text-align: center;
@@ -435,7 +435,7 @@ window.onclick = function(event) {
   transition: all 0.3s;
 }
 .media-item:hover {
-  border-color: #007bff;
+  border-color: var(--primary);
   box-shadow: 0 2px 10px rgba(0,123,255,0.2);
 }
 .media-item img {
@@ -447,30 +447,30 @@ window.onclick = function(event) {
 .media-item p {
   margin-top: 8px;
   font-size: 12px;
-  color: #666;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .media-upload-zone {
-  border: 2px dashed #d0d0d0;
+  border: 2px dashed var(--gray-300);
   border-radius: 10px;
   padding: 24px;
   text-align: center;
   margin-bottom: 20px;
   transition: all 0.3s;
-  background: #fafbfc;
+  background: var(--gray-50);
   cursor: pointer;
 }
 .media-upload-zone:hover,
 .media-upload-zone.drag-over {
-  border-color: #007bff;
-  background: #f0f7ff;
+  border-color: var(--primary);
+  background: var(--primary-bg);
 }
 .upload-browse-btn {
   background: none;
   border: none;
-  color: #007bff;
+  color: var(--primary);
   cursor: pointer;
   font-size: 12px;
   text-decoration: underline;
@@ -479,7 +479,7 @@ window.onclick = function(event) {
 .progress-bar-track {
   width: 100%;
   height: 6px;
-  background: #e0e0e0;
+  background: var(--gray-200);
   border-radius: 3px;
   margin: 8px 0 4px 0;
   overflow: hidden;
@@ -487,7 +487,7 @@ window.onclick = function(event) {
 .progress-bar-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #007bff, #00c6ff);
+  background: linear-gradient(90deg, var(--primary), #00c6ff);
   border-radius: 3px;
   transition: width 0.3s;
 }

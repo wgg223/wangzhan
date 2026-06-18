@@ -5,21 +5,21 @@
   <div class="admin-card-body">
     <!-- 统计信息 -->
     <div class="stats-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
-      <div class="stat-card" style="background: #f8f9fa; padding: 15px; border-radius: 4px; text-align: center;">
-        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: #333;"><%= stats.totalRecords %></div>
-        <div class="stat-label" style="color: #666; font-size: 12px;">总记录数</div>
+      <div class="stat-card" style="background: var(--gray-50); padding: 15px; border-radius: 4px; text-align: center;">
+        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: var(--text-primary);"><%= stats.totalRecords %></div>
+        <div class="stat-label" style="color: var(--text-secondary); font-size: 12px;">总记录数</div>
       </div>
-      <div class="stat-card" style="background: #e3f2fd; padding: 15px; border-radius: 4px; text-align: center;">
-        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: #1976d2;"><%= stats.fillCount %></div>
-        <div class="stat-label" style="color: #666; font-size: 12px;">诗词填空</div>
+      <div class="stat-card" style="background: var(--info-bg); padding: 15px; border-radius: 4px; text-align: center;">
+        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: var(--primary);"><%= stats.fillCount %></div>
+        <div class="stat-label" style="color: var(--text-secondary); font-size: 12px;">诗词填空</div>
       </div>
-      <div class="stat-card" style="background: #fce4ec; padding: 15px; border-radius: 4px; text-align: center;">
-        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: #c2185b;"><%= stats.feihuaCount %></div>
-        <div class="stat-label" style="color: #666; font-size: 12px;">飞花令</div>
+      <div class="stat-card" style="background: var(--danger-bg); padding: 15px; border-radius: 4px; text-align: center;">
+        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: var(--danger);"><%= stats.feihuaCount %></div>
+        <div class="stat-label" style="color: var(--text-secondary); font-size: 12px;">飞花令</div>
       </div>
-      <div class="stat-card" style="background: #e8f5e9; padding: 15px; border-radius: 4px; text-align: center;">
-        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: #388e3c;"><%= Math.round(stats.avgScore) %></div>
-        <div class="stat-label" style="color: #666; font-size: 12px;">平均分</div>
+      <div class="stat-card" style="background: var(--success-bg); padding: 15px; border-radius: 4px; text-align: center;">
+        <div class="stat-number" style="font-size: 24px; font-weight: bold; color: var(--success);"><%= Math.round(stats.avgScore) %></div>
+        <div class="stat-label" style="color: var(--text-secondary); font-size: 12px;">平均分</div>
       </div>
     </div>
 
@@ -66,7 +66,7 @@
       <tbody>
         <% if (records.length === 0) { %>
           <tr>
-            <td colspan="10" style="text-align: center; padding: 40px; color: #999;">
+            <td colspan="10" style="text-align: center; padding: 40px; color: var(--text-muted);">
               暂无排行榜数据
             </td>
           </tr>
@@ -78,7 +78,7 @@
                 <% if (rank === 1) { %>
                   <span style="color: #ffd700; font-weight: bold;">🥇 1</span>
                 <% } else if (rank === 2) { %>
-                  <span style="color: #c0c0c0; font-weight: bold;">🥈 2</span>
+                  <span style="color: var(--gray-300); font-weight: bold;">🥈 2</span>
                 <% } else if (rank === 3) { %>
                   <span style="color: #cd7f32; font-weight: bold;">🥉 3</span>
                 <% } else { %>
@@ -86,12 +86,12 @@
                 <% } %>
               </td>
               <td><%= record.username %></td>
-              <td style="font-weight: bold; color: #1976d2;"><%= record.score %></td>
+              <td style="font-weight: bold; color: var(--primary);"><%= record.score %></td>
               <td>
                 <% if (record.game_mode === 'fill') { %>
-                  <span style="background: #e3f2fd; color: #1976d2; padding: 2px 8px; border-radius: 10px; font-size: 12px;">诗词填空</span>
+                  <span style="background: var(--info-bg); color: var(--primary); padding: 2px 8px; border-radius: 10px; font-size: 12px;">诗词填空</span>
                 <% } else { %>
-                  <span style="background: #fce4ec; color: #c2185b; padding: 2px 8px; border-radius: 10px; font-size: 12px;">飞花令</span>
+                  <span style="background: var(--danger-bg); color: var(--danger); padding: 2px 8px; border-radius: 10px; font-size: 12px;">飞花令</span>
                 <% } %>
               </td>
               <td>

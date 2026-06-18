@@ -1,35 +1,35 @@
 <div style="margin-bottom: 20px;">
-  <a href="/admin/image-share" style="color: #667eea;">← 返回图片分享管理</a>
+  <a href="/admin/image-share" style="color: var(--primary);">← 返回图片分享管理</a>
 </div>
 
 <h2 style="margin-bottom: 20px;">📁 分类管理</h2>
 
-<div class="card" style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+<div class="card" style="background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
   <h3 style="margin-bottom: 15px;">添加新分类</h3>
   <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
     <div style="flex: 1; min-width: 150px;">
-      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">分类名称</label>
-      <input type="text" id="newCateName" placeholder="分类名称" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">分类名称</label>
+      <input type="text" id="newCateName" placeholder="分类名称" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
     </div>
     <div style="width: 100px;">
-      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">排序值</label>
-      <input type="number" id="newCateSort" placeholder="排序值" value="0" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+      <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">排序值</label>
+      <input type="number" id="newCateSort" placeholder="排序值" value="0" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
     </div>
     <label style="display: flex; align-items: center; gap: 5px; height: 40px;">
       <input type="checkbox" id="newCateGuest"> 访客可见
     </label>
-    <button onclick="addCategory()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">+ 添加</button>
+    <button onclick="addCategory()" style="padding: 10px 20px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">+ 添加</button>
   </div>
 </div>
 
 <!-- 批量操作工具栏 -->
 <div id="batchToolbar" style="display: none; padding: 12px 16px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-  <span style="font-size: 14px; color: #4338ca; font-weight: 500;">已选 <span id="selectedCount">0</span> 项</span>
-  <button onclick="batchDeleteCategories()" style="padding: 6px 14px; font-size: 13px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">批量删除</button>
-  <button onclick="clearSelection()" style="padding: 6px 14px; font-size: 13px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">取消选择</button>
+  <span style="font-size: 14px; color: var(--primary-dark); font-weight: 500;">已选 <span id="selectedCount">0</span> 项</span>
+  <button onclick="batchDeleteCategories()" style="padding: 6px 14px; font-size: 13px; background: var(--danger); color: white; border: none; border-radius: 4px; cursor: pointer;">批量删除</button>
+  <button onclick="clearSelection()" style="padding: 6px 14px; font-size: 13px; background: var(--text-muted); color: white; border: none; border-radius: 4px; cursor: pointer;">取消选择</button>
 </div>
 
-<div class="card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+<div class="card" style="background: var(--bg-card); border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
   <table>
     <thead>
       <tr>
@@ -47,10 +47,10 @@
         <tr>
           <td><input type="checkbox" class="cate-checkbox" value="<%= cat.id %>" onchange="updateSelection()"></td>
           <td><%= cat.id %></td>
-          <td><input type="text" id="cate-name-<%= cat.id %>" value="<%= cat.name %>" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;"></td>
-          <td><input type="number" id="cate-sort-<%= cat.id %>" value="<%= cat.sort %>" style="width: 60px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;"></td>
+          <td><input type="text" id="cate-name-<%= cat.id %>" value="<%= cat.name %>" style="padding: 5px; border: 1px solid var(--border-color); border-radius: 4px;"></td>
+          <td><input type="number" id="cate-sort-<%= cat.id %>" value="<%= cat.sort %>" style="width: 60px; padding: 5px; border: 1px solid var(--border-color); border-radius: 4px;"></td>
           <td>
-            <select id="cate-status-<%= cat.id %>" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+            <select id="cate-status-<%= cat.id %>" style="padding: 5px; border: 1px solid var(--border-color); border-radius: 4px;">
               <option value="1" <%= cat.status === 1 ? 'selected' : '' %>>启用</option>
               <option value="0" <%= cat.status === 0 ? 'selected' : '' %>>禁用</option>
             </select>
@@ -59,8 +59,8 @@
             <input type="checkbox" id="cate-guest-<%= cat.id %>" <%= cat.is_guest ? 'checked' : '' %>>
           </td>
           <td>
-            <button onclick="editCategory(<%= cat.id %>)" style="padding: 5px 12px; font-size: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">保存</button>
-            <button onclick="deleteCategory(<%= cat.id %>)" style="padding: 5px 12px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">删除</button>
+            <button onclick="editCategory(<%= cat.id %>)" style="padding: 5px 12px; font-size: 12px; background: var(--success); color: white; border: none; border-radius: 4px; cursor: pointer;">保存</button>
+            <button onclick="deleteCategory(<%= cat.id %>)" style="padding: 5px 12px; font-size: 12px; background: var(--danger); color: white; border: none; border-radius: 4px; cursor: pointer;">删除</button>
           </td>
         </tr>
       <% }); %>

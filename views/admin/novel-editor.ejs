@@ -101,7 +101,7 @@
         </div>
         <button type="button" class="btn btn-success" onclick="uploadBatchChapters()">批量上传</button>
         <div id="batchProgress" style="margin-top:12px;display:none;">
-          <div style="padding:12px;background:#fff;border-radius:4px;border:1px solid var(--gray-200);">
+          <div style="padding:12px;background:var(--bg-card);border-radius:4px;border:1px solid var(--gray-200);">
             <p id="batchStatus" style="margin:0 0 8px 0;font-size:14px;"></p>
             <div id="batchResults" style="max-height:200px;overflow-y:auto;font-size:13px;"></div>
           </div>
@@ -151,30 +151,30 @@
           </div>
         </div>
         <!-- 文件信息 -->
-        <div id="splitFileInfo" style="display:none;margin-top:12px;padding:12px 16px;background:#fff;border-radius:6px;border:1px solid var(--gray-200);font-size:13px;color:var(--gray-600);">
+        <div id="splitFileInfo" style="display:none;margin-top:12px;padding:12px 16px;background:var(--bg-card);border-radius:6px;border:1px solid var(--gray-200);font-size:13px;color:var(--gray-600);">
           <span id="splitFileName"></span> · <span id="splitFileSize"></span> · <span id="splitFileLines"></span> 行
         </div>
         <!-- 错误信息 -->
-        <div id="splitErrorMsg" style="display:none;margin-top:12px;padding:10px 14px;background:#fef2f2;color:#991b1b;border-radius:6px;border:1px solid #fecaca;font-size:13px;"></div>
+        <div id="splitErrorMsg" style="display:none;margin-top:12px;padding:10px 14px;background:var(--danger-bg);color:var(--danger-dark);border-radius:6px;border:1px solid var(--danger-bg);font-size:13px;"></div>
         <!-- 预览区域 -->
         <div id="splitPreviewArea" style="display:none;margin-top:16px;border:1px solid var(--gray-200);border-radius:var(--border-radius-sm);overflow:hidden;">
           <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
             <span style="font-size:14px;font-weight:500;color:var(--gray-700);">📖 拆分预览 <span id="splitPreviewCount" style="color:var(--primary);font-size:13px;"></span></span>
             <button type="button" class="btn btn-small" id="splitPreviewCloseBtn">✕ 关闭</button>
           </div>
-          <div style="max-height:300px;overflow-y:auto;background:#fafafa;">
-            <div id="splitPreviewContent" style="padding:14px;font-family:Consolas,monospace;font-size:13px;line-height:1.8;white-space:pre-wrap;word-wrap:break-word;color:#333;"></div>
+          <div style="max-height:300px;overflow-y:auto;background:var(--gray-50);">
+            <div id="splitPreviewContent" style="padding:14px;font-family:Consolas,monospace;font-size:13px;line-height:1.8;white-space:pre-wrap;word-wrap:break-word;color:var(--text-primary);"></div>
           </div>
         </div>
         <!-- 进度 -->
         <div id="splitProgressArea" style="display:none;margin-top:16px;">
           <div style="width:100%;height:8px;background:var(--gray-100);border-radius:4px;overflow:hidden;">
-            <div id="splitProgressBar" style="height:100%;background:linear-gradient(135deg,var(--primary),#8b5cf6);width:0%;transition:width 0.3s;border-radius:4px;"></div>
+            <div id="splitProgressBar" style="height:100%;background:linear-gradient(135deg,var(--primary),var(--accent));width:0%;transition:width 0.3s;border-radius:4px;"></div>
           </div>
           <p id="splitProgressText" style="text-align:center;font-size:13px;color:var(--gray-400);margin-top:6px;">准备中...</p>
         </div>
         <!-- 结果 -->
-        <div id="splitResultArea" style="display:none;margin-top:16px;padding:14px;background:#fff;border-radius:6px;border:1px solid var(--gray-200);max-height:300px;overflow-y:auto;"></div>
+        <div id="splitResultArea" style="display:none;margin-top:16px;padding:14px;background:var(--bg-card);border-radius:6px;border:1px solid var(--gray-200);max-height:300px;overflow-y:auto;"></div>
       </form>
     </div>
 
@@ -219,17 +219,17 @@
         statusP.textContent = data.message;
         let html = '';
         if (data.results && data.results.success.length > 0) {
-          html += '<div style="color:#10b981;margin-bottom:8px;"><strong>成功：</strong></div>';
+          html += '<div style="color:var(--success);margin-bottom:8px;"><strong>成功：</strong></div>';
           data.results.success.forEach(function(ch) {
-            html += '<div style="padding:4px 8px;margin:2px 0;background:#f0fdf4;border-radius:3px;">' +
+            html += '<div style="padding:4px 8px;margin:2px 0;background:var(--success-bg);border-radius:3px;">' +
                     '第' + ch.chapterNumber + '章 - ' + escapeHtml(ch.title) + 
                     ' <span style="color:var(--gray-400);font-size:12px;">(' + escapeHtml(ch.originalName) + ')</span></div>';
           });
         }
         if (data.results && data.results.errors.length > 0) {
-          html += '<div style="color:#ef4444;margin-top:8px;"><strong>失败：</strong></div>';
+          html += '<div style="color:var(--danger);margin-top:8px;"><strong>失败：</strong></div>';
           data.results.errors.forEach(function(err) {
-            html += '<div style="padding:4px 8px;margin:2px 0;background:#fef2f2;border-radius:3px;">' + 
+            html += '<div style="padding:4px 8px;margin:2px 0;background:var(--danger-bg);border-radius:3px;">' + 
                     escapeHtml(err.originalName) + ': ' + escapeHtml(err.error) + '</div>';
           });
         }
@@ -242,7 +242,7 @@
       })
       .catch(err => {
         statusP.textContent = '上传失败: ' + err.message;
-        statusP.style.color = '#ef4444';
+        statusP.style.color = 'var(--danger)';
       })
       .finally(function() {
         btn.disabled = false;
@@ -464,8 +464,8 @@
             const chInfo = extractSplitChapter(line, result.patterns);
             if (chInfo) {
               chIdx++;
-              html += '<span style="background:#e8edff;border-left:4px solid #6366f1;padding:3px 8px;margin:6px 0;display:block;font-weight:bold;color:#4833a0;border-radius:0 4px 4px 0;">';
-              html += '<span style="display:inline-block;background:#6366f1;color:#fff;font-size:11px;padding:1px 8px;border-radius:10px;margin-right:8px;font-weight:bold;">#' + chIdx + '</span>';
+              html += '<span style="background:#e8edff;border-left:4px solid var(--primary);padding:3px 8px;margin:6px 0;display:block;font-weight:bold;color:#4833a0;border-radius:0 4px 4px 0;">';
+              html += '<span style="display:inline-block;background:var(--primary);color:var(--bg-card);font-size:11px;padding:1px 8px;border-radius:10px;margin-right:8px;font-weight:bold;">#' + chIdx + '</span>';
               html += escapeHtml(line);
               html += '</span>\n';
             } else {
@@ -538,17 +538,17 @@
 
               if (res.redirected || res.ok) {
                 successCount++;
-                resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:#f0fdf4;border-radius:3px;font-size:13px;">' +
+                resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:var(--success-bg);border-radius:3px;font-size:13px;">' +
                   '✅ ' + escapeHtml(ch.title) + '</div>';
               } else {
                 const errData = await res.json().catch(function() { return { error: 'HTTP ' + res.status }; });
                 failCount++;
-                resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:#fef2f2;border-radius:3px;font-size:13px;">' +
+                resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:var(--danger-bg);border-radius:3px;font-size:13px;">' +
                   '❌ ' + escapeHtml(ch.title) + ': ' + escapeHtml(errData.error || '未知错误') + '</div>';
               }
             } catch (uploadErr) {
               failCount++;
-              resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:#fef2f2;border-radius:3px;font-size:13px;">' +
+              resultHtml += '<div style="padding:3px 8px;margin:2px 0;background:var(--danger-bg);border-radius:3px;font-size:13px;">' +
                 '❌ ' + escapeHtml(ch.title) + ': ' + escapeHtml(uploadErr.message) + '</div>';
             }
 
@@ -559,7 +559,7 @@
 
           // 完成
           const summaryHtml = '<div style="margin-top:10px;padding:10px;background:' +
-            (failCount === 0 ? '#f0fdf4;color:#166534' : '#fefce8;color:#92400e') +
+            (failCount === 0 ? 'var(--success-bg);color:var(--success-dark)' : '#fefce8;color:var(--warning-dark)') +
             ';border-radius:6px;font-size:14px;font-weight:bold;">' +
             '✅ 完成：成功 ' + successCount + ' 个' +
             (failCount > 0 ? '，失败 ' + failCount + ' 个' : '') +

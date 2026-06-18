@@ -122,7 +122,7 @@
   <!-- 按项目展示数据统计 -->
   <div class="card">
     <h2>📊 当前数据统计（按模块）</h2>
-    <p style="margin-bottom: 16px; color: var(--gray-500);">以下所有数据将在重置后被清空，总计 <strong style="color: #dc2626;"><%= totalRecords %></strong> 条记录：</p>
+    <p style="margin-bottom: 16px; color: var(--gray-500);">以下所有数据将在重置后被清空，总计 <strong style="color: var(--danger-dark);"><%= totalRecords %></strong> 条记录：</p>
     
     <% projectStats.forEach(function(project) { %>
     <div class="project-stat-block">
@@ -196,12 +196,12 @@
     </div>
   </div>
 
-  <div class="card" style="border-color: #fecaca; background: #fef2f2;">
-    <h2 style="color: #dc2626;">重置确认</h2>
-    <p style="margin-bottom: 16px; color: #991b1b;">
+  <div class="card" style="border-color: var(--danger-bg); background: var(--danger-bg);">
+    <h2 style="color: var(--danger-dark);">重置确认</h2>
+    <p style="margin-bottom: 16px; color: var(--danger-dark);">
       重置后将恢复到以下初始状态：
     </p>
-    <ul style="margin-bottom: 20px; padding-left: 20px; color: #991b1b; line-height: 1.8;">
+    <ul style="margin-bottom: 20px; padding-left: 20px; color: var(--danger-dark); line-height: 1.8;">
       <li>保留超级管理员账户（admin）</li>
       <li>保留网站设置（站点名称、SMTP、协议等）</li>
       <li>删除所有普通用户及其权限</li>
@@ -217,16 +217,16 @@
       <li>恢复默认页面（首页、关于、联系我们）</li>
     </ul>
     <div class="form-group">
-      <label for="confirm-text" style="color: #991b1b; font-weight: 600;">
-        请输入 <strong style="color: #dc2626; font-size: 16px;">确认重置</strong> 以继续：
+      <label for="confirm-text" style="color: var(--danger-dark); font-weight: 600;">
+        请输入 <strong style="color: var(--danger-dark); font-size: 16px;">确认重置</strong> 以继续：
       </label>
-      <input type="text" id="confirm-text" placeholder="请输入" style="border-color: #fecaca; max-width: 300px;">
+      <input type="text" id="confirm-text" placeholder="请输入" style="border-color: var(--danger-bg); max-width: 300px;">
     </div>
     <div class="form-group">
-      <label for="admin-password" style="color: #991b1b; font-weight: 600;">
+      <label for="admin-password" style="color: var(--danger-dark); font-weight: 600;">
         🔑 请输入当前管理员密码以确认身份：
       </label>
-      <input type="password" id="admin-password" placeholder="请输入管理员密码" style="border-color: #fecaca; max-width: 300px;">
+      <input type="password" id="admin-password" placeholder="请输入管理员密码" style="border-color: var(--danger-bg); max-width: 300px;">
     </div>
     <div class="form-actions">
       <button type="button" class="btn btn-danger btn-large" id="reset-btn" onclick="executeServerReset()" disabled>执行重置</button>
@@ -234,11 +234,11 @@
     </div>
   </div>
 </div>
-  <div class="card" style="margin-top: 24px; border-color: #fecaca; background: #fff7ed;">
+  <div class="card" style="margin-top: 24px; border-color: var(--danger-bg); background: var(--warning-bg);">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
       <div>
-        <h2 style="color: #dc2626; margin-bottom: 8px;">🔥 完全恢复出厂设置</h2>
-        <p style="color: #991b1b; font-size: 14px;">
+        <h2 style="color: var(--danger-dark); margin-bottom: 8px;">🔥 完全恢复出厂设置</h2>
+        <p style="color: var(--danger-dark); font-size: 14px;">
           <strong>更彻底的重置方式</strong> — 直接<strong>删除数据库文件</strong>，包括超级管理员账户、网站设置等全部数据。
           重启服务器后自动重建全新数据库。
         </p>
@@ -261,16 +261,16 @@
       <div class="alert alert-danger" id="pr-modal-alert"></div>
       <div class="reset-stats" id="pr-modal-stats"></div>
       <div class="form-group" style="margin-top: 20px;">
-        <label style="color: #991b1b; font-weight: 600;">
-          请输入 <strong style="color: #dc2626; font-size: 16px;">确认重置</strong> 以继续：
+        <label style="color: var(--danger-dark); font-weight: 600;">
+          请输入 <strong style="color: var(--danger-dark); font-size: 16px;">确认重置</strong> 以继续：
         </label>
-        <input type="text" id="pr-confirm-text" placeholder="请输入" style="border-color: #fecaca; max-width: 300px;">
+        <input type="text" id="pr-confirm-text" placeholder="请输入" style="border-color: var(--danger-bg); max-width: 300px;">
       </div>
       <div class="form-group">
-        <label style="color: #991b1b; font-weight: 600;">
+        <label style="color: var(--danger-dark); font-weight: 600;">
           🔑 请输入当前管理员密码以确认身份：
         </label>
-        <input type="password" id="pr-admin-password" placeholder="请输入管理员密码" style="border-color: #fecaca; max-width: 300px;">
+        <input type="password" id="pr-admin-password" placeholder="请输入管理员密码" style="border-color: var(--danger-bg); max-width: 300px;">
       </div>
     </div>
     <div class="modal-footer">
@@ -295,16 +295,16 @@
       <div class="selected-items" id="sr-selected-items"></div>
       
       <div class="form-group" style="margin-top: 20px;">
-        <label style="color: #991b1b; font-weight: 600;">
-          请输入 <strong style="color: #dc2626; font-size: 16px;">确认重置</strong> 以继续：
+        <label style="color: var(--danger-dark); font-weight: 600;">
+          请输入 <strong style="color: var(--danger-dark); font-size: 16px;">确认重置</strong> 以继续：
         </label>
-        <input type="text" id="sr-confirm-text" placeholder="请输入" style="border-color: #fecaca; max-width: 300px;">
+        <input type="text" id="sr-confirm-text" placeholder="请输入" style="border-color: var(--danger-bg); max-width: 300px;">
       </div>
       <div class="form-group">
-        <label style="color: #991b1b; font-weight: 600;">
+        <label style="color: var(--danger-dark); font-weight: 600;">
           🔑 请输入当前管理员密码以确认身份：
         </label>
-        <input type="password" id="sr-admin-password" placeholder="请输入管理员密码" style="border-color: #fecaca; max-width: 300px;">
+        <input type="password" id="sr-admin-password" placeholder="请输入管理员密码" style="border-color: var(--danger-bg); max-width: 300px;">
       </div>
     </div>
     <div class="modal-footer">
@@ -315,10 +315,10 @@
 </div>
 
 <div id="reset-progress-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
-  <div style="background:#fff; padding:40px; border-radius:16px; text-align:center; max-width:400px; box-shadow:0 25px 50px rgba(0,0,0,0.3);">
-    <div class="spinner" style="width:48px; height:48px; border:4px solid #e2e8f0; border-top-color:#ef4444; border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 20px;"></div>
-    <h3 style="margin-bottom:8px; color:#1e293b;">正在重置服务器...</h3>
-    <p style="color:#64748b; font-size:14px;">请勿关闭页面或刷新页面</p>
+  <div style="background:var(--bg-card); padding:40px; border-radius:16px; text-align:center; max-width:400px; box-shadow:0 25px 50px rgba(0,0,0,0.3);">
+    <div class="spinner" style="width:48px; height:48px; border:4px solid var(--gray-200); border-top-color:var(--danger); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 20px;"></div>
+    <h3 style="margin-bottom:8px; color:var(--gray-900);">正在重置服务器...</h3>
+    <p style="color:var(--text-muted); font-size:14px;">请勿关闭页面或刷新页面</p>
   </div>
 </div>
 
@@ -515,7 +515,7 @@
 }
 
 .modal-content {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: var(--border-radius-lg);
   box-shadow: 0 20px 60px rgba(0,0,0,0.15);
   max-width: 520px;
@@ -838,7 +838,7 @@ function openProjectResetModal() {
     html += '  <span class="reset-stat-value">' + count + '</span>';
     html += '</div>';
   });
-  statsDiv.innerHTML = html || '<div style="text-align:center;color:#999;padding:10px;">无数据</div>';
+  statsDiv.innerHTML = html || '<div style="text-align:center;color:var(--text-muted);padding:10px;">无数据</div>';
 
   document.getElementById('project-reset-modal').style.display = 'flex';
 }

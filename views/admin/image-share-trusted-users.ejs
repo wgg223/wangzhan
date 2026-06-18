@@ -1,6 +1,6 @@
 <h2 style="margin-bottom: 20px;">👤 免审核用户管理</h2>
 
-<p style="color: #666; margin-bottom: 20px;">
+<p style="color: var(--text-secondary); margin-bottom: 20px;">
   <i class="fas fa-info-circle"></i> 被设置为"免审核"的用户上传图片时将自动通过审核，无需管理员手动审核。
 </p>
 
@@ -39,11 +39,11 @@
               <span class="badge badge-warning">需审核</span>
             <% } %>
           </td>
-          <td style="color: #999; font-size: 12px;"><%= u.created_at %></td>
+          <td style="color: var(--text-muted); font-size: 12px;"><%= u.created_at %></td>
           <td>
             <button class="btn btn-sm toggle-trusted-btn" data-user-id="<%= u.id %>" 
               data-no-review="<%= u.image_no_review %>"
-              style="background: <%= u.image_no_review === 1 ? '#dc3545' : '#28a745' %>; color: white;">
+              style="background: <%= u.image_no_review === 1 ? 'var(--danger)' : 'var(--success)' %>; color: white;">
               <i class="fas fa-<%= u.image_no_review === 1 ? 'times' : 'check' %>"></i>
               <%= u.image_no_review === 1 ? '取消免审核' : '设为免审核' %>
             </button>
@@ -84,7 +84,7 @@ document.querySelectorAll('.toggle-trusted-btn').forEach(function(btn) {
       if (data.success) {
         if (data.no_review === 1) {
           self.setAttribute('data-no-review', '1');
-          self.style.background = '#dc3545';
+          self.style.background = 'var(--danger)';
           self.innerHTML = '<i class="fas fa-times"></i> 取消免审核';
           // 更新badge
           var badge = self.closest('tr').querySelector('.badge');
@@ -92,7 +92,7 @@ document.querySelectorAll('.toggle-trusted-btn').forEach(function(btn) {
           badge.textContent = '免审核';
         } else {
           self.setAttribute('data-no-review', '0');
-          self.style.background = '#28a745';
+          self.style.background = 'var(--success)';
           self.innerHTML = '<i class="fas fa-check"></i> 设为免审核';
           var badge = self.closest('tr').querySelector('.badge');
           badge.className = 'badge badge-warning';

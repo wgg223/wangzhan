@@ -20,7 +20,7 @@
     </div>
 
     <div class="form-group" id="user-select-group">
-      <label for="to_user_id">接收用户 <span style="color: red;">*</span></label>
+      <label for="to_user_id">接收用户 <span style="color: var(--danger);">*</span></label>
       <select id="to_user_id" name="to_user_id" style="width: 100%;">
         <option value="">请选择用户</option>
         <% users.forEach(function(u) { %>
@@ -32,12 +32,12 @@
     </div>
 
     <div class="form-group">
-      <label for="title">标题 <span style="color: red;">*</span></label>
+      <label for="title">标题 <span style="color: var(--danger);">*</span></label>
       <input type="text" id="title" name="title" value="<%= prefill.title || '' %>" required>
     </div>
 
     <div class="form-group">
-      <label for="content">内容 <span style="color: red;">*</span></label>
+      <label for="content">内容 <span style="color: var(--danger);">*</span></label>
       <textarea id="content" name="content" rows="8" required style="width: 100%;"><%= prefill.content || '' %></textarea>
     </div>
 

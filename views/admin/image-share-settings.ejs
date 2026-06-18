@@ -1,109 +1,109 @@
 <div style="margin-bottom: 20px;">
-  <a href="/admin/image-share" style="color: #667eea;">← 返回图片分享管理</a>
+  <a href="/admin/image-share" style="color: var(--primary);">← 返回图片分享管理</a>
 </div>
 
 <h2 style="margin-bottom: 20px;">⚙️ 图片分享设置</h2>
 
-<div class="card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">基本设置</h3>
+<div class="card" style="background: var(--bg-card); border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+  <h3 style="margin-bottom: 15px; color: var(--text-primary); border-bottom: 1px solid var(--gray-100); padding-bottom: 10px;">基本设置</h3>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">网站名称</label>
-    <input type="text" id="site_name" value="<%= config.site_name || '图片分享网' %>" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">网站名称</label>
+    <input type="text" id="site_name" value="<%= config.site_name || '图片分享网' %>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
   </div>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">网站描述</label>
-    <textarea id="site_description" rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;"><%= config.site_description || '分享精彩瞬间，记录美好生活' %></textarea>
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">网站描述</label>
+    <textarea id="site_description" rows="3" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;"><%= config.site_description || '分享精彩瞬间，记录美好生活' %></textarea>
   </div>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">网站Logo路径</label>
-    <input type="text" id="site_logo" value="<%= config.site_logo || '/assets/images/default-avatar.png' %>" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">网站Logo路径</label>
+    <input type="text" id="site_logo" value="<%= config.site_logo || '/assets/images/default-avatar.png' %>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
   </div>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">网站备案号</label>
-    <input type="text" id="icp_number" placeholder="例如：京ICP备12345678号-1" value="<%= config.icp_number || '' %>" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">网站备案号</label>
+    <input type="text" id="icp_number" placeholder="例如：京ICP备12345678号-1" value="<%= config.icp_number || '' %>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
   </div>
 </div>
 
-<div class="card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 20px;">
-  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">内容审核设置</h3>
+<div class="card" style="background: var(--bg-card); border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 20px;">
+  <h3 style="margin-bottom: 15px; color: var(--text-primary); border-bottom: 1px solid var(--gray-100); padding-bottom: 10px;">内容审核设置</h3>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">图片审核开关</label>
-    <select id="review_enabled" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">图片审核开关</label>
+    <select id="review_enabled" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
       <option value="1" <%= config.review_enabled === '1' ? 'selected' : '' %>>开启（图片需审核）</option>
       <option value="0" <%= config.review_enabled === '0' ? 'selected' : '' %>>关闭（图片直接通过）</option>
     </select>
   </div>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">评论功能开关</label>
-    <select id="comment_enabled" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">评论功能开关</label>
+    <select id="comment_enabled" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
       <option value="1" <%= config.comment_enabled === '1' ? 'selected' : '' %>>开启（允许用户评论）</option>
       <option value="0" <%= config.comment_enabled === '0' ? 'selected' : '' %>>关闭（禁止评论）</option>
     </select>
   </div>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">评论审核开关</label>
-    <select id="comment_review_enabled" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">评论审核开关</label>
+    <select id="comment_review_enabled" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
       <option value="1" <%= config.comment_review_enabled === '1' ? 'selected' : '' %>>开启（评论需审核）</option>
       <option value="0" <%= config.comment_review_enabled === '0' ? 'selected' : '' %>>关闭（评论直接显示）</option>
     </select>
   </div>
 </div>
 
-<div class="card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 20px;">
-  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">访客权限设置</h3>
+<div class="card" style="background: var(--bg-card); border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 20px;">
+  <h3 style="margin-bottom: 15px; color: var(--text-primary); border-bottom: 1px solid var(--gray-100); padding-bottom: 10px;">访客权限设置</h3>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">允许访客查看</label>
-    <select id="guest_view_enabled" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">允许访客查看</label>
+    <select id="guest_view_enabled" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
       <option value="1" <%= config.guest_view_enabled === '1' ? 'selected' : '' %>>开启（访客可浏览）</option>
       <option value="0" <%= config.guest_view_enabled === '0' ? 'selected' : '' %>>关闭（仅登录用户可浏览）</option>
     </select>
   </div>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">允许访客上传</label>
-    <select id="guest_upload_enabled" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">允许访客上传</label>
+    <select id="guest_upload_enabled" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
       <option value="1" <%= config.guest_upload_enabled === '1' ? 'selected' : '' %>>开启（访客可上传）</option>
       <option value="0" <%= config.guest_upload_enabled === '0' ? 'selected' : '' %>>关闭（仅登录用户可上传）</option>
     </select>
   </div>
 </div>
 
-<div class="card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 20px;">
-  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">上传设置</h3>
+<div class="card" style="background: var(--bg-card); border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 20px;">
+  <h3 style="margin-bottom: 15px; color: var(--text-primary); border-bottom: 1px solid var(--gray-100); padding-bottom: 10px;">上传设置</h3>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">最大文件大小 (MB)</label>
-    <input type="number" id="max_size" value="<%= config.max_size || 10 %>" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">最大文件大小 (MB)</label>
+    <input type="number" id="max_size" value="<%= config.max_size || 10 %>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
   </div>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">允许格式 (逗号分隔)</label>
-    <input type="text" id="allowed_formats" value="<%= config.allowed_formats || 'jpg,png,jpeg,gif,webp' %>" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">允许格式 (逗号分隔)</label>
+    <input type="text" id="allowed_formats" value="<%= config.allowed_formats || 'jpg,png,jpeg,gif,webp' %>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
   </div>
 </div>
 
-<div class="card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 20px;">
-  <h3 style="margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;">显示设置</h3>
+<div class="card" style="background: var(--bg-card); border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-top: 20px;">
+  <h3 style="margin-bottom: 15px; color: var(--text-primary); border-bottom: 1px solid var(--gray-100); padding-bottom: 10px;">显示设置</h3>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">每页显示图片数量</label>
-    <input type="number" id="images_per_page" value="<%= config.images_per_page || 12 %>" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">每页显示图片数量</label>
+    <input type="number" id="images_per_page" value="<%= config.images_per_page || 12 %>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
   </div>
   
   <div style="margin-bottom: 15px;">
-    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #555;">热门图片显示数量</label>
-    <input type="number" id="hot_images_count" value="<%= config.hot_images_count || 12 %>" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--gray-600);">热门图片显示数量</label>
+    <input type="number" id="hot_images_count" value="<%= config.hot_images_count || 12 %>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
   </div>
   
-  <button onclick="saveSettings()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">💾 保存设置</button>
+  <button onclick="saveSettings()" style="padding: 10px 20px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">💾 保存设置</button>
 </div>
 
 <script>

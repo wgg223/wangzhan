@@ -85,8 +85,8 @@
   </div>
 
   <% if (project) { %>
-  <div class="card" style="border-color: #fecaca; background: #fef2f2; margin-top: 20px;">
-    <h2 style="color: #dc2626;">项目信息</h2>
+  <div class="card" style="border-color: var(--danger-border); background: var(--danger-bg); margin-top: 20px;">
+    <h2 style="color: var(--danger-dark);">项目信息</h2>
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 12px;">
       <div class="project-stat">
         <span class="project-stat-label">项目 ID</span>
@@ -103,8 +103,8 @@
     </div>
 
     <div style="margin-top: 20px;">
-      <h3 style="color: #dc2626; font-size: 15px; margin-bottom: 12px;">🗑️ 删除项目</h3>
-      <p style="color: #991b1b; font-size: 13px; margin-bottom: 12px;">
+      <h3 style="color: var(--danger-dark); font-size: 15px; margin-bottom: 12px;">🗑️ 删除项目</h3>
+      <p style="color: var(--danger-dark); font-size: 13px; margin-bottom: 12px;">
         删除项目仅移除项目定义，不会清除项目关联的数据。如需清除数据，请先使用重置功能。
       </p>
       <button type="button" class="btn btn-danger btn-small" onclick="deleteProject()">删除项目定义</button>
@@ -119,19 +119,19 @@
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 6px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--danger-border);
 }
 
 .project-stat-label {
   font-size: 13px;
-  color: #991b1b;
+  color: var(--danger-dark);
 }
 
 .project-stat-value {
   font-weight: 600;
-  color: #dc2626;
+  color: var(--danger-dark);
 }
 </style>
 
@@ -167,10 +167,10 @@ document.addEventListener('DOMContentLoaded', function() {
       var pattern = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/)?(\.git)?$/;
       if (pattern.test(url)) {
         githubUrlStatus.textContent = '✅';
-        githubUrlStatus.style.color = '#22c55e';
+        githubUrlStatus.style.color = 'var(--success)';
       } else {
         githubUrlStatus.textContent = '❌';
-        githubUrlStatus.style.color = '#ef4444';
+        githubUrlStatus.style.color = 'var(--danger)';
       }
     });
   }

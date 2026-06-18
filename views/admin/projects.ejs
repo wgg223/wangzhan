@@ -32,16 +32,16 @@
       <div class="reset-stats" id="reset-modal-stats"></div>
 
       <div class="form-group" style="margin-top: 20px;">
-        <label style="color: #991b1b; font-weight: 600;">
-          请输入 <strong style="color: #dc2626; font-size: 16px;">确认重置</strong> 以继续：
+        <label style="color: var(--danger-dark); font-weight: 600;">
+          请输入 <strong style="color: var(--danger-dark); font-size: 16px;">确认重置</strong> 以继续：
         </label>
-        <input type="text" id="reset-confirm-text" placeholder="请输入" style="border-color: #fecaca; max-width: 300px;">
+        <input type="text" id="reset-confirm-text" placeholder="请输入" style="border-color: var(--danger-bg); max-width: 300px;">
       </div>
       <div class="form-group">
-        <label style="color: #991b1b; font-weight: 600;">
+        <label style="color: var(--danger-dark); font-weight: 600;">
           🔑 请输入当前管理员密码以确认身份：
         </label>
-        <input type="password" id="reset-admin-password" placeholder="请输入管理员密码" style="border-color: #fecaca; max-width: 300px;">
+        <input type="password" id="reset-admin-password" placeholder="请输入管理员密码" style="border-color: var(--danger-bg); max-width: 300px;">
       </div>
     </div>
     <div class="modal-footer">
@@ -59,7 +59,7 @@
 }
 
 .project-card {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: var(--border-radius);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--gray-100);
@@ -184,7 +184,7 @@
   text-align: center;
   padding: 60px 20px;
   color: var(--gray-400);
-  background: #fff;
+  background: var(--bg-card);
   border-radius: var(--border-radius);
   border: 1px solid var(--gray-100);
 }
@@ -209,7 +209,7 @@
 }
 
 .modal-content {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: var(--border-radius-lg);
   box-shadow: 0 20px 60px rgba(0,0,0,0.15);
   max-width: 520px;
@@ -275,19 +275,19 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: #fef2f2;
+  background: var(--danger-bg);
   border-radius: 6px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--danger-bg);
 }
 
 .reset-stat-label {
   font-size: 13px;
-  color: #991b1b;
+  color: var(--danger-dark);
 }
 
 .reset-stat-value {
   font-weight: 700;
-  color: #dc2626;
+  color: var(--danger-dark);
 }
 
 .project-deploy-info {
@@ -296,14 +296,14 @@
   align-items: center;
   margin-top: 12px;
   padding: 8px 12px;
-  background: #f0fdf4;
+  background: var(--success-bg);
   border-radius: 6px;
-  border: 1px solid #bbf7d0;
+  border: 1px solid var(--success-bg);
   font-size: 13px;
 }
 
 .project-deploy-url a {
-  color: #1d4ed8;
+  color: var(--primary-dark);
   text-decoration: none;
   font-weight: 500;
 }
@@ -313,22 +313,19 @@
 }
 
 .deploy-status-success {
-  color: #15803d;
-  font-weight: 600;
+  color: var(--success-dark);
 }
 
 .deploy-status-failed {
-  color: #dc2626;
-  font-weight: 600;
+  color: var(--danger-dark);
 }
 
 .deploy-status-none {
-  color: #92400e;
-  font-weight: 600;
+  color: var(--warning-dark);
 }
 
 .deploy-status-deploying {
-  color: #2563eb;
+  color: var(--primary-dark);
   font-weight: 600;
   animation: pulse 1.5s infinite;
 }
@@ -339,14 +336,14 @@
 }
 
 .btn-deploy {
-  background: #f0fdf4;
-  color: #15803d;
-  border: 1px solid #bbf7d0;
+  background: var(--success-bg);
+  color: var(--success-dark);
+  border: 1px solid var(--success-bg);
 }
 
 .btn-deploy:hover {
-  background: #dcfce7;
-  border-color: #86efac;
+  background: var(--success-bg);
+  border-color: var(--success-light);
 }
 
 .btn-deploy:disabled {
@@ -503,7 +500,7 @@ function openResetModal(projectId, projectName) {
   
   // 加载统计数据
   var statsDiv = document.getElementById('reset-modal-stats');
-  statsDiv.innerHTML = '<div style="text-align:center;color:#999;padding:10px;">加载统计数据中...</div>';
+  statsDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:10px;">加载统计数据中...</div>';
   
   document.getElementById('reset-modal').style.display = 'flex';
   
@@ -519,11 +516,11 @@ function openResetModal(projectId, projectName) {
           html += '  <span class="reset-stat-value">' + stats[table] + '</span>';
           html += '</div>';
         });
-        statsDiv.innerHTML = html || '<div style="text-align:center;color:#999;">无数据</div>';
+        statsDiv.innerHTML = html || '<div style="text-align:center;color:var(--text-muted);">无数据</div>';
       }
     })
     .catch(function() {
-      statsDiv.innerHTML = '<div style="text-align:center;color:#999;">加载失败</div>';
+      statsDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);">加载失败</div>';
     });
 }
 

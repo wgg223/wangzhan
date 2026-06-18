@@ -74,7 +74,7 @@
 
 <style>
 .update-info-card {
-  background: #f8f9fa;
+  background: var(--gray-50);
   border-radius: 8px;
   padding: 24px;
   margin-bottom: 20px;
@@ -93,18 +93,18 @@
 
 .version-display .label {
   font-size: 12px;
-  color: #6c757d;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
 .version-display .version {
   font-size: 24px;
   font-weight: bold;
-  color: #212529;
+  color: var(--text-primary);
 }
 
 .latest-version .version {
-  color: #0d6efd;
+  color: var(--primary);
 }
 
 .system-info {
@@ -112,9 +112,9 @@
   gap: 30px;
   margin-bottom: 20px;
   padding: 15px;
-  background: white;
+  background: var(--bg-card);
   border-radius: 6px;
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--border-color);
 }
 
 .system-info .info-item {
@@ -124,14 +124,14 @@
 
 .system-info .label {
   font-size: 11px;
-  color: #6c757d;
+  color: var(--text-muted);
   margin-bottom: 2px;
 }
 
 .system-info .value {
   font-size: 14px;
   font-weight: 500;
-  color: #212529;
+  color: var(--text-primary);
 }
 
 .update-status {
@@ -141,28 +141,28 @@
 }
 
 .update-status.has-update {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
 }
 
 .update-status.no-update {
-  background: #d1e7dd;
-  border: 1px solid #198754;
+  background: var(--success-bg);
+  border: 1px solid var(--success);
 }
 
 .update-status.error {
-  background: #f8d7da;
-  border: 1px solid #dc3545;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
 }
 
 .update-status.downloading {
-  background: #cff4fc;
-  border: 1px solid #0dcaf0;
+  background: var(--info-bg);
+  border: 1px solid var(--info);
 }
 
 .update-status.success {
-  background: #d1e7dd;
-  border: 1px solid #198754;
+  background: var(--success-bg);
+  border: 1px solid var(--success);
 }
 
 .status-message {
@@ -170,8 +170,8 @@
 }
 
 .release-info {
-  background: white;
-  border: 1px solid #dee2e6;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 20px;
   margin-bottom: 20px;
@@ -185,7 +185,7 @@
 
 .release-meta {
   font-size: 12px;
-  color: #6c757d;
+  color: var(--text-muted);
   margin-bottom: 15px;
 }
 
@@ -210,18 +210,18 @@
 }
 
 .update-actions .btn-warning {
-  background: #ffc107;
-  border-color: #ffc107;
-  color: #212529;
+  background: var(--warning);
+  border-color: var(--warning);
+  color: var(--text-primary);
 }
 
 .update-actions .btn-warning:hover {
-  background: #ffca2c;
-  border-color: #ffc720;
+  background: var(--warning-dark);
+  border-color: var(--warning-dark);
 }
 
 .update-log {
-  background: #f8f9fa;
+  background: var(--gray-50);
   border-radius: 6px;
   padding: 16px;
   min-height: 100px;
@@ -230,7 +230,7 @@
 }
 
 .text-muted {
-  color: #6c757d;
+  color: var(--text-muted);
   font-style: italic;
 }
 
@@ -242,28 +242,28 @@
 }
 
 .log-info {
-  background: #cff4fc;
-  border-left: 3px solid #0dcaf0;
+  background: var(--info-bg);
+  border-left: 3px solid var(--info);
 }
 
 .log-success {
-  background: #d1e7dd;
-  border-left: 3px solid #198754;
+  background: var(--success-bg);
+  border-left: 3px solid var(--success);
 }
 
 .log-error {
-  background: #f8d7da;
-  border-left: 3px solid #dc3545;
+  background: var(--danger-bg);
+  border-left: 3px solid var(--danger);
 }
 
 .log-time {
-  color: #6c757d;
+  color: var(--text-muted);
   margin-right: 8px;
 }
 
 .progress-bar {
   height: 4px;
-  background: #e9ecef;
+  background: var(--gray-100);
   border-radius: 2px;
   margin-top: 10px;
   overflow: hidden;
@@ -271,7 +271,7 @@
 
 .progress-bar-fill {
   height: 100%;
-  background: #0dcaf0;
+  background: var(--info);
   width: 0%;
   transition: width 0.3s ease;
 }

@@ -36,12 +36,12 @@
               <td>
                 <% if (c.commenter_name) { %>
                   <strong><%= c.commenter_name %></strong>
-                  <span style="font-size:12px;color:#888;">(注册用户)</span>
+                  <span class="commenter-type">(注册用户)</span>
                 <% } else if (c.visitor_name) { %>
                   <%= c.visitor_name %>
-                  <span style="font-size:12px;color:#888;">(<%= c.visitor_email %>)</span>
+                  <span class="commenter-type">(<%= c.visitor_email %>)</span>
                 <% } else { %>
-                  <span style="color:#999;">匿名</span>
+                  <span class="anonymous-label">匿名</span>
                 <% } %>
               </td>
               <td>
@@ -120,12 +120,12 @@
               <td>
                 <% if (c.commenter_name) { %>
                   <strong><%= c.commenter_name %></strong>
-                  <span style="font-size:12px;color:#888;">(注册用户)</span>
+                  <span class="commenter-type">(注册用户)</span>
                 <% } else if (c.visitor_name) { %>
                   <%= c.visitor_name %>
-                  <span style="font-size:12px;color:#888;">(<%= c.visitor_email %>)</span>
+                  <span class="commenter-type">(<%= c.visitor_email %>)</span>
                 <% } else { %>
-                  <span style="color:#999;">匿名</span>
+                  <span class="anonymous-label">匿名</span>
                 <% } %>
               </td>
               <td>
@@ -177,7 +177,7 @@
 
 <style>
 .row-pending {
-  background: #fffdf0;
+  background: var(--warning-bg);
 }
 
 .comment-content {
@@ -186,14 +186,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  color: #555;
+  color: var(--gray-600);
 }
 
 .reply-badge {
   display: inline-block;
   padding: 1px 5px;
-  background: #e8f4fd;
-  color: #007bff;
+  background: var(--info-bg);
+  color: var(--primary);
   border-radius: 3px;
   font-size: 11px;
   margin-left: 5px;
@@ -203,7 +203,7 @@
   margin-bottom: 20px;
   display: flex;
   gap: 0;
-  border-bottom: 2px solid #e2e8f0;
+  border-bottom: 2px solid var(--gray-200);
 }
 
 .tab-btn {
@@ -215,17 +215,17 @@
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--text-muted);
   transition: all 0.2s;
 }
 
 .tab-btn:hover {
-  color: #6366f1;
+  color: var(--primary);
 }
 
 .tab-btn.active {
-  color: #6366f1;
-  border-bottom-color: #6366f1;
+  color: var(--primary);
+  border-bottom-color: var(--primary);
 }
 
 .tab-content {
@@ -234,6 +234,15 @@
 
 .tab-content.active {
   display: block;
+}
+
+.commenter-type {
+  font-size: 12px;
+  color: var(--gray-400);
+}
+
+.anonymous-label {
+  color: var(--text-muted);
 }
 </style>
 

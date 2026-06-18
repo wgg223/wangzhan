@@ -50,7 +50,7 @@
           <% if (settings.logo) { %>
             <img src="<%= settings.logo %>" alt="网站Logo" id="logo-preview" style="max-width:200px;max-height:60px;">
           <% } else { %>
-            <div class="no-logo" id="logo-preview" style="padding:20px;background:#f5f5f5;text-align:center;border:1px dashed #ddd;">未设置Logo</div>
+            <div class="no-logo" id="logo-preview" style="padding:20px;background:var(--gray-50);text-align:center;border:1px dashed var(--border-color);">未设置Logo</div>
           <% } %>
         </div>
         <input type="file" id="logo-upload" accept="image/*">
@@ -341,21 +341,21 @@ function testSmtpConnection() {
 }
 .field-hint {
   font-size: 12px;
-  color: #888;
+  color: var(--gray-400);
   margin-top: 4px;
 }
 .background-preview img {
   max-width: 100%;
   max-height: 200px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
 }
 .no-bg {
   padding: 40px;
-  background: #f5f5f5;
+  background: var(--gray-50);
   text-align: center;
-  color: #999;
-  border: 1px dashed #ddd;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-color);
   border-radius: 4px;
 }
 .form-group input[type="file"] {
@@ -364,14 +364,14 @@ function testSmtpConnection() {
 .settings-section {
   margin-top: 30px;
   padding-top: 20px;
-  border-top: 2px solid #eee;
+  border-top: 2px solid var(--gray-100);
 }
 .settings-section h2 {
   font-size: 18px;
   margin-bottom: 5px;
 }
 .section-desc {
-  color: #888;
+  color: var(--gray-400);
   font-size: 13px;
   margin-bottom: 15px;
 }

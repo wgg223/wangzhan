@@ -1,21 +1,21 @@
 <h2 style="margin-bottom: 20px;">💬 图片评论管理</h2>
 
 <div class="stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-bottom: 20px;">
-  <div class="stat-card" style="background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-    <div style="font-size: 28px; font-weight: bold; color: #667eea;"><%= stats.total %></div>
-    <div style="font-size: 13px; color: #999; margin-top: 5px;">总评论</div>
+  <div class="stat-card" style="background: var(--bg-card); border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 28px; font-weight: bold; color: var(--primary);"><%= stats.total %></div>
+    <div style="font-size: 13px; color: var(--text-muted); margin-top: 5px;">总评论</div>
   </div>
-  <div class="stat-card" style="background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-    <div style="font-size: 28px; font-weight: bold; color: #ffc107;"><%= stats.pending %></div>
-    <div style="font-size: 13px; color: #999; margin-top: 5px;">待审核</div>
+  <div class="stat-card" style="background: var(--bg-card); border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 28px; font-weight: bold; color: var(--warning);"><%= stats.pending %></div>
+    <div style="font-size: 13px; color: var(--text-muted); margin-top: 5px;">待审核</div>
   </div>
-  <div class="stat-card" style="background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-    <div style="font-size: 28px; font-weight: bold; color: #28a745;"><%= stats.approved %></div>
-    <div style="font-size: 13px; color: #999; margin-top: 5px;">已通过</div>
+  <div class="stat-card" style="background: var(--bg-card); border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 28px; font-weight: bold; color: var(--success);"><%= stats.approved %></div>
+    <div style="font-size: 13px; color: var(--text-muted); margin-top: 5px;">已通过</div>
   </div>
-  <div class="stat-card" style="background: white; border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-    <div style="font-size: 28px; font-weight: bold; color: #dc3545;"><%= stats.rejected %></div>
-    <div style="font-size: 13px; color: #999; margin-top: 5px;">已驳回</div>
+  <div class="stat-card" style="background: var(--bg-card); border-radius: 10px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="font-size: 28px; font-weight: bold; color: var(--danger);"><%= stats.rejected %></div>
+    <div style="font-size: 13px; color: var(--text-muted); margin-top: 5px;">已驳回</div>
   </div>
 </div>
 
@@ -48,9 +48,9 @@
             <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><%= comment.content %></td>
             <td>
               <% if (comment.image_title) { %>
-                <a href="/image-share/image?id=<%= comment.image_id %>" target="_blank" style="color: #667eea;"><%= comment.image_title %></a>
+                <a href="/image-share/image?id=<%= comment.image_id %>" target="_blank" style="color: var(--primary);"><%= comment.image_title %></a>
               <% } else { %>
-                <span style="color: #999;">已删除</span>
+                <span style="color: var(--text-muted);">已删除</span>
               <% } %>
             </td>
             <td><%= comment.nickname || comment.username || '未知' %></td>
@@ -63,7 +63,7 @@
                 <span class="badge badge-danger">已驳回</span>
               <% } %>
             </td>
-            <td style="color: #999; font-size: 12px;"><%= comment.created_at %></td>
+            <td style="color: var(--text-muted); font-size: 12px;"><%= comment.created_at %></td>
             <td>
               <% if (comment.status === 'pending') { %>
                 <button class="btn btn-success btn-sm comment-review-btn" data-id="<%= comment.id %>" data-action="approve">
