@@ -100,3 +100,10 @@ security-config.json
 *.orig
 .writerHelper
 .vscode
+
+# Android (not needed for Node.js project)
+android/
+
+# Deploy
+deploy/
+deploy_logs/
