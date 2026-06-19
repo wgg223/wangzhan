@@ -333,119 +333,132 @@ router.get('/user/upload', isAuthenticated, (req, res) => {
 });
 
 // 处理上传
-router.post('/user/upload', isAuthenticated, imageUpload.single('image'), (req, res) => {
-  const db = req.db;
-  const user = req.session.user;
-  const config = getImageConfigs(db);
+router.post('/user/upload', isAuthenticated, (req, res) => {
+    imageUpload.single('image')(req, res, function (err) {
+        if (err) {
+            const db = req.db;
+            const user = req.session.user;
+            const config = getImageConfigs(db);
+            const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+            let errMsg = '文件上传失败';
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                errMsg = '文件大小超出限制（最大15MB）';
+            } else if (err.message) {
+                errMsg = err.message;
+            }
+            return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).render('image-share/user/upload', {
+                user, config, categories,
+                error: errMsg
+            });
+        }
 
-  if (!req.file) {
-    const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-    return res.render('image-share/user/upload', {
-      user, config, categories,
-      error: '请选择要上传的图片'
+        const db = req.db;
+        const user = req.session.user;
+        const config = getImageConfigs(db);
+
+        if (!req.file) {
+            const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+            return res.render('image-share/user/upload', {
+                user, config, categories,
+                error: '请选择要上传的图片'
+            });
+        }
+
+        var uploadFilePath = req.file.path;
+
+        if (fs.existsSync(uploadFilePath)) {
+            const stat = fs.statSync(uploadFilePath);
+            if (stat.size !== req.file.size) {
+                console.error(`[image-share] 文件完整性校验失败: multer报告=${req.file.size}B, 实际=${stat.size}B, 文件=${req.file.filename}`);
+                try { fs.unlinkSync(uploadFilePath); } catch (e) { /* ignore */ }
+                const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+                return res.render('image-share/user/upload', {
+                    user, config, categories,
+                    error: '文件上传不完整，请重新上传'
+                });
+            }
+            if (stat.size === 0) {
+                console.error(`[image-share] 文件大小为0: ${req.file.filename}`);
+                try { fs.unlinkSync(uploadFilePath); } catch (e) { /* ignore */ }
+                const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+                return res.render('image-share/user/upload', {
+                    user, config, categories,
+                    error: '文件上传失败（文件为空），请重新上传'
+                });
+            }
+        } else {
+            const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+            return res.render('image-share/user/upload', {
+                user, config, categories,
+                error: '文件上传失败，文件未保存成功'
+            });
+        }
+
+        try {
+            var fileBuffer = fs.readFileSync(uploadFilePath);
+            let isValid = validateMagicBytes(fileBuffer, req.file.mimetype);
+
+            if (!isValid) {
+                if (req.file.mimetype === 'image/jpeg' || req.file.mimetype === 'image/jpg') {
+                    isValid = validateMagicBytes(fileBuffer, 'image/jpeg') || validateMagicBytes(fileBuffer, 'image/jpg');
+                }
+            }
+
+            if (!isValid) {
+                try {
+                    fs.unlinkSync(uploadFilePath);
+                } catch (e) { /* ignore */ }
+                const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+                return res.render('image-share/user/upload', {
+                    user, config, categories,
+                    error: '文件内容与声明类型不符，已拒绝上传'
+                });
+            }
+        } catch (validationErr) {
+            try {
+                fs.unlinkSync(uploadFilePath);
+            } catch (e) { /* ignore */ }
+            const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+            return res.render('image-share/user/upload', {
+                user, config, categories,
+                error: '文件验证失败，请重试'
+            });
+        }
+
+        const title = req.body.title || '';
+        const description = req.body.description || '';
+        const cateId = parseInt(req.body.cate_id);
+
+        if (!title || !cateId) {
+            const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+            return res.render('image-share/user/upload', {
+                user, config, categories,
+                error: '请填写图片标题并选择分类'
+            });
+        }
+
+        const reviewEnabled = config.review_enabled === '1';
+        let status = reviewEnabled ? 0 : 1;
+        if (status === 0) {
+            const userInfo = queryOne(db, 'SELECT image_no_review FROM users WHERE id = ?', [user.id]);
+            if (userInfo && userInfo.image_no_review === 1) {
+                status = 1;
+            }
+        }
+        const url = '/uploads/images/' + req.file.filename;
+
+        db.run('INSERT INTO images (title, description, url, cate_id, user_id, status) VALUES (?, ?, ?, ?, ?, ?)',
+            [title, description, url, cateId, user.id, status]);
+        saveDatabase();
+
+        const message = status === 1 ? '上传成功' : '上传成功，等待管理员审核';
+        res.render('image-share/message', {
+            user, config,
+            message: message,
+            type: 'success',
+            redirect: '/image-share/user'
+        });
     });
-  }
-
-  // 构造正确的文件路径 - 修复：直接使用 req.file.path
-  var uploadFilePath = req.file.path;
-
-  // 验证上传文件完整性：检查实际文件大小是否与预期一致
-  if (fs.existsSync(uploadFilePath)) {
-    const stat = fs.statSync(uploadFilePath);
-    if (stat.size !== req.file.size) {
-      console.error(`[image-share] 文件完整性校验失败: multer报告=${req.file.size}B, 实际=${stat.size}B, 文件=${req.file.filename}`);
-      try { fs.unlinkSync(uploadFilePath); } catch (e) { /* ignore */ }
-      const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-      return res.render('image-share/user/upload', {
-        user, config, categories,
-        error: '文件上传不完整，请重新上传'
-      });
-    }
-    if (stat.size === 0) {
-      console.error(`[image-share] 文件大小为0: ${req.file.filename}`);
-      try { fs.unlinkSync(uploadFilePath); } catch (e) { /* ignore */ }
-      const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-      return res.render('image-share/user/upload', {
-        user, config, categories,
-        error: '文件上传失败（文件为空），请重新上传'
-      });
-    }
-  } else {
-    const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-    return res.render('image-share/user/upload', {
-      user, config, categories,
-      error: '文件上传失败，文件未保存成功'
-    });
-  }
-
-  try {
-    var fileBuffer = fs.readFileSync(uploadFilePath);
-
-    // 修复：更健壮的验证逻辑
-    let isValid = validateMagicBytes(fileBuffer, req.file.mimetype);
-
-    if (!isValid) {
-      // 如果 image/jpeg 不匹配，尝试 image/jpg
-      if (req.file.mimetype === 'image/jpeg' || req.file.mimetype === 'image/jpg') {
-        isValid = validateMagicBytes(fileBuffer, 'image/jpeg') || validateMagicBytes(fileBuffer, 'image/jpg');
-      }
-    }
-
-    if (!isValid) {
-      try {
-        fs.unlinkSync(uploadFilePath);
-      } catch (e) { /* ignore */ }
-      const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-      return res.render('image-share/user/upload', {
-        user, config, categories,
-        error: '文件内容与声明类型不符，已拒绝上传'
-      });
-    }
-  } catch (validationErr) {
-    try {
-      fs.unlinkSync(uploadFilePath);
-    } catch (e) { /* ignore */ }
-    const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-    return res.render('image-share/user/upload', {
-      user, config, categories,
-      error: '文件验证失败，请重试'
-    });
-  }
-
-  const title = req.body.title || '';
-  const description = req.body.description || '';
-  const cateId = parseInt(req.body.cate_id);
-
-  if (!title || !cateId) {
-    const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-    return res.render('image-share/user/upload', {
-      user, config, categories,
-      error: '请填写图片标题并选择分类'
-    });
-  }
-
-  const reviewEnabled = config.review_enabled === '1';
-  // 功能1：如果用户免审核或全局关闭审核，直接通过
-  let status = reviewEnabled ? 0 : 1;
-  if (status === 0) {
-    const userInfo = queryOne(db, 'SELECT image_no_review FROM users WHERE id = ?', [user.id]);
-    if (userInfo && userInfo.image_no_review === 1) {
-      status = 1;
-    }
-  }
-  const url = '/uploads/images/' + req.file.filename;
-
-  db.run('INSERT INTO images (title, description, url, cate_id, user_id, status) VALUES (?, ?, ?, ?, ?, ?)',
-    [title, description, url, cateId, user.id, status]);
-  saveDatabase();
-
-  const message = status === 1 ? '上传成功' : '上传成功，等待管理员审核';
-  res.render('image-share/message', {
-    user, config,
-    message: message,
-    type: 'success',
-    redirect: '/image-share/user'
-  });
 });
 
 // ============ 批量上传功能 ============
@@ -465,118 +478,136 @@ router.get('/user/upload-batch', isAuthenticated, (req, res) => {
 });
 
 // 处理批量上传
-router.post('/user/upload-batch', isAuthenticated, imageUploadMultiple.array('images', 20), async (req, res) => {
-  const db = req.db;
-  const user = req.session.user;
-  const config = getImageConfigs(db);
+router.post('/user/upload-batch', isAuthenticated, (req, res) => {
+    imageUploadMultiple.array('images', 20)(req, res, function (err) {
+        if (err) {
+            const db = req.db;
+            const user = req.session.user;
+            const config = getImageConfigs(db);
+            const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+            let errMsg = '文件上传失败';
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                errMsg = '文件大小超出限制（每张最大15MB）';
+            } else if (err.code === 'LIMIT_FILE_COUNT') {
+                errMsg = '上传文件数量超出限制（最多20张）';
+            } else if (err.message) {
+                errMsg = err.message;
+            }
+            return res.status(400).render('image-share/user/upload-batch', {
+                user, config, categories,
+                error: errMsg
+            });
+        }
 
-  if (!req.files || req.files.length === 0) {
-    const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-    return res.render('image-share/user/upload-batch', {
-      user, config, categories,
-      error: '请选择要上传的图片（最多20张）'
+        const db = req.db;
+        const user = req.session.user;
+        const config = getImageConfigs(db);
+
+        if (!req.files || req.files.length === 0) {
+            const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+            return res.render('image-share/user/upload-batch', {
+                user, config, categories,
+                error: '请选择要上传的图片（最多20张）'
+            });
+        }
+
+        const title = req.body.title || '';
+        const description = req.body.description || '';
+        const cateId = parseInt(req.body.cate_id);
+
+        if (!title || !cateId) {
+            for (const file of req.files) {
+                try {
+                    fs.unlinkSync(file.path);
+                } catch (e) { /* ignore */ }
+            }
+            const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+            return res.render('image-share/user/upload-batch', {
+                user, config, categories,
+                error: '请填写图片标题并选择分类'
+            });
+        }
+
+        const reviewEnabled = config.review_enabled === '1';
+        let status = reviewEnabled ? 0 : 1;
+        if (status === 0) {
+            const userInfo = queryOne(db, 'SELECT image_no_review FROM users WHERE id = ?', [user.id]);
+            if (userInfo && userInfo.image_no_review === 1) {
+                status = 1;
+            }
+        }
+
+        const uploadedImages = [];
+        const errors = [];
+
+        for (let i = 0; i < req.files.length; i++) {
+            const file = req.files[i];
+            try {
+                if (!fs.existsSync(file.path)) {
+                    errors.push(`第${i + 1}张图片：文件未保存成功`);
+                    continue;
+                }
+                const fileStat = fs.statSync(file.path);
+                if (fileStat.size !== file.size) {
+                    console.error(`[image-share] 批量上传完整性校验失败: multer报告=${file.size}B, 实际=${fileStat.size}B, 文件=${file.filename}`);
+                    try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
+                    errors.push(`第${i + 1}张图片：文件上传不完整`);
+                    continue;
+                }
+                if (fileStat.size === 0) {
+                    try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
+                    errors.push(`第${i + 1}张图片：文件为空`);
+                    continue;
+                }
+
+                var fileBuffer = fs.readFileSync(file.path);
+                let isValid = validateMagicBytes(fileBuffer, file.mimetype);
+
+                if (!isValid && (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg')) {
+                    isValid = validateMagicBytes(fileBuffer, 'image/jpeg') || validateMagicBytes(fileBuffer, 'image/jpg');
+                }
+
+                if (!isValid) {
+                    try {
+                        fs.unlinkSync(file.path);
+                    } catch (e) { /* ignore */ }
+                    errors.push(`第${i + 1}张图片：文件内容与声明类型不符`);
+                    continue;
+                }
+
+                const url = '/uploads/images/' + file.filename;
+                db.run('INSERT INTO images (title, description, url, cate_id, user_id, status) VALUES (?, ?, ?, ?, ?, ?)',
+                    [title + ' (' + (i + 1) + ')', description, url, cateId, user.id, status]);
+                uploadedImages.push({
+                    filename: file.filename,
+                    title: title + ' (' + (i + 1) + ')'
+                });
+            } catch (err) {
+                errors.push(`第${i + 1}张图片：处理失败 - ${err.message}`);
+                try {
+                    fs.unlinkSync(file.path);
+                } catch (e) { /* ignore */ }
+            }
+        }
+
+        saveDatabase();
+
+        let message = '';
+        if (uploadedImages.length > 0) {
+            message = `成功上传 ${uploadedImages.length} 张图片`;
+            if (status === 0) {
+                message += '，等待管理员审核';
+            }
+        }
+
+        const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
+        res.render('image-share/message', {
+            user, config,
+            message: message + (errors.length > 0 ? '<br>失败：' + errors.join('<br>') : ''),
+            type: errors.length === uploadedImages.length ? 'error' : 'success',
+            redirect: '/image-share/user'
+        });
     });
-  }
-
-  const title = req.body.title || '';
-  const description = req.body.description || '';
-  const cateId = parseInt(req.body.cate_id);
-
-  if (!title || !cateId) {
-    // 删除已上传的文件
-    for (const file of req.files) {
-      try {
-        fs.unlinkSync(file.path);
-      } catch (e) { /* ignore */ }
-    }
-    const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-    return res.render('image-share/user/upload-batch', {
-      user, config, categories,
-      error: '请填写图片标题并选择分类'
-    });
-  }
-
-  const reviewEnabled = config.review_enabled === '1';
-  let status = reviewEnabled ? 0 : 1;
-  if (status === 0) {
-    const userInfo = queryOne(db, 'SELECT image_no_review FROM users WHERE id = ?', [user.id]);
-    if (userInfo && userInfo.image_no_review === 1) {
-      status = 1;
-    }
-  }
-
-  // 验证并保存文件
-  const uploadedImages = [];
-  const errors = [];
-
-  for (let i = 0; i < req.files.length; i++) {
-    const file = req.files[i];
-    try {
-      // 验证批量上传文件完整性
-      if (!fs.existsSync(file.path)) {
-        errors.push(`第${i + 1}张图片：文件未保存成功`);
-        continue;
-      }
-      const fileStat = fs.statSync(file.path);
-      if (fileStat.size !== file.size) {
-        console.error(`[image-share] 批量上传完整性校验失败: multer报告=${file.size}B, 实际=${fileStat.size}B, 文件=${file.filename}`);
-        try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
-        errors.push(`第${i + 1}张图片：文件上传不完整`);
-        continue;
-      }
-      if (fileStat.size === 0) {
-        try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
-        errors.push(`第${i + 1}张图片：文件为空`);
-        continue;
-      }
-
-      var fileBuffer = fs.readFileSync(file.path);
-      let isValid = validateMagicBytes(fileBuffer, file.mimetype);
-
-      if (!isValid && (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg')) {
-        isValid = validateMagicBytes(fileBuffer, 'image/jpeg') || validateMagicBytes(fileBuffer, 'image/jpg');
-      }
-
-      if (!isValid) {
-        try {
-          fs.unlinkSync(file.path);
-        } catch (e) { /* ignore */ }
-        errors.push(`第${i + 1}张图片：文件内容与声明类型不符`);
-        continue;
-      }
-
-      const url = '/uploads/images/' + file.filename;
-      db.run('INSERT INTO images (title, description, url, cate_id, user_id, status) VALUES (?, ?, ?, ?, ?, ?)',
-        [title + ' (' + (i + 1) + ')', description, url, cateId, user.id, status]);
-      uploadedImages.push({
-        filename: file.filename,
-        title: title + ' (' + (i + 1) + ')'
-      });
-    } catch (err) {
-      errors.push(`第${i + 1}张图片：处理失败 - ${err.message}`);
-      try {
-        fs.unlinkSync(file.path);
-      } catch (e) { /* ignore */ }
-    }
-  }
-
-  saveDatabase();
-
-  let message = '';
-  if (uploadedImages.length > 0) {
-    message = `成功上传 ${uploadedImages.length} 张图片`;
-    if (status === 0) {
-      message += '，等待管理员审核';
-    }
-  }
-
-  const categories = queryAll(db, 'SELECT * FROM image_categories WHERE status = 1 ORDER BY sort ASC');
-  res.render('image-share/message', {
-    user, config,
-    message: message + (errors.length > 0 ? '<br>失败：' + errors.join('<br>') : ''),
-    type: errors.length === uploadedImages.length ? 'error' : 'success',
-    redirect: '/image-share/user'
-  });
 });
 
 // 编辑图片页面
