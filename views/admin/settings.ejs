@@ -196,6 +196,70 @@
         <p class="field-hint">支持HTML标签，建议使用 h3 / h4 / p 等标签排版。用户注销前必须查看并同意此协议</p>
       </div>
     </div>
+
+    <!-- ============ CDN加速设置 ============ -->
+    <div class="settings-section">
+      <h2>CDN加速设置</h2>
+      <p class="section-desc">配置CDN加速服务，提升网站访问速度</p>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="cdn_enabled" value="1" <%= settings.cdn_enabled === '1' ? 'checked' : '' %>>
+          启用CDN加速
+        </label>
+        <p class="field-hint">启用后，静态资源将通过CDN加速加载</p>
+      </div>
+
+      <div class="form-group">
+        <label for="cdn_provider">CDN服务商</label>
+        <select id="cdn_provider" name="cdn_provider" onchange="onProviderChange()">
+          <option value="custom" <%= (!settings.cdn_provider || settings.cdn_provider === 'custom') ? 'selected' : '' %>>自定义</option>
+          <option value="cloudflare" <%= settings.cdn_provider === 'cloudflare' ? 'selected' : '' %>>Cloudflare</option>
+          <option value="aliyun" <%= settings.cdn_provider === 'aliyun' ? 'selected' : '' %>>阿里云CDN</option>
+          <option value="tencent" <%= settings.cdn_provider === 'tencent' ? 'selected' : '' %>>腾讯云CDN</option>
+          <option value="huawei" <%= settings.cdn_provider === 'huawei' ? 'selected' : '' %>>华为云CDN</option>
+          <option value="baidu" <%= settings.cdn_provider === 'baidu' ? 'selected' : '' %>>百度云CDN</option>
+          <option value="qiniu" <%= settings.cdn_provider === 'qiniu' ? 'selected' : '' %>>七牛云CDN</option>
+          <option value="upyun" <%= settings.cdn_provider === 'upyun' ? 'selected' : '' %>>又拍云CDN</option>
+          <option value="cdnfly" <%= settings.cdn_provider === 'cdnfly' ? 'selected' : '' %>>CDNfly</option>
+          <option value="jsdelivr" <%= settings.cdn_provider === 'jsdelivr' ? 'selected' : '' %>>jsDelivr (免费)</option>
+        </select>
+        <p class="field-hint">选择CDN服务商，或选择"自定义"手动配置</p>
+      </div>
+
+      <div id="cdn-provider-info" class="cdn-provider-info" style="display:none;"></div>
+
+      <div class="form-group">
+        <label for="cdn_base_url">CDN域名</label>
+        <input type="text" id="cdn_base_url" name="cdn_base_url" value="<%= settings.cdn_base_url || 'https://dalaowang233.top' %>" placeholder="https://cdn.example.com">
+        <p class="field-hint" id="cdn-url-hint">CDN加速域名。Cloudflare用户填写主域名即可</p>
+      </div>
+
+      <div class="form-group">
+        <label for="cdn_version">资源版本号</label>
+        <input type="text" id="cdn_version" name="cdn_version" value="<%= settings.cdn_version || '1.0.0' %>" placeholder="1.0.0">
+        <p class="field-hint">修改版本号可强制更新CDN缓存</p>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group half">
+          <label>CDN状态</label>
+          <div class="cdn-status" id="cdn-status">
+            <% if (settings.cdn_enabled === '1') { %>
+              <span class="status-active">✓ 已启用</span>
+            <% } else { %>
+              <span class="status-inactive">✗ 未启用</span>
+            <% } %>
+          </div>
+        </div>
+        <div class="form-group half">
+          <label>操作</label>
+          <button type="button" class="btn" onclick="testCDN()" id="test-cdn-btn">测试CDN连接</button>
+        </div>
+      </div>
+
+      <div id="cdn-test-result" class="cdn-test-result"></div>
+    </div>
     
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">保存设置</button>
@@ -325,6 +389,134 @@ function testSmtpConnection() {
     result.innerHTML = '<span style="color:red;">✗ 连接失败，请检查配置</span>';
   });
 }
+
+// CDN服务商配置信息
+const cdnProviders = {
+  cloudflare: {
+    name: 'Cloudflare',
+    hint: '填写主域名即可，如 https://dalaowang233.top',
+    placeholder: 'https://dalaowang233.top',
+    info: 'Cloudflare会自动代理主域名的静态资源，无需单独配置CDN子域名。'
+  },
+  aliyun: {
+    name: '阿里云CDN',
+    hint: '填写阿里云CDN加速域名，如 https://cdn.dalaowang233.top',
+    placeholder: 'https://cdn.dalaowang233.top',
+    info: '需要在阿里云CDN控制台配置回源地址和CNAME解析。'
+  },
+  tencent: {
+    name: '腾讯云CDN',
+    hint: '填写腾讯云CDN加速域名，如 https://cdn.dalaowang233.top',
+    placeholder: 'https://cdn.dalaowang233.top',
+    info: '需要在腾讯云CDN控制台配置回源地址和CNAME解析。'
+  },
+  huawei: {
+    name: '华为云CDN',
+    hint: '填写华为云CDN加速域名，如 https://cdn.dalaowang233.top',
+    placeholder: 'https://cdn.dalaowang233.top',
+    info: '需要在华为云CDN控制台配置回源地址和CNAME解析。'
+  },
+  baidu: {
+    name: '百度云CDN',
+    hint: '填写百度云CDN加速域名，如 https://cdn.dalaowang233.top',
+    placeholder: 'https://cdn.dalaowang233.top',
+    info: '需要在百度云CDN控制台配置回源地址和CNAME解析。'
+  },
+  qiniu: {
+    name: '七牛云CDN',
+    hint: '填写七牛云CDN融合域名，如 https://cdn.dalaowang233.top',
+    placeholder: 'https://cdn.dalaowang233.top',
+    info: '需要在七牛云控制台配置融合CDN和CNAME解析。'
+  },
+  upyun: {
+    name: '又拍云CDN',
+    hint: '填写又拍云CDN加速域名，如 https://cdn.dalaowang233.top',
+    placeholder: 'https://cdn.dalaowang233.top',
+    info: '需要在又拍云控制台配置云分发和CNAME解析。'
+  },
+  cdnfly: {
+    name: 'CDNfly',
+    hint: '填写CDNfly加速域名，如 https://cdn.dalaowang233.top',
+    placeholder: 'https://cdn.dalaowang233.top',
+    info: '需要在CDNfly控制台配置节点和CNAME解析。'
+  },
+  jsdelivr: {
+    name: 'jsDelivr',
+    hint: '填写GitHub仓库信息，格式：用户名/仓库名',
+    placeholder: 'https://cdn.jsdelivr.net/gh/username/repo',
+    info: '免费CDN服务，需要将静态资源上传到GitHub仓库。国内访问可能不稳定。'
+  },
+  custom: {
+    name: '自定义',
+    hint: '填写CDN加速域名',
+    placeholder: 'https://cdn.example.com',
+    info: '自定义CDN配置，需要自行配置回源和CNAME解析。'
+  }
+};
+
+// 服务商选择变化
+function onProviderChange() {
+  const provider = document.getElementById('cdn_provider').value;
+  const config = cdnProviders[provider] || cdnProviders.custom;
+  const urlInput = document.getElementById('cdn_base_url');
+  const hint = document.getElementById('cdn-url-hint');
+  const info = document.getElementById('cdn-provider-info');
+
+  urlInput.placeholder = config.placeholder;
+  hint.textContent = config.hint;
+  info.textContent = config.info;
+  info.style.display = 'block';
+}
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', function() {
+  onProviderChange();
+});
+
+// 测试CDN连接
+function testCDN() {
+  const btn = document.getElementById('test-cdn-btn');
+  const result = document.getElementById('cdn-test-result');
+  const cdnUrl = document.getElementById('cdn_base_url').value;
+
+  if (!cdnUrl) {
+    result.className = 'cdn-test-result error';
+    result.textContent = '请填写CDN域名';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '测试中...';
+  result.className = 'cdn-test-result info';
+  result.textContent = '正在测试CDN连接...';
+
+  fetch('/admin/settings/test-cdn', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: JSON.stringify({ cdn_base_url: cdnUrl })
+  })
+  .then(response => response.json())
+  .then(data => {
+    btn.disabled = false;
+    btn.textContent = '测试CDN连接';
+    if (data.success) {
+      result.className = 'cdn-test-result success';
+      result.innerHTML = '✓ ' + data.message;
+    } else {
+      result.className = 'cdn-test-result error';
+      result.textContent = '✗ ' + (data.error || '测试失败');
+    }
+  })
+  .catch(err => {
+    btn.disabled = false;
+    btn.textContent = '测试CDN连接';
+    result.className = 'cdn-test-result error';
+    result.textContent = '✗ 连接失败，请检查配置';
+  });
+}
 </script>
 
 <style>
@@ -381,5 +573,52 @@ function testSmtpConnection() {
 }
 .form-row .half {
   flex: 1;
+}
+.cdn-status {
+  padding: 10px;
+  background: var(--gray-50);
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+.status-active {
+  color: #10b981;
+  font-weight: 600;
+}
+.status-inactive {
+  color: var(--gray-400);
+}
+.cdn-test-result {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 4px;
+  display: none;
+}
+.cdn-test-result.success {
+  display: block;
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+.cdn-test-result.error {
+  display: block;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+.cdn-test-result.info {
+  display: block;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+.cdn-provider-info {
+  margin-top: -10px;
+  margin-bottom: 15px;
+  padding: 10px 12px;
+  background: #f0f9ff;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+  border-radius: 4px;
+  font-size: 13px;
 }
 </style>

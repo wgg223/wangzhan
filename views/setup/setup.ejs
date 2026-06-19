@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>系统初始化安装</title>
-  <link rel="stylesheet" href="/css/setup.css">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/setup.css') : '/css/setup.css' %>">
 </head>
 <body>
   <div class="setup-container">
@@ -247,6 +247,6 @@
     <div class="loading-text">正在初始化系统，请耐心等待...</div>
   </div>
 
-  <script src="/js/setup.js"></script>
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/setup.js') : '/js/setup.js' %>"></script>
 </body>
 </html>

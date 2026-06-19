@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= currentChapter ? currentChapter.title + ' - ' : '' %><%= novel.title %> - <%= settings.site_name || '我的网站' %></title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/style.css') : '/css/style.css' %>">
   <style>
     body { background: var(--gray-50); }
     main { max-width: 1000px; }

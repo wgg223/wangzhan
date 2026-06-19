@@ -7,6 +7,7 @@ const { testSmtpConfig } = require('../../config/mailer');
 const { encrypt } = require('../../config/crypto-secure');
 const { settingsCache } = require('../../config/cache');
 const { upload } = require('./upload');
+const cdnConfig = require('../../../cdn-config');
 
 // ============ 网站设置 ============
 
@@ -45,11 +46,11 @@ router.post('/settings', isAuthenticated, hasPermission('settings.basic'), (req,
 
   // 保存站内信弹窗设置
   const popupEnabled = req.body.message_popup_enabled === '1' ? '1' : '0';
-  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (, ?)', ['message_popup_enabled', popupEnabled]);
+  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['message_popup_enabled', popupEnabled]);
 
   // 保存欢迎弹窗设置
   const welcomePopupEnabled = req.body.welcome_popup_enabled === '1' ? '1' : '0';
-  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (, ?)', ['welcome_popup_enabled', welcomePopupEnabled]);
+  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['welcome_popup_enabled', welcomePopupEnabled]);
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [welcome_popup_title || '欢迎访问', 'welcome_popup_title']);
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [welcome_popup_content || '', 'welcome_popup_content']);
 
@@ -62,9 +63,20 @@ router.post('/settings', isAuthenticated, hasPermission('settings.basic'), (req,
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_from_name || '', 'smtp_from_name']);
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_from_email || '', 'smtp_from_email']);
 
+  // 保存CDN配置
+  const cdnEnabled = req.body.cdn_enabled === '1' ? '1' : '0';
+  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['cdn_enabled', cdnEnabled]);
+  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['cdn_provider', req.body.cdn_provider || 'custom']);
+  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['cdn_base_url', req.body.cdn_base_url || 'https://dalaowang233.top']);
+  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['cdn_version', req.body.cdn_version || '1.0.0']);
+
   saveDatabase();
   settingsCache.delete('settings');
-  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'settings', target_id: null, target_title: '网站设置', detail: '更新了网站基本设置和SMTP配置', ip: req.ip });
+
+  // 重新加载CDN配置
+  cdnConfig.loadFromDatabase(db);
+
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'settings', target_id: null, target_title: '网站设置', detail: '更新了网站基本设置、SMTP配置和CDN配置', ip: req.ip });
   res.redirect('/admin/settings?success=1');
 });
 
@@ -87,6 +99,59 @@ router.post('/settings/test-smtp', isAuthenticated, hasPermission('settings.smtp
       pass: smtp_pass
     });
     res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// ============ CDN 配置测试 ============
+
+// 测试CDN连接
+router.post('/settings/test-cdn', isAuthenticated, hasPermission('settings.manage'), async (req, res) => {
+  const { cdn_base_url } = req.body;
+
+  if (!cdn_base_url) {
+    return res.status(400).json({ success: false, error: '请填写CDN域名' });
+  }
+
+  const https = require('https');
+  const http = require('http');
+  const url = require('url');
+
+  try {
+    const parsedUrl = new URL(cdn_base_url);
+    const protocol = parsedUrl.protocol === 'https:' ? https : http;
+
+    const testUrl = `${cdn_base_url}/css/style.css`;
+
+    const result = await new Promise((resolve, reject) => {
+      const req = protocol.get(testUrl, { timeout: 10000 }, (response) => {
+        let data = '';
+        response.on('data', (chunk) => { data += chunk; });
+        response.on('end', () => {
+          resolve({
+            statusCode: response.statusCode,
+            headers: response.headers,
+            cacheStatus: response.headers['cf-cache-status'] || response.headers['x-cache-status'] || 'N/A',
+            server: response.headers['server'] || 'N/A'
+          });
+        });
+      });
+
+      req.on('error', (error) => {
+        reject(new Error(`连接失败: ${error.message}`));
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('连接超时'));
+      });
+    });
+
+    const isCloudflare = result.server === 'cloudflare';
+    const message = `CDN连接成功${isCloudflare ? '（Cloudflare）' : ''}，状态码: ${result.statusCode}，缓存状态: ${result.cacheStatus}`;
+
+    res.json({ success: true, message: message });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }

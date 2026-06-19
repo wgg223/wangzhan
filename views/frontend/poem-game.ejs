@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>飞花令 · 诗词填空</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/style.css') : '/css/style.css' %>">
     <style>
         * {
             margin: 0;
@@ -1447,7 +1447,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3/dist/index.min.js"></script>
-    <script src="/js/poems_data.js"></script>
+    <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/poems_data.js') : '/js/poems_data.js' %>"></script>
     <script>
         // XSS 防护：转义 HTML 特殊字符
         function escapeHtml(str) {

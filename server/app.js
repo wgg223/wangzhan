@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const session = require('express-session');
@@ -11,6 +12,7 @@ const { settingsCache, pageCache } = require('./config/cache');
 const { monitor } = require('./config/monitor');
 const { globalLimiter, loginLimiter } = require('./middlewares/rate-limiter');
 const { maintenanceMiddleware } = require('./middlewares/maintenance');
+const cdnConfig = require('../cdn-config');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,14 +47,20 @@ app.use(express.urlencoded({
 }));
 
 app.use(express.static(path.join(__dirname, '../public'), {
-  maxAge: '7d',
+  maxAge: '30d',
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.css')) {
       res.setHeader('Content-Type', 'text/css; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
     } else if (filePath.endsWith('.js')) {
       res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+    } else if (filePath.match(/\.(jpg|jpeg|png|gif|ico|svg|webp)$/)) {
+      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+    } else if (filePath.match(/\.(woff|woff2|ttf|eot)$/)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     }
   }
 }));
@@ -164,6 +172,7 @@ app.use((req, res, next) => {
   res.locals.settings = getCachedSettings(req.db);
   res.locals.navPages = getCachedNavPages(req.db);
   res.locals.csrfToken = '';
+  res.locals.cdn = cdnConfig;
 
   // 使用 res.locals.layout 替代 app.set('layout') 避免并发竞态条件
   if (req.path.startsWith('/admin')) {
@@ -296,6 +305,18 @@ async function start() {
     await initDatabase();
 
     console.log('数据库初始化成功');
+
+    // 从数据库加载CDN配置
+    try {
+      const db = getDb();
+      if (db) {
+        cdnConfig.loadFromDatabase(db);
+        console.log('CDN配置加载成功:', cdnConfig.enabled ? '已启用' : '未启用');
+      }
+    } catch (err) {
+      console.error('[app] Failed to load CDN config:', err.message);
+      cdnConfig.loadFromEnv();
+    }
 
     // Initialize scheduled backup
     try {

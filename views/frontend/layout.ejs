@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#6366f1">
   <link rel="manifest" href="/pwa/manifest.json">
   <link rel="apple-touch-icon" href="/pwa/icon-192.png">
-  <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/community.css">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/style.css') : '/css/style.css' %>">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/community.css') : '/css/community.css' %>">
   <style>
     body {
       <% if (settings.background_image) { %>
@@ -169,7 +169,7 @@
     <div class="chat-modal">
       <div class="chat-modal-header">
         <div class="chat-modal-user">
-          <img id="chatModalAvatar" src="/assets/images/default-avatar.png" alt="" class="chat-modal-avatar">
+          <img id="chatModalAvatar" src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/assets/images/default-avatar.png') : '/assets/images/default-avatar.png' %>" alt="" class="chat-modal-avatar">
           <span id="chatModalUsername" class="chat-modal-username">私信</span>
         </div>
         <button class="chat-modal-close" onclick="closeChatModal()">&times;</button>
@@ -185,7 +185,7 @@
   </div>
   <% } %>
 
-  <script src="/js/main.js"></script>
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/main.js') : '/js/main.js' %>"></script>
   <% if (typeof user !== 'undefined' && user) { %>
   <script>
     // 通知下拉面板
