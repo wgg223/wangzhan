@@ -45,47 +45,45 @@
           <% if (user.role === 'super_admin') { %>
           <li><a href="/admin/activity-logs">📋 操作日志</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'pages.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'pages.manage')) { %>
           <li><a href="/admin/pages">📄 页面管理</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'articles.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'articles.manage')) { %>
           <li><a href="/admin/articles">📝 文章管理</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'novels.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'novels.manage')) { %>
           <li><a href="/admin/novels">📚 小说管理</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'users.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'users.manage')) { %>
           <li><a href="/admin/users">👥 用户管理</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'permissions.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'permissions.manage')) { %>
           <li><a href="/admin/permissions">🔐 权限管理</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'comments.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'comments.manage')) { %>
           <li><a href="/admin/comments">💬 评论管理</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'messages.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'messages.manage')) { %>
           <li><a href="/admin/messages">📬 站内信</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'leaderboard.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'leaderboard.manage')) { %>
           <li><a href="/admin/leaderboard">🏆 排行榜</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.view')) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.manage')) { %>
           <li><a href="/admin/image-share">🖼️ 图片分享</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.review')) { %>
-          <li><a href="/admin/image-share/trusted-users">👤 免审核用户</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.comment')) { %>
-          <li><a href="/admin/image-share/comments">💬 图片评论</a></li>
-          <% } %>
-          <% if (user.role === 'super_admin' || user.role === 'admin') { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'settings.manage')) { %>
           <li><a href="/admin/settings/basic">⚙️ 基础设置</a></li>
           <li><a href="/admin/settings/smtp">📧 SMTP配置</a></li>
           <li><a href="/admin/settings/agreement">📄 协议设置</a></li>
           <li><a href="/admin/settings/popup">🪟 弹窗设置</a></li>
+          <li><a href="/admin/settings">🚀 CDN设置</a></li>
           <% } %>
-          <% if (typeof userPermissions !== 'undefined' && userPermissions.indexOf('settings.advanced') !== -1) { %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'settings.manage')) { %>
           <li><a href="/admin/system-update">🔄 系统更新</a></li>
+          <% } %>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'data.manage')) { %>
+            <li><a href="/admin/backup">💾 备份管理</a></li>
           <% } %>
           <% if (user.role === 'super_admin') { %>
             <li><a href="/admin/backup">💾 备份管理</a></li>

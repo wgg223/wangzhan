@@ -11,7 +11,7 @@ const { novelUpload, imageUpload } = require('./upload');
 
 // ============ 小说管理 ============
 
-router.get('/novels', isAuthenticated, hasPermission('novels.view'), (req, res) => {
+router.get('/novels', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const novels = queryAll(db, `
     SELECT n.*, u.username as uploader_name,
@@ -28,7 +28,7 @@ router.get('/novels', isAuthenticated, hasPermission('novels.view'), (req, res) 
   });
 });
 
-router.get('/novels/new', isAuthenticated, hasPermission('novels.view'), (req, res) => {
+router.get('/novels/new', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   res.render('admin/novel-editor', {
     user: req.session.user,
     novel: null,
@@ -36,7 +36,7 @@ router.get('/novels/new', isAuthenticated, hasPermission('novels.view'), (req, r
   });
 });
 
-router.get('/novels/edit/:id', isAuthenticated, hasPermission('novels.view'), (req, res) => {
+router.get('/novels/edit/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const novel = queryOne(db, 'SELECT * FROM novels WHERE id = ?', [req.params.id]);
   const chapters = queryAll(db, 'SELECT * FROM novel_chapters WHERE novel_id = ? ORDER BY chapter_number ASC', [req.params.id]);
@@ -58,7 +58,7 @@ router.get('/novels/edit/:id', isAuthenticated, hasPermission('novels.view'), (r
   });
 });
 
-router.post('/novels/save', isAuthenticated, hasPermission('novels.view'), imageUpload.single('cover_image'), (req, res) => {
+router.post('/novels/save', isAuthenticated, hasPermission('novels.manage'), imageUpload.single('cover_image'), (req, res) => {
   try {
     const db = req.db;
     const { id, title, author, description, status } = req.body;
@@ -89,7 +89,7 @@ router.post('/novels/save', isAuthenticated, hasPermission('novels.view'), image
   }
 });
 
-router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.view'), (req, res) => {
+router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   novelUpload.single('chapter_file')(req, res, function(err) {
     if (err) {
       return res.status(400).json({ error: '文件上传失败: ' + err.message });
@@ -130,7 +130,7 @@ router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.vie
   });
 });
 
-router.post('/novels/batch-upload-chapters', isAuthenticated, hasPermission('novels.view'), function(req, res, next) {
+router.post('/novels/batch-upload-chapters', isAuthenticated, hasPermission('novels.manage'), function(req, res, next) {
   novelUpload.array('chapter_files', 100)(req, res, function(err) {
     if (err) {
       console.error('❌ Multer batch upload error:', err);
@@ -210,7 +210,7 @@ router.post('/novels/batch-upload-chapters', isAuthenticated, hasPermission('nov
   }
 });
 
-router.post('/novels/delete-chapter/:id', isAuthenticated, hasPermission('novels.view'), (req, res) => {
+router.post('/novels/delete-chapter/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const chapter = queryOne(db, 'SELECT * FROM novel_chapters WHERE id = ?', [req.params.id]);
 
@@ -227,7 +227,7 @@ router.post('/novels/delete-chapter/:id', isAuthenticated, hasPermission('novels
   res.redirect('/admin/novels/edit/' + chapter.novel_id);
 });
 
-router.post('/novels/batch-delete-chapters', isAuthenticated, hasPermission('novels.view'), (req, res) => {
+router.post('/novels/batch-delete-chapters', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const { ids, novel_id } = req.body;
 
@@ -271,7 +271,7 @@ router.post('/novels/batch-delete-chapters', isAuthenticated, hasPermission('nov
   res.json({ success: true, message: '成功删除 ' + deletedCount + ' 个章节' + (failCount > 0 ? '，' + failCount + ' 个失败' : '') });
 });
 
-router.post('/novels/reupload-chapter/:id', isAuthenticated, hasPermission('novels.view'), (req, res) => {
+router.post('/novels/reupload-chapter/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   novelUpload.single('chapter_file')(req, res, function(err) {
     if (err) {
       return res.status(400).json({ error: '文件上传失败: ' + err.message });
@@ -310,7 +310,7 @@ router.post('/novels/reupload-chapter/:id', isAuthenticated, hasPermission('nove
   });
 });
 
-router.post('/novels/delete/:id', isAuthenticated, hasPermission('novels.view'), (req, res) => {
+router.post('/novels/delete/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const novelInfo = queryOne(db, 'SELECT title FROM novels WHERE id = ?', [req.params.id]);
 

@@ -6,7 +6,7 @@ const { logActivity } = require('../../config/activity');
 
 // ============ 页面管理 ============
 
-router.get('/pages', isAuthenticated, hasPermission('pages.view'), (req, res) => {
+router.get('/pages', isAuthenticated, hasPermission('pages.manage'), (req, res) => {
   const db = req.db;
   const pages = queryAll(db, 'SELECT * FROM pages ORDER BY sort_order ASC, id ASC');
 
@@ -17,7 +17,7 @@ router.get('/pages', isAuthenticated, hasPermission('pages.view'), (req, res) =>
   });
 });
 
-router.get('/pages/new', isAuthenticated, hasPermission('pages.view'), (req, res) => {
+router.get('/pages/new', isAuthenticated, hasPermission('pages.manage'), (req, res) => {
   res.render('admin/page-editor', {
     user: req.session.user,
     page: null,
@@ -25,7 +25,7 @@ router.get('/pages/new', isAuthenticated, hasPermission('pages.view'), (req, res
   });
 });
 
-router.get('/pages/edit/:id', isAuthenticated, hasPermission('pages.view'), (req, res) => {
+router.get('/pages/edit/:id', isAuthenticated, hasPermission('pages.manage'), (req, res) => {
   const db = req.db;
   const page = queryOne(db, 'SELECT * FROM pages WHERE id = ?', [req.params.id]);
 
@@ -45,7 +45,7 @@ router.get('/pages/edit/:id', isAuthenticated, hasPermission('pages.view'), (req
   });
 });
 
-router.post('/pages/save', isAuthenticated, hasPermission('pages.view'), (req, res) => {
+router.post('/pages/save', isAuthenticated, hasPermission('pages.manage'), (req, res) => {
   const db = req.db;
   const { id, title, slug, content, type, status, parent_id, sort_order, font_color } = req.body;
 
@@ -95,7 +95,7 @@ router.post('/pages/save', isAuthenticated, hasPermission('pages.view'), (req, r
   res.redirect('/admin/pages');
 });
 
-router.post('/pages/delete/:id', isAuthenticated, hasPermission('pages.view'), (req, res) => {
+router.post('/pages/delete/:id', isAuthenticated, hasPermission('pages.manage'), (req, res) => {
   const db = req.db;
   const page = queryOne(db, 'SELECT * FROM pages WHERE id = ?', [req.params.id]);
 

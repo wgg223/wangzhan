@@ -159,9 +159,9 @@
     <div class="section-body">
       <div class="perm-tree">
         <div class="perm-group perm-group-basic">
-          <h3>📌 基础访问权限</h3>
+          <h3>📌 前端访问权限</h3>
           <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.endsWith('.access') || p.perm_key.endsWith('.read') || p.perm_key.endsWith('.browse'); }).forEach(function(perm) { %>
+            <% permissions.filter(function(p) { return p.perm_key.endsWith('.access'); }).forEach(function(perm) { %>
               <div class="perm-tree-item">
                 <span class="perm-key"><%= perm.perm_key %></span>
                 <span class="perm-name"><%= perm.perm_name %></span>
@@ -172,61 +172,9 @@
         </div>
         
         <div class="perm-group perm-group-article">
-          <h3>📝 文章权限</h3>
+          <h3>📝 内容管理权限</h3>
           <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('articles.'); }).forEach(function(perm) { %>
-              <div class="perm-tree-item">
-                <span class="perm-key"><%= perm.perm_key %></span>
-                <span class="perm-name"><%= perm.perm_name %></span>
-                <span class="perm-desc"><%= perm.description %></span>
-              </div>
-            <% }); %>
-          </div>
-        </div>
-        
-        <div class="perm-group perm-group-novel">
-          <h3>📚 小说权限</h3>
-          <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('novels.'); }).forEach(function(perm) { %>
-              <div class="perm-tree-item">
-                <span class="perm-key"><%= perm.perm_key %></span>
-                <span class="perm-name"><%= perm.perm_name %></span>
-                <span class="perm-desc"><%= perm.description %></span>
-              </div>
-            <% }); %>
-          </div>
-        </div>
-        
-        <div class="perm-group perm-group-image">
-          <h3>🖼️ 图片分享权限</h3>
-          <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('image-share.'); }).forEach(function(perm) { %>
-              <div class="perm-tree-item">
-                <span class="perm-key"><%= perm.perm_key %></span>
-                <span class="perm-name"><%= perm.perm_name %></span>
-                <span class="perm-desc"><%= perm.description %></span>
-              </div>
-            <% }); %>
-          </div>
-        </div>
-        
-        <div class="perm-group perm-group-community">
-          <h3>💬 社区互动权限</h3>
-          <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('community.') || p.perm_key.startsWith('messages.'); }).forEach(function(perm) { %>
-              <div class="perm-tree-item">
-                <span class="perm-key"><%= perm.perm_key %></span>
-                <span class="perm-name"><%= perm.perm_name %></span>
-                <span class="perm-desc"><%= perm.description %></span>
-              </div>
-            <% }); %>
-          </div>
-        </div>
-        
-        <div class="perm-group perm-group-page">
-          <h3>📄 页面管理权限</h3>
-          <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('pages.'); }).forEach(function(perm) { %>
+            <% permissions.filter(function(p) { return p.perm_key === 'articles.manage' || p.perm_key === 'novels.manage' || p.perm_key === 'pages.manage' || p.perm_key === 'media.manage'; }).forEach(function(perm) { %>
               <div class="perm-tree-item">
                 <span class="perm-key"><%= perm.perm_key %></span>
                 <span class="perm-name"><%= perm.perm_name %></span>
@@ -237,9 +185,9 @@
         </div>
         
         <div class="perm-group perm-group-user">
-          <h3>👥 用户管理权限</h3>
+          <h3>👥 用户与权限管理</h3>
           <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('users.'); }).forEach(function(perm) { %>
+            <% permissions.filter(function(p) { return p.perm_key === 'users.manage' || p.perm_key === 'permissions.manage'; }).forEach(function(perm) { %>
               <div class="perm-tree-item">
                 <span class="perm-key"><%= perm.perm_key %></span>
                 <span class="perm-name"><%= perm.perm_name %></span>
@@ -249,10 +197,10 @@
           </div>
         </div>
         
-        <div class="perm-group perm-group-permission">
-          <h3>🔐 权限管理权限</h3>
+        <div class="perm-group perm-group-community">
+          <h3>💬 社区与消息权限</h3>
           <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('permissions.'); }).forEach(function(perm) { %>
+            <% permissions.filter(function(p) { return p.perm_key === 'messages.manage' || p.perm_key === 'comments.manage'; }).forEach(function(perm) { %>
               <div class="perm-tree-item">
                 <span class="perm-key"><%= perm.perm_key %></span>
                 <span class="perm-name"><%= perm.perm_name %></span>
@@ -262,23 +210,10 @@
           </div>
         </div>
         
-        <div class="perm-group perm-group-comment">
-          <h3>💬 评论管理权限</h3>
+        <div class="perm-group perm-group-image">
+          <h3>🖼️ 图片分享管理</h3>
           <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('comments.'); }).forEach(function(perm) { %>
-              <div class="perm-tree-item">
-                <span class="perm-key"><%= perm.perm_key %></span>
-                <span class="perm-name"><%= perm.perm_name %></span>
-                <span class="perm-desc"><%= perm.description %></span>
-              </div>
-            <% }); %>
-          </div>
-        </div>
-        
-        <div class="perm-group perm-group-media">
-          <h3>📁 媒体管理权限</h3>
-          <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('media.'); }).forEach(function(perm) { %>
+            <% permissions.filter(function(p) { return p.perm_key === 'image-share.manage'; }).forEach(function(perm) { %>
               <div class="perm-tree-item">
                 <span class="perm-key"><%= perm.perm_key %></span>
                 <span class="perm-name"><%= perm.perm_name %></span>
@@ -289,48 +224,9 @@
         </div>
         
         <div class="perm-group perm-group-setting">
-          <h3>⚙️ 系统设置权限</h3>
+          <h3>⚙️ 系统管理权限</h3>
           <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('settings.'); }).forEach(function(perm) { %>
-              <div class="perm-tree-item">
-                <span class="perm-key"><%= perm.perm_key %></span>
-                <span class="perm-name"><%= perm.perm_name %></span>
-                <span class="perm-desc"><%= perm.description %></span>
-              </div>
-            <% }); %>
-          </div>
-        </div>
-        
-        <div class="perm-group perm-group-data">
-          <h3>💾 数据管理权限</h3>
-          <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('data.'); }).forEach(function(perm) { %>
-              <div class="perm-tree-item">
-                <span class="perm-key"><%= perm.perm_key %></span>
-                <span class="perm-name"><%= perm.perm_name %></span>
-                <span class="perm-desc"><%= perm.description %></span>
-              </div>
-            <% }); %>
-          </div>
-        </div>
-        
-        <div class="perm-group perm-group-log">
-          <h3>📋 日志管理权限</h3>
-          <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('logs.'); }).forEach(function(perm) { %>
-              <div class="perm-tree-item">
-                <span class="perm-key"><%= perm.perm_key %></span>
-                <span class="perm-name"><%= perm.perm_name %></span>
-                <span class="perm-desc"><%= perm.description %></span>
-              </div>
-            <% }); %>
-          </div>
-        </div>
-        
-        <div class="perm-group perm-group-leaderboard">
-          <h3>🏆 排行榜权限</h3>
-          <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key.startsWith('leaderboard.'); }).forEach(function(perm) { %>
+            <% permissions.filter(function(p) { return p.perm_key === 'settings.manage' || p.perm_key === 'data.manage' || p.perm_key === 'leaderboard.manage'; }).forEach(function(perm) { %>
               <div class="perm-tree-item">
                 <span class="perm-key"><%= perm.perm_key %></span>
                 <span class="perm-name"><%= perm.perm_name %></span>

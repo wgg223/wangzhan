@@ -6,7 +6,7 @@ const { logActivity } = require('../../config/activity');
 
 // ============ 文章管理 ============
 
-router.get('/articles', isAuthenticated, hasPermission('articles.view'), (req, res) => {
+router.get('/articles', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const db = req.db;
   let articles;
   if (isAdminRole(req.session.user)) {
@@ -22,7 +22,7 @@ router.get('/articles', isAuthenticated, hasPermission('articles.view'), (req, r
   });
 });
 
-router.get('/articles/new', isAuthenticated, hasPermission('articles.view'), (req, res) => {
+router.get('/articles/new', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   res.render('admin/article-editor', {
     user: req.session.user,
     article: null,
@@ -30,7 +30,7 @@ router.get('/articles/new', isAuthenticated, hasPermission('articles.view'), (re
   });
 });
 
-router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.view'), (req, res) => {
+router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const db = req.db;
   const article = queryOne(db, 'SELECT * FROM articles WHERE id = ?', [req.params.id]);
 
@@ -59,7 +59,7 @@ router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.view')
   });
 });
 
-router.post('/articles/save', isAuthenticated, hasPermission('articles.view'), (req, res) => {
+router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const db = req.db;
   let { id, title, content, category, status, cover_image, location } = req.body;
 
@@ -100,7 +100,7 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.view'), (
   res.redirect('/admin/articles');
 });
 
-router.post('/articles/delete/:id', isAuthenticated, hasPermission('articles.view'), (req, res) => {
+router.post('/articles/delete/:id', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const db = req.db;
   const article = queryOne(db, 'SELECT title, author_id FROM articles WHERE id = ?', [req.params.id]);
 

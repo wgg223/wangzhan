@@ -63,7 +63,7 @@ router.use(leaderboardRouter);
 router.use(imageShareRouter);
 router.use(mediaRouter);
 router.use(messagesRouter);
-router.use('/system-update', hasPermission('settings.advanced'), systemUpdateRouter);
+router.use('/system-update', hasPermission('settings.manage'), systemUpdateRouter);
 router.use(backupRouter);
 router.use(maintenanceRouter);
 

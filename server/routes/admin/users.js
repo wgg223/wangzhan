@@ -8,7 +8,7 @@ const { createNotification } = require('../community');
 
 // ============ 用户管理 ============
 
-router.get('/users', isAuthenticated, hasPermission('users.view'), (req, res) => {
+router.get('/users', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
   const users = queryAll(db, 'SELECT id, uid, username, email, role, status, created_at FROM users ORDER BY created_at DESC');
 
@@ -19,7 +19,7 @@ router.get('/users', isAuthenticated, hasPermission('users.view'), (req, res) =>
   });
 });
 
-router.post('/users/create', isAuthenticated, hasPermission('users.create'), (req, res) => {
+router.post('/users/create', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
   const { username, email, password, role } = req.body;
 
@@ -63,7 +63,7 @@ router.post('/users/create', isAuthenticated, hasPermission('users.create'), (re
   res.json({ success: true, message: '账户创建成功' });
 });
 
-router.post('/users/approve/:id', isAuthenticated, hasPermission('users.edit'), (req, res) => {
+router.post('/users/approve/:id', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
   const targetUser = queryOne(db, 'SELECT username, status FROM users WHERE id = ?', [req.params.id]);
   db.run("UPDATE users SET status = 'active' WHERE id = ?", [req.params.id]);
@@ -86,7 +86,7 @@ router.post('/users/approve/:id', isAuthenticated, hasPermission('users.edit'), 
   res.redirect('/admin/users');
 });
 
-router.post('/users/disable/:id', isAuthenticated, hasPermission('users.disable'), (req, res) => {
+router.post('/users/disable/:id', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
 
   if (parseInt(req.params.id) === req.session.user.id) {
@@ -122,7 +122,7 @@ router.post('/users/disable/:id', isAuthenticated, hasPermission('users.disable'
   res.redirect('/admin/users');
 });
 
-router.post('/users/role/:id', isAuthenticated, hasPermission('users.role.edit'), (req, res) => {
+router.post('/users/role/:id', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
   const { role } = req.body;
 
@@ -145,7 +145,7 @@ router.post('/users/role/:id', isAuthenticated, hasPermission('users.role.edit')
   res.redirect('/admin/users');
 });
 
-router.post('/users/delete/:id', isAuthenticated, hasPermission('users.delete'), (req, res) => {
+router.post('/users/delete/:id', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
 
   if (parseInt(req.params.id) === req.session.user.id) {
@@ -185,7 +185,7 @@ const csvUpload = multer({
   }
 });
 
-router.post('/users/import-csv', isAuthenticated, hasPermission('users.create'), csvUpload.single('csv_file'), (req, res) => {
+router.post('/users/import-csv', isAuthenticated, hasPermission('users.manage'), csvUpload.single('csv_file'), (req, res) => {
   const db = req.db;
   if (!req.file) {
     return res.status(400).json({ error: '请上传 CSV 文件' });

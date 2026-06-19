@@ -6,7 +6,7 @@ const { logActivity } = require('../../config/activity');
 
 // ============ 权限管理 ============
 
-router.get('/permissions', isAuthenticated, hasPermission('permissions.view'), (req, res) => {
+router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
 
   const allPermissions = queryAll(db, 'SELECT * FROM permissions ORDER BY id ASC');
@@ -54,7 +54,7 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.view'), (
   });
 });
 
-router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.view'), (req, res) => {
+router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { user_id, perm_key } = req.body;
 
@@ -76,7 +76,7 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.vi
   res.redirect('/admin/permissions');
 });
 
-router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.view'), (req, res) => {
+router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { user_id, perm_key } = req.body;
 
@@ -94,7 +94,7 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.v
 });
 
 // 批准权限申请
-router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.view'), (req, res) => {
+router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { application_id } = req.body;
 
@@ -137,7 +137,7 @@ router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.
 });
 
 // 拒绝权限申请
-router.post('/permissions/reject', isAuthenticated, hasPermission('permissions.view'), (req, res) => {
+router.post('/permissions/reject', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { application_id, reason } = req.body;
 

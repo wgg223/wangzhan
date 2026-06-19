@@ -6,7 +6,7 @@ const { logActivity } = require('../../config/activity');
 
 // ============ 站内信管理 ============
 
-router.get('/messages', isAuthenticated, hasPermission('messages.admin.view'), (req, res) => {
+router.get('/messages', isAuthenticated, hasPermission('messages.manage'), (req, res) => {
   const db = req.db;
   const messages = queryAll(db, `
     SELECT m.*, u.username as to_username
@@ -23,7 +23,7 @@ router.get('/messages', isAuthenticated, hasPermission('messages.admin.view'), (
   });
 });
 
-router.get('/messages/send', isAuthenticated, hasPermission('messages.admin.send'), (req, res) => {
+router.get('/messages/send', isAuthenticated, hasPermission('messages.manage'), (req, res) => {
   const db = req.db;
   const users = queryAll(db, "SELECT id, username, nickname FROM users WHERE status = 'active' ORDER BY username ASC");
 
@@ -35,7 +35,7 @@ router.get('/messages/send', isAuthenticated, hasPermission('messages.admin.send
   });
 });
 
-router.post('/messages/send', isAuthenticated, hasPermission('messages.admin.send'), (req, res) => {
+router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'), (req, res) => {
   const db = req.db;
   const { to_user_id, title, content, is_popup, broadcast } = req.body;
 
@@ -93,7 +93,7 @@ router.post('/messages/send', isAuthenticated, hasPermission('messages.admin.sen
   res.redirect('/admin/messages?sent=1');
 });
 
-router.post('/messages/delete/:id', isAuthenticated, hasPermission('messages.admin.delete'), (req, res) => {
+router.post('/messages/delete/:id', isAuthenticated, hasPermission('messages.manage'), (req, res) => {
   const db = req.db;
   const msgId = req.params.id;
   const msg = queryOne(db, 'SELECT title FROM internal_messages WHERE id = ?', [msgId]);
@@ -112,7 +112,7 @@ router.post('/messages/delete/:id', isAuthenticated, hasPermission('messages.adm
   res.redirect('/admin/messages');
 });
 
-router.post('/messages/broadcast-delete', isAuthenticated, hasPermission('messages.admin.delete'), (req, res) => {
+router.post('/messages/broadcast-delete', isAuthenticated, hasPermission('messages.manage'), (req, res) => {
   const db = req.db;
   const ids = req.body.ids;
   let deletedCount = 0;

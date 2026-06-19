@@ -10,7 +10,7 @@ const { imageUpload } = require('./upload');
 // ============ 媒体文件管理 ============
 
 // 获取媒体文件列表（数据来源：images 表 — 图片分享网后台）
-router.get('/media/list', isAuthenticated, hasPermission('media.view'), (req, res) => {
+router.get('/media/list', isAuthenticated, hasPermission('media.manage'), (req, res) => {
   const db = req.db;
   const isAdmin = isAdminRole(req.session.user);
 
@@ -50,7 +50,7 @@ router.get('/media/list', isAuthenticated, hasPermission('media.view'), (req, re
 });
 
 // 通用媒体上传（存入 images 表 — 图片分享网后台）
-router.post('/media/upload', isAuthenticated, hasPermission('media.upload'), (req, res) => {
+router.post('/media/upload', isAuthenticated, hasPermission('media.manage'), (req, res) => {
   // 手动调用 multer 以捕获文件上传错误（如文件过大、类型错误等）
   imageUpload.single('file')(req, res, function(err) {
     if (err) {

@@ -11,7 +11,7 @@ const cdnConfig = require('../../../cdn-config');
 
 // ============ 网站设置 ============
 
-router.get('/settings', isAuthenticated, hasPermission('settings.view'), (req, res) => {
+router.get('/settings', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
   const db = req.db;
   const settings = queryAll(db, 'SELECT * FROM settings');
   const settingsObj = {};
@@ -19,14 +19,19 @@ router.get('/settings', isAuthenticated, hasPermission('settings.view'), (req, r
     settingsObj[s.setting_key] = s.setting_value;
   });
 
+  // 获取用户权限
+  const userPermissions = queryAll(db, 'SELECT permission_key FROM user_permissions WHERE user_id = ?', [req.session.user.id]);
+  const permissions = userPermissions.map(p => p.permission_key);
+
   res.render('admin/settings', {
     user: req.session.user,
     settings: settingsObj,
-    success: req.query.success === '1'
+    success: req.query.success === '1',
+    userPermissions: permissions
   });
 });
 
-router.post('/settings', isAuthenticated, hasPermission('settings.basic'), (req, res) => {
+router.post('/settings', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
   const db = req.db;
   const { site_name, site_description, icp_number, icp_link, footer_text, logo, user_agreement, privacy_policy, delete_account_agreement, welcome_popup_enabled, welcome_popup_title, welcome_popup_content } = req.body;
 
@@ -83,7 +88,7 @@ router.post('/settings', isAuthenticated, hasPermission('settings.basic'), (req,
 // ============ SMTP 配置测试 ============
 
 // 测试SMTP连接
-router.post('/settings/test-smtp', isAuthenticated, hasPermission('settings.smtp'), async (req, res) => {
+router.post('/settings/test-smtp', isAuthenticated, hasPermission('settings.manage'), async (req, res) => {
   const { smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass } = req.body;
 
   if (!smtp_host || !smtp_user || !smtp_pass) {
@@ -157,7 +162,7 @@ router.post('/settings/test-cdn', isAuthenticated, hasPermission('settings.manag
   }
 });
 
-router.post('/upload-background', isAuthenticated, hasPermission('settings.basic'), upload.single('background'), (req, res) => {
+router.post('/upload-background', isAuthenticated, hasPermission('settings.manage'), upload.single('background'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '没有上传文件' });
   }
@@ -171,7 +176,7 @@ router.post('/upload-background', isAuthenticated, hasPermission('settings.basic
   res.json({ success: true, path: filePath });
 });
 
-router.post('/upload-logo', isAuthenticated, hasPermission('settings.basic'), upload.single('logo'), (req, res) => {
+router.post('/upload-logo', isAuthenticated, hasPermission('settings.manage'), upload.single('logo'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '没有上传文件' });
   }
@@ -189,7 +194,7 @@ router.post('/upload-logo', isAuthenticated, hasPermission('settings.basic'), up
 const fs = require('fs');
 const path = require('path');
 
-router.get('/settings/backup', isAuthenticated, hasPermission('data.backup'), (req, res) => {
+router.get('/settings/backup', isAuthenticated, hasPermission('data.manage'), (req, res) => {
   const db = req.db;
   try {
     const settings = queryAll(db, 'SELECT * FROM settings');
@@ -226,7 +231,7 @@ router.get('/settings/backup', isAuthenticated, hasPermission('data.backup'), (r
   }
 });
 
-router.get('/settings/backup/list', isAuthenticated, hasPermission('data.backup'), (req, res) => {
+router.get('/settings/backup/list', isAuthenticated, hasPermission('data.manage'), (req, res) => {
   const backupDir = path.join(__dirname, '../../../backups');
   try {
     if (!fs.existsSync(backupDir)) {
@@ -250,7 +255,7 @@ router.get('/settings/backup/list', isAuthenticated, hasPermission('data.backup'
   }
 });
 
-router.post('/settings/backup/restore', isAuthenticated, hasPermission('data.restore'), (req, res) => {
+router.post('/settings/backup/restore', isAuthenticated, hasPermission('data.manage'), (req, res) => {
   const db = req.db;
   const { filename } = req.body;
 
@@ -311,7 +316,7 @@ router.post('/settings/backup/restore', isAuthenticated, hasPermission('data.res
   }
 });
 
-router.delete('/settings/backup/:filename', isAuthenticated, hasPermission('data.backup'), (req, res) => {
+router.delete('/settings/backup/:filename', isAuthenticated, hasPermission('data.manage'), (req, res) => {
   const backupDir = path.join(__dirname, '../../../backups');
   const filename = req.params.filename;
   const filepath = path.join(backupDir, filename);

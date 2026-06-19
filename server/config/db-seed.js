@@ -77,126 +77,125 @@ function insertDefaultDataIfNeeded(db) {
     db.run('INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES (?, ?)', [key, value]);
   });
 
-  // 插入默认权限
+  // 插入默认权限（简化版：按模块合并，每个模块一个管理权限）
   const defaultPermissions = [
+    // 前端访问权限
     ['homepage.access', '主页访问', '访问网站主页（默认授予）'],
     ['articles.access', '文章访问', '浏览文章列表和详情'],
-    ['search.access', '搜索访问', '使用搜索功能'],
-    ['community.access', '社区访问', '访问社区功能'],
-    ['messages.access', '站内信访问', '发送和接收站内信'],
     ['novels.access', '小说访问', '访问小说模块'],
-    ['novels.read', '小说阅读', '阅读小说内容'],
-    ['poem-game.access', '诗词游戏访问', '访问诗词游戏模块'],
     ['image-share.access', '图片分享访问', '访问图片分享模块'],
-    ['image-share.browse', '图片浏览', '浏览图片列表和详情'],
-    ['articles.view', '查看文章', '查看文章列表和详情'],
-    ['articles.create', '发布文章', '创建新文章'],
-    ['articles.edit.own', '编辑自己的文章', '编辑自己发布的文章'],
-    ['articles.edit.all', '编辑所有文章', '编辑任何用户的文章'],
-    ['articles.delete.own', '删除自己的文章', '删除自己发布的文章'],
-    ['articles.delete.all', '删除所有文章', '删除任何用户的文章'],
-    ['articles.publish', '发布/下架文章', '设置文章发布状态'],
-    ['articles.category', '文章分类管理', '管理文章分类'],
-    ['articles.comment.view', '查看文章评论', '查看文章下的评论'],
-    ['articles.comment.create', '发表文章评论', '在文章下发表评论'],
-    ['articles.comment.delete.own', '删除自己的评论', '删除自己发表的评论'],
-    ['articles.comment.delete.all', '删除所有评论', '删除任何用户的评论'],
-    ['articles.comment.moderate', '评论审核', '审核文章评论'],
-    ['novels.view', '查看小说', '查看小说列表和详情'],
-    ['novels.create', '发布小说', '创建新小说'],
-    ['novels.edit.own', '编辑自己的小说', '编辑自己发布的小说'],
-    ['novels.edit.all', '编辑所有小说', '编辑任何用户的小说'],
-    ['novels.delete.own', '删除自己的小说', '删除自己发布的小说'],
-    ['novels.delete.all', '删除所有小说', '删除任何用户的小说'],
-    ['novels.chapters.view', '查看章节', '查看小说章节内容'],
-    ['novels.chapters.create', '创建章节', '为小说添加新章节'],
-    ['novels.chapters.edit.own', '编辑自己的章节', '编辑自己创建的章节'],
-    ['novels.chapters.edit.all', '编辑所有章节', '编辑任何章节'],
-    ['novels.chapters.delete.own', '删除自己的章节', '删除自己创建的章节'],
-    ['novels.chapters.delete.all', '删除所有章节', '删除任何章节'],
-    ['image-share.view', '查看图片', '查看图片列表和详情'],
-    ['image-share.upload', '上传图片', '上传新图片'],
-    ['image-share.upload.batch', '批量上传', '批量上传多张图片'],
-    ['image-share.edit.own', '编辑自己的图片', '编辑自己上传的图片信息'],
-    ['image-share.edit.all', '编辑所有图片', '编辑任何用户的图片信息'],
-    ['image-share.delete.own', '删除自己的图片', '删除自己上传的图片'],
-    ['image-share.delete.all', '删除所有图片', '删除任何用户的图片'],
-    ['image-share.download', '下载图片', '下载图片文件'],
-    ['image-share.favorite', '收藏图片', '收藏喜欢的图片'],
-    ['image-share.comment.view', '查看图片评论', '查看图片下的评论'],
-    ['image-share.comment.create', '发表图片评论', '在图片下发表评论'],
-    ['image-share.comment.delete.own', '删除自己的评论', '删除自己发表的图片评论'],
-    ['image-share.comment.delete.all', '删除所有评论', '删除任何用户的图片评论'],
-    ['image-share.categories.view', '查看图片分类', '查看图片分类列表'],
-    ['image-share.categories.manage', '管理图片分类', '创建、编辑、删除图片分类'],
-    ['image-share.review', '图片审核', '审核用户上传的图片'],
-    ['image-share.no-review', '免审核上传', '上传图片无需审核'],
-    ['image-share.users.manage', '管理可信用户', '管理图片分享可信用户列表'],
-    ['image-share.comments.manage', '管理图片评论', '审核和管理图片评论'],
-    ['community.follow', '关注用户', '关注/取消关注其他用户'],
-    ['community.unfollow', '取消关注', '取消关注其他用户'],
-    ['community.like', '点赞', '对内容进行点赞'],
-    ['community.unlike', '取消点赞', '取消对内容的点赞'],
-    ['community.favorite', '收藏', '收藏内容'],
-    ['community.unfavorite', '取消收藏', '取消收藏内容'],
-    ['community.notification.view', '查看通知', '查看系统通知'],
-    ['community.notification.mark-read', '标记已读', '标记通知为已读'],
-    ['messages.view', '查看站内信', '查看收到的站内信'],
-    ['messages.send', '发送站内信', '给其他用户发送站内信'],
-    ['messages.delete.own', '删除自己的站内信', '删除自己收到的站内信'],
-    ['messages.mark-read', '标记已读', '标记站内信为已读'],
-    ['pages.view', '查看页面', '查看页面列表和详情'],
-    ['pages.create', '创建页面', '创建新页面'],
-    ['pages.edit', '编辑页面', '编辑页面内容'],
-    ['pages.delete', '删除页面', '删除页面'],
-    ['pages.publish', '发布/下架页面', '设置页面发布状态'],
-    ['users.view', '查看用户', '查看用户列表和详情'],
-    ['users.create', '创建用户', '创建新用户'],
-    ['users.edit', '编辑用户', '编辑用户信息'],
-    ['users.delete', '删除用户', '删除用户'],
-    ['users.disable', '禁用用户', '禁用/启用用户'],
-    ['users.role.view', '查看用户角色', '查看用户角色信息'],
-    ['users.role.edit', '修改用户角色', '修改用户角色'],
-    ['users.permissions.view', '查看用户权限', '查看用户的权限列表'],
-    ['permissions.view', '查看权限', '查看权限列表和用户权限'],
-    ['permissions.applications.view', '查看权限申请', '查看权限申请列表'],
-    ['permissions.applications.approve', '批准权限申请', '批准用户的权限申请'],
-    ['permissions.applications.reject', '拒绝权限申请', '拒绝用户的权限申请'],
-    ['permissions.revoke', '撤销权限', '撤销用户已有的权限'],
-    ['comments.view', '查看评论', '查看评论列表'],
-    ['comments.moderate', '评论审核', '审核待审核的评论'],
-    ['comments.edit', '编辑评论', '编辑评论内容'],
-    ['comments.delete', '删除评论', '删除评论'],
-    ['media.view', '查看媒体', '查看媒体文件列表'],
-    ['media.upload', '上传媒体', '上传媒体文件'],
-    ['media.edit', '编辑媒体', '编辑媒体文件信息'],
-    ['media.delete', '删除媒体', '删除媒体文件'],
-    ['settings.view', '查看设置', '查看网站设置'],
-    ['settings.basic', '基础设置', '修改网站基础设置'],
-    ['settings.smtp', 'SMTP配置', '配置SMTP邮件服务'],
-    ['settings.agreement', '协议管理', '管理用户协议和隐私政策'],
-    ['settings.popup', '弹窗设置', '管理弹窗和欢迎信息'],
-    ['settings.seo', 'SEO设置', '管理SEO相关设置'],
-    ['settings.advanced', '高级设置', '修改高级系统设置'],
-    ['data.backup', '数据备份', '备份网站数据'],
-    ['data.restore', '数据恢复', '恢复网站数据'],
-    ['data.export', '数据导出', '导出网站数据'],
-    ['data.import', '数据导入', '导入网站数据'],
-    ['logs.view', '查看日志', '查看系统日志'],
-    ['logs.activity', '活动日志', '查看用户活动日志'],
-    ['logs.export', '导出日志', '导出日志数据'],
-    ['logs.delete', '删除日志', '删除日志记录'],
-    ['leaderboard.view', '查看排行榜', '查看游戏排行榜'],
-    ['leaderboard.manage', '管理排行榜', '管理排行榜数据'],
-    ['messages.admin.view', '查看所有站内信', '查看系统所有站内信'],
-    ['messages.admin.send', '发送系统站内信', '发送系统站内信给用户'],
-    ['messages.admin.broadcast', '群发站内信', '群发站内信给所有用户'],
-    ['messages.admin.delete', '删除站内信', '删除任何站内信']
+    ['poem-game.access', '诗词游戏访问', '访问诗词游戏模块'],
+    // 内容管理权限
+    ['articles.manage', '文章管理', '文章的查看、创建、编辑、删除、发布及评论管理'],
+    ['novels.manage', '小说管理', '小说的查看、创建、编辑、删除及章节管理'],
+    ['pages.manage', '页面管理', '页面的查看、创建、编辑、删除和发布'],
+    ['media.manage', '媒体管理', '媒体文件的查看、上传、编辑和删除'],
+    // 用户与权限管理
+    ['users.manage', '用户管理', '用户的查看、创建、编辑、删除、禁用及角色管理'],
+    ['permissions.manage', '权限管理', '权限的查看、审批、撤销'],
+    // 社区与消息
+    ['messages.manage', '站内信管理', '站内信的查看、发送、删除和群发'],
+    ['comments.manage', '评论管理', '评论的查看、审核、编辑和删除'],
+    // 图片分享管理
+    ['image-share.manage', '图片分享管理', '图片的查看、上传、编辑、删除、审核、分类及用户管理'],
+    // 系统管理
+    ['settings.manage', '系统设置', '网站基础设置、SMTP、协议、弹窗、CDN等配置'],
+    ['data.manage', '数据管理', '数据备份、恢复、导入和导出'],
+    ['leaderboard.manage', '排行榜管理', '排行榜数据的查看和管理']
   ];
 
   defaultPermissions.forEach(([key, name, desc]) => {
     db.run('INSERT OR IGNORE INTO permissions (perm_key, perm_name, description) VALUES (?, ?, ?)', [key, name, desc]);
   });
+
+  // 迁移旧权限到新权限（为已有用户映射旧权限到新权限）
+  try {
+    const oldToNewMap = {
+      'articles.view': 'articles.manage', 'articles.create': 'articles.manage',
+      'articles.edit.own': 'articles.manage', 'articles.edit.all': 'articles.manage',
+      'articles.delete.own': 'articles.manage', 'articles.delete.all': 'articles.manage',
+      'articles.publish': 'articles.manage', 'articles.category': 'articles.manage',
+      'articles.comment.view': 'articles.manage', 'articles.comment.create': 'articles.manage',
+      'articles.comment.delete.own': 'articles.manage', 'articles.comment.delete.all': 'articles.manage',
+      'articles.comment.moderate': 'articles.manage',
+      'novels.view': 'novels.manage', 'novels.create': 'novels.manage',
+      'novels.edit.own': 'novels.manage', 'novels.edit.all': 'novels.manage',
+      'novels.delete.own': 'novels.manage', 'novels.delete.all': 'novels.manage',
+      'novels.chapters.view': 'novels.manage', 'novels.chapters.create': 'novels.manage',
+      'novels.chapters.edit.own': 'novels.manage', 'novels.chapters.edit.all': 'novels.manage',
+      'novels.chapters.delete.own': 'novels.manage', 'novels.chapters.delete.all': 'novels.manage',
+      'image-share.view': 'image-share.manage', 'image-share.upload': 'image-share.manage',
+      'image-share.upload.batch': 'image-share.manage', 'image-share.edit.own': 'image-share.manage',
+      'image-share.edit.all': 'image-share.manage', 'image-share.delete.own': 'image-share.manage',
+      'image-share.delete.all': 'image-share.manage', 'image-share.download': 'image-share.manage',
+      'image-share.favorite': 'image-share.manage', 'image-share.comment.view': 'image-share.manage',
+      'image-share.comment.create': 'image-share.manage', 'image-share.comment.delete.own': 'image-share.manage',
+      'image-share.comment.delete.all': 'image-share.manage', 'image-share.categories.view': 'image-share.manage',
+      'image-share.categories.manage': 'image-share.manage', 'image-share.review': 'image-share.manage',
+      'image-share.no-review': 'image-share.manage', 'image-share.users.manage': 'image-share.manage',
+      'image-share.comments.manage': 'image-share.manage',
+      'pages.view': 'pages.manage', 'pages.create': 'pages.manage',
+      'pages.edit': 'pages.manage', 'pages.delete': 'pages.manage', 'pages.publish': 'pages.manage',
+      'users.view': 'users.manage', 'users.create': 'users.manage',
+      'users.edit': 'users.manage', 'users.delete': 'users.manage',
+      'users.disable': 'users.manage', 'users.role.view': 'users.manage',
+      'users.role.edit': 'users.manage', 'users.permissions.view': 'users.manage',
+      'permissions.view': 'permissions.manage', 'permissions.applications.view': 'permissions.manage',
+      'permissions.applications.approve': 'permissions.manage', 'permissions.applications.reject': 'permissions.manage',
+      'permissions.revoke': 'permissions.manage',
+      'comments.view': 'comments.manage', 'comments.moderate': 'comments.manage',
+      'comments.edit': 'comments.manage', 'comments.delete': 'comments.manage',
+      'media.view': 'media.manage', 'media.upload': 'media.manage',
+      'media.edit': 'media.manage', 'media.delete': 'media.manage',
+      'settings.view': 'settings.manage', 'settings.basic': 'settings.manage',
+      'settings.smtp': 'settings.manage', 'settings.agreement': 'settings.manage',
+      'settings.popup': 'settings.manage', 'settings.seo': 'settings.manage',
+      'settings.advanced': 'settings.manage', 'settings.manage': 'settings.manage',
+      'data.backup': 'data.manage', 'data.restore': 'data.manage',
+      'data.export': 'data.manage', 'data.import': 'data.manage',
+      'logs.view': 'data.manage', 'logs.activity': 'data.manage',
+      'logs.export': 'data.manage', 'logs.delete': 'data.manage',
+      'messages.admin.view': 'messages.manage', 'messages.admin.send': 'messages.manage',
+      'messages.admin.broadcast': 'messages.manage', 'messages.admin.delete': 'messages.manage',
+      'messages.view': 'messages.manage', 'messages.send': 'messages.manage',
+      'messages.delete.own': 'messages.manage', 'messages.mark-read': 'messages.manage',
+      'community.follow': 'community.access', 'community.unfollow': 'community.access',
+      'community.like': 'community.access', 'community.unlike': 'community.access',
+      'community.favorite': 'community.access', 'community.unfavorite': 'community.access',
+      'community.notification.view': 'community.access', 'community.notification.mark-read': 'community.access',
+      'community.access': 'community.access', 'messages.access': 'messages.access',
+      'search.access': 'homepage.access', 'novels.read': 'novels.access',
+      'image-share.browse': 'image-share.access',
+      'leaderboard.view': 'leaderboard.manage'
+    };
+
+    const migratedUsers = new Set();
+    const userPerms = queryAll(db, 'SELECT user_id, perm_key FROM user_permissions');
+    userPerms.forEach(({ user_id, perm_key }) => {
+      const newKey = oldToNewMap[perm_key];
+      if (newKey && newKey !== perm_key) {
+        db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+          [user_id, newKey, user_id]);
+        migratedUsers.add(user_id);
+      }
+    });
+
+    // 迁移待审核的权限申请
+    const pendingApps = queryAll(db, "SELECT id, user_id, perm_key FROM permission_applications WHERE status = 'pending'");
+    pendingApps.forEach(({ id, user_id, perm_key }) => {
+      const newKey = oldToNewMap[perm_key];
+      if (newKey && newKey !== perm_key) {
+        db.run('UPDATE permission_applications SET perm_key = ? WHERE id = ?', [newKey, id]);
+      }
+    });
+
+    if (migratedUsers.size > 0) {
+      console.log(`[db-seed] 已为 ${migratedUsers.size} 个用户迁移权限到新版本`);
+    }
+  } catch (e) {
+    // 迁移失败不影响启动
+    console.error('[db-seed] 权限迁移出错:', e.message);
+  }
 
   // 插入默认项目数据
   const defaultProjects = [

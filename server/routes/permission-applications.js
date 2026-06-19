@@ -40,35 +40,37 @@ setInterval(() => {
 
 // 权限分类定义
 const PERMISSION_CATEGORIES = {
-  'basic': { name: '基础访问', description: '网站基本功能访问权限' },
-  'content': { name: '内容管理', description: '文章、小说、页面等内容的创建和编辑' },
-  'media': { name: '媒体管理', description: '图片、文件等媒体资源的上传和管理' },
-  'community': { name: '社区功能', description: '关注、点赞、收藏等社交功能' },
-  'admin': { name: '管理功能', description: '后台管理相关功能' }
+  'basic': { name: '前端访问', description: '网站基本功能访问权限' },
+  'content': { name: '内容管理', description: '文章、小说、页面等内容的管理' },
+  'community': { name: '社区与消息', description: '评论、站内信等社区功能' },
+  'image': { name: '图片分享', description: '图片分享模块管理' },
+  'system': { name: '系统管理', description: '用户、权限、设置等管理功能' }
 };
 
 // 获取权限分类
 function getPermCategory(permKey) {
-  const prefix = permKey.split('.')[0];
   const categoryMap = {
-    'homepage': 'basic',
-    'community': 'community',
-    'messages': 'community',
-    'novels': 'content',
-    'poem-game': 'basic',
-    'image-share': 'content',
-    'articles': 'content',
-    'pages': 'content',
-    'comments': 'community',
-    'media': 'media',
-    'users': 'admin',
-    'permissions': 'admin',
-    'settings': 'admin',
-    'data': 'admin',
-    'logs': 'admin',
-    'leaderboard': 'community'
+    'homepage.access': 'basic',
+    'articles.access': 'basic',
+    'novels.access': 'basic',
+    'image-share.access': 'basic',
+    'poem-game.access': 'basic',
+    'articles.manage': 'content',
+    'novels.manage': 'content',
+    'pages.manage': 'content',
+    'media.manage': 'content',
+    'messages.manage': 'community',
+    'comments.manage': 'community',
+    'image-share.manage': 'image',
+    'users.manage': 'system',
+    'permissions.manage': 'system',
+    'settings.manage': 'system',
+    'data.manage': 'system',
+    'leaderboard.manage': 'system'
   };
-  return categoryMap[prefix] || 'basic';
+  if (categoryMap[permKey]) return categoryMap[permKey];
+  if (permKey.endsWith('.access')) return 'basic';
+  return 'system';
 }
 
 // 用户申请权限页面

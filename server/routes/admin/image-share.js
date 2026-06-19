@@ -9,7 +9,7 @@ const fsSafe = require('../../utils/fs-safe');
 // ============ 图片分享管理 ============
 
 // 图片分享 - 管理首页
-router.get('/image-share', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.get('/image-share', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const config = getImageConfigs(db);
 
@@ -44,7 +44,7 @@ router.get('/image-share', isAuthenticated, hasPermission('image-share.view'), (
 });
 
 // 图片分享 - 图片管理
-router.get('/image-share/images', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.get('/image-share/images', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const config = getImageConfigs(db);
   const status = req.query.status;
@@ -103,7 +103,7 @@ router.get('/image-share/images', isAuthenticated, hasPermission('image-share.vi
 });
 
 // 图片分享 - 审核图片
-router.post('/image-share/review', isAuthenticated, hasPermission('image-share.review'), (req, res) => {
+router.post('/image-share/review', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id, action } = req.body;
   if (!id || !action) {
@@ -121,7 +121,7 @@ router.post('/image-share/review', isAuthenticated, hasPermission('image-share.r
 });
 
 // 图片分享 - 删除图片
-router.post('/image-share/delete', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.post('/image-share/delete', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id } = req.body;
   if (!id) {
@@ -144,7 +144,7 @@ router.post('/image-share/delete', isAuthenticated, hasPermission('image-share.v
 });
 
 // 图片分享 - 分类管理
-router.get('/image-share/categories', isAuthenticated, hasPermission('image-share.categories.manage'), (req, res) => {
+router.get('/image-share/categories', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const config = getImageConfigs(db);
   const categories = queryAll(db, 'SELECT * FROM image_categories ORDER BY sort ASC');
@@ -158,7 +158,7 @@ router.get('/image-share/categories', isAuthenticated, hasPermission('image-shar
 });
 
 // 图片分享 - 添加分类
-router.post('/image-share/categories/add', isAuthenticated, hasPermission('image-share.categories.manage'), (req, res) => {
+router.post('/image-share/categories/add', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { name, sort, is_guest } = req.body;
   if (!name) {
@@ -174,7 +174,7 @@ router.post('/image-share/categories/add', isAuthenticated, hasPermission('image
 });
 
 // 图片分享 - 编辑分类
-router.post('/image-share/categories/edit', isAuthenticated, hasPermission('image-share.categories.manage'), (req, res) => {
+router.post('/image-share/categories/edit', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id, name, sort, status, is_guest } = req.body;
   if (!id || !name) {
@@ -190,7 +190,7 @@ router.post('/image-share/categories/edit', isAuthenticated, hasPermission('imag
 });
 
 // 图片分享 - 删除分类
-router.post('/image-share/categories/delete', isAuthenticated, hasPermission('image-share.categories.manage'), (req, res) => {
+router.post('/image-share/categories/delete', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id } = req.body;
   if (!id) {
@@ -211,7 +211,7 @@ router.post('/image-share/categories/delete', isAuthenticated, hasPermission('im
 });
 
 // 图片分享 - 设置页面
-router.get('/image-share/settings', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.get('/image-share/settings', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const config = getImageConfigs(db);
 
@@ -223,7 +223,7 @@ router.get('/image-share/settings', isAuthenticated, hasPermission('image-share.
 });
 
 // 图片分享 - 保存设置
-router.post('/image-share/settings', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.post('/image-share/settings', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const {
     site_name,
@@ -288,7 +288,7 @@ router.post('/image-share/settings', isAuthenticated, hasPermission('image-share
 });
 
 // 图片分享 - 操作日志
-router.get('/image-share/logs', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.get('/image-share/logs', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const logs = queryAll(db, `
     SELECT l.*, u.username as admin_name 
@@ -305,7 +305,7 @@ router.get('/image-share/logs', isAuthenticated, hasPermission('image-share.view
 });
 
 // 功能1：图片分享 - 免审核用户管理页面
-router.get('/image-share/trusted-users', isAuthenticated, hasPermission('image-share.users.manage'), (req, res) => {
+router.get('/image-share/trusted-users', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const users = queryAll(db, "SELECT id, username, email, nickname, image_no_review, status, created_at FROM users WHERE username != 'admin' ORDER BY image_no_review DESC, created_at DESC");
 
@@ -317,7 +317,7 @@ router.get('/image-share/trusted-users', isAuthenticated, hasPermission('image-s
 });
 
 // 功能1：图片分享 - 切换用户免审核状态
-router.post('/image-share/trusted-users/toggle', isAuthenticated, hasPermission('image-share.users.manage'), (req, res) => {
+router.post('/image-share/trusted-users/toggle', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id } = req.body;
   if (!id) {
@@ -338,7 +338,7 @@ router.post('/image-share/trusted-users/toggle', isAuthenticated, hasPermission(
 });
 
 // 功能2：图片分享 - 评论管理页面
-router.get('/image-share/comments', isAuthenticated, hasPermission('image-share.comments.manage'), (req, res) => {
+router.get('/image-share/comments', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const status = req.query.status;
   let comments;
@@ -379,7 +379,7 @@ router.get('/image-share/comments', isAuthenticated, hasPermission('image-share.
 });
 
 // 功能2：图片分享 - 审核评论
-router.post('/image-share/comments/review', isAuthenticated, hasPermission('image-share.comments.manage'), (req, res) => {
+router.post('/image-share/comments/review', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id, action } = req.body;
   if (!id || !action) {
@@ -397,7 +397,7 @@ router.post('/image-share/comments/review', isAuthenticated, hasPermission('imag
 });
 
 // 功能2：图片分享 - 删除评论
-router.post('/image-share/comments/delete', isAuthenticated, hasPermission('image-share.comments.manage'), (req, res) => {
+router.post('/image-share/comments/delete', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id } = req.body;
   if (!id) {
@@ -417,7 +417,7 @@ router.post('/image-share/comments/delete', isAuthenticated, hasPermission('imag
 });
 
 // 功能3：图片分享 - 设置图片可见性和可见用户
-router.post('/image-share/set-visibility', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.post('/image-share/set-visibility', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id, visibility, allowed_user_ids } = req.body;
 
@@ -459,7 +459,7 @@ router.post('/image-share/set-visibility', isAuthenticated, hasPermission('image
 });
 
 // 功能3：图片分享 - 获取所有非管理员用户列表（用于设置可见用户弹窗）
-router.get('/image-share/visible-users', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.get('/image-share/visible-users', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const search = req.query.search || '';
 
@@ -486,7 +486,7 @@ router.get('/image-share/visible-users', isAuthenticated, hasPermission('image-s
 });
 
 // 图片分享 - 禁用/启用用户
-router.post('/image-share/users/toggle', isAuthenticated, hasPermission('image-share.users.manage'), (req, res) => {
+router.post('/image-share/users/toggle', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { id, status } = req.body;
   if (!id) {
@@ -509,7 +509,7 @@ router.post('/image-share/users/toggle', isAuthenticated, hasPermission('image-s
 // ============ 批量操作 ============
 
 // 批量删除图片
-router.post('/image-share/batch-delete', isAuthenticated, hasPermission('image-share.view'), (req, res) => {
+router.post('/image-share/batch-delete', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { ids } = req.body;
 
@@ -549,7 +549,7 @@ router.post('/image-share/batch-delete', isAuthenticated, hasPermission('image-s
 });
 
 // 批量审核图片
-router.post('/image-share/batch-review', isAuthenticated, hasPermission('image-share.review'), (req, res) => {
+router.post('/image-share/batch-review', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { ids, action } = req.body;
 
@@ -579,7 +579,7 @@ router.post('/image-share/batch-review', isAuthenticated, hasPermission('image-s
 });
 
 // 批量删除分类（同时删除分类下的图片）
-router.post('/image-share/batch-delete-categories', isAuthenticated, hasPermission('image-share.categories.manage'), (req, res) => {
+router.post('/image-share/batch-delete-categories', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
   const { ids } = req.body;
 

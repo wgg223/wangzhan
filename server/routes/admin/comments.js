@@ -6,7 +6,7 @@ const { logActivity } = require('../../config/activity');
 
 // ============ 评论管理 ============
 
-router.get('/comments', isAuthenticated, hasPermission('comments.view'), (req, res) => {
+router.get('/comments', isAuthenticated, hasPermission('comments.manage'), (req, res) => {
   const db = req.db;
   const comments = queryAll(db, `
     SELECT c.*, a.title as article_title, u.username as commenter_name, 'article' as comment_type
@@ -34,7 +34,7 @@ router.get('/comments', isAuthenticated, hasPermission('comments.view'), (req, r
 
 // ===== 文章评论操作 =====
 
-router.post('/comments/approve/:id', isAuthenticated, hasPermission('comments.view'), (req, res) => {
+router.post('/comments/approve/:id', isAuthenticated, hasPermission('comments.manage'), (req, res) => {
   const db = req.db;
   const comment = queryOne(db, 'SELECT c.id, c.content, a.title as article_title FROM comments c LEFT JOIN articles a ON c.article_id = a.id WHERE c.id = ?', [req.params.id]);
   db.run("UPDATE comments SET status = 'approved' WHERE id = ?", [req.params.id]);
@@ -45,7 +45,7 @@ router.post('/comments/approve/:id', isAuthenticated, hasPermission('comments.vi
   res.redirect('/admin/comments');
 });
 
-router.post('/comments/reject/:id', isAuthenticated, hasPermission('comments.view'), (req, res) => {
+router.post('/comments/reject/:id', isAuthenticated, hasPermission('comments.manage'), (req, res) => {
   const db = req.db;
   const comment = queryOne(db, 'SELECT c.id, c.content, a.title as article_title FROM comments c LEFT JOIN articles a ON c.article_id = a.id WHERE c.id = ?', [req.params.id]);
   db.run("UPDATE comments SET status = 'rejected' WHERE id = ?", [req.params.id]);
@@ -58,7 +58,7 @@ router.post('/comments/reject/:id', isAuthenticated, hasPermission('comments.vie
 
 // ===== 图片评论（媒体评论）操作 =====
 
-router.post('/media-comments/approve/:id', isAuthenticated, hasPermission('comments.view'), (req, res) => {
+router.post('/media-comments/approve/:id', isAuthenticated, hasPermission('comments.manage'), (req, res) => {
   const db = req.db;
   const comment = queryOne(db, 'SELECT mc.id, mc.content, m.original_name as media_title FROM media_comments mc LEFT JOIN media m ON mc.media_id = m.id WHERE mc.id = ?', [req.params.id]);
   db.run("UPDATE media_comments SET status = 'approved' WHERE id = ?", [req.params.id]);
@@ -69,7 +69,7 @@ router.post('/media-comments/approve/:id', isAuthenticated, hasPermission('comme
   res.redirect('/admin/comments');
 });
 
-router.post('/media-comments/reject/:id', isAuthenticated, hasPermission('comments.view'), (req, res) => {
+router.post('/media-comments/reject/:id', isAuthenticated, hasPermission('comments.manage'), (req, res) => {
   const db = req.db;
   const comment = queryOne(db, 'SELECT mc.id, mc.content, m.original_name as media_title FROM media_comments mc LEFT JOIN media m ON mc.media_id = m.id WHERE mc.id = ?', [req.params.id]);
   db.run("UPDATE media_comments SET status = 'rejected' WHERE id = ?", [req.params.id]);
@@ -80,7 +80,7 @@ router.post('/media-comments/reject/:id', isAuthenticated, hasPermission('commen
   res.redirect('/admin/comments');
 });
 
-router.post('/media-comments/delete/:id', isAuthenticated, hasPermission('comments.view'), (req, res) => {
+router.post('/media-comments/delete/:id', isAuthenticated, hasPermission('comments.manage'), (req, res) => {
   const db = req.db;
   const comment = queryOne(db, 'SELECT mc.id, mc.content, m.original_name as media_title FROM media_comments mc LEFT JOIN media m ON mc.media_id = m.id WHERE mc.id = ?', [req.params.id]);
   db.run('DELETE FROM media_comments WHERE id = ?', [req.params.id]);
