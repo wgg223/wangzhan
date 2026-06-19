@@ -3,13 +3,10 @@
     <h1>文章搜索</h1>
   </div>
 
-  <div class="search-bar" style="display: flex; gap: 10px; margin-bottom: 30px;">
-    <form action="/search" method="GET" style="display: flex; gap: 10px; width: 100%;">
-      <input type="text" name="q" value="<%= typeof keyword !== 'undefined' ? keyword : '' %>" placeholder="搜索文章标题或内容..."
-        style="flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 6px; font-size: 15px;">
-      <button type="submit" class="btn" style="background: #007bff; color: #fff; border: none; padding: 12px 25px; border-radius: 6px; font-size: 15px; cursor: pointer;">
-        搜索
-      </button>
+  <div class="search-bar">
+    <form action="/search" method="GET" class="search-form">
+      <input type="text" name="q" value="<%= typeof keyword !== 'undefined' ? keyword : '' %>" placeholder="搜索文章标题或内容..." class="search-input">
+      <button type="submit" class="btn search-btn">搜索</button>
     </form>
   </div>
 
@@ -18,7 +15,7 @@
       <p style="color: #666; margin-bottom: 20px;">找到 <strong><%= articles.length %></strong> 篇相关文章</p>
       
       <% articles.forEach(function(article) { %>
-        <div class="card" style="background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 15px;">
+        <div class="search-result-card">
           <h3 style="margin: 0 0 8px 0;">
             <a href="/articles/<%= article.id %>" style="color: #007bff; text-decoration: none; font-size: 18px;">
               <%= article.title %>
@@ -51,3 +48,73 @@
     </div>
   <% } %>
 </div>
+
+<style>
+.search-bar {
+  margin-bottom: 30px;
+}
+
+.search-form {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.search-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 15px;
+  outline: none;
+  font-family: inherit;
+}
+
+.search-input:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0,123,255,0.15);
+}
+
+.search-btn {
+  background: #007bff;
+  color: #fff;
+  border: none;
+  padding: 12px 25px;
+  border-radius: 6px;
+  font-size: 15px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.search-result-card {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  margin-bottom: 15px;
+}
+
+@media (max-width: 768px) {
+  .search-form {
+    flex-direction: column;
+  }
+  .search-input {
+    font-size: 16px;
+  }
+  .search-btn {
+    padding: 12px;
+  }
+  .search-result-card {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .search-result-card {
+    padding: 14px;
+  }
+  .search-result-card h3 a {
+    font-size: 16px !important;
+  }
+}
+</style>

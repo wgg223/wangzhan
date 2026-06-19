@@ -70,11 +70,30 @@
     .empty-state { text-align: center; padding: 50px; color: #999; }
     .empty-state i { font-size: 48px; margin-bottom: 15px; display: block; }
     @media (max-width: 768px) {
-      .nav { flex-direction: column; gap: 10px; }
-      .nav-links { flex-wrap: wrap; justify-content: center; }
-      .image-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-      .category-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
-      .stats { grid-template-columns: repeat(2, 1fr); }
+      .nav { flex-direction: column; gap: 10px; padding: 12px 16px; }
+      .nav-links { flex-wrap: wrap; justify-content: center; gap: 8px; }
+      .nav-links a { padding: 6px 10px; font-size: 13px; }
+      .image-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+      .category-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+      .stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .container { padding: 12px; }
+      .card { padding: 16px; }
+      .image-card img { height: 150px; }
+    }
+    @media (max-width: 480px) {
+      .nav .logo { font-size: 17px; }
+      .nav-links a { padding: 5px 8px; font-size: 12px; }
+      .image-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .category-grid { grid-template-columns: repeat(2, 1fr); }
+      .stats { grid-template-columns: 1fr; }
+      .stat-card { padding: 14px; }
+      .stat-card .number { font-size: 22px; }
+      .image-card img { height: 120px; }
+      .image-card .info { padding: 8px; }
+      .image-card .title { font-size: 13px; }
+      .container { padding: 8px; }
+      table { font-size: 13px; }
+      table th, table td { padding: 8px 6px; }
     }
   </style>
 </head>

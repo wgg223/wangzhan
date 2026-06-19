@@ -1,5 +1,5 @@
 <div class="container" style="max-width: 900px; margin: 0 auto;">
-  <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+  <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 12px;">
     <h1 style="margin: 0;">站内信</h1>
     <div>
       <button type="button" class="btn" onclick="markAllRead()">全部标为已读</button>
@@ -11,18 +11,18 @@
       <% messages.forEach(function(msg) { %>
         <div class="message-item <%= msg.is_read ? 'message-read' : 'message-unread' %>" id="msg-<%= msg.id %>" style="background: #fff; border: 1px solid #ddd; border-left: 4px solid <%= msg.is_read ? '#ddd' : '#007bff' %>; border-radius: 8px; padding: 15px 20px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s;">
           <div style="display: flex; justify-content: space-between; align-items: center;" onclick="toggleMessage(<%= msg.id %>)">
-            <div style="flex: 1;">
+            <div style="flex: 1; min-width: 0;">
               <div style="display: flex; align-items: center; gap: 8px;">
                 <% if (!msg.is_read) { %>
-                  <span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%;"></span>
+                  <span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%; flex-shrink: 0;"></span>
                 <% } %>
-                <strong style="font-size: 15px;"><%= msg.title %></strong>
+                <strong style="font-size: 15px; word-break: break-word;"><%= msg.title %></strong>
               </div>
               <div style="font-size: 13px; color: #999; margin-top: 4px;">
                 来自：<%= msg.from_username || '系统' %> · <%= new Date(msg.created_at + 'Z').toLocaleString('zh-CN') %>
               </div>
             </div>
-            <div style="display: flex; gap: 8px; align-items: center;" onclick="event.stopPropagation();">
+            <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;" onclick="event.stopPropagation();">
               <% if (!msg.is_read) { %>
                 <span class="badge badge-new" style="background: #007bff; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px;">新</span>
               <% } %>
@@ -45,6 +45,39 @@
     </div>
   <% } %>
 </div>
+
+<style>
+@media (max-width: 768px) {
+  .container {
+    padding: 0 12px !important;
+  }
+  .page-header {
+    margin-bottom: 16px !important;
+  }
+  .page-header h1 {
+    font-size: 20px !important;
+  }
+  .message-item {
+    padding: 12px 14px !important;
+  }
+  .message-item strong {
+    font-size: 14px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 0 8px !important;
+  }
+  .page-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .message-item {
+    padding: 10px 12px !important;
+  }
+}
+</style>
 
 <script>
 function toggleMessage(id) {

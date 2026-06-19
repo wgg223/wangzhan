@@ -435,6 +435,33 @@ h2 {
   color: #666;
   font-size: 12px;
 }
+
+@media (max-width: 768px) {
+  .permission-apply-page {
+    padding: 20px 12px;
+  }
+  .permission-apply-page h1 {
+    font-size: 22px;
+  }
+  .perms-grid {
+    grid-template-columns: 1fr;
+  }
+  .rate-limit-notice {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .permission-apply-page {
+    padding: 12px 8px;
+  }
+  .permission-apply-page h1 {
+    font-size: 20px;
+  }
+  .perm-card {
+    padding: 10px;
+  }
+}
 </style>
 
 <script>

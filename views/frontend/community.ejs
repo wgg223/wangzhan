@@ -212,4 +212,46 @@
 .btn-secondary:hover {
   background: var(--gray-200);
 }
+
+@media (max-width: 768px) {
+  .community-page {
+    padding: 12px;
+  }
+  .community-header h1 {
+    font-size: 22px;
+  }
+  .feed-item {
+    padding: 16px;
+  }
+  .user-avatar {
+    width: 36px;
+    height: 36px;
+  }
+  .feed-title {
+    font-size: 16px;
+  }
+  .feed-cover img {
+    max-height: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .community-page {
+    padding: 8px;
+  }
+  .community-header {
+    margin-bottom: 20px;
+  }
+  .community-header h1 {
+    font-size: 20px;
+  }
+  .feed-item {
+    padding: 12px;
+    border-radius: 8px;
+  }
+  .feed-user {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+}
 </style>
