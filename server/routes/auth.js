@@ -7,24 +7,24 @@ const { createRateLimiter, loginLimiter } = require('../middlewares/rate-limiter
 
 // ============ 频率限制器 ============
 const registerLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: '注册请求过于频繁，请15分钟后再试'
+  windowMs: 60 * 1000,
+  max: 100,
+  message: '注册请求过于频繁，请稍后再试'
 });
 const sendCodeLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 3,
-  message: '验证码发送过于频繁，请15分钟后再试'
+  windowMs: 60 * 1000,
+  max: 100,
+  message: '验证码发送过于频繁，请稍后再试'
 });
 const resetPasswordLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: '密码重置尝试过多，请15分钟后再试'
+  windowMs: 60 * 1000,
+  max: 100,
+  message: '密码重置尝试过多，请稍后再试'
 });
 const changePasswordLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: '修改密码尝试过多，请15分钟后再试'
+  windowMs: 60 * 1000,
+  max: 100,
+  message: '修改密码尝试过多，请稍后再试'
 });
 
 // 支持的邮箱域名白名单（主流邮箱服务商）

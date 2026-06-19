@@ -64,7 +64,9 @@ router.post('/settings', isAuthenticated, hasPermission('settings.manage'), (req
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_port || '465', 'smtp_port']);
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_secure || 'true', 'smtp_secure']);
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_user || '', 'smtp_user']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [encrypt(req.body.smtp_pass || ''), 'smtp_pass']);
+  if (req.body.smtp_pass) {
+    db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [encrypt(req.body.smtp_pass), 'smtp_pass']);
+  }
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_from_name || '', 'smtp_from_name']);
   db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_from_email || '', 'smtp_from_email']);
 

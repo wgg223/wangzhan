@@ -93,7 +93,7 @@ app.use((req, res, next) => {
 
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net static.cloudflareinsights.com",
     "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: cdnjs.cloudflare.com",

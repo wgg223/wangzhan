@@ -85,15 +85,15 @@ const globalLimiter = createRateLimiter({
 });
 
 const loginLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
+  windowMs: 60 * 1000,
+  max: 100,
   keyGenerator: (req) => `login:${req.ip}:${req.body?.username || 'unknown'}`,
-  message: '登录尝试次数过多，请15分钟后再试'
+  message: '登录尝试次数过多，请稍后再试'
 });
 
 const apiLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 30,
+  max: 1000,
   message: 'API请求过于频繁，请稍后再试'
 });
 

@@ -108,7 +108,7 @@
       
       <div class="form-group">
         <label for="smtp_pass">邮箱密码 / 授权码</label>
-        <input type="password" id="smtp_pass" name="smtp_pass" value="<%= settings.smtp_pass || '' %>" placeholder="邮箱密码或SMTP授权码">
+        <input type="password" id="smtp_pass" name="smtp_pass" value="" placeholder="<%= settings.smtp_pass ? '已保存，如需修改请重新输入' : '邮箱密码或SMTP授权码' %>">
       </div>
       
       <div class="form-row">

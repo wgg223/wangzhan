@@ -36,10 +36,12 @@ router.post('/', (req, res) => {
     smtp_port: smtp_port || '465',
     smtp_secure: smtp_secure || 'true',
     smtp_user: smtp_user || '',
-    smtp_pass: encrypt(smtp_pass || ''),
     smtp_from_name: smtp_from_name || '',
     smtp_from_email: smtp_from_email || ''
   };
+  if (smtp_pass) {
+    smtpSettings.smtp_pass = encrypt(smtp_pass);
+  }
 
   for (const [key, value] of Object.entries(smtpSettings)) {
     const existing = queryOne(db, 'SELECT id FROM settings WHERE setting_key = ?', [key]);

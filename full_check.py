@@ -92,8 +92,8 @@ for lf in sorted(local_files):
     basename = os.path.basename(lf)
     if should_skip(basename):
         continue
-    # Check if it's in a key directory
-    if lf.startswith(('server/', 'views/', 'public/')):
+    # Check if it's in a key directory or is a root-level config file
+    if lf.startswith(('server/', 'views/', 'public/')) or lf in ('cdn-config.js', 'package.json', 'ecosystem.config.js'):
         remote_path = f'{remote_root}/{lf}'
         stdin, stdout, stderr = ssh.exec_command(f'ls {remote_path} 2>/dev/null')
         exists = 'No such file' not in stdout.read().decode('utf-8', errors='replace')

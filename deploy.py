@@ -703,6 +703,7 @@ def upload_files(client):
         "package.json",
         "package-lock.json",
         "ecosystem.config.js",
+        "cdn-config.js",
         ".eslintrc.json",
         ".eslintignore",
         ".gitignore",
