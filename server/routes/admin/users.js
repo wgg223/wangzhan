@@ -58,6 +58,16 @@ router.post('/users/create', isAuthenticated, hasPermission('users.manage'), (re
   db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
     [newUid, username, hashedPassword, email || '', userRole]);
 
+  // 为新用户授予默认权限
+  const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+  if (newUser) {
+    const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
+    defaultPerms.forEach(perm => {
+      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+        [newUser.id, perm, req.session.user.id]);
+    });
+  }
+
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'user', target_id: null, target_title: username, detail: '手动创建账户：' + username + ' (角色: ' + userRole + ')', ip: req.ip });
   res.json({ success: true, message: '账户创建成功' });
@@ -250,6 +260,17 @@ router.post('/users/import-csv', isAuthenticated, hasPermission('users.manage'),
       const csvUid = generateUid(db);
       db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
         [csvUid, username, hashedPassword, email, role]);
+
+      // 为新用户授予默认权限
+      const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+      if (newUser) {
+        const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
+        defaultPerms.forEach(perm => {
+          db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+            [newUser.id, perm, req.session.user.id]);
+        });
+      }
+
       results.success++;
     }
 

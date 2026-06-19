@@ -655,11 +655,14 @@ router.post('/:source/register', registerLimiter, (req, res) => {
       [uid1, tempData.username, hashedPassword, tempData.email, tempData.nickname || tempData.username]);
     saveDatabase();
 
-    // 为新用户授予主页访问权限
+    // 为新用户授予默认权限
     const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [tempData.username]);
     if (newUser) {
-      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-        [newUser.id, 'homepage.access', newUser.id]);
+      const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
+      defaultPerms.forEach(perm => {
+        db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+          [newUser.id, perm, newUser.id]);
+      });
       saveDatabase();
     }
 
@@ -814,11 +817,14 @@ router.post('/:source/register', registerLimiter, (req, res) => {
       [uid2, username, hashedPassword, email, nickname || username]);
     saveDatabase();
 
-    // 为新用户授予主页访问权限
+    // 为新用户授予默认权限
     const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
     if (newUser) {
-      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-        [newUser.id, 'homepage.access', newUser.id]);
+      const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
+      defaultPerms.forEach(perm => {
+        db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+          [newUser.id, perm, newUser.id]);
+      });
       saveDatabase();
     }
 

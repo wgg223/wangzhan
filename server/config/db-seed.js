@@ -218,12 +218,18 @@ function insertDefaultDataIfNeeded(db) {
       [id, name, desc, tables, dirs, icon]);
   });
 
-  // 迁移：为所有已存在的活跃用户添加主页访问权限
+  // 迁移：为所有已存在的活跃用户添加默认权限
   try {
+    const defaultUserPerms = [
+      'homepage.access', 'articles.access', 'novels.access',
+      'image-share.access', 'poem-game.access'
+    ];
     const activeUsers = queryAll(db, "SELECT id FROM users WHERE status = 'active'");
     activeUsers.forEach(user => {
-      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-        [user.id, 'homepage.access', user.id]);
+      defaultUserPerms.forEach(perm => {
+        db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+          [user.id, perm, user.id]);
+      });
     });
   } catch (e) {
     // 如果出错（比如表不存在），忽略
