@@ -85,6 +85,8 @@ function insertDefaultDataIfNeeded(db) {
     ['novels.access', '小说访问', '访问小说模块'],
     ['image-share.access', '图片分享访问', '访问图片分享模块'],
     ['poem-game.access', '诗词游戏访问', '访问诗词游戏模块'],
+    // 站点统计权限
+    ['site_stats.view', '站点统计', '查看站点基本统计数据（用户数、运行状态等）'],
     // 内容管理权限
     ['articles.manage', '文章管理', '文章的查看、创建、编辑、删除、发布及评论管理'],
     ['novels.manage', '小说管理', '小说的查看、创建、编辑、删除及章节管理'],
@@ -222,7 +224,7 @@ function insertDefaultDataIfNeeded(db) {
   try {
     const defaultUserPerms = [
       'homepage.access', 'articles.access', 'novels.access',
-      'image-share.access', 'poem-game.access'
+      'image-share.access', 'poem-game.access', 'site_stats.view'
     ];
     const activeUsers = queryAll(db, "SELECT id FROM users WHERE status = 'active'");
     activeUsers.forEach(user => {

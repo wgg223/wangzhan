@@ -26,6 +26,7 @@ const settingsPopupRouter = require('./settings-popup');
 const systemUpdateRouter = require('./system-update');
 const backupRouter = require('./backup');
 const maintenanceRouter = require('./maintenance');
+const siteStatsRouter = require('./site-stats');
 
 // ---------- Admin 全局中间件 ----------
 router.use(isAuthenticated);
@@ -42,6 +43,16 @@ router.use((req, res, next) => {
 });
 
 // ---------- 挂载子路由 ----------
+router.use(siteStatsRouter);
+
+// 普通用户访问 /admin 时重定向到站点统计
+router.get('/', (req, res, next) => {
+  if (req.session.user.role !== 'super_admin') {
+    return res.redirect('/admin/site-stats');
+  }
+  next();
+});
+
 router.use(dashboardRouter);
 router.use(activityLogsRouter);
 router.use(settingsRouter);

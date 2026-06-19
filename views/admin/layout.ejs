@@ -39,6 +39,9 @@
       </div>
       <nav class="sidebar-nav">
         <ul>
+          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'site_stats.view')) { %>
+          <li><a href="/admin/site-stats">📈 站点统计</a></li>
+          <% } %>
           <% if (user.role === 'super_admin') { %>
           <li><a href="/admin">📊 仪表盘</a></li>
           <% } %>
@@ -86,7 +89,6 @@
             <li><a href="/admin/backup">💾 备份管理</a></li>
           <% } %>
           <% if (user.role === 'super_admin') { %>
-            <li><a href="/admin/backup">💾 备份管理</a></li>
             <li><a href="/admin/maintenance">🔧 服务器维护</a></li>
             <li><a href="/admin/projects">📦 项目管理</a></li>
             <li><a href="/admin/reset" style="color:#ef4444;">⚠️ 重置服务器</a></li>

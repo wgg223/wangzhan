@@ -1,0 +1,124 @@
+<div class="admin-content">
+  <div class="content-header">
+    <h1>站点统计</h1>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon">👥</div>
+      <div class="stat-info">
+        <div class="stat-value"><%= stats.userCount %></div>
+        <div class="stat-label">注册用户数</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon">⏱️</div>
+      <div class="stat-info">
+        <div class="stat-value"><%= stats.uptimeFormatted %></div>
+        <div class="stat-label">站点运行时间</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon">💾</div>
+      <div class="stat-info">
+        <div class="stat-value"><%= stats.memory.rssFormatted %></div>
+        <div class="stat-label">内存占用</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon">📊</div>
+      <div class="stat-info">
+        <div class="stat-value"><%= stats.memory.heapUsedFormatted %></div>
+        <div class="stat-label">堆内存使用</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-section">
+    <h2>服务器信息</h2>
+    <table class="info-table">
+      <tr>
+        <td class="label">Node.js 版本</td>
+        <td><%= stats.nodeVersion %></td>
+      </tr>
+      <tr>
+        <td class="label">运行平台</td>
+        <td><%= stats.platform %></td>
+      </tr>
+      <tr>
+        <td class="label">CPU 架构</td>
+        <td><%= stats.cpuArch %></td>
+      </tr>
+      <tr>
+        <td class="label">堆内存总量</td>
+        <td><%= stats.memory.heapTotalFormatted %></td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<style>
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.stat-icon {
+  font-size: 36px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #1a1a1a;
+}
+
+.stat-label {
+  color: #666;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.info-section {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.info-section h2 {
+  margin-bottom: 15px;
+  font-size: 18px;
+  color: #333;
+}
+
+.info-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.info-table td {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.info-table .label {
+  color: #666;
+  width: 140px;
+}
+</style>
