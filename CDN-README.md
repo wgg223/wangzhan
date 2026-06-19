@@ -1,112 +1,98 @@
-# CDN加速配置
+# CDN加速配置指南
 
-为 dalaowang233.top 网站配置CDN加速，提升访问速度和用户体验。
+## 概述
 
-## 文件说明
+本指南帮助您为网站配置CDN加速，提升访问速度和用户体验。
 
-- `cdn-config.js` - CDN配置管理模块
-- `test-cdn.js` - CDN配置测试脚本
-- `monitor-cdn.js` - CDN状态监控脚本
-- `deploy-cdn.sh` - Linux/Mac部署脚本
-- `deploy-cdn.bat` - Windows部署脚本
-- `nginx-cdn.conf.example` - Nginx配置示例
-- `.env.example` - 环境变量配置示例
-- `CDN配置指南.md` - 详细配置指南
+## 支持的CDN服务商
 
-## 快速开始
+| 服务商 | 优势 | 免费额度 | 流量费用 |
+|--------|------|----------|----------|
+| Cloudflare | 免费无限流量，全球节点，自带DDoS防护 | 无限 | 免费 |
+| 阿里云CDN | 国内节点多，速度快，稳定 | 100GB/月 | 0.24元/GB |
+| 腾讯云CDN | 性价比高，免费额度大 | 10GB/月 | 0.21元/GB |
+| 华为云CDN | 企业级服务，稳定可靠 | 100GB/月 | 0.21元/GB |
+| 百度云CDN | 与百度生态集成好 | 10GB/月 | 0.24元/GB |
+| 七牛云CDN | 图片处理能力强 | 10GB/月 | 0.26元/GB |
+| 又拍云CDN | 适合中小型网站 | 10GB/月 | 0.29元/GB |
+| CDNfly | 价格便宜，适合个人站长 | - | - |
+| jsDelivr | 完全免费，无需注册 | 无限 | 免费 |
 
-### 1. 选择CDN服务商
+## 快速配置
 
-推荐选择：
-- **阿里云CDN** - 国内节点多，稳定
-- **腾讯云CDN** - 性价比高
-- **Cloudflare** - 免费方案
+### 第1步：配置CDN服务商
 
-### 2. 配置环境变量
+#### Cloudflare（推荐）
 
-复制并编辑环境变量文件：
+1. 注册 https://dash.cloudflare.com
+2. 添加站点 `your-domain.com`
+3. 修改域名服务器为Cloudflare提供的地址
+4. 配置SSL/TLS模式为 `Full (Strict)`
+5. 在后台设置填写主域名：`https://your-domain.com`
 
-```bash
-cp .env.example .env
+#### 阿里云CDN
+
+1. 登录 https://cdn.console.aliyun.com
+2. 添加加速域名：`cdn.your-domain.com`
+3. 源站地址：您的服务器IP
+4. 配置CNAME记录
+5. 在后台设置填写：`https://cdn.your-domain.com`
+
+#### 腾讯云CDN
+
+1. 登录 https://console.cloud.tencent.com/cdn
+2. 添加域名：`cdn.your-domain.com`
+3. 源站配置：您的服务器IP
+4. 配置CNAME记录
+5. 在后台设置填写：`https://cdn.your-domain.com`
+
+### 第2步：配置DNS解析
+
+在域名注册商处添加CNAME记录：
+```
+类型：CNAME
+主机记录：cdn
+记录值：xxxx.cdn.com（CDN服务商提供）
 ```
 
-编辑 `.env` 文件：
+### 第3步：后台配置
+
+1. 登录网站后台
+2. 进入「网站设置」→「CDN加速设置」
+3. 选择CDN服务商
+4. 填写CDN域名
+5. 启用CDN
+6. 保存设置
+7. 点击「测试CDN连接」验证
+
+## 缓存规则配置
+
+| 资源类型 | 缓存时间 |
+|----------|----------|
+| CSS/JS文件 | 30天 |
+| 图片文件 | 30天 |
+| 字体文件 | 1年 |
+| HTML文件 | 不缓存或短时间缓存 |
+
+## 环境变量配置
+
+创建 `.env` 文件：
 
 ```bash
+# 启用CDN
 CDN_ENABLED=true
-CDN_BASE_URL=https://cdn.dalaowang233.top
-ORIGIN_URL=https://dalaowang233.top
+
+# CDN域名
+CDN_BASE_URL=https://cdn.your-domain.com
+
+# 原站域名
+ORIGIN_URL=https://your-domain.com
+
+# 资源版本号（修改可强制更新缓存）
 CDN_VERSION=1.0.0
 ```
 
-### 3. 配置CDN服务商
-
-#### 阿里云CDN
-1. 添加加速域名：`cdn.dalaowang233.top`
-2. 源站地址：您的服务器IP
-3. 配置CNAME记录
-4. 配置缓存规则
-5. 配置HTTPS证书
-
-#### 腾讯云CDN
-1. 添加域名：`cdn.dalaowang233.top`
-2. 源站配置：您的服务器IP
-3. 配置CNAME记录
-4. 配置缓存策略
-5. 配置SSL证书
-
-#### Cloudflare
-1. 添加站点：`dalaowang233.top`
-2. 修改域名服务器
-3. 配置缓存规则
-4. 启用SSL
-
-### 4. 部署配置
-
-#### Linux/Mac
-```bash
-chmod +x deploy-cdn.sh
-sudo ./deploy-cdn.sh
-```
-
-#### Windows
-```cmd
-deploy-cdn.bat
-```
-
-### 5. 验证配置
-
-运行测试脚本：
-
-```bash
-node test-cdn.js
-```
-
-运行监控脚本：
-
-```bash
-node monitor-cdn.js
-```
-
-## 配置详情
-
-### CDN配置模块
-
-`cdn-config.js` 提供以下功能：
-
-```javascript
-const cdnConfig = require('./cdn-config');
-
-// 获取CDN URL
-const cssUrl = cdnConfig.getUrl('/css/style.css');
-// 返回: https://cdn.dalaowang233.top/css/style.css?v=1.0.0
-
-// 检查CDN状态
-console.log(cdnConfig.enabled); // true/false
-console.log(cdnConfig.baseUrl); // https://cdn.dalaowang233.top
-```
-
-### 前端模板使用
+## 前端模板使用
 
 在EJS模板中使用CDN URL：
 
@@ -116,144 +102,117 @@ console.log(cdnConfig.baseUrl); // https://cdn.dalaowang233.top
 <img src="<%= cdn.getUrl('/assets/images/logo.png') %>">
 ```
 
-### 缓存策略
+## 验证配置
 
-- CSS/JS文件：30天
-- 图片文件：30天
-- 字体文件：1年
-- 用户上传文件：不通过CDN
-
-### 安全配置
-
-- 启用HTTPS
-- 配置CORS
-- 设置防盗链
-- 启用WAF
-
-## 监控和维护
-
-### 监控脚本
-
+### 检查DNS解析
 ```bash
-# 实时监控
-node monitor-cdn.js
-
-# 定时监控（每5分钟）
-watch -n 300 node monitor-cdn.js
+nslookup cdn.your-domain.com
 ```
 
-### 性能指标
-
-- 首次字节时间（TTFB）
-- 首次内容绘制（FCP）
-- 最大内容绘制（LCP）
-- 累积布局偏移（CLS）
-
-### 缓存更新
-
-1. 修改 `CDN_VERSION` 环境变量
-2. 在CDN控制台手动刷新缓存
-3. 使用CDN提供的API刷新
-
-## 故障排除
-
-### 常见问题
-
-**Q: CDN回源失败怎么办？**
-A: 检查原站是否正常运行，检查防火墙设置，确保CDN IP可以访问原站。
-
-**Q: 如何更新CDN缓存？**
-A: 修改 `CDN_VERSION` 环境变量或在CDN控制台手动刷新。
-
-**Q: 如何监控CDN性能？**
-A: 使用 `monitor-cdn.js` 脚本或CDN服务商提供的监控工具。
-
-### 调试命令
-
+### 检查HTTP响应头
 ```bash
-# 检查DNS解析
-nslookup cdn.dalaowang233.top
-
-# 检查HTTP头
-curl -I https://cdn.dalaowang233.top/css/style.css
-
-# 检查缓存状态
-curl -I https://cdn.dalaowang233.top/css/style.css | grep -i cache-control
-
-# 测试访问速度
-curl -w "@curl-format.txt" -o /dev/null -s https://cdn.dalaowang233.top/css/style.css
+curl -I https://cdn.your-domain.com/css/style.css
 ```
+
+应该看到：
+- `server: cloudflare`（Cloudflare）
+- `cf-cache-status: HIT` 或 `DYNAMIC`
+- `cache-control: max-age=2592000`
+
+## 常见问题
+
+### Q1: 如何选择CDN服务商？
+
+- **国内用户**：阿里云、腾讯云、华为云
+- **海外用户**：Cloudflare
+- **免费方案**：Cloudflare、jsDelivr
+- **性价比**：腾讯云、七牛云、又拍云
+
+### Q2: CDN域名填什么？
+
+- **Cloudflare**：填写主域名，如 `https://your-domain.com`
+- **其他服务商**：填写CDN加速域名，如 `https://cdn.your-domain.com`
+
+### Q3: 如何更新CDN缓存？
+
+1. 修改后台「资源版本号」
+2. 保存设置
+3. 在CDN服务商控制台清除缓存
+
+### Q4: CDN不生效怎么办？
+
+1. 检查CNAME解析是否正确
+2. 检查CDN配置是否正确
+3. 清除浏览器缓存
+4. 等待DNS生效（最多24小时）
+
+### Q5: CDN回源失败怎么办？
+
+1. 检查原站是否正常运行
+2. 检查防火墙设置
+3. 确保CDN IP可以访问原站
 
 ## 性能优化建议
 
-### 1. 资源优化
-- CSS/JS文件合并压缩
-- 图片使用WebP格式
-- 启用Gzip/Brotli压缩
+1. **资源优化**
+   - CSS/JS文件合并压缩
+   - 图片使用WebP格式
+   - 启用Gzip/Brotli压缩
 
-### 2. 缓存策略
-- 静态资源：30天
-- 图片资源：30天
-- 字体文件：1年
-- HTML文件：不缓存或短时间缓存
+2. **安全配置**
+   - 启用HTTPS
+   - 配置CORS
+   - 设置防盗链
+   - 启用WAF
 
-### 3. 安全配置
-- 启用HTTPS
-- 配置CORS
-- 设置防盗链
-- 启用WAF
-
-## 成本估算
-
-### 阿里云CDN
-- 流量费：0.24元/GB（中国内地）
-- 请求费：0.01元/万次
-- HTTPS请求费：0.05元/万次
-
-### 腾讯云CDN
-- 流量费：0.21元/GB（中国内地）
-- 请求费：0.01元/万次
-- HTTPS请求费：0.05元/万次
-
-### Cloudflare
-- 免费方案：无限流量
-- Pro方案：$20/月
-- Business方案：$200/月
-
-## 最佳实践
-
-1. **选择合适的CDN服务商**
-   - 国内用户选择阿里云或腾讯云
-   - 海外用户选择Cloudflare
-
-2. **合理配置缓存**
-   - 静态资源设置长缓存
-   - 动态内容不缓存或短缓存
-
-3. **启用HTTPS**
-   - 使用免费SSL证书
-   - 强制HTTPS跳转
-
-4. **监控性能**
+3. **监控性能**
    - 定期检查CDN状态
    - 监控访问速度
+   - 查看CDN服务商统计面板
 
-5. **优化成本**
-   - 合理设置缓存时间
-   - 启用压缩
-   - 使用WebP格式
+## Cloudflare专项配置
 
-## 联系支持
+### 验证Cloudflare状态
 
-如有问题，请联系：
-- CDN服务商技术支持
-- 域名注册商支持
-- 服务器提供商支持
+登录 https://dash.cloudflare.com，确认：
+- 站点状态显示 **「Active」**
+- SSL证书显示 **「Active Certificate」**
 
-## 更新日志
+### 检查HTTP响应头
 
-### v1.0.0 (2026-06-19)
-- 初始版本
-- 支持阿里云、腾讯云、Cloudflare
-- 提供完整的配置和部署脚本
-- 包含监控和测试工具
+```bash
+curl -I https://your-domain.com
+```
+
+应该看到：
+- `server: cloudflare`
+- `cf-ray: xxx`
+- `cf-cache-status: HIT` 或 `DYNAMIC`
+
+### 常用操作
+
+**清除缓存**：进入 「Caching」→「Configuration」→「Purge Cache」
+
+**更新资源版本号**：修改 `.env` 文件中的 `CDN_VERSION`
+
+### 性能优化
+
+1. 启用HTTP/2和HTTP/3（「Network」页面）
+2. 启用Brotli压缩（「Speed」→「Optimization」）
+3. 配置WAF规则（「Security」→「WAF」）
+
+## 故障排除
+
+| 问题 | 解决方案 |
+|------|----------|
+| 网站无法访问 | 检查Cloudflare状态、域名服务器、源站服务器 |
+| SSL证书错误 | 确认SSL模式为Full (Strict)，检查源站证书 |
+| 缓存未生效 | 检查页面规则配置，清除CDN缓存 |
+| DNS解析失败 | 检查CNAME记录，等待DNS生效 |
+
+## 技术支持
+
+- Cloudflare：https://developers.cloudflare.com
+- 阿里云：https://help.aliyun.com
+- 腾讯云：https://cloud.tencent.com/document/product/228
+- 华为云：https://support.huaweicloud.com
