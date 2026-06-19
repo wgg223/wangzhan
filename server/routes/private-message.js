@@ -24,10 +24,10 @@ function canSendMessage(db, senderId, targetUserId) {
   );
 
   if (allowFrom === 'following') {
-    return !!iFollowTarget;
+    return Boolean(iFollowTarget);
   }
   if (allowFrom === 'mutual') {
-    return !!iFollowTarget && !!targetFollowsMe;
+    return Boolean(iFollowTarget) && Boolean(targetFollowsMe);
   }
   return false;
 }

@@ -1638,11 +1638,11 @@ router.get('/logout', (req, res) => {
       }
     }
   } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
-  
+
   const redirectUrl = req.session.user?.role === 'super_admin' || req.session.user?.role === 'admin'
     ? '/auth/frontend/login'
     : '/';
-  
+
   req.session.destroy(() => {
     res.redirect(redirectUrl);
   });
@@ -1945,8 +1945,8 @@ router.get('/2fa/status', (req, res) => {
   const db = req.db;
   const user = queryOne(db, 'SELECT totp_secret, totp_enabled FROM users WHERE id = ?', [req.session.user.id]);
   res.json({
-    enabled: user ? !!user.totp_enabled : false,
-    hasSecret: user ? !!user.totp_secret : false
+    enabled: user ? Boolean(user.totp_enabled) : false,
+    hasSecret: user ? Boolean(user.totp_secret) : false
   });
 });
 
@@ -1965,7 +1965,7 @@ router.post('/2fa/setup', (req, res) => {
   res.json({
     secret: secret,
     uri: uri,
-    qrcode: uri  // 前端可用此生成二维码
+    qrcode: uri // 前端可用此生成二维码
   });
 });
 

@@ -172,7 +172,7 @@ router.get('/api/tags', (req, res) => {
     let tags;
     if (search) {
       tags = queryAll(db,
-        "SELECT t.*, (SELECT COUNT(*) FROM content_tags WHERE tag_id = t.id) as usage_count FROM tags t WHERE t.name LIKE ? ORDER BY usage_count DESC, t.name ASC",
+        'SELECT t.*, (SELECT COUNT(*) FROM content_tags WHERE tag_id = t.id) as usage_count FROM tags t WHERE t.name LIKE ? ORDER BY usage_count DESC, t.name ASC',
         [`%${search}%`]
       );
     } else {

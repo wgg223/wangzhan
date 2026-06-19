@@ -15,9 +15,9 @@ const SENSITIVE_WORDS = [
  * 可疑链接模式
  */
 const SUSPICIOUS_URL_PATTERNS = [
-  /https?:\/\/\d+\.\d+\.\d+\.\d+/g,  // IP 地址链接
-  /https?:\/\/(?:[a-z0-9-]+\.)?(?:xyz|top|club|work|loan|gq|ml|cf|ga)\/[^\s]*/gi,  // 可疑顶级域名
-  /https?:\/\/bit\.ly\/[^\s]*/gi,  // 短链接
+  /https?:\/\/\d+\.\d+\.\d+\.\d+/g, // IP 地址链接
+  /https?:\/\/(?:[a-z0-9-]+\.)?(?:xyz|top|club|work|loan|gq|ml|cf|ga)\/[^\s]*/gi, // 可疑顶级域名
+  /https?:\/\/bit\.ly\/[^\s]*/gi, // 短链接
   /https?:\/\/tinyurl\.com\/[^\s]*/gi,
   /https?:\/\/shorturl\.at\/[^\s]*/gi,
 ];
@@ -28,8 +28,8 @@ const SUSPICIOUS_URL_PATTERNS = [
 const SPAM_PATTERNS = [
   /(?:免费|领取|红包|加微信|加QQ|兼职|刷单|日赚|月入)/,
   /(?:联系我|私聊我|加我好友|扫码|二维码)/,
-  /(?:https?:\/\/[^\s]*){3,}/,  // 大量链接
-  /(?:[^\w]{5,})/,  // 连续特殊字符
+  /(?:https?:\/\/[^\s]*){3,}/, // 大量链接
+  /(?:[^\w]{5,})/, // 连续特殊字符
 ];
 
 /**

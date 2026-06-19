@@ -88,7 +88,7 @@ router.get('/api/user/:id/follow/status', isAuthenticated, (req, res) => {
   res.json({
     success: true,
     data: {
-      is_following: !!existing,
+      is_following: Boolean(existing),
       following_count: followingCount,
       follower_count: followerCount
     }
@@ -338,15 +338,15 @@ router.post('/api/like/:targetType/:targetId', isAuthenticated, (req, res) => {
   // 检查目标是否存在
   let targetExists = false;
   if (targetType === 'article') {
-    targetExists = !!queryOne(db, 'SELECT id FROM articles WHERE id = ?', [targetId]);
+    targetExists = Boolean(queryOne(db, 'SELECT id FROM articles WHERE id = ?', [targetId]));
   } else if (targetType === 'comment') {
-    targetExists = !!queryOne(db, 'SELECT id FROM comments WHERE id = ?', [targetId]);
+    targetExists = Boolean(queryOne(db, 'SELECT id FROM comments WHERE id = ?', [targetId]));
   } else if (targetType === 'image') {
-    targetExists = !!queryOne(db, 'SELECT id FROM images WHERE id = ?', [targetId]);
+    targetExists = Boolean(queryOne(db, 'SELECT id FROM images WHERE id = ?', [targetId]));
   } else if (targetType === 'image_comment') {
-    targetExists = !!queryOne(db, 'SELECT id FROM image_comments WHERE id = ?', [targetId]);
+    targetExists = Boolean(queryOne(db, 'SELECT id FROM image_comments WHERE id = ?', [targetId]));
   } else if (targetType === 'novel_chapter') {
-    targetExists = !!queryOne(db, 'SELECT id FROM novel_chapters WHERE id = ?', [targetId]);
+    targetExists = Boolean(queryOne(db, 'SELECT id FROM novel_chapters WHERE id = ?', [targetId]));
   }
 
   if (!targetExists) {
@@ -443,7 +443,7 @@ router.get('/api/like/:targetType/:targetId/status', isAuthenticated, (req, res)
   res.json({
     success: true,
     data: {
-      liked: !!existing,
+      liked: Boolean(existing),
       like_type: existing?.like_type || null,
       like_count: count
     }

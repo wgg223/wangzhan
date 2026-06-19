@@ -13,7 +13,7 @@
  */
 const CacheManager = {
   _cache: new Map(),
-  
+
   /**
    * 设置缓存
    * @param {string} key - 缓存键
@@ -26,7 +26,7 @@ const CacheManager = {
       expireAt: Date.now() + ttl
     });
   },
-  
+
   /**
    * 获取缓存
    * @param {string} key - 缓存键
@@ -35,15 +35,15 @@ const CacheManager = {
   get(key) {
     const item = this._cache.get(key);
     if (!item) return null;
-    
+
     if (Date.now() > item.expireAt) {
       this._cache.delete(key);
       return null;
     }
-    
+
     return item.value;
   },
-  
+
   /**
    * 删除缓存
    * @param {string} key - 缓存键
@@ -51,14 +51,14 @@ const CacheManager = {
   delete(key) {
     this._cache.delete(key);
   },
-  
+
   /**
    * 清空所有缓存
    */
   clear() {
     this._cache.clear();
   },
-  
+
   /**
    * 清理过期缓存
    */
@@ -203,7 +203,7 @@ const ConversationManager = {
     const cacheKey = 'conversation_list';
     const cached = CacheManager.get(cacheKey);
     if (cached) return cached;
-    
+
     try {
       const res = await fetch('/api/chat/conversations');
       if (!res.ok) {
@@ -439,7 +439,7 @@ const MessageManager = {
       if (options.limit) params.append('limit', options.limit);
       if (options.before) params.append('before', options.before);
       if (params.toString()) url += '?' + params.toString();
-      
+
       const res = await fetch(url);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
@@ -480,7 +480,7 @@ const ModelManager = {
     const cacheKey = 'model_list';
     const cached = CacheManager.get(cacheKey);
     if (cached) return cached;
-    
+
     try {
       const res = await fetch('/api/chat/models');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -844,13 +844,13 @@ const StreamRenderer = {
    */
   _doRender() {
     if (!this.contentEl) return;
-    
+
     // 增量渲染策略：
     // 1. 前10次渲染每次都全量渲染（确保初始内容正确显示）
     // 2. 之后每3次渲染一次全量（减少DOM操作）
     // 3. 其他时候只追加文本（最快）
     this.renderCount++;
-    
+
     if (this.renderCount <= 10 || this.renderCount % 3 === 0) {
       // 全量渲染
       this.contentEl.innerHTML = renderMarkdown(this.buffer);

@@ -35,7 +35,9 @@ const cdnConfig = {
   // 从数据库加载配置
   loadFromDatabase(db) {
     try {
-      const settings = db.prepare('SELECT setting_key, setting_value FROM settings WHERE setting_key IN (?, ?, ?, ?)').all('cdn_enabled', 'cdn_provider', 'cdn_base_url', 'cdn_version');
+      // 使用queryAll函数（兼容better-sqlite3和sql.js）
+      const { queryAll } = require('./server/config/db-helpers');
+      const settings = queryAll(db, "SELECT setting_key, setting_value FROM settings WHERE setting_key IN (?, ?, ?, ?)", ['cdn_enabled', 'cdn_provider', 'cdn_base_url', 'cdn_version']);
       const settingsObj = {};
       settings.forEach(s => {
         settingsObj[s.setting_key] = s.setting_value;
@@ -47,6 +49,7 @@ const cdnConfig = {
       this.version = settingsObj.cdn_version || '1.0.0';
     } catch (err) {
       // 如果数据库查询失败，使用环境变量
+      console.error('[CDN] 数据库加载失败，使用环境变量:', err.message);
       this.loadFromEnv();
     }
   },

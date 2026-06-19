@@ -636,9 +636,9 @@ router.post('/maintenance/scheduled-backup', isAuthenticated, isSuperAdmin, (req
     for (const { key, value } of settingsToUpdate) {
       const existing = queryOne(db, `SELECT id FROM settings WHERE setting_key = '${key}'`);
       if (existing) {
-        db.run(`UPDATE settings SET setting_value = ? WHERE setting_key = ?`, [value, key]);
+        db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [value, key]);
       } else {
-        db.run(`INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)`, [key, value]);
+        db.run('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)', [key, value]);
       }
     }
     saveDatabase();

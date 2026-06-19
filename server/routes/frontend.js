@@ -572,10 +572,10 @@ router.get('/user/:id', (req, res) => {
 
   const profileUserId = profileUser.id;
 
-  const isFollowing = currentUserId ? !!queryOne(db,
+  const isFollowing = currentUserId ? Boolean(queryOne(db,
     'SELECT id FROM user_follows WHERE follower_id = ? AND following_id = ?',
     [currentUserId, profileUserId]
-  ) : false;
+  )) : false;
 
   const followerCount = queryOne(db,
     'SELECT COUNT(*) as count FROM user_follows WHERE following_id = ?', [profileUserId]

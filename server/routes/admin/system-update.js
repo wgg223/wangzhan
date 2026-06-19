@@ -174,11 +174,11 @@ function compareVersions(a, b) {
 router.post('/download', async (req, res) => {
   try {
     const { downloadUrl, version } = req.body;
-    
+
     if (!downloadUrl) {
       return res.status(400).json({ success: false, error: '缺少下载链接' });
     }
-    
+
     const projectRoot = path.resolve(__dirname, '../../..');
 
     // 读取当前版本，禁止降级
@@ -199,7 +199,7 @@ router.post('/download', async (req, res) => {
 
     const tempDir = path.join(projectRoot, 'temp_update');
     const backupDir = path.join(projectRoot, 'backup_' + Date.now());
-    
+
     // 记录开始更新
     try {
       const db = req.db;
@@ -215,17 +215,17 @@ router.post('/download', async (req, res) => {
     } catch (logErr) {
       console.error('[system-update] logActivity 错误:', logErr.message);
     }
-    
+
     // 创建临时目录
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
-    
+
     // 下载文件
     const zipPath = path.join(tempDir, 'update.zip');
-    
+
     console.log('[system-update] 开始下载文件:', downloadUrl);
-    
+
     await new Promise((resolve, reject) => {
       const downloadFile = (url) => {
         const protocol = url.startsWith('https') ? https : http;
@@ -237,7 +237,7 @@ router.post('/download', async (req, res) => {
         }, (response) => {
           console.log('[system-update] 下载响应状态码:', response.statusCode);
           console.log('[system-update] 响应头Content-Type:', response.headers['content-type']);
-          
+
           // 处理重定向
           if (response.statusCode === 302 || response.statusCode === 301 || response.statusCode === 307) {
             const redirectUrl = response.headers.location;
@@ -245,12 +245,12 @@ router.post('/download', async (req, res) => {
             downloadFile(redirectUrl);
             return;
           }
-          
+
           if (response.statusCode !== 200) {
             reject(new Error(`下载失败，状态码: ${response.statusCode}`));
             return;
           }
-          
+
           const contentLength = parseInt(response.headers['content-length'] || '0', 10);
           let downloadedBytes = 0;
 
@@ -259,7 +259,7 @@ router.post('/download', async (req, res) => {
             downloadedBytes += chunk.length;
           });
           response.pipe(file);
-          
+
           file.on('finish', () => {
             file.close();
             console.log('[system-update] 文件下载完成，大小:', downloadedBytes, 'bytes');
@@ -284,26 +284,26 @@ router.post('/download', async (req, res) => {
 
             resolve();
           });
-          
+
           file.on('error', (err) => {
             fs.unlink(zipPath, () => {});
             reject(err);
           });
         });
-        
+
         request.on('error', (err) => {
           reject(err);
         });
-        
+
         request.setTimeout(30000, () => {
           request.destroy();
           reject(new Error('下载超时'));
         });
       };
-      
+
       downloadFile(downloadUrl);
     });
-    
+
     // 解压前验证zip文件完整性
     const zipFileSize = fs.statSync(zipPath).size;
     console.log('[system-update] 开始解压文件:', zipPath);
@@ -312,16 +312,16 @@ router.post('/download', async (req, res) => {
     if (zipFileSize < 100) {
       throw new Error('下载的文件过小(' + zipFileSize + ' bytes)，可能不是有效的更新包');
     }
-    
+
     try {
       const zip = new AdmZip(zipPath);
       const entries = zip.getEntries();
       console.log('[system-update] zip文件包含', entries.length, '个条目');
-      
+
       if (entries.length > 0) {
         console.log('[system-update] 前5个条目:', entries.slice(0, 5).map(e => e.entryName));
       }
-      
+
       zip.extractAllTo(tempDir, true);
       console.log('[system-update] adm-zip解压完成，共', entries.length, '个条目');
 
@@ -339,21 +339,21 @@ router.post('/download', async (req, res) => {
         throw new Error('所有解压方法都失败: adm-zip: ' + zipError.message + ', unzip: ' + unzipError.message);
       }
     }
-    
+
     // 调试：列出解压后的文件
     console.log('[system-update] 解压后tempDir内容:', fs.readdirSync(tempDir));
-    
+
     // 查找解压后的目录或文件
     const files = fs.readdirSync(tempDir).filter(f => f !== 'update.zip');
-    
+
     let sourceDir;
-    
+
     // 检查是否有子目录（GitHub zipball通常会有一个子目录）
     const extractedDir = files.find(f => {
       const fullPath = path.join(tempDir, f);
       return fs.statSync(fullPath).isDirectory();
     });
-    
+
     if (extractedDir) {
       sourceDir = path.join(tempDir, extractedDir);
     } else if (files.length > 0) {
@@ -362,18 +362,18 @@ router.post('/download', async (req, res) => {
     } else {
       throw new Error('解压失败，未找到更新文件');
     }
-    
+
     // 备份当前项目（排除node_modules, temp_update等）
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
     }
-    
+
     // 复制关键文件进行备份
     const backupFiles = ['package.json', 'server', 'public', 'views'];
     for (const item of backupFiles) {
       const sourcePath = path.join(projectRoot, item);
       const destPath = path.join(backupDir, item);
-      
+
       if (fs.existsSync(sourcePath)) {
         try {
           const stat = fs.statSync(sourcePath);
@@ -392,18 +392,18 @@ router.post('/download', async (req, res) => {
         }
       }
     }
-    
+
     // 复制更新文件到项目目录
     const updateItems = fs.readdirSync(sourceDir);
     for (const item of updateItems) {
       const sourcePath = path.join(sourceDir, item);
       const destPath = path.join(projectRoot, item);
-      
+
       // 跳过node_modules和一些特殊目录
       if (item === 'node_modules' || item === '.git' || item === 'temp_update') {
         continue;
       }
-      
+
       try {
         const stat = fs.statSync(sourcePath);
         if (stat.isDirectory()) {
@@ -420,7 +420,7 @@ router.post('/download', async (req, res) => {
         console.warn(`[system-update] 复制 ${item} 失败:`, err.message);
       }
     }
-    
+
     // 清理临时文件
     await removeDirCrossPlatform(tempDir);
 
@@ -505,16 +505,16 @@ router.post('/restart', (req, res) => {
     } catch (logErr) {
       console.error('[system-update] logActivity 错误:', logErr.message);
     }
-    
+
     res.json({
       success: true,
       message: '服务器将在3秒后重启...'
     });
-    
+
     // 延迟3秒后重启
     setTimeout(() => {
       console.log('[系统更新] 正在重启服务器...');
-      
+
       // 使用PM2重启（如果使用PM2）
       if (process.env.PM2_HOME || process.env.pm_id) {
         console.log('[系统更新] 检测到PM2，使用PM2重启...');
@@ -547,7 +547,7 @@ router.post('/restart', (req, res) => {
         process.exit(0);
       }
     }, 3000);
-    
+
   } catch (err) {
     console.error('[Admin] 重启服务器失败:', err);
     res.status(500).json({ success: false, error: '重启服务器失败: ' + err.message });
@@ -558,7 +558,7 @@ router.post('/restart', (req, res) => {
 router.get('/status', (req, res) => {
   const projectRoot = path.resolve(__dirname, '../../..');
   const packageJsonPath = path.join(projectRoot, 'package.json');
-  
+
   let currentVersion = '0.0.0';
   try {
     if (fs.existsSync(packageJsonPath)) {
@@ -568,7 +568,7 @@ router.get('/status', (req, res) => {
   } catch (err) {
     console.error('[system-update] 读取package.json失败:', err);
   }
-  
+
   res.json({
     success: true,
     data: {

@@ -1,4 +1,4 @@
- // 后台管理JavaScript文件
+// 后台管理JavaScript文件
 
 /**
  * HTML 转义函数，防止 XSS 攻击
@@ -19,7 +19,7 @@ function escapeHtml(text) {
  */
 function showToast(message, type) {
   if (!message) return;
-  
+
   // 移除已有的toast
   var existing = document.querySelector('.admin-toast');
   if (existing) {
@@ -28,19 +28,19 @@ function showToast(message, type) {
       existing.remove();
     }, 300);
   }
-  
+
   // 创建新的toast
   var toast = document.createElement('div');
   toast.className = 'admin-toast';
   toast.textContent = message;
-  
+
   // 添加类型样式
   if (type) {
     toast.classList.add('toast-' + type);
   }
-  
+
   document.body.appendChild(toast);
-  
+
   // 3秒后自动消失
   setTimeout(function() {
     toast.classList.add('hiding');

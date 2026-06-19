@@ -1052,7 +1052,7 @@ router.get('/api/image/:id/favorite/status', isAuthenticated, (req, res) => {
   res.json({
     success: true,
     data: {
-      favorited: !!existing,
+      favorited: Boolean(existing),
       favorite_count: count?.count || 0
     }
   });
