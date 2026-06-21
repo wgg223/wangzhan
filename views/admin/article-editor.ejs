@@ -47,6 +47,28 @@
       <input type="hidden" id="content" name="content" value="<%= article ? article.content : '' %>">
     </div>
     
+    <div class="form-group">
+      <label>文章附件</label>
+      <div class="attachments-section">
+        <div class="attachment-upload-zone" id="attachment-upload-zone">
+          <i class="fas fa-cloud-upload-alt" style="font-size:24px;color:var(--primary);margin-bottom:6px;display:block;"></i>
+          <p style="font-weight:600;margin:0 0 4px 0;">拖拽文件到此处上传</p>
+          <p style="color:var(--text-muted);font-size:12px;margin:0;">或 <button type="button" class="upload-browse-btn" onclick="document.getElementById('attachment-file-input').click()">点击选择文件</button></p>
+          <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0 0;">支持 zip/rar/7z/exe/apk/pdf/doc/xls 等格式，最大 200MB，支持断点续传</p>
+        </div>
+        <div class="attachment-upload-progress" id="attachment-upload-progress" style="display:none;">
+          <div class="attachment-progress-info">
+            <span id="att-upload-filename" class="att-filename"></span>
+            <span id="att-upload-percent" class="att-percent">0%</span>
+          </div>
+          <div class="progress-bar-track"><div class="progress-bar-fill" id="att-upload-bar"></div></div>
+          <span id="att-upload-status" style="font-size:12px;color:var(--text-secondary);"></span>
+        </div>
+        <input type="file" id="attachment-file-input" style="display:none;" onchange="handleAttachmentFileSelect(event)">
+        <div id="attachments-list" class="attachments-list-editor"></div>
+      </div>
+    </div>
+    
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">保存文章</button>
       <a href="/admin/articles" class="btn">取消</a>
@@ -204,6 +226,105 @@
   background: linear-gradient(90deg, var(--primary), #00c6ff);
   border-radius: 3px;
   transition: width 0.3s;
+}
+
+/* 附件上传区域 */
+.attachments-section {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--gray-50);
+}
+.attachment-upload-zone {
+  border: 2px dashed var(--gray-300);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.3s;
+  background: var(--bg-card);
+  cursor: pointer;
+}
+.attachment-upload-zone:hover,
+.attachment-upload-zone.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+.attachment-upload-progress {
+  padding: 12px 0;
+}
+.attachment-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.att-filename {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
+}
+.att-percent {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+}
+.attachments-list-editor {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.attachments-list-editor:empty {
+  display: none;
+}
+.att-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.att-item-icon {
+  font-size: 18px;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.att-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.att-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+.att-item-size {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.att-item-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 14px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+.att-item-remove:hover {
+  color: #ef4444;
+  background: #fef2f2;
 }
 </style>
 
@@ -447,4 +568,373 @@ window.onclick = function(event) {
     closeMediaSelector();
   }
 }
+
+// ============ 附件上传（断点续传） ============
+var uploadedAttachments = [];
+var currentUploadXhr = null;
+var currentUploadAbort = false;
+
+function getAttachmentFileIcon(filename) {
+  var ext = filename.split('.').pop().toLowerCase();
+  if (['zip','rar','7z','tar','gz','bz2','xz'].includes(ext)) return { icon: 'fa-file-archive', color: '#f59e0b' };
+  if (['exe','msi','dmg','apk','ipa'].includes(ext)) return { icon: 'fa-cog', color: '#6366f1' };
+  if (['pdf'].includes(ext)) return { icon: 'fa-file-pdf', color: '#ef4444' };
+  if (['doc','docx'].includes(ext)) return { icon: 'fa-file-word', color: '#3b82f6' };
+  if (['xls','xlsx'].includes(ext)) return { icon: 'fa-file-excel', color: '#10b981' };
+  if (['mp3','wav','flac','aac','ogg'].includes(ext)) return { icon: 'fa-file-audio', color: '#8b5cf6' };
+  if (['mp4','avi','mkv','mov','wmv','flv'].includes(ext)) return { icon: 'fa-file-video', color: '#ec4899' };
+  if (['iso','img'].includes(ext)) return { icon: 'fa-compact-disc', color: '#64748b' };
+  return { icon: 'fa-file', color: '#94a3b8' };
+}
+
+function formatAttSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function renderAttachmentsList() {
+  var list = document.getElementById('attachments-list');
+  if (!list) return;
+  if (uploadedAttachments.length === 0) {
+    list.innerHTML = '';
+    return;
+  }
+  var html = '';
+  uploadedAttachments.forEach(function(att, idx) {
+    var fi = getAttachmentFileIcon(att.original_name);
+    html += '<div class="att-item">';
+    html += '  <div class="att-item-icon"><i class="fas ' + fi.icon + '" style="color:' + fi.color + ';"></i></div>';
+    html += '  <div class="att-item-info">';
+    html += '    <span class="att-item-name">' + att.original_name + '</span>';
+    html += '    <span class="att-item-size">' + formatAttSize(att.file_size) + '</span>';
+    html += '  </div>';
+    html += '  <button type="button" class="att-item-remove" onclick="removeAttachment(' + idx + ')" title="移除"><i class="fas fa-times"></i></button>';
+    html += '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function removeAttachment(idx) {
+  var att = uploadedAttachments[idx];
+  if (att && att.id) {
+    fetch('/admin/attachments/delete/' + att.id, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': getCsrfToken() }
+    }).catch(function() {});
+  }
+  uploadedAttachments.splice(idx, 1);
+  renderAttachmentsList();
+}
+
+function handleAttachmentFileSelect(event) {
+  var file = event.target.files[0];
+  if (file) uploadAttachmentChunked(file);
+  event.target.value = '';
+}
+
+var attUploadZone = document.getElementById('attachment-upload-zone');
+if (attUploadZone) {
+  attUploadZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.classList.add('drag-over');
+  });
+  attUploadZone.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.classList.remove('drag-over');
+  });
+  attUploadZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.classList.remove('drag-over');
+    if (e.dataTransfer.files.length > 0) {
+      uploadAttachmentChunked(e.dataTransfer.files[0]);
+    }
+  });
+  attUploadZone.addEventListener('click', function(e) {
+    if (e.target.tagName !== 'BUTTON') {
+      document.getElementById('attachment-file-input').click();
+    }
+  });
+}
+
+function uploadAttachmentChunked(file) {
+  if (file.size > 200 * 1024 * 1024) {
+    alert('文件超过 200MB 限制');
+    return;
+  }
+
+  var CHUNK_SIZE = 2 * 1024 * 1024;
+  var totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  var zone = document.getElementById('attachment-upload-zone');
+  var progress = document.getElementById('attachment-upload-progress');
+  var bar = document.getElementById('att-upload-bar');
+  var filenameEl = document.getElementById('att-upload-filename');
+  var percentEl = document.getElementById('att-upload-percent');
+  var statusEl = document.getElementById('att-upload-status');
+
+  if (zone) zone.style.display = 'none';
+  if (progress) progress.style.display = '';
+  if (bar) bar.style.width = '0%';
+  if (filenameEl) filenameEl.textContent = file.name;
+  if (percentEl) percentEl.textContent = '准备中...';
+  if (statusEl) statusEl.textContent = '正在初始化上传...';
+
+  currentUploadAbort = false;
+
+  fetch('/admin/attachments/upload/init', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: JSON.stringify({
+      fileName: file.name,
+      fileSize: file.size,
+      totalChunks: totalChunks
+    })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (data.error) {
+      alert(data.error);
+      resetAttachmentUploadZone();
+      return;
+    }
+    uploadChunksSequentially(file, data.uploadId, 0, totalChunks, CHUNK_SIZE);
+  })
+  .catch(function(err) {
+    alert('上传初始化失败，请重试');
+    resetAttachmentUploadZone();
+  });
+}
+
+function uploadChunksSequentially(file, uploadId, index, total, chunkSize) {
+  if (currentUploadAbort) {
+    fetch('/admin/attachments/upload/cancel', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify({ uploadId: uploadId })
+    }).catch(function() {});
+    resetAttachmentUploadZone();
+    return;
+  }
+
+  if (index >= total) {
+    mergeUpload(file, uploadId);
+    return;
+  }
+
+  var start = index * chunkSize;
+  var end = Math.min(start + chunkSize, file.size);
+  var chunk = file.slice(start, end);
+
+  var bar = document.getElementById('att-upload-bar');
+  var percentEl = document.getElementById('att-upload-percent');
+  var statusEl = document.getElementById('att-upload-status');
+
+  if (bar) bar.style.width = Math.round(index / total * 100) + '%';
+  if (percentEl) percentEl.textContent = Math.round(index / total * 100) + '%';
+  if (statusEl) statusEl.textContent = '上传分片 ' + (index + 1) + ' / ' + total;
+
+  var xhr = new XMLHttpRequest();
+  currentUploadXhr = xhr;
+  xhr.open('POST', '/admin/attachments/upload/chunk');
+  xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+  xhr.setRequestHeader('X-CSRF-Token', getCsrfToken());
+  xhr.setRequestHeader('X-Upload-Id', uploadId);
+  xhr.setRequestHeader('X-Chunk-Index', index.toString());
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+  xhr.addEventListener('load', function() {
+    if (xhr.status === 200) {
+      uploadChunksSequentially(file, uploadId, index + 1, total, chunkSize);
+    } else {
+      try {
+        var result = JSON.parse(xhr.responseText);
+        if (statusEl) statusEl.textContent = '上传失败: ' + (result.error || '未知错误');
+      } catch (e) {
+        if (statusEl) statusEl.textContent = '上传失败，请重试';
+      }
+      setTimeout(resetAttachmentUploadZone, 3000);
+    }
+  });
+
+  xhr.addEventListener('error', function() {
+    if (statusEl) statusEl.textContent = '网络错误，3秒后重试...';
+    setTimeout(function() {
+      uploadChunksSequentially(file, uploadId, index, total, chunkSize);
+    }, 3000);
+  });
+
+  xhr.send(chunk);
+}
+
+function mergeUpload(file, uploadId) {
+  var bar = document.getElementById('att-upload-bar');
+  var percentEl = document.getElementById('att-upload-percent');
+  var statusEl = document.getElementById('att-upload-status');
+
+  if (bar) bar.style.width = '100%';
+  if (percentEl) percentEl.textContent = '100%';
+  if (statusEl) statusEl.textContent = '正在合并文件...';
+
+  fetch('/admin/attachments/upload/merge', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: JSON.stringify({ uploadId: uploadId })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (data.error) {
+      if (statusEl) statusEl.textContent = '合并失败: ' + data.error;
+      setTimeout(resetAttachmentUploadZone, 3000);
+      return;
+    }
+
+    if (statusEl) statusEl.textContent = '上传完成！';
+
+    var articleId = document.querySelector('input[name="id"]');
+    var articleIdVal = articleId ? articleId.value : null;
+
+    fetch('/admin/attachments/save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify({
+        article_id: articleIdVal || null,
+        original_name: data.file.original_name,
+        file_name: data.file.file_name,
+        file_path: data.file.file_path,
+        file_size: data.file.file_size
+      })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(saveData) {
+      if (saveData.success && saveData.attachment) {
+        uploadedAttachments.push(saveData.attachment);
+        renderAttachmentsList();
+      }
+      setTimeout(resetAttachmentUploadZone, 500);
+    })
+    .catch(function() {
+      uploadedAttachments.push({
+        original_name: data.file.original_name,
+        file_name: data.file.file_name,
+        file_path: data.file.file_path,
+        file_size: data.file.file_size
+      });
+      renderAttachmentsList();
+      setTimeout(resetAttachmentUploadZone, 500);
+    });
+  })
+  .catch(function(err) {
+    if (statusEl) statusEl.textContent = '合并请求失败，请重试';
+    setTimeout(resetAttachmentUploadZone, 3000);
+  });
+}
+
+function resetAttachmentUploadZone() {
+  var zone = document.getElementById('attachment-upload-zone');
+  var progress = document.getElementById('attachment-upload-progress');
+  if (zone) zone.style.display = '';
+  if (progress) progress.style.display = 'none';
+  currentUploadXhr = null;
+  currentUploadAbort = false;
+}
+
+// 加载已有附件
+function loadExistingAttachments(articleId) {
+  if (!articleId) return;
+  fetch('/admin/attachments/list/' + articleId, {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (Array.isArray(data)) {
+      uploadedAttachments = data;
+      renderAttachmentsList();
+    }
+  })
+  .catch(function() {});
+}
+
+// 表单改为AJAX提交以处理附件
+(function() {
+  var form = document.querySelector('.admin-form');
+  if (!form) return;
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    document.getElementById('content').value = quill ? quill.root.innerHTML : document.getElementById('content').value;
+
+    var formData = new FormData(form);
+
+    fetch('/admin/articles/save', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': getCsrfToken() },
+      body: new URLSearchParams(formData)
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.error) {
+        alert('保存失败: ' + data.error);
+        return;
+      }
+      var savedArticleId = data.articleId;
+
+      // 关联附件到文章
+      if (uploadedAttachments.length > 0 && savedArticleId) {
+        var orphanIds = uploadedAttachments.filter(function(a) { return !a.article_id || String(a.article_id) === 'null'; }).map(function(a) { return a.id; });
+        if (orphanIds.length > 0) {
+          fetch('/admin/attachments/update-article', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest',
+              'X-CSRF-Token': getCsrfToken()
+            },
+            body: JSON.stringify({
+              attachment_ids: orphanIds,
+              article_id: savedArticleId
+            })
+          }).then(function() {
+            window.location.href = '/admin/articles';
+          }).catch(function() {
+            window.location.href = '/admin/articles';
+          });
+          return;
+        }
+      }
+
+      window.location.href = '/admin/articles';
+    })
+    .catch(function(err) {
+      alert('保存失败，请重试');
+    });
+  });
+
+  // 加载已有附件
+  var articleIdInput = form.querySelector('input[name="id"]');
+  if (articleIdInput && articleIdInput.value) {
+    loadExistingAttachments(articleIdInput.value);
+  }
+})();
 </script>

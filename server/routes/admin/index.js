@@ -27,6 +27,7 @@ const systemUpdateRouter = require('./system-update');
 const backupRouter = require('./backup');
 const maintenanceRouter = require('./maintenance');
 const siteStatsRouter = require('./site-stats');
+const attachmentsRouter = require('./attachments');
 
 // ---------- Admin 全局中间件 ----------
 router.use(isAuthenticated);
@@ -63,6 +64,7 @@ router.use('/settings/smtp', isAdmin, settingsSmtpRouter);
 router.use('/settings/agreement', isAdmin, settingsAgreementRouter);
 router.use('/settings/popup', isAdmin, settingsPopupRouter);
 router.use(articlesRouter);
+router.use('/attachments', attachmentsRouter);
 router.use(usersRouter);
 router.use(permissionsRouter);
 router.use(commentsRouter);

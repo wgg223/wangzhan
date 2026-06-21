@@ -1,4 +1,5 @@
 <div class="container">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <article class="article-detail">
     <h1><%= article.title %></h1>
     <div class="article-meta">
@@ -24,6 +25,57 @@
     <div class="article-body">
       <%- article.content %>
     </div>
+    <% if (attachments && attachments.length > 0) { %>
+    <div class="article-attachments">
+      <h3><i class="fas fa-paperclip"></i> 附件下载 (<%= attachments.length %>)</h3>
+      <div class="attachments-list">
+        <% attachments.forEach(function(att) { %>
+        <div class="attachment-item">
+          <div class="attachment-icon">
+            <% var ext = att.original_name.split('.').pop().toLowerCase(); %>
+            <% if (['zip','rar','7z','tar','gz','bz2','xz'].includes(ext)) { %>
+              <i class="fas fa-file-archive" style="color:#f59e0b;"></i>
+            <% } else if (['exe','msi','dmg','apk','ipa'].includes(ext)) { %>
+              <i class="fas fa-cog" style="color:#6366f1;"></i>
+            <% } else if (['pdf'].includes(ext)) { %>
+              <i class="fas fa-file-pdf" style="color:#ef4444;"></i>
+            <% } else if (['doc','docx'].includes(ext)) { %>
+              <i class="fas fa-file-word" style="color:#3b82f6;"></i>
+            <% } else if (['xls','xlsx'].includes(ext)) { %>
+              <i class="fas fa-file-excel" style="color:#10b981;"></i>
+            <% } else if (['mp3','wav','flac','aac','ogg'].includes(ext)) { %>
+              <i class="fas fa-file-audio" style="color:#8b5cf6;"></i>
+            <% } else if (['mp4','avi','mkv','mov','wmv','flv'].includes(ext)) { %>
+              <i class="fas fa-file-video" style="color:#ec4899;"></i>
+            <% } else if (['iso','img'].includes(ext)) { %>
+              <i class="fas fa-compact-disc" style="color:#64748b;"></i>
+            <% } else { %>
+              <i class="fas fa-file" style="color:#94a3b8;"></i>
+            <% } %>
+          </div>
+          <div class="attachment-info">
+            <span class="attachment-name"><%= att.original_name %></span>
+            <span class="attachment-meta">
+              <% if (att.file_size) { %>
+                <% if (att.file_size < 1024) { %><%= att.file_size %> B
+                <% } else if (att.file_size < 1024 * 1024) { %><%= (att.file_size / 1024).toFixed(1) %> KB
+                <% } else if (att.file_size < 1024 * 1024 * 1024) { %><%= (att.file_size / (1024 * 1024)).toFixed(1) %> MB
+                <% } else { %><%= (att.file_size / (1024 * 1024 * 1024)).toFixed(2) %> GB
+                <% } %>
+              <% } %>
+              <% if (att.download_count > 0) { %>
+                &middot; <%= att.download_count %> 次下载
+              <% } %>
+            </span>
+          </div>
+          <a href="/attachments/download/<%= att.id %>" class="attachment-download-btn" title="下载">
+            <i class="fas fa-download"></i> 下载
+          </a>
+        </div>
+        <% }); %>
+      </div>
+    </div>
+    <% } %>
     <div class="article-footer">
       <div class="article-actions-left">
         <a href="/articles" class="btn">返回文章列表</a>
@@ -428,6 +480,95 @@
 
 .like-btn.liked .like-icon {
   color: #ef4444;
+}
+
+/* 文章附件 */
+.article-attachments {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px solid #f0f0f0;
+}
+.article-attachments h3 {
+  font-size: 16px;
+  color: #333;
+  margin-bottom: 12px;
+}
+.article-attachments h3 i {
+  margin-right: 6px;
+  color: #007bff;
+}
+.attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+.attachment-item:hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+.attachment-icon {
+  font-size: 24px;
+  width: 36px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.attachment-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.attachment-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-meta {
+  font-size: 12px;
+  color: #999;
+}
+.attachment-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  background: #007bff;
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.attachment-download-btn:hover {
+  background: #0056b3;
+  color: #fff;
+}
+
+@media (max-width: 600px) {
+  .attachment-item {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .attachment-download-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>
 

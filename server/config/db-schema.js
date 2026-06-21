@@ -615,6 +615,22 @@ function createTables(db) {
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_docs_source ON ai_knowledge_docs(source_type, source_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_docs_created ON ai_knowledge_docs(created_at)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunks_doc ON ai_knowledge_chunks(doc_id, chunk_index)');
+
+  // ============ 文章附件表 ============
+  db.run(`CREATE TABLE IF NOT EXISTS article_attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id INTEGER,
+    original_name TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size INTEGER DEFAULT 0,
+    download_count INTEGER DEFAULT 0,
+    uploaded_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+    FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_article_attachments_article ON article_attachments(article_id)');
 }
 
 module.exports = { createTables };

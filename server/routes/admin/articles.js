@@ -76,6 +76,7 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
   }
 
   const locationValue = location || 'home';
+  let articleId = id;
 
   if (id) {
     const existing = queryOne(db, 'SELECT author_id FROM articles WHERE id = ?', [id]);
@@ -90,6 +91,9 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
     try {
       db.run('INSERT INTO articles (title, content, category, status, cover_image, location, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [title, content, category || '', status || 'published', cover_image || '', locationValue, req.session.user.id]);
+      const newArticle = queryOne(db, 'SELECT id FROM articles WHERE title = ? AND author_id = ? ORDER BY id DESC LIMIT 1',
+        [title, req.session.user.id]);
+      if (newArticle) articleId = newArticle.id;
     } catch (err) { throw err; }
   }
 
@@ -97,6 +101,12 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
   try {
     logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: id ? 'update' : 'create', target_type: 'article', target_id: id || null, target_title: title, detail: (id ? '更新' : '创建') + '文章：' + title, ip: req.ip });
   } catch (err) { throw err; }
+
+  // AJAX请求返回JSON
+  if (req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest') {
+    return res.json({ success: true, articleId: articleId });
+  }
+
   res.redirect('/admin/articles');
 });
 
@@ -111,6 +121,16 @@ router.post('/articles/delete/:id', isAuthenticated, hasPermission('articles.man
   if (!isAdminRole(req.session.user) && article.author_id !== req.session.user.id) {
     return res.status(403).json({ error: '无权删除此文章' });
   }
+
+  // 删除关联的附件文件
+  const attachments = queryAll(db, 'SELECT file_path FROM article_attachments WHERE article_id = ?', [req.params.id]);
+  const fs = require('fs');
+  const path = require('path');
+  attachments.forEach(function(att) {
+    const filePath = path.join(__dirname, '../../../public', att.file_path);
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
+  });
+  db.run('DELETE FROM article_attachments WHERE article_id = ?', [req.params.id]);
 
   db.run('DELETE FROM articles WHERE id = ?', [req.params.id]);
 

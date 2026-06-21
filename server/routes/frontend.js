@@ -84,6 +84,8 @@ router.post('/articles/save', isAuthenticated, (req, res) => {
     return res.status(400).json({ error: '文章标题不能为空' });
   }
 
+  let articleId = id;
+
   if (id) {
     // 验证是否为作者本人
     const article = queryOne(db, 'SELECT * FROM articles WHERE id = ?', [id]);
@@ -98,6 +100,9 @@ router.post('/articles/save', isAuthenticated, (req, res) => {
   } else {
     db.run('INSERT INTO articles (title, content, category, location, status, cover_image, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [title, content, category || '', location || 'home', status || 'published', cover_image || '', req.session.user.id]);
+    const newArticle = queryOne(db, 'SELECT id FROM articles WHERE title = ? AND author_id = ? ORDER BY id DESC LIMIT 1',
+      [title, req.session.user.id]);
+    if (newArticle) articleId = newArticle.id;
   }
 
   // 清除相关缓存
@@ -105,6 +110,12 @@ router.post('/articles/save', isAuthenticated, (req, res) => {
   queryCache.delete('articles_list');
 
   saveDatabase();
+
+  // AJAX请求返回JSON（用于附件关联）
+  if (req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest') {
+    return res.json({ success: true, articleId: articleId });
+  }
+
   res.redirect('/articles');
 });
 
@@ -198,11 +209,17 @@ router.get('/articles/:id', (req, res) => {
     }
   });
 
+  const attachments = queryAll(db,
+    'SELECT * FROM article_attachments WHERE article_id = ? ORDER BY created_at ASC',
+    [req.params.id]
+  );
+
   res.render('frontend/article-detail', {
     user: req.session.user || null,
     settings: settings,
     article: article,
     comments: comments,
+    attachments: attachments,
     error: req.query.error || null,
     success: req.query.success || null,
     currentUserId: req.session.user ? req.session.user.id : null
@@ -487,6 +504,48 @@ router.get('/search', (req, res) => {
     articles: articles,
     keyword: keyword
   });
+});
+
+// ============ 文章附件下载 ============
+router.get('/attachments/download/:id', (req, res) => {
+  const db = req.db;
+  const att = queryOne(db, 'SELECT * FROM article_attachments WHERE id = ?', [req.params.id]);
+
+  if (!att) {
+    return res.status(404).render('frontend/error', {
+      message: '附件不存在',
+      error: '您访问的附件不存在或已被删除',
+      user: req.session.user || null,
+      settings: res.locals.settings || {}
+    });
+  }
+
+  const article = queryOne(db, 'SELECT id, status FROM articles WHERE id = ?', [att.article_id]);
+  if (!article || article.status !== 'published') {
+    return res.status(404).render('frontend/error', {
+      message: '附件不可用',
+      error: '该附件所属文章未发布',
+      user: req.session.user || null,
+      settings: res.locals.settings || {}
+    });
+  }
+
+  const filePath = path.join(__dirname, '../../public', att.file_path);
+  if (!require('fs').existsSync(filePath)) {
+    return res.status(404).render('frontend/error', {
+      message: '文件不存在',
+      error: '文件已被删除',
+      user: req.session.user || null,
+      settings: res.locals.settings || {}
+    });
+  }
+
+  try {
+    db.run('UPDATE article_attachments SET download_count = download_count + 1 WHERE id = ?', [att.id]);
+    saveDatabase();
+  } catch (e) { /* ignore */ }
+
+  res.download(filePath, att.original_name);
 });
 
 // ============ 社区主页 ============
