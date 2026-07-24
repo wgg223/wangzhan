@@ -66,14 +66,11 @@ const { createNotification } = require('./community');
 const logger = require('../utils/logger');
 const { ROLE_HIERARCHY } = require('../middlewares/auth');
 const { getSettings, getImageConfigs } = require('../utils/settings');
+const { grantDefaultPermissions } = require('../config/db-helpers');
 
 // 辅助函数：生成随机验证码
 function generateCode() {
   return crypto.randomBytes(4).toString('hex');
-}
-
-function generateSecureToken() {
-  return crypto.randomBytes(32).toString('hex');
 }
 
 // 辅助函数：检查SMTP是否配置
@@ -683,11 +680,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     // 为新用户授予默认权限
     const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [tempData.username]);
     if (newUser) {
-      const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
-      defaultPerms.forEach(perm => {
-        db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-          [newUser.id, perm, newUser.id]);
-      });
+      grantDefaultPermissions(db, newUser.id, newUser.id);
       saveDatabase();
     }
 
@@ -845,11 +838,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     // 为新用户授予默认权限
     const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
     if (newUser) {
-      const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
-      defaultPerms.forEach(perm => {
-        db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-          [newUser.id, perm, newUser.id]);
-      });
+      grantDefaultPermissions(db, newUser.id, newUser.id);
       saveDatabase();
     }
 

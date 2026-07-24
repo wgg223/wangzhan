@@ -1,8 +1,6 @@
 /**
  * 图片分享工具函数
  */
-const { queryAll, saveDatabase } = require('../config/database');
-const { getImageConfigs } = require('./settings');
 
 /**
  * 记录图片分享操作日志
@@ -15,6 +13,5 @@ function addImageLog(db, adminId, content) {
 }
 
 module.exports = {
-  getImageConfigs,
   addImageLog
 };

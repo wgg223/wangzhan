@@ -1,16 +1,5 @@
 // 前端主要JavaScript文件
-
-/**
- * HTML 转义函数，防止 XSS 攻击
- * @param {string} text - 需要转义的文本
- * @returns {string} 转义后的文本
- */
-function escapeHtml(text) {
-  if (typeof text !== 'string') return '';
-  const div = document.createElement('div');
-  div.appendChild(document.createTextNode(text));
-  return div.innerHTML;
-}
+// 注意: escapeHtml, getCsrfToken, showToast 等工具函数已移至 utils.js
 
 // ============ 暗色模式切换 ============
 function initThemeToggle() {

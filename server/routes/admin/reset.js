@@ -9,6 +9,46 @@ const { getProjectStats, cleanProjectFiles } = require('../../utils/project-util
 const { PROJECT_DEFINITIONS, DEPENDENT_TABLES, ALL_TABLES } = require('../../config/constants');
 const fsSafe = require('../../utils/fs-safe');
 
+/**
+ * 收集所有项目的统计数据和全局统计
+ */
+function collectAllStats(db) {
+  const allProjectDefs = getAllProjectDefinitions(db);
+  const projectStatsList = allProjectDefs.map(project => {
+    const { stats, totalRecords } = getProjectStats(db, project.tables);
+    return {
+      id: project.id,
+      name: project.name,
+      icon: project.icon,
+      description: project.description,
+      tables: project.tables,
+      file_dirs: project.file_dirs,
+      stats,
+      totalRecords
+    };
+  });
+
+  const globalStats = {
+    users: queryOne(db, "SELECT COUNT(*) as count FROM users WHERE role != 'super_admin'")?.count || 0,
+    media: queryOne(db, 'SELECT COUNT(*) as count FROM media')?.count || 0,
+    activity_logs: queryOne(db, 'SELECT COUNT(*) as count FROM activity_logs')?.count || 0,
+    internal_messages: queryOne(db, 'SELECT COUNT(*) as count FROM internal_messages')?.count || 0,
+    notifications: queryOne(db, 'SELECT COUNT(*) as count FROM notifications')?.count || 0,
+    content_likes: queryOne(db, 'SELECT COUNT(*) as count FROM content_likes')?.count || 0,
+    user_follows: queryOne(db, 'SELECT COUNT(*) as count FROM user_follows')?.count || 0,
+    tags: queryOne(db, 'SELECT COUNT(*) as count FROM tags')?.count || 0,
+    content_tags: queryOne(db, 'SELECT COUNT(*) as count FROM content_tags')?.count || 0,
+    content_versions: queryOne(db, 'SELECT COUNT(*) as count FROM content_versions')?.count || 0,
+    article_drafts: queryOne(db, 'SELECT COUNT(*) as count FROM article_drafts')?.count || 0
+  };
+
+  let totalRecords = 0;
+  projectStatsList.forEach(p => { totalRecords += p.totalRecords; });
+  Object.values(globalStats).forEach(v => { totalRecords += v; });
+
+  return { projectStatsList, globalStats, totalRecords };
+}
+
 // ============ 选择性重置 ============
 
 router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) => {
@@ -120,41 +160,7 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
 router.get('/reset', isAuthenticated, canAccessAdmin, isSuperAdmin, (req, res) => {
   const db = req.db;
 
-  // 收集所有项目的统计数据
-  const allProjectDefs = getAllProjectDefinitions(db);
-  const projectStatsList = allProjectDefs.map(project => {
-    const { stats, totalRecords } = getProjectStats(db, project.tables);
-    return {
-      id: project.id,
-      name: project.name,
-      icon: project.icon,
-      description: project.description,
-      tables: project.tables,
-      file_dirs: project.file_dirs,
-      stats,
-      totalRecords
-    };
-  });
-
-  // 全局统计
-  const globalStats = {
-    users: queryOne(db, "SELECT COUNT(*) as count FROM users WHERE role != 'super_admin'")?.count || 0,
-    media: queryOne(db, 'SELECT COUNT(*) as count FROM media')?.count || 0,
-    activity_logs: queryOne(db, 'SELECT COUNT(*) as count FROM activity_logs')?.count || 0,
-    internal_messages: queryOne(db, 'SELECT COUNT(*) as count FROM internal_messages')?.count || 0,
-    notifications: queryOne(db, 'SELECT COUNT(*) as count FROM notifications')?.count || 0,
-    content_likes: queryOne(db, 'SELECT COUNT(*) as count FROM content_likes')?.count || 0,
-    user_follows: queryOne(db, 'SELECT COUNT(*) as count FROM user_follows')?.count || 0,
-    tags: queryOne(db, 'SELECT COUNT(*) as count FROM tags')?.count || 0,
-    content_tags: queryOne(db, 'SELECT COUNT(*) as count FROM content_tags')?.count || 0,
-    content_versions: queryOne(db, 'SELECT COUNT(*) as count FROM content_versions')?.count || 0,
-    article_drafts: queryOne(db, 'SELECT COUNT(*) as count FROM article_drafts')?.count || 0
-  };
-
-  // 计算总记录数
-  let totalRecords = 0;
-  projectStatsList.forEach(p => { totalRecords += p.totalRecords; });
-  Object.values(globalStats).forEach(v => { totalRecords += v; });
+  const { projectStatsList, globalStats, totalRecords } = collectAllStats(db);
 
   res.render('admin/reset', {
     user: req.session.user,
@@ -260,41 +266,7 @@ router.post('/reset/execute', isAuthenticated, isSuperAdmin, async (req, res) =>
 router.get('/reset/factory', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
-  // 收集所有项目的统计数据
-  const allProjectDefs = getAllProjectDefinitions(db);
-  const projectStatsList = allProjectDefs.map(project => {
-    const { stats, totalRecords } = getProjectStats(db, project.tables);
-    return {
-      id: project.id,
-      name: project.name,
-      icon: project.icon,
-      description: project.description,
-      tables: project.tables,
-      file_dirs: project.file_dirs,
-      stats,
-      totalRecords
-    };
-  });
-
-  // 全局统计
-  const globalStats = {
-    users: queryOne(db, "SELECT COUNT(*) as count FROM users WHERE role != 'super_admin'")?.count || 0,
-    media: queryOne(db, 'SELECT COUNT(*) as count FROM media')?.count || 0,
-    activity_logs: queryOne(db, 'SELECT COUNT(*) as count FROM activity_logs')?.count || 0,
-    internal_messages: queryOne(db, 'SELECT COUNT(*) as count FROM internal_messages')?.count || 0,
-    notifications: queryOne(db, 'SELECT COUNT(*) as count FROM notifications')?.count || 0,
-    content_likes: queryOne(db, 'SELECT COUNT(*) as count FROM content_likes')?.count || 0,
-    user_follows: queryOne(db, 'SELECT COUNT(*) as count FROM user_follows')?.count || 0,
-    tags: queryOne(db, 'SELECT COUNT(*) as count FROM tags')?.count || 0,
-    content_tags: queryOne(db, 'SELECT COUNT(*) as count FROM content_tags')?.count || 0,
-    content_versions: queryOne(db, 'SELECT COUNT(*) as count FROM content_versions')?.count || 0,
-    article_drafts: queryOne(db, 'SELECT COUNT(*) as count FROM article_drafts')?.count || 0
-  };
-
-  // 计算总记录数
-  let totalRecords = 0;
-  projectStatsList.forEach(p => { totalRecords += p.totalRecords; });
-  Object.values(globalStats).forEach(v => { totalRecords += v; });
+  const { projectStatsList, globalStats, totalRecords } = collectAllStats(db);
 
   // 包含超级管理员的总用户数
   const totalUsers = globalStats.users + 1;
@@ -393,3 +365,4 @@ function getAllTablesToReset(db) {
 }
 
 module.exports = router;
+module.exports.getAllProjectDefinitions = getAllProjectDefinitions;

@@ -8,16 +8,13 @@ const { encrypt } = require('../../config/crypto-secure');
 const { settingsCache } = require('../../config/cache');
 const { upload } = require('./upload');
 const cdnConfig = require('../../../cdn-config');
+const { getSettings, upsertSettings } = require('../../utils/settings');
 
 // ============ 网站设置 ============
 
 router.get('/settings', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
   const db = req.db;
-  const settings = queryAll(db, 'SELECT * FROM settings');
-  const settingsObj = {};
-  settings.forEach(s => {
-    settingsObj[s.setting_key] = s.setting_value;
-  });
+  const settingsObj = getSettings(db);
 
   // 获取用户权限
   const userPermissions = queryAll(db, 'SELECT permission_key FROM user_permissions WHERE user_id = ?', [req.session.user.id]);
@@ -35,50 +32,38 @@ router.post('/settings', isAuthenticated, hasPermission('settings.manage'), (req
   const db = req.db;
   const { site_name, site_description, icp_number, icp_link, footer_text, logo, user_agreement, privacy_policy, delete_account_agreement, welcome_popup_enabled, welcome_popup_title, welcome_popup_content } = req.body;
 
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [site_name || '', 'site_name']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [site_description || '', 'site_description']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [icp_number || '', 'icp_beian']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.police_beian || '', 'police_beian']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [icp_number || '', 'icp_number']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [icp_link || 'https://beian.miit.gov.cn/', 'icp_link']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [footer_text || '', 'footer_text']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [logo || '', 'logo']);
-  // 保存用户协议与隐私政策
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [user_agreement || '', 'user_agreement']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [privacy_policy || '', 'privacy_policy']);
-  // 保存账户注销协议
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [delete_account_agreement || '', 'delete_account_agreement']);
+  upsertSettings(db, {
+    site_name: site_name || '',
+    site_description: site_description || '',
+    icp_beian: icp_number || '',
+    police_beian: req.body.police_beian || '',
+    icp_number: icp_number || '',
+    icp_link: icp_link || 'https://beian.miit.gov.cn/',
+    footer_text: footer_text || '',
+    logo: logo || '',
+    user_agreement: user_agreement || '',
+    privacy_policy: privacy_policy || '',
+    delete_account_agreement: delete_account_agreement || '',
+    message_popup_enabled: req.body.message_popup_enabled === '1' ? '1' : '0',
+    welcome_popup_enabled: req.body.welcome_popup_enabled === '1' ? '1' : '0',
+    welcome_popup_title: welcome_popup_title || '欢迎访问',
+    welcome_popup_content: welcome_popup_content || '',
+    smtp_host: req.body.smtp_host || '',
+    smtp_port: req.body.smtp_port || '465',
+    smtp_secure: req.body.smtp_secure || 'true',
+    smtp_user: req.body.smtp_user || '',
+    smtp_from_name: req.body.smtp_from_name || '',
+    smtp_from_email: req.body.smtp_from_email || '',
+    cdn_enabled: req.body.cdn_enabled === '1' ? '1' : '0',
+    cdn_provider: req.body.cdn_provider || 'custom',
+    cdn_base_url: req.body.cdn_base_url || 'https://dalaowang233.top',
+    cdn_version: req.body.cdn_version || '1.0.0'
+  });
 
-  // 保存站内信弹窗设置
-  const popupEnabled = req.body.message_popup_enabled === '1' ? '1' : '0';
-  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['message_popup_enabled', popupEnabled]);
-
-  // 保存欢迎弹窗设置
-  const welcomePopupEnabled = req.body.welcome_popup_enabled === '1' ? '1' : '0';
-  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['welcome_popup_enabled', welcomePopupEnabled]);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [welcome_popup_title || '欢迎访问', 'welcome_popup_title']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [welcome_popup_content || '', 'welcome_popup_content']);
-
-  // 保存SMTP配置
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_host || '', 'smtp_host']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_port || '465', 'smtp_port']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_secure || 'true', 'smtp_secure']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_user || '', 'smtp_user']);
   if (req.body.smtp_pass) {
     db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [encrypt(req.body.smtp_pass), 'smtp_pass']);
+    saveDatabase();
   }
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_from_name || '', 'smtp_from_name']);
-  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [req.body.smtp_from_email || '', 'smtp_from_email']);
-
-  // 保存CDN配置
-  const cdnEnabled = req.body.cdn_enabled === '1' ? '1' : '0';
-  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['cdn_enabled', cdnEnabled]);
-  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['cdn_provider', req.body.cdn_provider || 'custom']);
-  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['cdn_base_url', req.body.cdn_base_url || 'https://dalaowang233.top']);
-  db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', ['cdn_version', req.body.cdn_version || '1.0.0']);
-
-  saveDatabase();
-  settingsCache.delete('settings');
 
   // 重新加载CDN配置
   cdnConfig.loadFromDatabase(db);
@@ -301,7 +286,7 @@ router.post('/settings/backup/restore', isAuthenticated, hasPermission('data.man
     }
 
     saveDatabase();
-    settingsCache.delete('settings');
+    settingsCache.delete('settings:all');
 
     logActivity(db, {
       user_id: req.session.user.id,

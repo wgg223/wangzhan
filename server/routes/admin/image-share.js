@@ -3,7 +3,8 @@ const router = express.Router();
 const path = require('path');
 const { isAuthenticated, hasPermission, isAdminRole } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
-const { getImageConfigs, addImageLog } = require('../../utils/image-utils');
+const { addImageLog } = require('../../utils/image-utils');
+const { getImageConfigs, saveImageShareConfigs } = require('../../utils/settings');
 const fsSafe = require('../../utils/fs-safe');
 
 // ============ 图片分享管理 ============
@@ -49,7 +50,7 @@ router.get('/image-share/images', isAuthenticated, hasPermission('image-share.ma
   const config = getImageConfigs(db);
   const status = req.query.status;
   const user = req.session.user;
-  const isAdmin = user.role === 'admin' || user.role === 'super_admin';
+  const isAdmin = isAdminRole(user);
 
   let images;
   if (isAdmin) {
@@ -225,64 +226,9 @@ router.get('/image-share/settings', isAuthenticated, hasPermission('image-share.
 // 图片分享 - 保存设置
 router.post('/image-share/settings', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
-  const {
-    site_name,
-    site_description,
-    site_logo,
-    icp_number,
-    review_enabled,
-    comment_enabled,
-    comment_review_enabled,
-    guest_view_enabled,
-    guest_upload_enabled,
-    max_size,
-    allowed_formats,
-    images_per_page,
-    hot_images_count
-  } = req.body;
 
-  if (site_name !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('site_name', ?)", [site_name || '']);
-  }
-  if (site_description !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('site_description', ?)", [site_description || '']);
-  }
-  if (site_logo !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('site_logo', ?)", [site_logo || '']);
-  }
-  if (icp_number !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('icp_number', ?)", [icp_number || '']);
-  }
-  if (review_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('review_enabled', ?)", [review_enabled ? '1' : '0']);
-  }
-  if (comment_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('comment_enabled', ?)", [comment_enabled ? '1' : '0']);
-  }
-  if (comment_review_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('comment_review_enabled', ?)", [comment_review_enabled ? '1' : '0']);
-  }
-  if (guest_view_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('guest_view_enabled', ?)", [guest_view_enabled ? '1' : '0']);
-  }
-  if (guest_upload_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('guest_upload_enabled', ?)", [guest_upload_enabled ? '1' : '0']);
-  }
-  if (max_size !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('max_size', ?)", [String(max_size)]);
-  }
-  if (allowed_formats !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('allowed_formats', ?)", [allowed_formats || '']);
-  }
-  if (images_per_page !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('images_per_page', ?)", [String(images_per_page)]);
-  }
-  if (hot_images_count !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('hot_images_count', ?)", [String(hot_images_count)]);
-  }
-
+  saveImageShareConfigs(db, req.body);
   addImageLog(db, req.session.user.id, '修改图片分享网站设置');
-  saveDatabase();
 
   res.json({ success: true, message: '保存成功' });
 });
@@ -431,7 +377,7 @@ router.post('/image-share/set-visibility', isAuthenticated, hasPermission('image
   }
 
   const user = req.session.user;
-  const isAdmin = user.role === 'admin' || user.role === 'super_admin';
+  const isAdmin = isAdminRole(user);
   if (!isAdmin && image.user_id !== user.id) {
     return res.json({ success: false, message: '无权修改此图片的可见性' });
   }

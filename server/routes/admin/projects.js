@@ -2,10 +2,12 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
-const { saveDatabase, queryAll, queryOne } = require('../../config/database');
+const { saveDatabase, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { getProjectInfo, getProjectStats, cleanProjectFiles, deployFromGithub, getDeployStatus, isValidGithubUrl } = require('../../utils/project-utils');
-const { PROJECT_DEFINITIONS, DEPENDENT_TABLES } = require('../../config/constants');
+const { DEPENDENT_TABLES } = require('../../config/constants');
+const { getAllProjectDefinitions } = require('./reset');
+const { renderError } = require('../../utils/response');
 
 // ============ 项目管理 ============
 
@@ -24,12 +26,7 @@ router.get('/projects/edit/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const project = getProjectInfo(db, req.params.id);
 
   if (!project) {
-    return res.status(404).render('frontend/error', {
-      message: '项目不存在',
-      error: '',
-      user: req.session.user,
-      settings: res.locals.settings || {}
-    });
+    return renderError(res, 404, '项目不存在', req);
   }
 
   res.render('admin/project-editor', {
@@ -43,21 +40,7 @@ router.get('/projects/edit/:id', isAuthenticated, isSuperAdmin, (req, res) => {
 router.get('/projects', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
-  let projects = [];
-  try {
-    const dbProjects = queryAll(db, 'SELECT * FROM projects WHERE is_active = 1 ORDER BY created_at ASC');
-    if (dbProjects.length > 0) {
-      projects = dbProjects.map(p => ({
-        ...p,
-        tables: JSON.parse(p.tables),
-        file_dirs: JSON.parse(p.file_dirs || '[]')
-      }));
-    }
-  } catch (e) { /* ignore */ }
-
-  if (projects.length === 0) {
-    projects = Object.values(PROJECT_DEFINITIONS);
-  }
+  const projects = getAllProjectDefinitions(db);
 
   const projectsWithStats = projects.map(project => {
     const { stats, totalRecords } = getProjectStats(db, project.tables);
@@ -80,21 +63,7 @@ router.get('/projects', isAuthenticated, isSuperAdmin, (req, res) => {
 router.get('/projects/api/list', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
-  let projects = [];
-  try {
-    const dbProjects = queryAll(db, 'SELECT * FROM projects WHERE is_active = 1 ORDER BY created_at ASC');
-    if (dbProjects.length > 0) {
-      projects = dbProjects.map(p => ({
-        ...p,
-        tables: JSON.parse(p.tables),
-        file_dirs: JSON.parse(p.file_dirs || '[]')
-      }));
-    }
-  } catch (e) { /* ignore */ }
-
-  if (projects.length === 0) {
-    projects = Object.values(PROJECT_DEFINITIONS);
-  }
+  const projects = getAllProjectDefinitions(db);
 
   const projectsWithStats = projects.map(project => {
     const { stats, totalRecords } = getProjectStats(db, project.tables);

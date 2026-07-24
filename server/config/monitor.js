@@ -3,6 +3,7 @@
  * 监控内存、CPU使用情况，并在内存过高时触发GC
  */
 const os = require('os');
+const { formatBytes, formatUptime } = require('../utils/format');
 
 class SystemMonitor {
   constructor(options = {}) {
@@ -150,29 +151,14 @@ class SystemMonitor {
    * 格式化字节
    */
   _formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return formatBytes(bytes);
   }
 
   /**
    * 格式化运行时间
    */
   _formatUptime(seconds) {
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-
-    const parts = [];
-    if (days > 0) parts.push(`${days}天`);
-    if (hours > 0) parts.push(`${hours}小时`);
-    if (minutes > 0) parts.push(`${minutes}分`);
-    parts.push(`${secs}秒`);
-
-    return parts.join('');
+    return formatUptime(seconds);
   }
 }
 

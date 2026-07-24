@@ -6,6 +6,7 @@ const { isAuthenticated, canEditArticle, hasFrontendPermission } = require('../m
 const { settingsCache, queryCache } = require('../config/cache');
 const { createNotification } = require('./community');
 const { getSettings } = require('../utils/settings');
+const { renderError } = require('../utils/response');
 
 // 缓存包装：对查询结果进行短时间缓存（10秒）
 function cachedQuery(cacheKey, db, sql, params = []) {
@@ -42,22 +43,9 @@ router.get('/', (req, res) => {
   });
 });
 
-// 首页
+// 首页（/home 重定向到 /）
 router.get('/home', (req, res) => {
-  const db = req.db;
-
-  const settings = getSettings(db);
-  const articles = cachedQuery('home_articles', db,
-    "SELECT * FROM articles WHERE status = 'published' AND (location = 'home' OR location = 'both') ORDER BY created_at DESC LIMIT 10");
-  const pages = cachedQuery('nav_pages', db,
-    "SELECT * FROM pages WHERE status = 'published' AND parent_id = 0 ORDER BY sort_order ASC");
-
-  res.render('frontend/index', {
-    user: req.session.user || null,
-    settings: settings,
-    articles: articles,
-    pages: pages
-  });
+  res.redirect(301, '/');
 });
 
 // ============ 前端文章管理（登录用户） ============

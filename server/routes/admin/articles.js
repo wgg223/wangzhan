@@ -3,6 +3,7 @@ const router = express.Router();
 const { isAuthenticated, hasPermission, isAdminRole } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
+const { renderError } = require('../../utils/response');
 
 // ============ 文章管理 ============
 
@@ -35,21 +36,11 @@ router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.manage
   const article = queryOne(db, 'SELECT * FROM articles WHERE id = ?', [req.params.id]);
 
   if (!article) {
-    return res.status(404).render('frontend/error', {
-      message: '文章不存在',
-      error: '',
-      user: req.session.user,
-      settings: res.locals.settings || {}
-    });
+    return renderError(res, 404, '文章不存在', req);
   }
 
   if (!isAdminRole(req.session.user) && article.author_id !== req.session.user.id) {
-    return res.status(403).render('frontend/error', {
-      message: '权限不足',
-      error: '您只能编辑自己的文章',
-      user: req.session.user,
-      settings: res.locals.settings || {}
-    });
+    return renderError(res, 403, '权限不足', req, '您只能编辑自己的文章');
   }
 
   res.render('admin/article-editor', {

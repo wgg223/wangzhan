@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { isAuthenticated } = require('../middlewares/auth');
 const { saveDatabase, queryOne, queryAll } = require('../config/database');
 const { getSettings } = require('../utils/settings');
+const { sendMail } = require('../config/mailer');
+const { logActivity } = require('../config/activity');
 
 // 头像上传配置
 const avatarStorage = multer.diskStorage({
@@ -145,6 +148,161 @@ router.post('/account/password', isAuthenticated, (req, res) => {
   saveDatabase();
 
   res.redirect('/account?success=密码修改成功');
+});
+
+// 修改用户名
+router.post('/account/username', isAuthenticated, (req, res) => {
+  const db = req.db;
+  const userId = req.session.user.id;
+  const { new_username, password } = req.body;
+
+  if (!new_username || !password) {
+    return res.redirect('/account?error=请填写所有字段#profile');
+  }
+
+  if (new_username.length < 3 || new_username.length > 20) {
+    return res.redirect('/account?error=用户名长度应在3-20个字符之间#profile');
+  }
+
+  if (!/^[\u4e00-\u9fa5a-zA-Z0-9_]+$/.test(new_username)) {
+    return res.redirect('/account?error=用户名只能包含中文、字母、数字和下划线#profile');
+  }
+
+  const user = queryOne(db, 'SELECT * FROM users WHERE id = ?', [userId]);
+  if (!user) {
+    return res.redirect('/account?error=用户不存在#profile');
+  }
+
+  if (!bcrypt.compareSync(password, user.password)) {
+    return res.redirect('/account?error=密码错误#profile');
+  }
+
+  // 检查用户名是否已存在（排除自己）
+  const existing = queryOne(db, 'SELECT id FROM users WHERE username = ? AND id != ?', [new_username, userId]);
+  if (existing) {
+    return res.redirect('/account?error=该用户名已被使用#profile');
+  }
+
+  db.run('UPDATE users SET username = ? WHERE id = ?', [new_username, userId]);
+  saveDatabase();
+
+  // 更新session
+  req.session.user.username = new_username;
+  req.session.save(function() {
+    try {
+      logActivity(db, {
+        user_id: userId,
+        username: new_username,
+        action: 'update',
+        target_type: 'user',
+        target_id: userId,
+        target_title: '修改用户名',
+        detail: `用户 ${user.username} 修改用户名为 ${new_username}`,
+        ip: req.ip
+      });
+    } catch (e) { /* 忽略 */ }
+    res.redirect('/account?success=用户名已更新#profile');
+  });
+});
+
+// 发送邮箱验证码
+router.post('/account/email/send-code', isAuthenticated, async (req, res) => {
+  const db = req.db;
+  const userId = req.session.user.id;
+  const { new_email } = req.body;
+
+  if (!new_email) {
+    return res.json({ success: false, error: '请输入邮箱地址' });
+  }
+
+  // 简单邮箱格式验证
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(new_email)) {
+    return res.json({ success: false, error: '邮箱格式不正确' });
+  }
+
+  // 检查邮箱是否已被其他用户使用
+  const existing = queryOne(db, 'SELECT id FROM users WHERE email = ? AND id != ?', [new_email, userId]);
+  if (existing) {
+    return res.json({ success: false, error: '该邮箱已被其他账号使用' });
+  }
+
+  // 生成6位验证码
+  const code = crypto.randomBytes(3).toString('hex').toUpperCase();
+  const expires = Date.now() + 10 * 60 * 1000; // 10分钟有效
+
+  // 存储到session
+  req.session.emailChange = {
+    email: new_email,
+    code: code,
+    expires: expires
+  };
+
+  try {
+    await sendMail(db, {
+      to: new_email,
+      subject: '邮箱验证码',
+      html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:20px;">
+        <h2 style="color:#333;">邮箱验证码</h2>
+        <p>您正在修改账号绑定邮箱，验证码为：</p>
+        <div style="background:#f5f5f5;padding:16px;border-radius:8px;text-align:center;margin:20px 0;">
+          <span style="font-size:28px;font-weight:bold;letter-spacing:4px;color:#4f46e5;">${code}</span>
+        </div>
+        <p style="color:#666;font-size:13px;">验证码 10 分钟内有效。如果不是您本人操作，请忽略此邮件。</p>
+      </div>`
+    });
+    res.json({ success: true, message: '验证码已发送到 ' + new_email });
+  } catch (err) {
+    res.json({ success: false, error: '邮件发送失败，请检查SMTP配置或稍后重试' });
+  }
+});
+
+// 验证邮箱验证码并更新邮箱
+router.post('/account/email/verify', isAuthenticated, (req, res) => {
+  const db = req.db;
+  const userId = req.session.user.id;
+  const { code } = req.body;
+
+  if (!code) {
+    return res.json({ success: false, error: '请输入验证码' });
+  }
+
+  const emailChange = req.session.emailChange;
+  if (!emailChange) {
+    return res.json({ success: false, error: '请先发送验证码' });
+  }
+
+  if (Date.now() > emailChange.expires) {
+    delete req.session.emailChange;
+    return res.json({ success: false, error: '验证码已过期，请重新发送' });
+  }
+
+  if (code.toUpperCase() !== emailChange.code) {
+    return res.json({ success: false, error: '验证码错误' });
+  }
+
+  // 验证通过，更新邮箱
+  db.run('UPDATE users SET email = ? WHERE id = ?', [emailChange.email, userId]);
+  saveDatabase();
+
+  // 更新session
+  req.session.user.email = emailChange.email;
+  delete req.session.emailChange;
+  req.session.save(function() {
+    try {
+      logActivity(db, {
+        user_id: userId,
+        username: req.session.user.username,
+        action: 'update',
+        target_type: 'user',
+        target_id: userId,
+        target_title: '修改邮箱',
+        detail: `用户修改绑定邮箱为 ${emailChange.email}`,
+        ip: req.ip
+      });
+    } catch (e) { /* 忽略 */ }
+    res.json({ success: true, message: '邮箱已更新', email: emailChange.email });
+  });
 });
 
 // 上传头像

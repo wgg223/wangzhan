@@ -57,8 +57,24 @@
             <form action="/account/profile" method="POST" class="account-form">
               <div class="form-group">
                 <label>用户名</label>
-                <input type="text" value="<%= userData.username %>" disabled class="form-input disabled">
-                <small class="form-hint">用户名无法修改</small>
+                <div class="input-with-action">
+                  <input type="text" value="<%= userData.username %>" disabled class="form-input disabled" id="currentUsername">
+                  <button type="button" class="btn btn-small btn-outline" onclick="toggleUsernameForm()">修改</button>
+                </div>
+                <div id="usernameForm" style="display:none;margin-top:12px;padding:16px;background:var(--gray-50);border-radius:8px;">
+                  <div class="form-group" style="margin-bottom:12px;">
+                    <label for="new_username">新用户名</label>
+                    <input type="text" id="new_username" name="new_username" class="form-input" minlength="3" maxlength="20" placeholder="3-20个字符，支持中文、字母、数字、下划线">
+                  </div>
+                  <div class="form-group" style="margin-bottom:12px;">
+                    <label for="username_password">验证密码</label>
+                    <input type="password" id="username_password" name="username_password" class="form-input" placeholder="输入当前密码以确认修改">
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <button type="button" class="btn btn-primary btn-small" onclick="submitUsernameChange()">确认修改</button>
+                    <button type="button" class="btn btn-small" onclick="toggleUsernameForm()">取消</button>
+                  </div>
+                </div>
               </div>
               <div class="form-group">
                 <label for="nickname">昵称</label>
@@ -72,6 +88,7 @@
               <div class="form-group">
                 <label>邮箱</label>
                 <input type="text" value="<%= userData.email || '未设置' %>" disabled class="form-input disabled">
+                <small class="form-hint">修改邮箱请前往「安全设置」</small>
               </div>
               <div class="form-actions">
                 <button type="submit" class="btn btn-primary">保存修改</button>
@@ -102,6 +119,35 @@
                 <button type="submit" class="btn btn-primary">修改密码</button>
               </div>
             </form>
+          </div>
+
+          <div class="card" style="margin-top:20px;">
+            <h3 class="card-title">绑定邮箱</h3>
+            <p class="card-desc">
+              <% if (userData.email) { %>
+                当前绑定邮箱：<strong><%= userData.email %></strong>
+              <% } else { %>
+                您尚未绑定邮箱
+              <% } %>
+            </p>
+            <div class="account-form">
+              <div class="form-group">
+                <label for="new_email">新邮箱地址</label>
+                <div class="input-with-action">
+                  <input type="email" id="new_email" class="form-input" placeholder="输入新的邮箱地址">
+                  <button type="button" class="btn btn-small btn-outline" id="sendCodeBtn" onclick="sendEmailCode()">发送验证码</button>
+                </div>
+              </div>
+              <div class="form-group" id="verifyGroup" style="display:none;">
+                <label for="email_code">验证码</label>
+                <div class="input-with-action">
+                  <input type="text" id="email_code" class="form-input" placeholder="输入6位验证码" maxlength="6">
+                  <button type="button" class="btn btn-primary btn-small" onclick="verifyEmailCode()">验证并绑定</button>
+                </div>
+                <small class="form-hint" id="codeHint">验证码已发送，10分钟内有效</small>
+              </div>
+              <div id="emailResult" style="margin-top:8px;font-size:14px;"></div>
+            </div>
           </div>
         </div>
 
@@ -602,6 +648,32 @@
   background: #dc2626;
 }
 
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+}
+
+.btn-outline:hover {
+  background: var(--primary-bg);
+}
+
+.input-with-action {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.input-with-action .form-input {
+  flex: 1;
+}
+
+.input-with-action .btn {
+  flex-shrink: 0;
+  margin-top: 1px;
+  height: 38px;
+}
+
 .btn-small {
   padding: 6px 12px;
   font-size: 12px;
@@ -916,6 +988,137 @@ function unbindOAuth(provider, name) {
   .catch(function() {
     alert('请求失败，请重试');
   });
+}
+
+// ============ 修改用户名 ============
+function toggleUsernameForm() {
+  var form = document.getElementById('usernameForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+function submitUsernameChange() {
+  var newUsername = document.getElementById('new_username').value.trim();
+  var password = document.getElementById('username_password').value;
+
+  if (!newUsername || !password) {
+    alert('请填写所有字段');
+    return;
+  }
+
+  if (newUsername.length < 3 || newUsername.length > 20) {
+    alert('用户名长度应在3-20个字符之间');
+    return;
+  }
+
+  if (!/^[\u4e00-\u9fa5a-zA-Z0-9_]+$/.test(newUsername)) {
+    alert('用户名只能包含中文、字母、数字和下划线');
+    return;
+  }
+
+  if (!confirm('确定要将用户名修改为 "' + newUsername + '" 吗？')) return;
+
+  // 创建隐藏表单提交
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/account/username';
+
+  var input1 = document.createElement('input');
+  input1.type = 'hidden';
+  input1.name = 'new_username';
+  input1.value = newUsername;
+  form.appendChild(input1);
+
+  var input2 = document.createElement('input');
+  input2.type = 'hidden';
+  input2.name = 'password';
+  input2.value = password;
+  form.appendChild(input2);
+
+  document.body.appendChild(form);
+  form.submit();
+}
+
+// ============ 邮箱验证 ============
+var sendCodeTimer = null;
+
+function sendEmailCode() {
+  var email = document.getElementById('new_email').value.trim();
+  if (!email) {
+    showEmailResult('请输入邮箱地址', false);
+    return;
+  }
+
+  var btn = document.getElementById('sendCodeBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+
+  fetch('/account/email/send-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_email: email })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      showEmailResult(data.message, true);
+      document.getElementById('verifyGroup').style.display = 'block';
+      document.getElementById('email_code').focus();
+      // 60秒倒计时
+      var seconds = 60;
+      btn.textContent = seconds + '秒后重发';
+      sendCodeTimer = setInterval(function() {
+        seconds--;
+        if (seconds <= 0) {
+          clearInterval(sendCodeTimer);
+          btn.disabled = false;
+          btn.textContent = '发送验证码';
+        } else {
+          btn.textContent = seconds + '秒后重发';
+        }
+      }, 1000);
+    } else {
+      showEmailResult(data.error, false);
+      btn.disabled = false;
+      btn.textContent = '发送验证码';
+    }
+  })
+  .catch(function() {
+    showEmailResult('请求失败，请重试', false);
+    btn.disabled = false;
+    btn.textContent = '发送验证码';
+  });
+}
+
+function verifyEmailCode() {
+  var code = document.getElementById('email_code').value.trim();
+  if (!code) {
+    showEmailResult('请输入验证码', false);
+    return;
+  }
+
+  fetch('/account/email/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: code })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      showEmailResult(data.message, true);
+      setTimeout(function() { location.reload(); }, 1500);
+    } else {
+      showEmailResult(data.error, false);
+    }
+  })
+  .catch(function() {
+    showEmailResult('请求失败，请重试', false);
+  });
+}
+
+function showEmailResult(msg, success) {
+  var el = document.getElementById('emailResult');
+  el.textContent = msg;
+  el.style.color = success ? '#059669' : '#dc2626';
 }
 
 // 页面加载时根据hash切换到对应tab

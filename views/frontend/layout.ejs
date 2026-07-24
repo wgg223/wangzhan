@@ -186,6 +186,7 @@
   </div>
   <% } %>
 
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/utils.js') : '/js/utils.js' %>"></script>
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/main.js') : '/js/main.js' %>"></script>
   <% if (typeof user !== 'undefined' && user) { %>
   <script>

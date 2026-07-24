@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { isAuthenticated, hasPermission } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
+const { formatBytes } = require('../../utils/format');
 
 const UPLOAD_DIR = path.join(__dirname, '../../../public/uploads/attachments');
 const CHUNKS_DIR = path.join(__dirname, '../../../public/uploads/.chunks');
@@ -63,10 +64,7 @@ function validateExtension(filename) {
 }
 
 function formatSize(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  return formatBytes(bytes);
 }
 
 // POST /admin/attachments/upload/init - Initialize resumable upload

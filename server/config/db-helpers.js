@@ -100,9 +100,24 @@ function generateUid(db) {
   return uid + Date.now().toString(36).slice(-4).toUpperCase();
 }
 
+/**
+ * 为新用户授予默认权限
+ * @param {Object} db - 数据库实例
+ * @param {number} userId - 用户ID
+ * @param {number} grantedBy - 授权者ID
+ */
+function grantDefaultPermissions(db, userId, grantedBy) {
+  const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
+  defaultPerms.forEach(perm => {
+    db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+      [userId, perm, grantedBy]);
+  });
+}
+
 module.exports = {
   setUseNativeSql,
   queryOne,
   queryAll,
-  generateUid
+  generateUid,
+  grantDefaultPermissions
 };

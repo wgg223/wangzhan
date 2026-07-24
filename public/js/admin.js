@@ -1,54 +1,5 @@
 // 后台管理JavaScript文件
-
-/**
- * HTML 转义函数，防止 XSS 攻击
- * @param {string} text - 需要转义的文本
- * @returns {string} 转义后的文本
- */
-function escapeHtml(text) {
-  if (typeof text !== 'string') return '';
-  const div = document.createElement('div');
-  div.appendChild(document.createTextNode(text));
-  return div.innerHTML;
-}
-
-/**
- * 显示 Toast 提示
- * @param {string} message - 提示消息
- * @param {string} type - 提示类型: success, error, warning, info
- */
-function showToast(message, type) {
-  if (!message) return;
-
-  // 移除已有的toast
-  var existing = document.querySelector('.admin-toast');
-  if (existing) {
-    existing.classList.add('hiding');
-    setTimeout(function() {
-      existing.remove();
-    }, 300);
-  }
-
-  // 创建新的toast
-  var toast = document.createElement('div');
-  toast.className = 'admin-toast';
-  toast.textContent = message;
-
-  // 添加类型样式
-  if (type) {
-    toast.classList.add('toast-' + type);
-  }
-
-  document.body.appendChild(toast);
-
-  // 3秒后自动消失
-  setTimeout(function() {
-    toast.classList.add('hiding');
-    setTimeout(function() {
-      toast.remove();
-    }, 300);
-  }, 3000);
-}
+// 注意: escapeHtml, showToast, copyToClipboard, fallbackCopy 已移至 utils.js
 
 document.addEventListener('DOMContentLoaded', function() {
   // 初始化代码
@@ -94,31 +45,7 @@ function resetPassword(userId, username) {
 // 复制链接到剪贴板
 function copyUrl(url) {
   var fullUrl = window.location.origin + url;
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(fullUrl).then(function() {
-      showToast('链接已复制到剪贴板', 'success');
-    }).catch(function() {
-      fallbackCopy(fullUrl);
-    });
-  } else {
-    fallbackCopy(fullUrl);
-  }
-}
-
-function fallbackCopy(text) {
-  var textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.select();
-  try {
-    document.execCommand('copy');
-    showToast('链接已复制到剪贴板', 'success');
-  } catch (err) {
-    showToast('复制失败，请手动复制', 'error');
-  }
-  document.body.removeChild(textarea);
+  copyToClipboard(fullUrl, '链接已复制到剪贴板');
 }
 
 // 打开媒体选择器

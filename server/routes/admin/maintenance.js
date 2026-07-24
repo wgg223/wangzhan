@@ -9,37 +9,14 @@ const { saveDatabase, queryAll, queryOne, getDb } = require('../../config/databa
 const { logActivity } = require('../../config/activity');
 const { settingsCache, queryCache, pageCache } = require('../../config/cache');
 const { sendMail } = require('../../config/mailer');
+const { formatBytes } = require('../../utils/format');
+const { getDirSize, copyDir } = require('../../utils/fs-helpers');
 
 const projectRoot = path.resolve(__dirname, '../../..');
 const backupDir = path.join(projectRoot, 'backups');
 
 // Scheduled backup task
 let scheduledBackupTask = null;
-
-// Initialize scheduled backup from settings
-function initScheduledBackup(db) {
-  if (scheduledBackupTask) {
-    scheduledBackupTask.stop();
-    scheduledBackupTask = null;
-  }
-
-  const enabled = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_enabled'");
-  const cronExpr = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_cron'");
-  const backupType = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_type'");
-  const notifyEmail = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'scheduled_backup_notify_email'");
-
-  if (enabled?.setting_value === 'true' && cronExpr?.settingValue) {
-    try {
-      scheduledBackupTask = cron.schedule(cronExpr.setting_value, async () => {
-        console.log('[scheduled-backup] Starting scheduled backup...');
-        await performScheduledBackup(db, backupType?.setting_value || 'database', notifyEmail?.setting_value);
-      });
-      console.log('[scheduled-backup] Scheduled backup initialized:', cronExpr.setting_value);
-    } catch (err) {
-      console.error('[scheduled-backup] Failed to initialize:', err.message);
-    }
-  }
-}
 
 // Initialize scheduled backup from settings
 function initScheduledBackup(db) {
@@ -709,48 +686,8 @@ router.post('/maintenance/backup-now', isAuthenticated, isSuperAdmin, async (req
   }
 });
 
-// Helper functions
-function getDirSize(dirPath) {
-  let size = 0;
-  try {
-    const items = fs.readdirSync(dirPath);
-    for (const item of items) {
-      const itemPath = path.join(dirPath, item);
-      const stat = fs.statSync(itemPath);
-      if (stat.isDirectory()) {
-        size += getDirSize(itemPath);
-      } else {
-        size += stat.size;
-      }
-    }
-  } catch (e) { /* ignore */ }
-  return size;
-}
-
 function formatSize(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Async copy directory helper
-async function copyDir(src, dest) {
-  if (!fs.existsSync(dest)) {
-    fs.mkdirSync(dest, { recursive: true });
-  }
-  const items = fs.readdirSync(src);
-  for (const item of items) {
-    const srcPath = path.join(src, item);
-    const destPath = path.join(dest, item);
-    const stat = fs.statSync(srcPath);
-    if (stat.isDirectory()) {
-      await copyDir(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
+  return formatBytes(bytes);
 }
 
 module.exports = router;

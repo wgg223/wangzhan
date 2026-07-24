@@ -3,12 +3,12 @@ const router = express.Router();
 const { logActivity } = require('../../config/activity');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
 const { dbUpload } = require('./upload');
 const { closeDatabase, getDbPath } = require('../../config/database');
+const { formatBytes } = require('../../utils/format');
+const { getDirSize, copyDir, removeDir } = require('../../utils/fs-helpers');
 
-const isWindows = process.platform === 'win32';
 const projectRoot = path.resolve(__dirname, '../../..');
 const backupDir = path.join(projectRoot, 'backups');
 
@@ -339,58 +339,8 @@ function getBackupList() {
   return backups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function getDirSize(dirPath) {
-  let size = 0;
-  const items = fs.readdirSync(dirPath);
-  for (const item of items) {
-    const itemPath = path.join(dirPath, item);
-    const stat = fs.statSync(itemPath);
-    if (stat.isDirectory()) {
-      size += getDirSize(itemPath);
-    } else {
-      size += stat.size;
-    }
-  }
-  return size;
-}
-
 function formatSize(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-async function copyDir(src, dest) {
-  if (!fs.existsSync(dest)) {
-    fs.mkdirSync(dest, { recursive: true });
-  }
-
-  const items = fs.readdirSync(src);
-  for (const item of items) {
-    const srcPath = path.join(src, item);
-    const destPath = path.join(dest, item);
-    const stat = fs.statSync(srcPath);
-
-    if (stat.isDirectory()) {
-      await copyDir(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
-
-async function removeDir(dirPath) {
-  if (isWindows) {
-    return new Promise((resolve) => {
-      exec(`rd /s /q "${dirPath}"`, () => resolve());
-    });
-  } else {
-    return new Promise((resolve) => {
-      exec(`rm -rf "${dirPath}"`, () => resolve());
-    });
-  }
+  return formatBytes(bytes);
 }
 
 module.exports = router;

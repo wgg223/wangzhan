@@ -117,6 +117,7 @@
     }
   });
   </script>
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/utils.js') : '/js/utils.js' %>"></script>
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/admin.js') : '/js/admin.js' %>"></script>
 </body>
 </html>

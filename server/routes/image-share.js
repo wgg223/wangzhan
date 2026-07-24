@@ -7,7 +7,9 @@ const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
 const { isAuthenticated, hasFrontendPermission } = require('../middlewares/auth');
 const { validateMagicBytes } = require('../utils/file-validator');
-const { getImageConfigs } = require('../utils/settings');
+const { getImageConfigs, saveImageShareConfigs } = require('../utils/settings');
+const { addImageLog } = require('../utils/image-utils');
+const { isAdminRole } = require('../middlewares/auth');
 
 // 上传配置
 const storage = multer.diskStorage({
@@ -64,7 +66,7 @@ function canAccessCategory(db, cateId, user) {
 
 // 辅助：记录操作日志
 function addLog(db, adminId, content) {
-  db.run('INSERT INTO image_logs (admin_id, content) VALUES (?, ?)', [adminId, content]);
+  addImageLog(db, adminId, content);
   saveDatabase();
 }
 
@@ -201,7 +203,7 @@ router.get('/image', (req, res) => {
     return res.render('image-share/message', { user, config, message: '图片不存在', type: 'error' });
   }
 
-  if (image.status !== 1 && (!user || (user.role !== 'admin' && user.role !== 'super_admin' && user.id !== image.user_id))) {
+  if (image.status !== 1 && (!user || (!isAdminRole(user) && user.id !== image.user_id))) {
     return res.render('image-share/message', { user, config, message: '图片未通过审核或不存在', type: 'error' });
   }
 
@@ -212,7 +214,7 @@ router.get('/image', (req, res) => {
     if (vis === 'public' || vis === '' || vis === null) {
       canView = true;
     } else if (user) {
-      if (user.role === 'admin' || user.role === 'super_admin' || user.id === image.user_id) {
+      if (isAdminRole(user) || user.id === image.user_id) {
         canView = true;
       } else if (vis === 'selected') {
         try {
@@ -239,7 +241,7 @@ router.get('/image', (req, res) => {
 
   // 功能2：获取待审核评论数量（仅图片作者或管理员可见）
   let pendingCommentCount = 0;
-  if (user && (user.id === image.user_id || user.role === 'admin' || user.role === 'super_admin')) {
+  if (user && (user.id === image.user_id || isAdminRole(user))) {
     const pendingRes = queryOne(db, "SELECT COUNT(*) as count FROM image_comments WHERE image_id = ? AND status = 'pending'", [imageId]);
     pendingCommentCount = pendingRes ? pendingRes.count : 0;
   }
@@ -769,7 +771,7 @@ router.post('/comment/delete', isAuthenticated, (req, res) => {
   }
 
   // 仅评论作者或管理员可删除
-  if (comment.user_id !== user.id && user.role !== 'admin' && user.role !== 'super_admin') {
+  if (comment.user_id !== user.id && !isAdminRole(user)) {
     return res.render('image-share/message', { user, config, message: '无权删除此评论', type: 'error' });
   }
 
@@ -833,63 +835,8 @@ router.get('/admin/settings', isAuthenticated, (req, res) => {
 
 router.post('/admin/settings', isAuthenticated, (req, res) => {
   const db = req.db;
-  const {
-    site_name,
-    site_description,
-    site_logo,
-    icp_number,
-    review_enabled,
-    comment_enabled,
-    comment_review_enabled,
-    guest_view_enabled,
-    guest_upload_enabled,
-    max_size,
-    allowed_formats,
-    images_per_page,
-    hot_images_count
-  } = req.body;
 
-  if (site_name !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('site_name', ?)", [site_name || '']);
-  }
-  if (site_description !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('site_description', ?)", [site_description || '']);
-  }
-  if (site_logo !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('site_logo', ?)", [site_logo || '']);
-  }
-  if (icp_number !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('icp_number', ?)", [icp_number || '']);
-  }
-  if (review_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('review_enabled', ?)", [review_enabled ? '1' : '0']);
-  }
-  if (comment_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('comment_enabled', ?)", [comment_enabled ? '1' : '0']);
-  }
-  if (comment_review_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('comment_review_enabled', ?)", [comment_review_enabled ? '1' : '0']);
-  }
-  if (guest_view_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('guest_view_enabled', ?)", [guest_view_enabled ? '1' : '0']);
-  }
-  if (guest_upload_enabled !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('guest_upload_enabled', ?)", [guest_upload_enabled ? '1' : '0']);
-  }
-  if (max_size !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('max_size', ?)", [String(max_size)]);
-  }
-  if (allowed_formats !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('allowed_formats', ?)", [allowed_formats || '']);
-  }
-  if (images_per_page !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('images_per_page', ?)", [String(images_per_page)]);
-  }
-  if (hot_images_count !== undefined) {
-    db.run("INSERT OR REPLACE INTO image_configs (config_key, config_value) VALUES ('hot_images_count', ?)", [String(hot_images_count)]);
-  }
-
-  saveDatabase();
+  saveImageShareConfigs(db, req.body);
   res.json({ success: true, message: '保存成功' });
 });
 
@@ -1149,7 +1096,7 @@ router.post('/api/admin/images/batch-review', isAuthenticated, (req, res) => {
 
   // 检查权限
   const user = queryOne(db, 'SELECT role FROM users WHERE id = ?', [userId]);
-  if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
+  if (!user || !isAdminRole(user)) {
     return res.status(403).json({ success: false, error: '无权操作' });
   }
 
@@ -1188,7 +1135,7 @@ router.post('/api/admin/images/batch-move-category', isAuthenticated, (req, res)
 
   // 检查权限
   const user = queryOne(db, 'SELECT role FROM users WHERE id = ?', [userId]);
-  if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
+  if (!user || !isAdminRole(user)) {
     return res.status(403).json({ success: false, error: '无权操作' });
   }
 
@@ -1227,7 +1174,7 @@ router.post('/api/admin/images/batch-delete', isAuthenticated, (req, res) => {
   }
 
   const user = queryOne(db, 'SELECT role FROM users WHERE id = ?', [userId]);
-  if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
+  if (!user || !isAdminRole(user)) {
     return res.status(403).json({ success: false, error: '无权操作' });
   }
 
@@ -1286,7 +1233,7 @@ router.post('/api/image/:id/tags', isAuthenticated, (req, res) => {
   }
 
   const user = queryOne(db, 'SELECT role FROM users WHERE id = ?', [userId]);
-  if (image.user_id !== userId && (!user || (user.role !== 'admin' && user.role !== 'super_admin'))) {
+  if (image.user_id !== userId && (!user || !isAdminRole(user))) {
     return res.status(403).json({ success: false, error: '无权操作' });
   }
 
@@ -1354,7 +1301,7 @@ router.delete('/api/image/:id/tags', isAuthenticated, (req, res) => {
   }
 
   const user = queryOne(db, 'SELECT role FROM users WHERE id = ?', [userId]);
-  if (image.user_id !== userId && (!user || (user.role !== 'admin' && user.role !== 'super_admin'))) {
+  if (image.user_id !== userId && (!user || !isAdminRole(user))) {
     return res.status(403).json({ success: false, error: '无权操作' });
   }
 

@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { isAuthenticated, hasPermission, ROLE_HIERARCHY } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne, generateUid } = require('../../config/database');
+const { grantDefaultPermissions } = require('../../config/db-helpers');
 const { logActivity } = require('../../config/activity');
 const { createNotification } = require('../community');
 
@@ -61,11 +62,7 @@ router.post('/users/create', isAuthenticated, hasPermission('users.manage'), (re
   // 为新用户授予默认权限
   const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
   if (newUser) {
-    const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
-    defaultPerms.forEach(perm => {
-      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-        [newUser.id, perm, req.session.user.id]);
-    });
+    grantDefaultPermissions(db, newUser.id, req.session.user.id);
   }
 
   saveDatabase();
@@ -264,11 +261,7 @@ router.post('/users/import-csv', isAuthenticated, hasPermission('users.manage'),
       // 为新用户授予默认权限
       const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
       if (newUser) {
-        const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
-        defaultPerms.forEach(perm => {
-          db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-            [newUser.id, perm, req.session.user.id]);
-        });
+        grantDefaultPermissions(db, newUser.id, req.session.user.id);
       }
 
       results.success++;

@@ -3,6 +3,7 @@ const router = express.Router();
 const { isAuthenticated, hasPermission } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
+const { renderError } = require('../../utils/response');
 
 // ============ 页面管理 ============
 
@@ -30,12 +31,7 @@ router.get('/pages/edit/:id', isAuthenticated, hasPermission('pages.manage'), (r
   const page = queryOne(db, 'SELECT * FROM pages WHERE id = ?', [req.params.id]);
 
   if (!page) {
-    return res.status(404).render('frontend/error', {
-      message: '页面不存在',
-      error: '',
-      user: req.session.user,
-      settings: res.locals.settings || {}
-    });
+    return renderError(res, 404, '页面不存在', req);
   }
 
   res.render('admin/page-editor', {

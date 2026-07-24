@@ -8,6 +8,7 @@ const { logActivity } = require('../../config/activity');
 const { readTextFileContent } = require('../../utils/file-utils');
 const fsSafe = require('../../utils/fs-safe');
 const { novelUpload, imageUpload } = require('./upload');
+const { renderError } = require('../../utils/response');
 
 // ============ 小说管理 ============
 
@@ -42,12 +43,7 @@ router.get('/novels/edit/:id', isAuthenticated, hasPermission('novels.manage'), 
   const chapters = queryAll(db, 'SELECT * FROM novel_chapters WHERE novel_id = ? ORDER BY chapter_number ASC', [req.params.id]);
 
   if (!novel) {
-    return res.status(404).render('frontend/error', {
-      message: '小说不存在',
-      error: '',
-      user: req.session.user,
-      settings: res.locals.settings || {}
-    });
+    return renderError(res, 404, '小说不存在', req);
   }
 
   res.render('admin/novel-editor', {

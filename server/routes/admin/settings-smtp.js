@@ -1,20 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { saveDatabase, queryAll, queryOne } = require('../../config/database');
-const { logActivity } = require('../../config/activity');
 const { testSmtpConfig } = require('../../config/mailer');
 const { encrypt } = require('../../config/crypto-secure');
+const { getSettings, upsertSettings } = require('../../utils/settings');
+const { safeLogActivity } = require('../../utils/error-handler');
 
 // SMTP 配置 - 仅管理员可访问
 
 // GET - SMTP配置页面
 router.get('/', (req, res) => {
   const db = req.db;
-  const settings = {};
-  const settingRows = queryAll(db, 'SELECT * FROM settings');
-  settingRows.forEach(s => {
-    settings[s.setting_key] = s.setting_value;
-  });
+  const settings = getSettings(db);
 
   res.render('admin/settings-smtp', {
     settings,
@@ -43,29 +39,17 @@ router.post('/', (req, res) => {
     smtpSettings.smtp_pass = encrypt(smtp_pass);
   }
 
-  for (const [key, value] of Object.entries(smtpSettings)) {
-    const existing = queryOne(db, 'SELECT id FROM settings WHERE setting_key = ?', [key]);
-    if (existing) {
-      db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [value, key]);
-    } else {
-      db.run('INSERT INTO settings (setting_key, setting_value) VALUES (, ?)', [key, value]);
-    }
-  }
-  saveDatabase();
+  upsertSettings(db, smtpSettings);
 
-  try {
-    logActivity(db, {
-      user_id: req.session.user.id,
-      username: req.session.user.username,
-      action: 'update_settings',
-      target_type: 'settings',
-      target_title: 'SMTP配置',
-      detail: `用户 ${req.session.user.username} 更新了SMTP邮件配置`,
-      ip: req.ip
-    });
-  } catch (logErr) {
-    console.error('[settings-smtp] logActivity 错误:', logErr.message);
-  }
+  safeLogActivity(db, {
+    user_id: req.session.user.id,
+    username: req.session.user.username,
+    action: 'update_settings',
+    target_type: 'settings',
+    target_title: 'SMTP配置',
+    detail: `用户 ${req.session.user.username} 更新了SMTP邮件配置`,
+    ip: req.ip
+  });
 
   if (req.headers['x-requested-with'] === 'XMLHttpRequest') {
     return res.json({ success: true, message: 'SMTP配置已保存' });

@@ -7,36 +7,13 @@ const { exec, spawn } = require('child_process');
 const https = require('https');
 const http = require('http');
 const AdmZip = require('adm-zip');
+const { removeDir, copyDirCrossPlatform } = require('../../utils/fs-helpers');
 
 const isWindows = process.platform === 'win32';
 
 // GitHub repo config（固定地址，不可修改）
 const GITHUB_OWNER = 'wgg223';
 const GITHUB_REPO = 'wangzhan';
-
-function copyDirCrossPlatform(src, dest) {
-  return new Promise((resolve) => {
-    if (isWindows) {
-      exec(`robocopy "${src}" "${dest}" /E /NFL /NDL /NJH /NJS /nc /ns /np`, (error) => {
-        resolve(error && error.code > 7 ? false : true);
-      });
-    } else {
-      exec(`cp -r "${src}" "${dest}"`, (error) => {
-        resolve(!error);
-      });
-    }
-  });
-}
-
-function removeDirCrossPlatform(dir) {
-  return new Promise((resolve) => {
-    if (isWindows) {
-      exec(`rd /s /q "${dir}"`, () => resolve());
-    } else {
-      exec(`rm -rf "${dir}"`, () => resolve());
-    }
-  });
-}
 
 function unzipCrossPlatform(zipPath, destDir) {
   return new Promise((resolve, reject) => {
@@ -422,7 +399,7 @@ router.post('/download', async (req, res) => {
     }
 
     // 清理临时文件
-    await removeDirCrossPlatform(tempDir);
+    await removeDir(tempDir);
 
     // 安装依赖
     console.log('[system-update] 开始执行 npm install...');

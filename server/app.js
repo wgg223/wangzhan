@@ -3,7 +3,6 @@ const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const expressLayouts = require('express-ejs-layouts');
-const multer = require('multer');
 const fs = require('fs');
 const os = require('os');
 const cookieParser = require('cookie-parser');
@@ -13,6 +12,7 @@ const { monitor } = require('./config/monitor');
 const { globalLimiter, loginLimiter } = require('./middlewares/rate-limiter');
 const { maintenanceMiddleware } = require('./middlewares/maintenance');
 const cdnConfig = require('../cdn-config');
+const { getSettings } = require('./utils/settings');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -115,39 +115,6 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '../views'));
 app.set('layout', 'frontend/layout');
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../public/uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-function getCachedSettings(db) {
-  const cacheKey = 'settings';
-  let settings = settingsCache.get(cacheKey);
-  if (!settings) {
-    try {
-      const settingsArray = queryAll(db, 'SELECT * FROM settings');
-      settings = {};
-      settingsArray.forEach(s => {
-        settings[s.setting_key] = s.setting_value;
-      });
-      settingsCache.set(cacheKey, settings);
-    } catch (err) {
-      console.error('获取设置失败:', err.message);
-      settings = {};
-    }
-  }
-  return settings;
-}
-
 function getCachedNavPages(db) {
   const cacheKey = 'nav_pages';
   let navPages = pageCache.get(cacheKey);
@@ -169,7 +136,7 @@ app.use((req, res, next) => {
   }
 
   res.locals.user = req.session.user || null;
-  res.locals.settings = getCachedSettings(req.db);
+  res.locals.settings = getSettings(req.db);
   res.locals.navPages = getCachedNavPages(req.db);
   res.locals.csrfToken = '';
   res.locals.cdn = cdnConfig;
