@@ -51,24 +51,6 @@ const OAUTH_CONFIGS = {
     userApi: 'https://www.googleapis.com/oauth2/v2/userinfo',
     scope: 'openid email profile'
   },
-  alipay: {
-    name: '支付宝',
-    icon: 'fab fa-alipay',
-    color: '#1677FF',
-    authUrl: 'https://openauth.alipay.com/oauth2/publicAppAuthorize.htm',
-    tokenUrl: 'https://openapi.alipay.com/gateway.do',
-    userApi: 'https://openapi.alipay.com/gateway.do',
-    scope: 'auth_user'
-  },
-  bilibili: {
-    name: '哔哩哔哩',
-    icon: 'fab fa-bilibili',
-    color: '#00A1D6',
-    authUrl: 'https://account.bilibili.com/h5/login/oauth2',
-    tokenUrl: 'https://api.bilibili.com/x/account-oauth2/v1/token',
-    userApi: 'https://api.bilibili.com/x/account-oauth2/v1/userinfo',
-    scope: ''
-  }
 };
 
 // 获取启用的第三方登录配置
@@ -93,9 +75,7 @@ function initDefaultProviders(db) {
     { provider: 'wechat', display_name: '微信', icon: 'fab fa-weixin', color: '#07C160', sort_order: 2 },
     { provider: 'qq', display_name: 'QQ', icon: 'fab fa-qq', color: '#12B7F5', sort_order: 3 },
     { provider: 'weibo', display_name: '微博', icon: 'fab fa-weibo', color: '#E6162D', sort_order: 4 },
-    { provider: 'google', display_name: 'Google', icon: 'fab fa-google', color: '#4285F4', sort_order: 5 },
-    { provider: 'alipay', display_name: '支付宝', icon: 'fab fa-alipay', color: '#1677FF', sort_order: 6 },
-    { provider: 'bilibili', display_name: '哔哩哔哩', icon: 'fab fa-bilibili', color: '#00A1D6', sort_order: 7 }
+    { provider: 'google', display_name: 'Google', icon: 'fab fa-google', color: '#4285F4', sort_order: 5 }
   ];
 
   defaultProviders.forEach(p => {
@@ -145,14 +125,6 @@ function getAuthUrl(provider, config, state, redirectUri) {
       params.append('response_type', 'code');
       params.append('access_type', 'offline');
       return `${OAUTH_CONFIGS.google.authUrl}?${params.toString()}`;
-
-    case 'alipay':
-      params.append('scope', OAUTH_CONFIGS.alipay.scope);
-      return `${OAUTH_CONFIGS.alipay.authUrl}?${params.toString()}`;
-
-    case 'bilibili':
-      params.append('response_type', 'code');
-      return `${OAUTH_CONFIGS.bilibili.authUrl}?${params.toString()}`;
 
     default:
       return null;
@@ -207,22 +179,6 @@ async function getAccessToken(provider, config, code, redirectUri) {
           grant_type: 'authorization_code'
         });
         return response.data.access_token;
-      }
-
-      case 'alipay': {
-        // 支付宝使用签名方式，这里简化处理
-        return null;
-      }
-
-      case 'bilibili': {
-        const response = await axios.post(OAUTH_CONFIGS.bilibili.tokenUrl, {
-          client_id: config.client_id,
-          client_secret: config.client_secret,
-          code: code,
-          redirect_uri: redirectUri,
-          grant_type: 'authorization_code'
-        });
-        return response.data.data?.access_token;
       }
 
       default:
@@ -304,19 +260,6 @@ async function getUserInfo(provider, config, accessToken) {
           nickname: data.name,
           avatar: data.picture,
           email: data.email
-        };
-      }
-
-      case 'bilibili': {
-        const response = await axios.get(OAUTH_CONFIGS.bilibili.userApi, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        const data = response.data.data;
-        return {
-          open_id: String(data.mid),
-          nickname: data.uname,
-          avatar: data.face,
-          email: null
         };
       }
 

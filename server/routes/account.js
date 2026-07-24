@@ -69,7 +69,7 @@ router.get('/account', isAuthenticated, (req, res) => {
     [userId]);
 
   // 获取可用的第三方登录提供商
-  const { getEnabledProviders, initDefaultProviders, OAUTH_CONFIGS } = require('./oauth');
+  const { getEnabledProviders, initDefaultProviders } = require('./oauth');
   try { initDefaultProviders(db); } catch (e) { /* 忽略 */ }
   const enabledProviders = getEnabledProviders(db);
 

@@ -49,7 +49,7 @@ const DEFAULT_OPTIONS = {
     'audio': ['http', 'https'],
     'source': ['http', 'https']
   },
-  allowedIframeHostnames: ['www.youtube.com', 'player.bilibili.com', 'www.bilibili.com'],
+  allowedIframeHostnames: ['www.youtube.com'],
   disallowedTagsMode: 'discard'
 };
 

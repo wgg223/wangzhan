@@ -915,15 +915,7 @@ html {
   border-color: #4285F4;
 }
 
-.oauth-btn-alipay:hover {
-  background: #1677FF;
-  border-color: #1677FF;
-}
 
-.oauth-btn-bilibili:hover {
-  background: #00A1D6;
-  border-color: #00A1D6;
-}
 
 /* 移动端适配 */
 @media (max-width: 480px) {
