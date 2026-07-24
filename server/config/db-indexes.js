@@ -17,6 +17,7 @@ function createIndexes(db) {
     db.run('CREATE INDEX IF NOT EXISTS idx_pages_sort ON pages(sort_order)');
 
     db.run('CREATE INDEX IF NOT EXISTS idx_comments_article ON comments(article_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_comments_status ON comments(status)');
     db.run('CREATE INDEX IF NOT EXISTS idx_comments_created ON comments(created_at)');
 
@@ -25,6 +26,7 @@ function createIndexes(db) {
     db.run('CREATE INDEX IF NOT EXISTS idx_chapters_number ON novel_chapters(novel_id, chapter_number)');
 
     db.run('CREATE INDEX IF NOT EXISTS idx_user_perms ON user_permissions(user_id)');
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_permissions_unique ON user_permissions(user_id, perm_key)');
 
     db.run('CREATE INDEX IF NOT EXISTS idx_media_type ON media(file_type)');
     db.run('CREATE INDEX IF NOT EXISTS idx_media_created ON media(created_at)');
@@ -51,6 +53,24 @@ function createIndexes(db) {
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_roles_user ON ai_roles(user_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_models_user ON ai_models(user_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_models_default ON ai_models(is_default, is_enabled)');
+
+    // OAuth相关索引
+    db.run('CREATE INDEX IF NOT EXISTS idx_oauth_providers_enabled ON oauth_providers(is_enabled)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_bindings_user ON user_oauth_bindings(user_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_bindings_provider ON user_oauth_bindings(provider, open_id)');
+
+    // 用户表索引
+    db.run('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_users_uid ON users(uid)');
+
+    // 通知表索引
+    db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read)');
+
+    // 私信相关索引
+    db.run('CREATE INDEX IF NOT EXISTS idx_conversations_users ON conversations(user1_id, user2_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_private_messages_read ON private_messages(conversation_id, is_read)');
 
   } catch (err) {
     console.error('创建索引失败:', err.message);

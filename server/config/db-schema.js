@@ -518,6 +518,43 @@ function createTables(db) {
     }
   } catch (e) { /* 忽略 */ }
 
+  // ============ 第三方登录模块表 ============
+
+  // 第三方登录配置表
+  db.run(`CREATE TABLE IF NOT EXISTS oauth_providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT UNIQUE NOT NULL,
+    display_name TEXT NOT NULL,
+    client_id TEXT,
+    client_secret TEXT,
+    redirect_uri TEXT,
+    icon TEXT DEFAULT '',
+    color TEXT DEFAULT '#000000',
+    is_enabled INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  // 第三方登录绑定表
+  db.run(`CREATE TABLE IF NOT EXISTS user_oauth_bindings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    open_id TEXT NOT NULL,
+    union_id TEXT DEFAULT '',
+    access_token TEXT DEFAULT '',
+    refresh_token TEXT DEFAULT '',
+    nickname TEXT DEFAULT '',
+    avatar TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(provider, open_id)
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_user ON user_oauth_bindings(user_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_provider ON user_oauth_bindings(provider, open_id)');
+
   // AI 角色预设表
   db.run(`CREATE TABLE IF NOT EXISTS ai_roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

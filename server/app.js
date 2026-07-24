@@ -219,6 +219,8 @@ const { activityLogger } = require('./middlewares/activity-logger');
 app.use(activityLogger);
 
 const authRoutes = require('./routes/auth');
+const oauthRoutes = require('./routes/oauth').router;
+const accountRoutes = require('./routes/account');
 const adminRoutes = require('./routes/admin/index');
 const frontendRoutes = require('./routes/frontend');
 const setupRoutes = require('./routes/setup');
@@ -230,6 +232,8 @@ const permissionApplicationsRoutes = require('./routes/permission-applications')
 const privateMessageRoutes = require('./routes/private-message');
 app.use('/setup', setupRoutes);
 app.use('/auth', globalLimiter, authRoutes);
+app.use('/oauth', globalLimiter, oauthRoutes);
+app.use('/', globalLimiter, accountRoutes);
 app.use('/admin', globalLimiter, adminRoutes);
 app.use('/', globalLimiter, permissionApplicationsRoutes);
 

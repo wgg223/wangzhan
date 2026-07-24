@@ -185,15 +185,28 @@ router.get('/:source/login', (req, res) => {
   const db = req.db;
   const siteName = getSiteName(db, source);
   const modeInfo = getModeInfo('login', source);
-  res.render('auth/login', { layout: false,
+
+  // 获取启用的第三方登录配置
+  const { getEnabledProviders, initDefaultProviders } = require('./oauth');
+  try { initDefaultProviders(db); } catch (e) { /* 初始化失败不影响登录 */ }
+  const oauthProviders = getEnabledProviders(db);
+
+  res.render('auth/auth-page', { layout: false,
     source,
+    mode: 'login',
     modeTitle: modeInfo.title,
     modeSubtitle: modeInfo.subtitle,
     siteName,
-    error: null,
-    success: null,
+    error: req.query.error || null,
+    success: req.query.success || null,
     user: req.session.user || null,
-    username: ''
+    username: '',
+    step: null,
+    email: '',
+    userAgreement: '',
+    privacyPolicy: '',
+    oauthProviders,
+    csrfToken: req.csrfToken ? req.csrfToken() : ''
   });
 });
 
@@ -391,17 +404,29 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   const db = req.db;
   const siteName = getSiteName(db, source);
 
+  // 获取启用的第三方登录配置
+  const { getEnabledProviders, initDefaultProviders } = require('./oauth');
+  try { initDefaultProviders(db); } catch (e) { /* 初始化失败不影响登录 */ }
+  const oauthProviders = getEnabledProviders(db);
+
   function renderLogin(errorMsg) {
     const modeInfo = getModeInfo('login', source);
-    res.render('auth/login', { layout: false,
+    res.render('auth/auth-page', { layout: false,
       source,
+      mode: 'login',
       modeTitle: modeInfo.title,
       modeSubtitle: modeInfo.subtitle,
       siteName,
       error: errorMsg,
       success: null,
       user: null,
-      username: username || ''
+      username: username || '',
+      step: null,
+      email: '',
+      userAgreement: '',
+      privacyPolicy: '',
+      oauthProviders,
+      csrfToken: req.csrfToken ? req.csrfToken() : ''
     });
   }
 

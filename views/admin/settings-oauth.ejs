@@ -1,0 +1,116 @@
+<% var active = 'settings' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>第三方登录设置</h1>
+    <p class="page-desc">配置第三方登录平台的API密钥，用户可使用第三方账号快速登录</p>
+  </div>
+  
+  <% if (typeof success !== 'undefined' && success) { %>
+    <div class="alert alert-success">设置已保存</div>
+  <% } %>
+  
+  <form action="/admin/settings/oauth" method="POST" class="admin-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    
+    <div class="settings-section">
+      <h2>第三方登录平台配置</h2>
+      <p class="section-desc">请在各平台开发者后台创建应用后，将对应的 Client ID 和 Client Secret 填入下方。留空表示不使用该登录方式。</p>
+      
+      <% providers.forEach(function(provider) { %>
+        <div class="oauth-provider-card" style="border-left: 4px solid <%= provider.color %>; margin-bottom: 20px; padding: 16px; background: var(--bg-card); border-radius: 8px;">
+          <input type="hidden" name="provider_id" value="<%= provider.id %>">
+          
+          <div class="provider-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <i class="<%= provider.icon %>" style="font-size: 24px; color: <%= provider.color %>;"></i>
+              <strong style="font-size: 16px;"><%= provider.display_name %></strong>
+            </div>
+            <label class="toggle-switch" style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" name="is_enabled" value="<%= provider.id %>" <%= provider.is_enabled ? 'checked' : '' %>>
+              <span>启用</span>
+            </label>
+          </div>
+          
+          <div class="form-group">
+            <label>Client ID</label>
+            <input type="text" name="client_id" value="<%= provider.client_id || '' %>" placeholder="输入 <%= provider.display_name %> 的 Client ID">
+          </div>
+          
+          <div class="form-group">
+            <label>Client Secret</label>
+            <input type="password" name="client_secret" value="<%= provider.client_secret || '' %>" placeholder="输入 <%= provider.display_name %> 的 Client Secret" autocomplete="new-password">
+          </div>
+          
+          <div class="form-group">
+            <label>回调地址 (Redirect URI)</label>
+            <input type="text" name="redirect_uri" value="<%= provider.redirect_uri || '' %>" placeholder="留空则使用默认地址">
+            <small class="form-text" style="color: var(--text-muted); font-size: 12px; margin-top: 4px; display: block;">
+              默认回调地址：<code><%= typeof req !== 'undefined' ? req.protocol + '://' + req.get('host') : '' %>/oauth/callback/<%= provider.provider %></code>
+            </small>
+          </div>
+        </div>
+      <% }); %>
+      
+      <div class="form-actions" style="margin-top: 24px;">
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-save"></i> 保存设置
+        </button>
+      </div>
+    </div>
+  </form>
+  
+  <div class="settings-section" style="margin-top: 32px;">
+    <h2>使用说明</h2>
+    <div class="help-content" style="background: var(--bg-card); padding: 20px; border-radius: 8px; line-height: 1.8;">
+      <h3>配置步骤：</h3>
+      <ol>
+        <li>在对应平台的开发者后台创建应用或网站接入</li>
+        <li>获取应用的 <strong>Client ID</strong> 和 <strong>Client Secret</strong></li>
+        <li>将回调地址设置为对应平台提供的回调地址</li>
+        <li>在上方表单中填入对应信息并保存</li>
+        <li>启用对应的登录方式</li>
+      </ol>
+      
+      <h3 style="margin-top: 16px;">各平台开发者后台：</h3>
+      <ul>
+        <li><strong>GitHub</strong>：<a href="https://github.com/settings/developers" target="_blank">https://github.com/settings/developers</a></li>
+        <li><strong>微信</strong>：<a href="https://open.weixin.qq.com/" target="_blank">https://open.weixin.qq.com/</a></li>
+        <li><strong>QQ</strong>：<a href="https://connect.qq.com/" target="_blank">https://connect.qq.com/</a></li>
+        <li><strong>微博</strong>：<a href="https://open.weibo.com/" target="_blank">https://open.weibo.com/</a></li>
+        <li><strong>Google</strong>：<a href="https://console.cloud.google.com/apis/credentials" target="_blank">https://console.cloud.google.com/apis/credentials</a></li>
+        <li><strong>支付宝</strong>：<a href="https://open.alipay.com/" target="_blank">https://open.alipay.com/</a></li>
+        <li><strong>哔哩哔哩</strong>：<a href="https://openhome.bilibili.com/" target="_blank">https://openhome.bilibili.com/</a></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<style>
+  .toggle-switch input[type="checkbox"] {
+    width: 44px;
+    height: 22px;
+    appearance: none;
+    background: #ccc;
+    border-radius: 11px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .toggle-switch input[type="checkbox"]:checked {
+    background: var(--success);
+  }
+  .toggle-switch input[type="checkbox"]::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: white;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s;
+  }
+  .toggle-switch input[type="checkbox"]:checked::before {
+    transform: translateX(22px);
+  }
+</style>

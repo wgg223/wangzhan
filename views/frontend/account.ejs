@@ -1,0 +1,931 @@
+<div class="container">
+  <div class="account-page">
+    <h1 class="page-title">账号管理</h1>
+
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <div class="account-grid">
+      <!-- 左侧：个人信息卡片 -->
+      <div class="account-sidebar">
+        <div class="profile-card">
+          <div class="profile-card-header">
+            <div class="avatar-section">
+              <img src="<%= userData.avatar || '/assets/images/default-avatar.png' %>" alt="头像" class="account-avatar" id="accountAvatar">
+              <button class="btn-change-avatar" onclick="document.getElementById('avatarInput').click()">更换头像</button>
+              <input type="file" id="avatarInput" accept="image/*" style="display:none;" onchange="handleAvatarSelect(this)">
+            </div>
+            <h2 class="profile-name"><%= userData.nickname || userData.username %></h2>
+            <p class="profile-username">@<%= userData.username %></p>
+            <% if (userData.uid) { %>
+              <p class="profile-uid">UID: <%= userData.uid %></p>
+            <% } %>
+            <p class="profile-join">加入时间：<%= new Date(userData.created_at).toLocaleDateString('zh-CN') %></p>
+          </div>
+
+          <div class="profile-stats">
+            <div class="stat-item">
+              <span class="stat-count"><%= articles.length %></span>
+              <span class="stat-label">文章</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-count"><%= comments.length %></span>
+              <span class="stat-label">评论</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 导航菜单 -->
+        <div class="account-nav">
+          <a href="#profile" class="nav-item active" onclick="switchTab('profile', this)">个人信息</a>
+          <a href="#security" class="nav-item" onclick="switchTab('security', this)">安全设置</a>
+          <a href="#content" class="nav-item" onclick="switchTab('content', this)">我的内容</a>
+          <a href="#oauth" class="nav-item" onclick="switchTab('oauth', this)">第三方账号</a>
+        </div>
+      </div>
+
+      <!-- 右侧：内容区域 -->
+      <div class="account-content">
+        <!-- 个人信息 -->
+        <div class="tab-panel active" id="tab-profile">
+          <div class="card">
+            <h3 class="card-title">个人信息</h3>
+            <form action="/account/profile" method="POST" class="account-form">
+              <div class="form-group">
+                <label>用户名</label>
+                <input type="text" value="<%= userData.username %>" disabled class="form-input disabled">
+                <small class="form-hint">用户名无法修改</small>
+              </div>
+              <div class="form-group">
+                <label for="nickname">昵称</label>
+                <input type="text" id="nickname" name="nickname" value="<%= userData.nickname || '' %>" class="form-input" maxlength="30" placeholder="设置一个昵称">
+              </div>
+              <div class="form-group">
+                <label for="bio">个人简介</label>
+                <textarea id="bio" name="bio" class="form-input" rows="3" maxlength="200" placeholder="介绍一下自己..."><%= userData.bio || '' %></textarea>
+                <small class="form-hint">最多200个字符</small>
+              </div>
+              <div class="form-group">
+                <label>邮箱</label>
+                <input type="text" value="<%= userData.email || '未设置' %>" disabled class="form-input disabled">
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">保存修改</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 安全设置 -->
+        <div class="tab-panel" id="tab-security">
+          <div class="card">
+            <h3 class="card-title">修改密码</h3>
+            <form action="/account/password" method="POST" class="account-form">
+              <div class="form-group">
+                <label for="current_password">当前密码</label>
+                <input type="password" id="current_password" name="current_password" class="form-input" required>
+              </div>
+              <div class="form-group">
+                <label for="new_password">新密码</label>
+                <input type="password" id="new_password" name="new_password" class="form-input" required minlength="6">
+                <small class="form-hint">至少6个字符</small>
+              </div>
+              <div class="form-group">
+                <label for="confirm_password">确认新密码</label>
+                <input type="password" id="confirm_password" name="confirm_password" class="form-input" required>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">修改密码</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 我的内容 -->
+        <div class="tab-panel" id="tab-content">
+          <div class="card">
+            <h3 class="card-title">我的文章</h3>
+            <% if (articles && articles.length > 0) { %>
+              <div class="content-list">
+                <% articles.forEach(function(article) { %>
+                  <div class="content-item">
+                    <div class="content-info">
+                      <a href="/articles/<%= article.id %>" class="content-title"><%= article.title %></a>
+                      <span class="content-meta">
+                        <span class="content-date"><%= new Date(article.created_at).toLocaleDateString('zh-CN') %></span>
+                        <span class="content-status status-<%= article.status %>"><%= article.status === 'published' ? '已发布' : '草稿' %></span>
+                      </span>
+                    </div>
+                    <div class="content-actions">
+                      <a href="/articles/<%= article.id %>/edit" class="btn btn-small">编辑</a>
+                      <button class="btn btn-small btn-danger" onclick="deleteArticle(<%= article.id %>, '<%= article.title.replace(/'/g, "\\'") %>')">删除</button>
+                    </div>
+                  </div>
+                <% }); %>
+              </div>
+            <% } else { %>
+              <div class="empty-state">
+                <p>暂无文章</p>
+                <a href="/articles/new" class="btn btn-primary">写文章</a>
+              </div>
+            <% } %>
+          </div>
+
+          <div class="card" style="margin-top: 20px;">
+            <h3 class="card-title">我的评论</h3>
+            <% if (comments && comments.length > 0) { %>
+              <div class="content-list">
+                <% comments.forEach(function(comment) { %>
+                  <div class="content-item">
+                    <div class="content-info">
+                      <p class="comment-text"><%= comment.content.length > 100 ? comment.content.substring(0, 100) + '...' : comment.content %></p>
+                      <span class="content-meta">
+                        <% if (comment.article_title) { %>
+                          <span>文章：<a href="/articles/<%= comment.article_id %>"><%= comment.article_title %></a></span>
+                        <% } %>
+                        <span class="content-date"><%= new Date(comment.created_at).toLocaleDateString('zh-CN') %></span>
+                      </span>
+                    </div>
+                    <div class="content-actions">
+                      <button class="btn btn-small btn-danger" onclick="deleteComment(<%= comment.id %>)">删除</button>
+                    </div>
+                  </div>
+                <% }); %>
+              </div>
+            <% } else { %>
+              <div class="empty-state">
+                <p>暂无评论</p>
+              </div>
+            <% } %>
+          </div>
+        </div>
+
+        <!-- 第三方账号 -->
+        <div class="tab-panel" id="tab-oauth">
+          <div class="card">
+            <h3 class="card-title">第三方账号绑定</h3>
+            <p class="card-desc">绑定第三方账号后，可以直接使用第三方账号快速登录</p>
+
+            <div class="oauth-list">
+              <% providersWithBinding.forEach(function(provider) { %>
+                <div class="oauth-item">
+                  <div class="oauth-info">
+                    <i class="<%= provider.icon %>" style="color: <%= provider.color %>; font-size: 24px;"></i>
+                    <div>
+                      <strong><%= provider.display_name %></strong>
+                      <% if (provider.bound) { %>
+                        <span class="oauth-status bound">已绑定</span>
+                      <% } else { %>
+                        <span class="oauth-status unbound">未绑定</span>
+                      <% } %>
+                    </div>
+                  </div>
+                  <div class="oauth-action">
+                    <% if (provider.bound) { %>
+                      <button class="btn btn-small btn-danger" onclick="unbindOAuth('<%= provider.provider %>', '<%= provider.display_name %>')">解除绑定</button>
+                    <% } else { %>
+                      <button class="btn btn-small btn-primary" onclick="bindOAuth('<%= provider.provider %>')">绑定</button>
+                    <% } %>
+                  </div>
+                </div>
+              <% }); %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 头像裁剪弹窗 -->
+<div id="avatarCropperModal" class="cropper-modal" style="display:none;">
+  <div class="cropper-modal-content">
+    <div class="cropper-modal-header">
+      <h3>裁剪头像</h3>
+      <button class="cropper-close" onclick="closeCropperModal()">&times;</button>
+    </div>
+    <div class="cropper-modal-body">
+      <div class="cropper-container">
+        <img id="cropperImage" src="" alt="裁剪图片">
+      </div>
+    </div>
+    <div class="cropper-modal-footer">
+      <div class="cropper-preview">
+        <div class="preview-circle" id="previewCircle"></div>
+        <span>预览</span>
+      </div>
+      <div class="cropper-actions">
+        <button class="btn" onclick="closeCropperModal()">取消</button>
+        <button class="btn btn-primary" id="cropConfirmBtn" onclick="confirmCrop()">确认上传</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.account-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.page-title {
+  font-size: 24px;
+  margin-bottom: 24px;
+}
+
+.account-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 768px) {
+  .account-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profile-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.profile-card-header {
+  padding: 24px;
+  text-align: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+.avatar-section {
+  margin-bottom: 12px;
+}
+
+.account-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.3);
+  object-fit: cover;
+}
+
+.btn-change-avatar {
+  display: block;
+  margin: 8px auto 0;
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-change-avatar:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+.profile-name {
+  font-size: 20px;
+  margin: 8px 0 4px;
+}
+
+.profile-username {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.profile-uid {
+  font-size: 12px;
+  opacity: 0.7;
+  font-family: monospace;
+}
+
+.profile-join {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 8px;
+}
+
+.profile-stats {
+  display: flex;
+  justify-content: space-around;
+  padding: 16px;
+  background: var(--bg-card);
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-count {
+  display: block;
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--primary);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.account-nav {
+  background: var(--bg-card);
+  border-radius: 12px;
+  margin-top: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.nav-item {
+  display: block;
+  padding: 12px 20px;
+  color: var(--text-primary);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: all 0.2s;
+}
+
+.nav-item:hover {
+  background: var(--gray-50);
+}
+
+.nav-item.active {
+  background: var(--primary-bg);
+  color: var(--primary);
+  border-left-color: var(--primary);
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.card-title {
+  font-size: 18px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.card-desc {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.account-form .form-group {
+  margin-bottom: 16px;
+}
+
+.account-form label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-input);
+  transition: border-color 0.2s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.form-input.disabled {
+  background: var(--gray-100);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.form-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.form-actions {
+  margin-top: 20px;
+}
+
+.content-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.content-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: var(--gray-50);
+  border-radius: 8px;
+  gap: 12px;
+}
+
+.content-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.content-title {
+  font-weight: 500;
+  color: var(--primary);
+  text-decoration: none;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.content-title:hover {
+  text-decoration: underline;
+}
+
+.content-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.content-meta a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.content-status {
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.status-published {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-draft {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.content-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.comment-text {
+  font-size: 14px;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-muted);
+}
+
+.empty-state .btn {
+  margin-top: 12px;
+}
+
+.oauth-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.oauth-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: var(--gray-50);
+  border-radius: 8px;
+}
+
+.oauth-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.oauth-status {
+  display: inline-block;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.oauth-status.bound {
+  color: #059669;
+}
+
+.oauth-status.unbound {
+  color: var(--text-muted);
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.alert {
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.alert-success {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.alert-error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark);
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* 头像裁剪弹窗样式 */
+.cropper-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.6);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.cropper-modal-content {
+  background: var(--bg-card);
+  border-radius: 16px;
+  width: 500px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: cropperIn 0.2s ease;
+}
+
+@keyframes cropperIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.cropper-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cropper-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.cropper-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0;
+  line-height: 1;
+}
+
+.cropper-close:hover {
+  color: var(--text-primary);
+}
+
+.cropper-modal-body {
+  padding: 20px;
+}
+
+.cropper-container {
+  width: 100%;
+  max-height: 400px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #000;
+}
+
+.cropper-container img {
+  max-width: 100%;
+  display: block;
+}
+
+.cropper-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.cropper-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.preview-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--border-color);
+  background: var(--gray-100);
+}
+
+.preview-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cropper-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Cropper.js 自定义样式 */
+.cropper-view-box,
+.cropper-face {
+  border-radius: 50%;
+}
+</style>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+
+<script>
+function switchTab(tabId, el) {
+  // 隐藏所有面板
+  document.querySelectorAll('.tab-panel').forEach(function(panel) {
+    panel.classList.remove('active');
+  });
+  // 显示目标面板
+  document.getElementById('tab-' + tabId).classList.add('active');
+
+  // 更新导航状态
+  document.querySelectorAll('.nav-item').forEach(function(item) {
+    item.classList.remove('active');
+  });
+  el.classList.add('active');
+
+  // 更新URL hash
+  window.location.hash = tabId;
+}
+
+var cropper = null;
+
+function handleAvatarSelect(input) {
+  if (!input.files || !input.files[0]) return;
+
+  var file = input.files[0];
+  if (!file.type.match(/^image\//)) {
+    alert('请选择图片文件');
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    alert('图片大小不能超过5MB');
+    return;
+  }
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    openCropperModal(e.target.result);
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function openCropperModal(imageSrc) {
+  var modal = document.getElementById('avatarCropperModal');
+  var img = document.getElementById('cropperImage');
+
+  img.src = imageSrc;
+  modal.style.display = 'flex';
+
+  if (cropper) {
+    cropper.destroy();
+  }
+
+  setTimeout(function() {
+    cropper = new Cropper(img, {
+      aspectRatio: 1,
+      viewMode: 1,
+      dragMode: 'move',
+      autoCropArea: 0.8,
+      restore: false,
+      guides: false,
+      center: true,
+      highlight: false,
+      cropBoxMovable: false,
+      cropBoxResizable: false,
+      ready: function() {
+        updatePreview();
+      },
+      crop: function() {
+        updatePreview();
+      }
+    });
+  }, 100);
+}
+
+function closeCropperModal() {
+  var modal = document.getElementById('avatarCropperModal');
+  modal.style.display = 'none';
+  if (cropper) {
+    cropper.destroy();
+    cropper = null;
+  }
+}
+
+function updatePreview() {
+  if (!cropper) return;
+  var previewCircle = document.getElementById('previewCircle');
+  var canvas = cropper.getCroppedCanvas({
+    width: 96,
+    height: 96
+  });
+  previewCircle.innerHTML = '';
+  previewCircle.appendChild(canvas);
+}
+
+function confirmCrop() {
+  if (!cropper) return;
+
+  var btn = document.getElementById('cropConfirmBtn');
+  btn.disabled = true;
+  btn.textContent = '上传中...';
+
+  cropper.getCroppedCanvas({
+    width: 200,
+    height: 200,
+    fillColor: '#fff',
+    imageSmoothingEnabled: true,
+    imageSmoothingQuality: 'high'
+  }).toBlob(function(blob) {
+    var formData = new FormData();
+    formData.append('avatar', blob, 'avatar.jpg');
+
+    fetch('/account/avatar', {
+      method: 'POST',
+      body: formData
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success) {
+        document.getElementById('accountAvatar').src = data.avatar + '?t=' + Date.now();
+        closeCropperModal();
+        location.reload();
+      } else {
+        alert(data.error || '上传失败');
+      }
+    })
+    .catch(function() {
+      alert('上传失败，请重试');
+    })
+    .finally(function() {
+      btn.disabled = false;
+      btn.textContent = '确认上传';
+    });
+  }, 'image/jpeg', 0.9);
+}
+
+function deleteArticle(id, title) {
+  if (!confirm('确定要删除文章"' + title + '"吗？此操作不可恢复。')) return;
+
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/account/article/' + id + '/delete';
+  document.body.appendChild(form);
+  form.submit();
+}
+
+function deleteComment(id) {
+  if (!confirm('确定要删除这条评论吗？此操作不可恢复。')) return;
+
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/account/comment/' + id + '/delete';
+  document.body.appendChild(form);
+  form.submit();
+}
+
+function bindOAuth(provider) {
+  fetch('/oauth/auth-url/' + provider + '?source=frontend')
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || '获取授权链接失败');
+      }
+    })
+    .catch(function() {
+      alert('请求失败，请重试');
+    });
+}
+
+function unbindOAuth(provider, name) {
+  if (!confirm('确定要解除' + name + '的绑定吗？')) return;
+
+  fetch('/account/unbind/' + provider, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      location.reload();
+    } else {
+      alert(data.error || '解绑失败');
+    }
+  })
+  .catch(function() {
+    alert('请求失败，请重试');
+  });
+}
+
+// 页面加载时根据hash切换到对应tab
+(function() {
+  var hash = window.location.hash.substring(1);
+  if (hash) {
+    var navItem = document.querySelector('.nav-item[href="#' + hash + '"]');
+    if (navItem) {
+      switchTab(hash, navItem);
+    }
+  }
+})();
+</script>

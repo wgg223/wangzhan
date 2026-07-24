@@ -339,4 +339,103 @@ router.delete('/settings/backup/:filename', isAuthenticated, hasPermission('data
   }
 });
 
+// ============ 第三方登录设置 ============
+
+router.get('/settings/oauth', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
+  const db = req.db;
+  const { initDefaultProviders } = require('../../routes/oauth');
+  try { initDefaultProviders(db); } catch (e) { /* 忽略 */ }
+
+  const providers = queryAll(db, 'SELECT * FROM oauth_providers ORDER BY sort_order ASC');
+
+  res.render('admin/settings-oauth', {
+    user: req.session.user,
+    providers,
+    success: req.query.success === '1'
+  });
+});
+
+router.post('/settings/oauth', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
+  const db = req.db;
+  const { provider_id, client_id, client_secret, redirect_uri, is_enabled } = req.body;
+
+  // 处理多个provider的更新
+  const providerIds = Array.isArray(provider_id) ? provider_id : [provider_id];
+  const clientIds = Array.isArray(client_id) ? client_id : [client_id];
+  const clientSecrets = Array.isArray(client_secret) ? client_secret : [client_secret];
+  const redirectUris = Array.isArray(redirect_uri) ? redirect_uri : [redirect_uri];
+  const enabledStates = Array.isArray(is_enabled) ? is_enabled : [is_enabled];
+
+  for (let i = 0; i < providerIds.length; i++) {
+    const id = providerIds[i];
+    const cid = clientIds[i] || '';
+    const csecret = clientSecrets[i] || '';
+    const ruri = redirectUris[i] || '';
+    const enabled = enabledStates.includes(id) ? 1 : 0;
+
+    db.run('UPDATE oauth_providers SET client_id = ?, client_secret = ?, redirect_uri = ?, is_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [cid, csecret, ruri, enabled, id]);
+  }
+
+  saveDatabase();
+
+  logActivity(db, {
+    user_id: req.session.user.id,
+    username: req.session.user.username,
+    action: 'update_oauth',
+    target_type: 'settings',
+    detail: '更新第三方登录配置',
+    ip: req.ip
+  });
+
+  res.redirect('/admin/settings/oauth?success=1');
+});
+
+// ============ 数据库维护 ============
+
+router.post('/settings/dedup', isAuthenticated, hasPermission('data.manage'), (req, res) => {
+  const db = req.db;
+  const { deduplicateDatabase } = require('../../config/db-dedup');
+
+  try {
+    const results = deduplicateDatabase(db);
+    const totalRemoved = Object.values(results).reduce((sum, count) => sum + count, 0);
+
+    logActivity(db, {
+      user_id: req.session.user.id,
+      username: req.session.user.username,
+      action: 'db_dedup',
+      target_type: 'database',
+      detail: `手动去重完成，清理 ${totalRemoved} 条重复数据`,
+      ip: req.ip
+    });
+
+    res.json({ success: true, removed: totalRemoved, details: results });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/settings/vacuum', isAuthenticated, hasPermission('data.manage'), (req, res) => {
+  const db = req.db;
+
+  try {
+    db.run('VACUUM');
+    db.run('ANALYZE');
+
+    logActivity(db, {
+      user_id: req.session.user.id,
+      username: req.session.user.username,
+      action: 'db_vacuum',
+      target_type: 'database',
+      detail: '手动优化数据库（VACUUM + ANALYZE）',
+      ip: req.ip
+    });
+
+    res.json({ success: true, message: '数据库已优化' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

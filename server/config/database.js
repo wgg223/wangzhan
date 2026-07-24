@@ -9,6 +9,7 @@ const { setUseNativeSql, queryOne, queryAll, generateUid } = require('./db-helpe
 const { createTables } = require('./db-schema');
 const { insertDefaultDataIfNeeded } = require('./db-seed');
 const { createIndexes } = require('./db-indexes');
+const { deduplicateDatabase, ensureUniqueConstraints } = require('./db-dedup');
 
 try {
   Database = require('better-sqlite3');
@@ -25,7 +26,7 @@ let saveTimer = null;
 let pendingSaves = 0;
 let isSaving = false;
 
-const DEFAULT_CACHE_PAGES = 2000; // 约8MB缓存
+const DEFAULT_CACHE_PAGES = 4000; // 约16MB缓存（原8MB）
 
 function scheduleSave() {
   if (useNativeSql) return;
@@ -81,16 +82,20 @@ async function initDatabase() {
     db = new Database(dbPath, {
       fileMustExist: false,
       readonly: false,
-      timeout: 5000,
+      timeout: 10000,
     });
 
+    // 安全与性能优化 PRAGMA 设置
     db.pragma('foreign_keys = ON');
     db.pragma('synchronous = NORMAL');
     db.pragma('journal_mode = WAL');
     db.pragma(`cache_size = -${DEFAULT_CACHE_PAGES}`);
     db.pragma('temp_store = MEMORY');
-    db.pragma('journal_size_limit = 1048576');
+    db.pragma('journal_size_limit = 2097152'); // 2MB journal limit
     db.pragma('locking_mode = NORMAL');
+    db.pragma('wal_autocheckpoint = 1000');
+    db.pragma('secure_delete = FAST'); // 安全删除，平衡性能
+    db.pragma('busy_timeout = 5000');
 
     db.run = function(sql, params) {
       try {
@@ -128,8 +133,9 @@ async function initDatabase() {
     db.run('PRAGMA journal_mode = WAL');
     db.run(`PRAGMA cache_size = -${DEFAULT_CACHE_PAGES}`);
     db.run('PRAGMA temp_store = MEMORY');
-    db.run('PRAGMA journal_size_limit = 1048576');
+    db.run('PRAGMA journal_size_limit = 2097152');
     db.run('PRAGMA locking_mode = NORMAL');
+    db.run('PRAGMA secure_delete = FAST');
   }
 
   // 创建所有表结构
@@ -143,8 +149,12 @@ async function initDatabase() {
     insertDefaultDataIfNeeded(db);
   }
 
-  // 创建数据库索引
+  // 创建数据库索引和唯一约束
   createIndexes(db);
+  ensureUniqueConstraints(db);
+
+  // 自动去重 - 清理更新过程中产生的重复数据
+  deduplicateDatabase(db);
 
   // 初始保存
   saveDatabase();

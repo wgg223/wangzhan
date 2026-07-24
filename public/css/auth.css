@@ -811,3 +811,137 @@ html {
     font-size: 22px;
   }
 }
+
+/* ========================================
+   第三方登录样式
+   ======================================== */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  margin: var(--space-6) 0;
+  color: var(--auth-text-muted);
+  font-size: 13px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--auth-border), transparent);
+}
+
+.auth-divider span {
+  padding: 0 var(--space-4);
+  white-space: nowrap;
+}
+
+.oauth-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+  margin-bottom: var(--space-4);
+}
+
+.oauth-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 10px 16px;
+  border: 1px solid var(--auth-border);
+  border-radius: 10px;
+  background: var(--auth-card-bg);
+  color: var(--oauth-color, var(--auth-text));
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  min-width: 100px;
+}
+
+.oauth-btn:hover {
+  background: var(--oauth-color, var(--auth-primary));
+  color: #fff;
+  border-color: var(--oauth-color, var(--auth-primary));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.oauth-btn:active {
+  transform: translateY(0);
+}
+
+.oauth-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.oauth-btn i {
+  font-size: 18px;
+}
+
+.oauth-btn span {
+  font-size: 13px;
+}
+
+/* 特定平台hover颜色 */
+.oauth-btn-github:hover {
+  background: #333;
+  border-color: #333;
+}
+
+.oauth-btn-wechat:hover {
+  background: #07C160;
+  border-color: #07C160;
+}
+
+.oauth-btn-qq:hover {
+  background: #12B7F5;
+  border-color: #12B7F5;
+}
+
+.oauth-btn-weibo:hover {
+  background: #E6162D;
+  border-color: #E6162D;
+}
+
+.oauth-btn-google:hover {
+  background: #4285F4;
+  border-color: #4285F4;
+}
+
+.oauth-btn-alipay:hover {
+  background: #1677FF;
+  border-color: #1677FF;
+}
+
+.oauth-btn-bilibili:hover {
+  background: #00A1D6;
+  border-color: #00A1D6;
+}
+
+/* 移动端适配 */
+@media (max-width: 480px) {
+  .oauth-buttons {
+    gap: var(--space-2);
+  }
+  
+  .oauth-btn {
+    padding: 8px 12px;
+    min-width: 80px;
+    font-size: 12px;
+  }
+  
+  .oauth-btn i {
+    font-size: 16px;
+  }
+  
+  .oauth-btn span {
+    font-size: 12px;
+  }
+}

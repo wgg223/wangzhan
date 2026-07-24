@@ -37,7 +37,7 @@ const cdnConfig = {
     try {
       // 使用queryAll函数（兼容better-sqlite3和sql.js）
       const { queryAll } = require('./server/config/db-helpers');
-      const settings = queryAll(db, "SELECT setting_key, setting_value FROM settings WHERE setting_key IN (?, ?, ?, ?)", ['cdn_enabled', 'cdn_provider', 'cdn_base_url', 'cdn_version']);
+      const settings = queryAll(db, 'SELECT setting_key, setting_value FROM settings WHERE setting_key IN (?, ?, ?, ?)', ['cdn_enabled', 'cdn_provider', 'cdn_base_url', 'cdn_version']);
       const settingsObj = {};
       settings.forEach(s => {
         settingsObj[s.setting_key] = s.setting_value;
