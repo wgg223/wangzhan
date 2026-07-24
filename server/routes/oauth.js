@@ -362,7 +362,7 @@ router.get('/callback/:provider', async (req, res) => {
       // 日志记录失败不影响登录流程
     }
 
-    return res.redirect(redirectBase);
+    return req.session.save(() => res.redirect(redirectBase));
   }
 
   // 未绑定，检查是否有相同邮箱的用户
@@ -399,7 +399,7 @@ router.get('/callback/:provider', async (req, res) => {
         });
       } catch (e) { /* 日志记录失败不影响登录 */ }
 
-      return res.redirect(redirectBase);
+      return req.session.save(() => res.redirect(redirectBase));
     }
   }
 
@@ -463,7 +463,7 @@ router.get('/callback/:provider', async (req, res) => {
     // 日志记录失败不影响登录流程
   }
 
-  return res.redirect(redirectBase);
+  return req.session.save(() => res.redirect(redirectBase));
 });
 
 // 获取OAuth登录URL (AJAX接口)
