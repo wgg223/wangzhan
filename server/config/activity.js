@@ -192,6 +192,11 @@ const actionLabels = {
   forgot_password: '忘记密码',
   forgot_send_code: '发送重置验证码',
   forgot_reset: '重置密码成功',
+  // 第三方登录
+  oauth_login: '第三方登录',
+  oauth_bind: '绑定第三方账号',
+  oauth_register: '第三方注册',
+  oauth_unbind: '解绑第三方账号',
   // 邮箱
   email_send: '发送邮件',
   email_send_success: '邮件发送成功',

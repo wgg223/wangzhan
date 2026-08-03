@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/main_shell.dart';
 import 'state/auth_state.dart';
+import 'state/theme_state.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -18,15 +19,43 @@ class MiApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthState()..restore()),
+        ChangeNotifierProvider(create: (_) => ThemeState()..load()),
       ],
-      child: MaterialApp(
-        title: '网站客户端',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
-        themeMode: ThemeMode.system,
-        home: const RootGate(),
+      child: Consumer<ThemeState>(
+        builder: (context, ts, _) {
+          final transparentBg = ts.backgroundDecoration != null;
+          return MaterialApp(
+            title: '网站客户端',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light(fontFamily: ts.fontFamily, transparentBg: transparentBg),
+            darkTheme: AppTheme.dark(fontFamily: ts.fontFamily, transparentBg: transparentBg),
+            themeMode: ts.flutterMode,
+            builder: (context, child) =>
+                _ThemeBackground(decoration: ts.backgroundDecoration, child: child ?? const SizedBox.shrink()),
+            home: const RootGate(),
+          );
+        },
       ),
+    );
+  }
+}
+
+/// 自定义背景包装：在应用内容下层渲染渐变/图片背景
+class _ThemeBackground extends StatelessWidget {
+  const _ThemeBackground({required this.decoration, required this.child});
+
+  final BoxDecoration? decoration;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (decoration == null) return child;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(decoration: decoration!),
+        child,
+      ],
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../api/api_client.dart';
 import '../../api/auth_api.dart';
@@ -16,9 +17,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
+  final _captchaInput = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
   String? _error;
+
+  // 图形验证码
+  String _captchaId = '';
+  String _captchaSvg = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCaptcha();
+  }
+
+  @override
+  void dispose() {
+    _username.dispose();
+    _nickname.dispose();
+    _email.dispose();
+    _password.dispose();
+    _confirm.dispose();
+    _captchaInput.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCaptcha() async {
+    try {
+      final (id, svg) = await AuthApi.captcha();
+      if (mounted) {
+        setState(() {
+          _captchaId = id;
+          _captchaSvg = svg;
+          _captchaInput.clear();
+        });
+      }
+    } catch (_) {
+      // 验证码加载失败不阻塞注册页，提交时会被后端拒绝
+    }
+  }
 
   Future<void> _register() async {
     final username = _username.text.trim();
@@ -35,6 +73,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() => _error = '两次输入的密码不一致');
       return;
     }
+    if (_captchaInput.text.trim().isEmpty) {
+      setState(() => _error = '请输入图形验证码');
+      return;
+    }
     setState(() => _loading = true);
     try {
       await AuthApi.register(
@@ -42,14 +84,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
         password: password,
         nickname: _nickname.text.trim(),
         email: _email.text.trim(),
+        captchaId: _captchaId,
+        captcha: _captchaInput.text.trim(),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('注册成功，请登录')));
       Navigator.pop(context);
     } on ApiException catch (e) {
       setState(() => _error = e.message);
+      _loadCaptcha(); // 验证码用后即焚，失败后刷新
     } catch (_) {
       setState(() => _error = '网络错误，请检查连接');
+      _loadCaptcha();
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -98,6 +144,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: _confirm,
                 obscureText: _obscure,
                 decoration: const InputDecoration(labelText: '确认密码 *', prefixIcon: Icon(Icons.lock_outline)),
+              ),
+              const SizedBox(height: 16),
+              // 图形验证码
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _captchaInput,
+                      decoration: const InputDecoration(
+                        labelText: '图形验证码 *',
+                        prefixIcon: Icon(Icons.verified_outlined),
+                        hintText: '请输入图中计算结果',
+                      ),
+                      maxLength: 10,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: _loadCaptcha,
+                    child: Container(
+                      width: 120,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.grey.shade100,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _captchaSvg.isNotEmpty
+                          ? SvgPicture.string(_captchaSvg, width: 120, height: 48, fit: BoxFit.cover)
+                          : Center(
+                              child: Icon(Icons.refresh, color: Colors.grey.shade400),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Text('点击图片刷新验证码', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
+                ],
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),

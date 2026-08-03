@@ -19,7 +19,7 @@ class AdminApi {
     return DashboardStats.fromJson(data as Map<String, dynamic>);
   }
 
-  // ---------- 用户管理 ----------
+  // ---------- 用户管理（仅查询，删除/改角色/改状态仅支持网页端操作） ----------
   static Future<(List<User>, int)> users({int page = 1, int limit = 10, String? q, String? role}) async {
     final data = await _client.get(_p('/users'), query: {
       'page': page,
@@ -33,14 +33,6 @@ class AdminApi {
       list.map((e) => User.fromJson(e as Map<String, dynamic>)).toList(),
       map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
     );
-  }
-
-  static Future<void> updateUser(int id, {String? role, String? status}) async {
-    await _client.put(_p('/users/$id'), data: {if (role != null) 'role': role, if (status != null) 'status': status});
-  }
-
-  static Future<void> deleteUser(int id) async {
-    await _client.delete(_p('/users/$id'));
   }
 
   // ---------- 文章管理 ----------
@@ -158,15 +150,11 @@ class AdminApi {
     await _client.delete(_p('/logs'), query: {'days': days});
   }
 
-  // ---------- 权限 ----------
+  // ---------- 权限（仅查询，授予/撤销权限仅支持网页端操作） ----------
   static Future<List<PermissionItem>> permissions(int userId) async {
     final data = await _client.get(_p('/users/$userId/permissions'));
     final list = (data as Map)['permissions'] is List ? (data as Map)['permissions'] : const [];
     return list.map((e) => PermissionItem.fromJson(e as Map<String, dynamic>)).toList();
-  }
-
-  static Future<void> savePermissions(int userId, List<String> permKeys) async {
-    await _client.put(_p('/users/$userId/permissions'), data: {'perm_keys': permKeys});
   }
 
   // ---------- 媒体 ----------

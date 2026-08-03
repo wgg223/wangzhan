@@ -1,0 +1,252 @@
+<% var active = 'server-logs' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>🖥️ 服务器日志</h1>
+    <p class="page-desc">查看服务器运行日志、客户端（App）访问日志与系统运行状态</p>
+  </div>
+
+  <!-- Tab 切换 -->
+  <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+    <button type="button" class="btn btn-primary" id="tab-btn-runtime" onclick="switchTab('runtime')">📄 运行日志</button>
+    <button type="button" class="btn" id="tab-btn-access" onclick="switchTab('access')">📱 App 访问日志</button>
+    <button type="button" class="btn" id="tab-btn-system" onclick="switchTab('system')">ℹ️ 系统信息</button>
+  </div>
+
+  <!-- Tab 1: 运行日志 -->
+  <div class="card" id="tab-runtime">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px;">
+      <h2 style="margin: 0; font-size: 17px;">运行日志（logs/runtime-日期.log）</h2>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <select id="log-file-select" style="padding: 6px 10px; border: 1px solid var(--gray-200); border-radius: 6px; background: var(--bg-card); color: var(--text);">
+          <% logFiles.forEach(function(f) { %>
+          <option value="<%= f.name %>"><%= f.name %> (<%= (f.size / 1024).toFixed(1) %> KB)</option>
+          <% }); %>
+        </select>
+        <select id="log-level" style="padding: 6px 10px; border: 1px solid var(--gray-200); border-radius: 6px; background: var(--bg-card); color: var(--text);">
+          <option value="">全部级别</option>
+          <option value="error">error</option>
+          <option value="warn">warn</option>
+          <option value="info">info</option>
+          <option value="debug">debug</option>
+        </select>
+        <input type="text" id="log-keyword" placeholder="关键字过滤" style="padding: 6px 10px; border: 1px solid var(--gray-200); border-radius: 6px; background: var(--bg-card); color: var(--text); width: 160px;">
+        <button type="button" class="btn btn-small" onclick="refreshRuntimeLog()">🔄 刷新</button>
+        <button type="button" class="btn btn-small btn-danger" onclick="clearRuntimeLog()">清空当前文件</button>
+      </div>
+    </div>
+    <pre id="runtime-log-content" style="background: #1e1e2e; color: #d4d4d4; padding: 16px; border-radius: 8px; max-height: 520px; overflow: auto; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; margin: 0;"><% if (runtimeLines && runtimeLines.length > 0) { %><% runtimeLines.forEach(function(line) { %><%= line %>
+<% }); %><% } else { %>（暂无日志）<% } %></pre>
+  </div>
+
+  <!-- Tab 2: App 访问日志 -->
+  <div class="card" id="tab-access" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px;">
+      <h2 style="margin: 0; font-size: 17px;">📱 客户端访问数据库日志（api_access_logs）</h2>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <input type="text" id="access-keyword" placeholder="路径关键字" style="padding: 6px 10px; border: 1px solid var(--gray-200); border-radius: 6px; background: var(--bg-card); color: var(--text); width: 140px;">
+        <select id="access-method" style="padding: 6px 10px; border: 1px solid var(--gray-200); border-radius: 6px; background: var(--bg-card); color: var(--text);">
+          <option value="">全部方法</option>
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+          <option value="PUT">PUT</option>
+          <option value="PATCH">PATCH</option>
+          <option value="DELETE">DELETE</option>
+        </select>
+        <button type="button" class="btn btn-small" onclick="loadAccessLogs(1)">🔍 查询</button>
+        <button type="button" class="btn btn-small btn-danger" onclick="clearAccessLogs()">清空日志</button>
+        <span style="color: var(--gray-500); font-size: 13px;">共 <strong id="access-total"><%= accessTotal %></strong> 条（写操作全量记录，GET 60秒节流）</span>
+      </div>
+    </div>
+    <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+          <tr style="background: var(--gray-50); color: var(--gray-600);">
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--gray-200);">时间</th>
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--gray-200);">用户</th>
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--gray-200);">方法</th>
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--gray-200);">路径</th>
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--gray-200);">状态</th>
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--gray-200);">IP</th>
+          </tr>
+        </thead>
+        <tbody id="access-log-body">
+          <% accessLogs.forEach(function(log) { %>
+          <tr>
+            <td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100); white-space: nowrap;"><%= log.created_at %></td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100);"><%= log.username || '未登录' %></td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100);"><span style="padding: 2px 8px; border-radius: 4px; font-size: 12px; background: <%= log.method === 'GET' ? 'var(--primary-bg)' : 'var(--warning-bg)' %>; color: <%= log.method === 'GET' ? 'var(--primary)' : 'var(--danger)' %>;"><%= log.method %></span></td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100); word-break: break-all;"><code style="font-size: 12px;"><%= log.path %></code></td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100);"><span style="color: <%= log.status >= 400 ? 'var(--danger)' : 'var(--success)' %>;"><%= log.status %></span></td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100); white-space: nowrap;"><%= log.ip %></td>
+          </tr>
+          <% }); %>
+          <% if (accessLogs.length === 0) { %>
+          <tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--gray-400);">暂无客户端访问记录</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+    <div id="access-pagination" style="display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; color: var(--gray-600);">
+      <button type="button" class="btn btn-small" id="access-prev" onclick="loadAccessLogs(<%= accessPage - 1 %>)">← 上一页</button>
+      <span id="access-page-info">第 <%= accessPage %> 页</span>
+      <button type="button" class="btn btn-small" id="access-next" onclick="loadAccessLogs(<%= accessPage + 1 %>)">下一页 →</button>
+    </div>
+  </div>
+
+  <!-- Tab 3: 系统信息 -->
+  <div class="card" id="tab-system" style="display: none;">
+    <h2 style="margin: 0 0 16px; font-size: 17px;">ℹ️ 服务器运行状态</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;">
+      <div class="reset-stat-item" style="background: var(--gray-50); padding: 14px 16px; border-radius: 8px;">
+        <span class="reset-stat-label" style="font-size: 13px; color: var(--gray-500);">启动时间</span>
+        <span class="reset-stat-value" style="font-size: 16px; color: var(--gray-800); font-weight: 600;"><%= new Date(systemInfo.startedAt).toLocaleString('zh-CN') %></span>
+      </div>
+      <div class="reset-stat-item" style="background: var(--gray-50); padding: 14px 16px; border-radius: 8px;">
+        <span class="reset-stat-label" style="font-size: 13px; color: var(--gray-500);">已运行</span>
+        <span class="reset-stat-value" style="font-size: 16px; color: var(--gray-800); font-weight: 600;"><%= systemInfo.uptime %></span>
+      </div>
+      <div class="reset-stat-item" style="background: var(--gray-50); padding: 14px 16px; border-radius: 8px;">
+        <span class="reset-stat-label" style="font-size: 13px; color: var(--gray-500);">Node.js</span>
+        <span class="reset-stat-value" style="font-size: 16px; color: var(--gray-800); font-weight: 600;"><%= systemInfo.nodeVersion %> / <%= systemInfo.platform %>-<%= systemInfo.arch %></span>
+      </div>
+      <div class="reset-stat-item" style="background: var(--gray-50); padding: 14px 16px; border-radius: 8px;">
+        <span class="reset-stat-label" style="font-size: 13px; color: var(--gray-500);">进程内存 (RSS)</span>
+        <span class="reset-stat-value" style="font-size: 16px; color: var(--gray-800); font-weight: 600;"><%= systemInfo.processMemory.rss %>（堆 <%= systemInfo.processMemory.heapUsedPercent %>）</span>
+      </div>
+      <div class="reset-stat-item" style="background: var(--gray-50); padding: 14px 16px; border-radius: 8px;">
+        <span class="reset-stat-label" style="font-size: 13px; color: var(--gray-500);">系统内存</span>
+        <span class="reset-stat-value" style="font-size: 16px; color: var(--gray-800); font-weight: 600;"><%= systemInfo.systemMemory.used %> / <%= systemInfo.systemMemory.total %>（<%= systemInfo.systemMemory.percent %>）</span>
+      </div>
+      <div class="reset-stat-item" style="background: var(--gray-50); padding: 14px 16px; border-radius: 8px;">
+        <span class="reset-stat-label" style="font-size: 13px; color: var(--gray-500);">CPU</span>
+        <span class="reset-stat-value" style="font-size: 16px; color: var(--gray-800); font-weight: 600;"><%= systemInfo.cpu.cores %> 核</span>
+      </div>
+      <div class="reset-stat-item" style="background: var(--gray-50); padding: 14px 16px; border-radius: 8px;">
+        <span class="reset-stat-label" style="font-size: 13px; color: var(--gray-500);">请求 / 错误</span>
+        <span class="reset-stat-value" style="font-size: 16px; color: var(--gray-800); font-weight: 600;"><%= systemInfo.requestCount %> / <%= systemInfo.errorCount %></span>
+      </div>
+      <div class="reset-stat-item" style="background: var(--gray-50); padding: 14px 16px; border-radius: 8px;">
+        <span class="reset-stat-label" style="font-size: 13px; color: var(--gray-500);">数据库文件</span>
+        <span class="reset-stat-value" style="font-size: 16px; color: var(--gray-800); font-weight: 600;"><%= dbSizeText %></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+#runtime-log-content::-webkit-scrollbar { width: 8px; }
+#runtime-log-content::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+</style>
+
+<script>
+function switchTab(tab) {
+  ['runtime', 'access', 'system'].forEach(function(t) {
+    document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
+    var btn = document.getElementById('tab-btn-' + t);
+    if (btn) btn.className = t === tab ? 'btn btn-primary' : 'btn';
+  });
+  if (tab === 'runtime') refreshRuntimeLog();
+  if (tab === 'access') loadAccessLogs(1);
+}
+
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ===== 运行日志 =====
+function refreshRuntimeLog() {
+  var lines = document.getElementById('log-keyword') ? document.getElementById('log-keyword').value : '';
+  var level = document.getElementById('log-level') ? document.getElementById('log-level').value : '';
+  var file = document.getElementById('log-file-select') ? document.getElementById('log-file-select').value : '';
+  var params = new URLSearchParams({ lines: 500 });
+  if (level) params.set('level', level);
+  if (lines.trim()) params.set('keyword', lines.trim());
+  if (file) params.set('file', file);
+
+  fetch('/admin/server-logs/api/runtime?' + params.toString())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var el = document.getElementById('runtime-log-content');
+        el.textContent = data.lines.join('\n') || '（暂无日志）';
+      }
+    })
+    .catch(function(err) { console.error('加载运行日志失败:', err); });
+}
+
+function clearRuntimeLog() {
+  if (!confirm('确定要清空当前运行日志文件吗？')) return;
+  var file = document.getElementById('log-file-select') ? document.getElementById('log-file-select').value : '';
+  fetch('/admin/server-logs/api/runtime/clear', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-csrf-token': getCsrfToken() },
+    body: JSON.stringify({ file: file })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    alert(data.success ? '✅ 已清空' : '❌ 清空失败: ' + (data.error || ''));
+    if (data.success) refreshRuntimeLog();
+  })
+  .catch(function(err) { alert('❌ 请求失败: ' + err.message); });
+}
+
+// ===== App 访问日志 =====
+function loadAccessLogs(page) {
+  var keyword = document.getElementById('access-keyword') ? document.getElementById('access-keyword').value : '';
+  var method = document.getElementById('access-method') ? document.getElementById('access-method').value : '';
+  var params = new URLSearchParams({ page: page, limit: 30 });
+  if (keyword.trim()) params.set('keyword', keyword.trim());
+  if (method) params.set('method', method);
+
+  fetch('/admin/server-logs/api/access?' + params.toString())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.success) return;
+      var body = document.getElementById('access-log-body');
+      var html = '';
+      data.logs.forEach(function(log) {
+        var methodBg = log.method === 'GET' ? 'var(--primary-bg)' : 'var(--warning-bg)';
+        var methodColor = log.method === 'GET' ? 'var(--primary)' : 'var(--danger)';
+        var statusColor = log.status >= 400 ? 'var(--danger)' : 'var(--success)';
+        html += '<tr>' +
+          '<td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100); white-space: nowrap;">' + escapeHtml(log.created_at) + '</td>' +
+          '<td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100);">' + escapeHtml(log.username || '未登录') + '</td>' +
+          '<td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100);"><span style="padding: 2px 8px; border-radius: 4px; font-size: 12px; background: ' + methodBg + '; color: ' + methodColor + ';">' + escapeHtml(log.method) + '</span></td>' +
+          '<td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100); word-break: break-all;"><code style="font-size: 12px;">' + escapeHtml(log.path) + '</code></td>' +
+          '<td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100);"><span style="color: ' + statusColor + ';">' + escapeHtml(log.status) + '</span></td>' +
+          '<td style="padding: 8px 12px; border-bottom: 1px solid var(--gray-100); white-space: nowrap;">' + escapeHtml(log.ip) + '</td>' +
+          '</tr>';
+      });
+      if (data.logs.length === 0) {
+        html = '<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--gray-400);">暂无记录</td></tr>';
+      }
+      body.innerHTML = html;
+      document.getElementById('access-total').textContent = data.pagination.total;
+      document.getElementById('access-page-info').textContent = '第 ' + data.pagination.page + ' 页 / 共 ' + data.pagination.totalPages + ' 页';
+      document.getElementById('access-prev').disabled = data.pagination.page <= 1;
+      document.getElementById('access-next').disabled = data.pagination.page >= data.pagination.totalPages;
+    })
+    .catch(function(err) { console.error('加载访问日志失败:', err); });
+}
+
+function clearAccessLogs() {
+  if (!confirm('确定要清空全部客户端访问日志吗？此操作不可恢复！')) return;
+  fetch('/admin/server-logs/api/access/clear', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-csrf-token': getCsrfToken() },
+    body: JSON.stringify({})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    alert(data.success ? '✅ 已清空 ' + data.deleted + ' 条记录' : '❌ 清空失败: ' + (data.error || ''));
+    if (data.success) loadAccessLogs(1);
+  })
+  .catch(function(err) { alert('❌ 请求失败: ' + err.message); });
+}
+
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+</script>

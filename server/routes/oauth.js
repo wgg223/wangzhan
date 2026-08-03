@@ -131,7 +131,7 @@ function getAuthUrl(provider, config, state, redirectUri) {
   }
 }
 
-// 获取access_token
+// 获取access_token（微信同时返回 openid，用于后续用户信息获取）
 async function getAccessToken(provider, config, code, redirectUri) {
   const axios = require('axios');
 
@@ -144,19 +144,22 @@ async function getAccessToken(provider, config, code, redirectUri) {
           code: code,
           redirect_uri: redirectUri
         }, { headers: { Accept: 'application/json' } });
-        return response.data.access_token;
+        return { accessToken: response.data.access_token };
       }
 
       case 'wechat': {
         const url = `${OAUTH_CONFIGS.wechat.tokenUrl}?appid=${config.client_id}&secret=${config.client_secret}&code=${code}&grant_type=authorization_code`;
         const response = await axios.get(url);
-        return response.data.access_token;
+        const data = response.data;
+        // 微信授权码换 token 时响应中直接携带 openid（修复原先误用 client_id 的问题）
+        if (!data.access_token) return { accessToken: null };
+        return { accessToken: data.access_token, openid: data.openid || null };
       }
 
       case 'qq': {
         const url = `${OAUTH_CONFIGS.qq.tokenUrl}?client_id=${config.client_id}&client_secret=${config.client_secret}&code=${code}&redirect_uri=${redirectUri}&grant_type=authorization_code&fmt=json`;
         const response = await axios.get(url);
-        return response.data.access_token;
+        return { accessToken: response.data.access_token };
       }
 
       case 'weibo': {
@@ -167,7 +170,7 @@ async function getAccessToken(provider, config, code, redirectUri) {
           redirect_uri: redirectUri,
           grant_type: 'authorization_code'
         });
-        return response.data.access_token;
+        return { accessToken: response.data.access_token };
       }
 
       case 'google': {
@@ -178,20 +181,20 @@ async function getAccessToken(provider, config, code, redirectUri) {
           redirect_uri: redirectUri,
           grant_type: 'authorization_code'
         });
-        return response.data.access_token;
+        return { accessToken: response.data.access_token };
       }
 
       default:
-        return null;
+        return { accessToken: null };
     }
   } catch (error) {
     console.error(`[OAuth] 获取 ${provider} access_token 失败:`, error.message);
-    return null;
+    return { accessToken: null };
   }
 }
 
 // 获取用户信息
-async function getUserInfo(provider, config, accessToken) {
+async function getUserInfo(provider, config, accessToken, openid) {
   const axios = require('axios');
 
   try {
@@ -210,7 +213,7 @@ async function getUserInfo(provider, config, accessToken) {
       }
 
       case 'wechat': {
-        const url = `${OAUTH_CONFIGS.wechat.userApi}?access_token=${accessToken}&openid=${config.client_id}&lang=zh_CN`;
+        const url = `${OAUTH_CONFIGS.wechat.userApi}?access_token=${accessToken}&openid=${openid}&lang=zh_CN`;
         const response = await axios.get(url);
         const data = response.data;
         return {
@@ -305,13 +308,13 @@ router.get('/callback/:provider', async (req, res) => {
   const redirectUri = `${req.protocol}://${req.get('host')}/oauth/callback/${provider}`;
 
   // 获取access_token
-  const accessToken = await getAccessToken(provider, config, code, redirectUri);
-  if (!accessToken) {
+  const tokenResult = await getAccessToken(provider, config, code, redirectUri);
+  if (!tokenResult || !tokenResult.accessToken) {
     return res.redirect('/auth/' + source + '/login?error=登录失败，请重试');
   }
 
   // 获取用户信息
-  const userInfo = await getUserInfo(provider, config, accessToken);
+  const userInfo = await getUserInfo(provider, config, tokenResult.accessToken, tokenResult.openid);
   if (!userInfo || !userInfo.open_id) {
     return res.redirect('/auth/' + source + '/login?error=获取用户信息失败');
   }
@@ -333,19 +336,16 @@ router.get('/callback/:provider', async (req, res) => {
 
     // 更新token
     db.run('UPDATE user_oauth_bindings SET access_token = ?, nickname = ?, avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [accessToken, userInfo.nickname || '', userInfo.avatar || '', binding.id]);
-    saveDatabase();
+      [tokenResult.accessToken, userInfo.nickname || '', userInfo.avatar || '', binding.id]);
 
-    // 设置session
-    req.session.user = {
-      id: user.id,
-      uid: user.uid || '',
-      username: user.username,
-      email: user.email,
-      nickname: user.nickname || user.username,
-      role: user.role,
-      avatar: user.avatar || '/assets/images/default-avatar.png'
-    };
+    // 同步头像/昵称到用户资料（头像非空才覆盖，昵称为空才填充）
+    if (userInfo.avatar) {
+      db.run('UPDATE users SET avatar = ? WHERE id = ?', [userInfo.avatar, user.id]);
+    }
+    if (!user.nickname && userInfo.nickname) {
+      db.run('UPDATE users SET nickname = ? WHERE id = ?', [userInfo.nickname, user.id]);
+    }
+    saveDatabase();
 
     // 记录登录日志
     try {
@@ -362,29 +362,26 @@ router.get('/callback/:provider', async (req, res) => {
       // 日志记录失败不影响登录流程
     }
 
-    return req.session.save(() => res.redirect(redirectBase));
+    return establishSession(req, res, user, redirectBase);
   }
 
-  // 未绑定，检查是否有相同邮箱的用户
-  if (userInfo.email) {
+  // 未绑定，检查是否有相同邮箱的用户（仅限邮箱已验证的提供商，防止账号接管）
+  if (userInfo.email && (provider === 'github' || provider === 'google')) {
     const existingUser = queryOne(db, 'SELECT * FROM users WHERE email = ?', [userInfo.email]);
 
     if (existingUser && existingUser.status === 'active') {
       // 自动绑定到已有用户
       db.run('INSERT INTO user_oauth_bindings (user_id, provider, open_id, access_token, nickname, avatar) VALUES (?, ?, ?, ?, ?, ?)',
-        [existingUser.id, provider, userInfo.open_id, accessToken, userInfo.nickname || '', userInfo.avatar || '']);
-      saveDatabase();
+        [existingUser.id, provider, userInfo.open_id, tokenResult.accessToken, userInfo.nickname || '', userInfo.avatar || '']);
 
-      // 设置session
-      req.session.user = {
-        id: existingUser.id,
-        uid: existingUser.uid || '',
-        username: existingUser.username,
-        email: existingUser.email,
-        nickname: existingUser.nickname || existingUser.username,
-        role: existingUser.role,
-        avatar: existingUser.avatar || '/assets/images/default-avatar.png'
-      };
+      // 同步头像/昵称
+      if (userInfo.avatar) {
+        db.run('UPDATE users SET avatar = ? WHERE id = ?', [userInfo.avatar, existingUser.id]);
+      }
+      if (!existingUser.nickname && userInfo.nickname) {
+        db.run('UPDATE users SET nickname = ? WHERE id = ?', [userInfo.nickname, existingUser.id]);
+      }
+      saveDatabase();
 
       // 记录日志
       try {
@@ -399,7 +396,7 @@ router.get('/callback/:provider', async (req, res) => {
         });
       } catch (e) { /* 日志记录失败不影响登录 */ }
 
-      return req.session.save(() => res.redirect(redirectBase));
+      return establishSession(req, res, existingUser, redirectBase);
     }
   }
 
@@ -434,19 +431,8 @@ router.get('/callback/:provider', async (req, res) => {
 
   // 绑定OAuth
   db.run('INSERT INTO user_oauth_bindings (user_id, provider, open_id, access_token, nickname, avatar) VALUES (?, ?, ?, ?, ?, ?)',
-    [newUser.id, provider, userInfo.open_id, accessToken, userInfo.nickname || '', userInfo.avatar || '']);
+    [newUser.id, provider, userInfo.open_id, tokenResult.accessToken, userInfo.nickname || '', userInfo.avatar || '']);
   saveDatabase();
-
-  // 设置session
-  req.session.user = {
-    id: newUser.id,
-    uid: uid,
-    username: finalUsername,
-    email: userInfo.email || '',
-    nickname: userInfo.nickname || finalUsername,
-    role: 'user',
-    avatar: userInfo.avatar || '/assets/images/default-avatar.png'
-  };
 
   // 记录日志
   try {
@@ -463,8 +449,29 @@ router.get('/callback/:provider', async (req, res) => {
     // 日志记录失败不影响登录流程
   }
 
-  return req.session.save(() => res.redirect(redirectBase));
+  return establishSession(req, res, newUser, redirectBase);
 });
+
+/**
+ * 建立登录会话（重建 session 防止会话固定攻击，然后写入用户信息并跳转）
+ */
+function establishSession(req, res, user, redirectBase) {
+  req.session.regenerate((err) => {
+    if (err) {
+      console.error('OAuth 会话重建失败:', err.message);
+    }
+    req.session.user = {
+      id: user.id,
+      uid: user.uid || '',
+      username: user.username,
+      email: user.email,
+      nickname: user.nickname || user.username,
+      role: user.role,
+      avatar: user.avatar || '/assets/images/default-avatar.png'
+    };
+    req.session.save(() => res.redirect(redirectBase));
+  });
+}
 
 // 获取OAuth登录URL (AJAX接口)
 router.get('/auth-url/:provider', (req, res) => {

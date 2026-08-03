@@ -1,10 +1,23 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { queryOne, getDb, generateUid } = require('../../config/database');
 const { issueToken, revokeToken } = require('../../config/tokens');
 const { apiAuth } = require('../../middlewares/api-auth');
+const { generateCaptcha } = require('../../config/captcha');
 
 const router = express.Router();
+
+// 图形验证码（内存存储，5分钟过期，用后即焚）
+const captchaStore = new Map();
+const CAPTCHA_TTL = 5 * 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, record] of captchaStore.entries()) {
+    if (record.expires < now) captchaStore.delete(id);
+  }
+}, 10 * 60 * 1000);
 
 function sanitizeUser(u) {
   if (!u) return null;
@@ -22,6 +35,25 @@ function sanitizeUser(u) {
   };
 }
 
+// ============ 图形验证码 ============
+router.get('/captcha', (req, res) => {
+  const captcha = generateCaptcha();
+  const id = crypto.randomBytes(8).toString('hex');
+  captchaStore.set(id, { text: captcha.text, expires: Date.now() + CAPTCHA_TTL });
+  res.json({ captcha_id: id, svg: captcha.data });
+});
+
+// ============ 用户协议与隐私政策（登录/注册弹窗使用） ============
+router.get('/agreements', (req, res) => {
+  const db = getDb();
+  const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
+  const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
+  res.json({
+    user_agreement: agreement ? agreement.setting_value : '',
+    privacy_policy: privacy ? privacy.setting_value : ''
+  });
+});
+
 // ============ 注册 ============
 router.post('/register', (req, res) => {
   const db = getDb();
@@ -29,6 +61,8 @@ router.post('/register', (req, res) => {
   const password = req.body.password || '';
   const nickname = (req.body.nickname || '').trim();
   const email = (req.body.email || '').trim();
+  const captchaId = (req.body.captcha_id || '').toString();
+  const captchaInput = (req.body.captcha || '').toString();
 
   if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username)) {
     return res.status(400).json({ error: '用户名格式不正确（2-20位，仅限字母数字下划线中文）' });
@@ -36,6 +70,14 @@ router.post('/register', (req, res) => {
   if (password.length < 6 || password.length > 64) {
     return res.status(400).json({ error: '密码长度需在 6-64 位之间' });
   }
+
+  // 图形验证码校验
+  const stored = captchaId ? captchaStore.get(captchaId) : null;
+  if (!stored || stored.expires < Date.now() || stored.text.toLowerCase() !== captchaInput.trim().toLowerCase()) {
+    if (captchaId) captchaStore.delete(captchaId);
+    return res.status(400).json({ error: '图形验证码错误或已过期' });
+  }
+  captchaStore.delete(captchaId);
 
   const existing = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
   if (existing) {

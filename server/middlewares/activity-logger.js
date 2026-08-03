@@ -191,7 +191,7 @@ function activityLogger(req, res, next) {
       if (db) {
         logActivity(db, {
           user_id: user.id,
-          username: user.username,
+          username: user.username || user.nickname || '未知用户',
           action: action,
           target_type: targetType,
           target_id: targetId,

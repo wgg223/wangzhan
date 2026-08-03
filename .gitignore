@@ -5,6 +5,9 @@ node_modules/
 database.sqlite
 database.sqlite.tmp
 database.sqlite.backup.*
+database.sqlite-wal
+database.sqlite-shm
+database.sqlite-journal
 
 # Uploads
 public/uploads/*

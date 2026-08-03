@@ -28,6 +28,7 @@ const backupRouter = require('./backup');
 const maintenanceRouter = require('./maintenance');
 const siteStatsRouter = require('./site-stats');
 const attachmentsRouter = require('./attachments');
+const serverLogsRouter = require('./server-logs');
 
 // ---------- Admin 全局中间件 ----------
 router.use(isAuthenticated);
@@ -79,5 +80,6 @@ router.use(messagesRouter);
 router.use('/system-update', isSuperAdmin, systemUpdateRouter);
 router.use(backupRouter);
 router.use(maintenanceRouter);
+router.use(serverLogsRouter);
 
 module.exports = router;

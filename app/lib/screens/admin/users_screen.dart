@@ -51,36 +51,6 @@ class _UsersScreenState extends State<UsersScreen> {
     }
   }
 
-  Future<void> _toggleRole(User user) async {
-    final newRole = user.role == 'admin' ? 'user' : 'admin';
-    await AdminApi.updateUser(user.id, role: newRole);
-    _load(refresh: true);
-  }
-
-  Future<void> _toggleStatus(User user) async {
-    final newStatus = user.status == 'active' ? 'disabled' : 'active';
-    await AdminApi.updateUser(user.id, status: newStatus);
-    _load(refresh: true);
-  }
-
-  Future<void> _delete(User user) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除用户'),
-        content: Text('确定删除用户 ${user.username} 吗？此操作不可恢复。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await AdminApi.deleteUser(user.id);
-      _load(refresh: true);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -134,18 +104,6 @@ class _UsersScreenState extends State<UsersScreen> {
                           ],
                         ),
                         subtitle: Text('@${u.username} · ${u.status}'),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (v) {
-                            if (v == 'role') _toggleRole(u);
-                            if (v == 'status') _toggleStatus(u);
-                            if (v == 'delete') _delete(u);
-                          },
-                          itemBuilder: (_) => [
-                            PopupMenuItem(value: 'role', child: Text(u.isAdmin ? '取消管理员' : '设为管理员')),
-                            PopupMenuItem(value: 'status', child: Text(u.status == 'active' ? '禁用账号' : '启用账号')),
-                            const PopupMenuItem(value: 'delete', child: Text('删除', style: TextStyle(color: Colors.red))),
-                          ],
-                        ),
                       ),
                     );
                   },

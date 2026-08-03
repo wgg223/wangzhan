@@ -89,6 +89,12 @@ class _AdminShellState extends State<AdminShell> {
                     Navigator.pop(context);
                   },
                 ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.home_outlined),
+                title: const Text('返回主页'),
+                onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
+              ),
             ],
           ),
         ),

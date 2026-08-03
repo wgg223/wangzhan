@@ -72,6 +72,7 @@
             <% if (user.role === 'super_admin') { %>
             <li><a href="/admin" class="<%= isActive('/admin') ? 'active' : '' %>">📊 仪表盘</a></li>
             <li><a href="/admin/activity-logs" class="<%= isActive('/admin/activity-logs') ? 'active' : '' %>">📋 操作日志</a></li>
+            <li><a href="/admin/server-logs" class="<%= isActive('/admin/server-logs') ? 'active' : '' %>">🖥️ 服务器日志</a></li>
             <% } %>
           </ul>
         </div>

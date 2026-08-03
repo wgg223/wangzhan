@@ -19,18 +19,39 @@ class AuthApi {
     return token;
   }
 
+  /// 获取用户协议与隐私政策（登录/注册强制同意弹窗）
+  static Future<Map<String, String>> agreements() async {
+    final data = await _client.get(AppConfig.api('/auth/agreements'));
+    final map = data is Map ? data : const {};
+    return {
+      'user_agreement': map['user_agreement']?.toString() ?? '',
+      'privacy_policy': map['privacy_policy']?.toString() ?? '',
+    };
+  }
+
+  /// 获取图形验证码，返回 (captcha_id, svg)
+  static Future<(String, String)> captcha() async {
+    final data = await _client.get(AppConfig.api('/auth/captcha'));
+    final map = data is Map ? data : const {};
+    return (map['captcha_id']?.toString() ?? '', map['svg']?.toString() ?? '');
+  }
+
   /// 注册
   static Future<void> register({
     required String username,
     required String password,
     String? nickname,
     String? email,
+    String? captchaId,
+    String? captcha,
   }) async {
     await _client.post(AppConfig.api('/auth/register'), data: {
       'username': username,
       'password': password,
       'nickname': nickname ?? '',
       'email': email ?? '',
+      'captcha_id': captchaId ?? '',
+      'captcha': captcha ?? '',
     });
   }
 

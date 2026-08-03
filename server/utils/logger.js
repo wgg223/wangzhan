@@ -1,15 +1,46 @@
+const fs = require('fs');
+const path = require('path');
 const util = require('util');
 
 const isProd = (process.env.NODE_ENV === 'production');
+const LOG_DIR = path.join(__dirname, '../../logs');
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 单文件 5MB，超出后轮转为 .1
+
+function ensureLogDir() {
+  if (!fs.existsSync(LOG_DIR)) {
+    try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch (e) { /* 忽略 */ }
+  }
+}
+
+function logFilePath() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return path.join(LOG_DIR, `runtime-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.log`);
+}
+
+function writeToFile(level, msg) {
+  try {
+    ensureLogDir();
+    const file = logFilePath();
+    try {
+      if (fs.existsSync(file) && fs.statSync(file).size > MAX_FILE_SIZE) {
+        fs.renameSync(file, file + '.1');
+      }
+    } catch (e) { /* 轮转失败不阻塞 */ }
+    fs.appendFile(file, `[${new Date().toISOString()}] [${level}] ${msg}\n`, 'utf8', () => {});
+  } catch (e) { /* 日志写入失败不影响主流程 */ }
+}
 
 function formatArgs(args) {
   return args.map(a => (typeof a === 'string' ? a : util.inspect(a))).join(' ');
 }
 
 module.exports = {
-  debug: (...args) => { if (!isProd) console.debug('[debug]', formatArgs(args)); },
-  info: (...args) => { console.info('[info]', formatArgs(args)); },
-  warn: (...args) => { console.warn('[warn]', formatArgs(args)); },
-  error: (...args) => { console.error('[error]', formatArgs(args)); },
-  isProd
+  debug: (...args) => { const m = formatArgs(args); if (!isProd) console.debug('[debug]', m); writeToFile('debug', m); },
+  info: (...args) => { const m = formatArgs(args); console.info('[info]', m); writeToFile('info', m); },
+  warn: (...args) => { const m = formatArgs(args); console.warn('[warn]', m); writeToFile('warn', m); },
+  error: (...args) => { const m = formatArgs(args); console.error('[error]', m); writeToFile('error', m); },
+  isProd,
+  logFilePath,
+  LOG_DIR
 };

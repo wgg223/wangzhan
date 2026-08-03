@@ -7,11 +7,12 @@ class AppTheme {
   static const Color background = Color(0xFFF8FAFC);
   static const Color card = Colors.white;
 
-  static ThemeData light() {
-    return ThemeData(
+  static ThemeData light({String? fontFamily, bool transparentBg = false}) {
+    final base = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(seedColor: primary, brightness: Brightness.light),
-      scaffoldBackgroundColor: background,
+      scaffoldBackgroundColor: transparentBg ? Colors.transparent : background,
+      fontFamily: fontFamily,
       appBarTheme: const AppBarTheme(
         backgroundColor: background,
         elevation: 0,
@@ -33,13 +34,15 @@ class AppTheme {
         ),
       ),
     );
+    return transparentBg ? base.copyWith(appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, elevation: 0, centerTitle: true, titleTextStyle: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w600))) : base;
   }
 
-  static ThemeData dark() {
-    return ThemeData(
+  static ThemeData dark({String? fontFamily, bool transparentBg = false}) {
+    final base = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(seedColor: primary, brightness: Brightness.dark),
-      scaffoldBackgroundColor: const Color(0xFF111827),
+      scaffoldBackgroundColor: transparentBg ? Colors.transparent : const Color(0xFF111827),
+      fontFamily: fontFamily,
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF111827),
         elevation: 0,
@@ -47,5 +50,6 @@ class AppTheme {
       ),
       cardTheme: const CardThemeData(elevation: 1),
     );
+    return transparentBg ? base.copyWith(appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, elevation: 0, centerTitle: true)) : base;
   }
 }

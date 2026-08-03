@@ -205,13 +205,14 @@ const contentRoutes = require('./routes/content');
 const permissionApplicationsRoutes = require('./routes/permission-applications');
 const privateMessageRoutes = require('./routes/private-message');
 const apiRoutes = require('./routes/api/index');
+const { apiAccessLogger } = require('./middlewares/api-access-logger');
 app.use('/setup', setupRoutes);
 app.use('/auth', globalLimiter, authRoutes);
 app.use('/oauth', globalLimiter, oauthRoutes);
 app.use('/', globalLimiter, accountRoutes);
 app.use('/admin', globalLimiter, adminRoutes);
 app.use('/', globalLimiter, permissionApplicationsRoutes);
-app.use('/api/v1', globalLimiter, apiRoutes);
+app.use('/api/v1', globalLimiter, apiAccessLogger, apiRoutes);
 
 // Maintenance mode middleware - only affects frontend routes
 app.use(maintenanceMiddleware);

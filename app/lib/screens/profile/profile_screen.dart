@@ -15,7 +15,7 @@ import '../messages/message_list_screen.dart';
 import 'edit_profile_screen.dart';
 import 'favorites_screen.dart';
 import 'notifications_screen.dart';
-import 'server_settings_screen.dart';
+import 'theme_settings_screen.dart';
 
 /// 我的（个人中心）
 class ProfileScreen extends StatefulWidget {
@@ -110,7 +110,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 12),
           _MenuGroup([
             _MenuItem(icon: Icons.person_outline, title: '编辑资料', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()))),
-            _MenuItem(icon: Icons.settings_outlined, title: '服务器设置', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServerSettingsScreen()))),
+            _MenuItem(icon: Icons.palette_outlined, title: '主题设置', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ThemeSettingsScreen()))),
           ]),
           if (user.isAdmin) ...[
             const SizedBox(height: 12),

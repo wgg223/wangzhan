@@ -682,6 +682,21 @@ function createTables(db) {
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash)');
+
+  // ============ API 访问日志表（原生 App / 客户端访问记录） ============
+  db.run(`CREATE TABLE IF NOT EXISTS api_access_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT DEFAULT '',
+    method TEXT DEFAULT 'GET',
+    path TEXT DEFAULT '',
+    status INTEGER DEFAULT 0,
+    ip TEXT DEFAULT '',
+    client TEXT DEFAULT 'app',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_api_logs_created ON api_access_logs(created_at)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_api_logs_user ON api_access_logs(user_id)');
 }
 
 module.exports = { createTables };
