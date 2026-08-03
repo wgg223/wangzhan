@@ -233,7 +233,7 @@
       <a href="/admin" class="btn">取消</a>
     </div>
   </div>
-</div>
+
   <div class="card" style="margin-top: 24px; border-color: var(--danger-bg); background: var(--warning-bg);">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
       <div>
@@ -609,6 +609,11 @@ document.addEventListener('DOMContentLoaded', function() {
   if (prConfirmInput && prPasswordInput && prResetBtn) {
     prConfirmInput.addEventListener('input', checkPrForm);
     prPasswordInput.addEventListener('input', checkPrForm);
+    prPasswordInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !prResetBtn.disabled) {
+        executeProjectReset();
+      }
+    });
   }
 
   // 选择性重置表单监听
@@ -623,6 +628,11 @@ document.addEventListener('DOMContentLoaded', function() {
   if (srConfirmInput && srPasswordInput && srResetBtn) {
     srConfirmInput.addEventListener('input', checkSrForm);
     srPasswordInput.addEventListener('input', checkSrForm);
+    srPasswordInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !srResetBtn.disabled) {
+        executeSelectiveReset();
+      }
+    });
   }
 
   // 选择性重置复选框监听
@@ -767,6 +777,8 @@ function loadProjectsForSelect() {
       if (data.success && data.projects) {
         allProjects = data.projects;
         var select = document.getElementById('project-select');
+        // 先清空，避免重置后重复加载产生重复选项
+        select.innerHTML = '<option value="">-- 请选择项目 --</option>';
         data.projects.forEach(function(p) {
           var opt = document.createElement('option');
           opt.value = p.id;
