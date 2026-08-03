@@ -668,6 +668,20 @@ function createTables(db) {
     FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_article_attachments_article ON article_attachments(article_id)');
+
+  // ============ API Token 表（原生 App 鉴权） ============
+  db.run(`CREATE TABLE IF NOT EXISTS api_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT UNIQUE NOT NULL,
+    name TEXT DEFAULT '',
+    expires_at DATETIME,
+    last_used_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash)');
 }
 
 module.exports = { createTables };

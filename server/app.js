@@ -166,6 +166,7 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   if (req.path.startsWith('/setup') ||
       req.path.startsWith('/health') ||
+      req.path.startsWith('/api/') ||
       req.path.startsWith('/css/') ||
       req.path.startsWith('/js/') ||
       req.path.startsWith('/uploads/') ||
@@ -197,12 +198,14 @@ const communityRoutes = require('./routes/community');
 const contentRoutes = require('./routes/content');
 const permissionApplicationsRoutes = require('./routes/permission-applications');
 const privateMessageRoutes = require('./routes/private-message');
+const apiRoutes = require('./routes/api/index');
 app.use('/setup', setupRoutes);
 app.use('/auth', globalLimiter, authRoutes);
 app.use('/oauth', globalLimiter, oauthRoutes);
 app.use('/', globalLimiter, accountRoutes);
 app.use('/admin', globalLimiter, adminRoutes);
 app.use('/', globalLimiter, permissionApplicationsRoutes);
+app.use('/api/v1', globalLimiter, apiRoutes);
 
 // Maintenance mode middleware - only affects frontend routes
 app.use(maintenanceMiddleware);
@@ -233,6 +236,9 @@ app.get('/health', (req, res) => {
 });
 
 app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: '接口不存在' });
+  }
   res.status(404).render('frontend/error', {
     message: '页面未找到',
     error: '您请求的页面不存在',
@@ -244,6 +250,12 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error('服务器错误:', err);
   monitor.recordError();
+
+  if (req.path.startsWith('/api/')) {
+    const status = err.status || (err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE' ? 400 : 500);
+    const message = err.code === 'LIMIT_FILE_SIZE' ? '文件大小超出限制' : (err.message || '服务器内部错误');
+    return res.status(status).json({ error: message });
+  }
 
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({ error: '文件大小超出限制（最大50MB）' });
@@ -274,6 +286,8 @@ app.use((err, req, res, next) => {
 async function start() {
   try {
     await initDatabase();
+    const { cleanupExpiredTokens } = require('./config/tokens');
+    cleanupExpiredTokens();
 
     console.log('数据库初始化成功');
 

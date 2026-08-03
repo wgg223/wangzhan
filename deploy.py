@@ -70,6 +70,7 @@ EXTRA_EXCLUDE_PATTERNS = [
     'RP-Hub',
     'node_modules',
     '.git',
+    '.mimocode',
     '__pycache__',
     '*.pyc',
     '.DS_Store',
@@ -96,6 +97,13 @@ EXTRA_EXCLUDE_PATTERNS = [
     'deploy.py',
     'diagnose.py',
     'view-logs.py',
+    # Flutter 客户端源码与构建产物（客户端在本地构建，不部署到服务器）
+    'app',
+    'app/',
+    'app/**',
+    'build/app/outputs',
+    # 部署文档（本地文档，不上传服务器）
+    '部署指南.md',
 ]
 
 # ============ 颜色输出 ============

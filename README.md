@@ -7,6 +7,8 @@
 - **后端**: Node.js, Express.js
 - **模板引擎**: EJS + express-ejs-layouts
 - **数据库**: SQLite（优先 better-sqlite3，回退 sql.js WASM）
+- **客户端 API**: `/api/v1` JSON 接口层（Token 鉴权，供 Flutter 客户端使用）
+- **客户端**: Flutter（Android APK + Windows 桌面程序，见 `app/` 目录）
 - **前端**: 原生 JavaScript, CSS, Quill 富文本编辑器
 - **进程管理**: PM2
 - **安全**: bcryptjs, AES-256-GCM 加密, SVG 验证码, TOTP 双因素认证
@@ -192,6 +194,33 @@ npm run health           # 健康检查
 - 图片分享: `http://localhost:3000/image-share`
 - 诗词游戏: `http://localhost:3000/poem-game`
 - 安装向导: `http://localhost:3000/setup`
+- 客户端 API: `http://localhost:3000/api/v1`
+
+## 安卓 / Windows 客户端
+
+项目附带 Flutter 原生客户端（`app/` 目录），一套代码同时构建 **Android APK** 和 **Windows 桌面程序**，通过服务器的 `/api/v1` 接口与网站共用同一数据库（SQLite 集中在服务器端），支持完整的用户端功能和管理后台。
+
+```bash
+# 首次构建前初始化平台工程（只需一次）
+cd app && flutter create --project-name mi_app --platforms android,windows .
+flutter pub get
+
+# 修改 lib/config/app_config.dart 中的服务器地址后：
+flutter build apk --release        # 安卓 APK
+flutter build windows --release    # Windows 桌面程序
+```
+
+详细说明见 [app/README.md](./app/README.md)。
+
+## 客户端 API 接口层
+
+服务器新增 `/api/v1` JSON 接口层（`server/routes/api/`），供原生客户端使用，不影响原有网页功能：
+
+- **鉴权**: Token 机制。`POST /api/v1/auth/login` 返回 30 天有效的 Token，后续请求携带 `Authorization: Bearer <token>`。Token 哈希存于 `api_tokens` 表（服务器启动时自动建表）。
+- **用户端**: 注册/登录/资料/改密、文章（列表/详情/评论/点赞）、图片分享（分类/浏览/上传/收藏/评论）、诗词游戏（随机题库/排行榜）、小说（列表/目录/章节）、社区（动态流/关注/点赞/通知）、私信（会话/消息/未读数）、搜索。
+- **管理端**（需管理员权限）: 仪表盘、用户、文章、评论、图片审核、分类、小说、设置、日志、权限、媒体、备份、维护模式。
+- 所有写操作与网页端走同一套数据库表，数据实时互通。
+- 验证脚本: `node scripts/api-test.js`（启动临时服务器跑全量接口测试，测试后自动还原数据库）。
 
 ## 后台管理功能
 
@@ -257,18 +286,21 @@ npm run security:full     # 安全审计 + 扫描
 - **全局安全中间件**: 除特定路径外所有请求经过安全校验
 - **活动日志**: 全局记录用户行为
 - **维护模式**: 中间件层面实现，前端显示维护页面
+- **客户端 Token 鉴权**: `/api/v1` 接口使用 Token（SHA-256 哈希存 `api_tokens` 表），登录后注入 `req.session.user`，与网页端共用同一套权限体系
 - **跨平台部署**: deploy.py 支持 Windows 和 Linux
 
 ## 部署
+
+> 含 `/api/v1` 接口层的完整部署步骤、验证清单与回滚说明，见 [部署指南.md](./部署指南.md)。
 
 ```bash
 # 完整部署
 python deploy.py
 
-# 仅上传文件
+# 仅上传文件（推荐用于日常增量更新；上传后需手动重启 PM2，见部署指南）
 python deploy.py --upload-only
 
-# 仅上传变更文件
+# 仅上传变更文件（需本机安装 git）
 python deploy.py --upload-changed
 
 # 健康检查
@@ -280,6 +312,16 @@ python deploy.py --check
 本项目采用 [LICENSE](./LICENSE) 文件。
 
 ## 版本历史
+
+### v5.0.0 (2026-08-03)
+
+**安卓 / Windows 客户端 + API 接口层**
+- 新增 Flutter 原生客户端（`app/`），同一套代码构建 Android APK 和 Windows 桌面程序
+- 新增 `/api/v1` JSON 接口层（`server/routes/api/`）：Token 鉴权（`api_tokens` 表）、
+  用户端（认证/文章/图片/诗词/小说/社区/私信/搜索）和管理端（仪表盘/用户/文章/评论/图片/
+  分类/小说/设置/日志/权限/媒体/备份/维护）全部接口
+- 客户端与网页端共用同一 SQLite 数据库，数据实时互通；原有网页功能不受影响
+- 新增接口验证脚本：`node scripts/api-test.js`（37 项端到端测试）与 `node scripts/web-smoke-test.js`
 
 ### v4.1.0 (2026-06-21)
 
