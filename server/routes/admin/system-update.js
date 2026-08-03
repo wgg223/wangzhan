@@ -518,7 +518,7 @@ router.get('/', (req, res) => {
 // POST - 检查GitHub更新
 router.post('/check', async (req, res) => {
   try {
-    const projectRoot = path.resolve(__dirname, '../../..');
+    const projectRoot = require('../../config/app-root').projectRoot;
     const currentVersion = readCurrentVersion(projectRoot);
 
     let releases = [];
@@ -591,7 +591,7 @@ router.post('/download', async (req, res) => {
       return res.status(409).json({ success: false, error: '已有更新任务正在进行，请稍后再试' });
     }
 
-    const projectRoot = path.resolve(__dirname, '../../..');
+    const projectRoot = require('../../config/app-root').projectRoot;
     const currentVersion = readCurrentVersion(projectRoot);
 
     updateTask = {
@@ -659,7 +659,7 @@ router.get('/progress', (req, res) => {
 // POST - 重启服务器
 router.post('/restart', (req, res) => {
   try {
-    const projectRoot = path.resolve(__dirname, '../../..');
+    const projectRoot = require('../../config/app-root').projectRoot;
     try {
       const db = req.db;
       logActivity(db, {
@@ -689,7 +689,7 @@ router.post('/restart', (req, res) => {
 
 // GET - 获取更新状态
 router.get('/status', (req, res) => {
-  const projectRoot = path.resolve(__dirname, '../../..');
+  const projectRoot = require('../../config/app-root').projectRoot;
   const currentVersion = readCurrentVersion(projectRoot);
 
   res.json({

@@ -471,6 +471,21 @@ router.post('/api/content/:type/:id/versions/:versionId/restore', isAuthenticate
   }
 
   try {
+    // 越权防护：文章仅作者本人或管理员可回滚；页面仅管理员可回滚
+    if (targetType === 'article') {
+      const article = queryOne(db, 'SELECT author_id FROM articles WHERE id = ?', [targetId]);
+      if (!article) return res.status(404).json({ success: false, error: '文章不存在' });
+      if (article.author_id !== editorId && req.session.user.role !== 'admin' && req.session.user.role !== 'super_admin') {
+        return res.status(403).json({ success: false, error: '无权恢复此文章' });
+      }
+    } else {
+      const page = queryOne(db, 'SELECT id FROM pages WHERE id = ?', [targetId]);
+      if (!page) return res.status(404).json({ success: false, error: '页面不存在' });
+      if (req.session.user.role !== 'admin' && req.session.user.role !== 'super_admin') {
+        return res.status(403).json({ success: false, error: '无权恢复此页面' });
+      }
+    }
+
     const version = queryOne(db,
       'SELECT * FROM content_versions WHERE id = ? AND target_type = ? AND target_id = ?',
       [versionId, targetType, targetId]

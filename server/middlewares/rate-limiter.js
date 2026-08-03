@@ -61,13 +61,14 @@ function createRateLimiter(options) {
 
     if (skipFailedRequests || skipSuccessfulRequests) {
       const originalEnd = res.end;
-      const originalStatus = res.statusCode;
 
       res.end = function(chunk, encoding) {
-        if (skipFailedRequests && originalStatus >= 400) {
+        // 必须在响应结束时读取状态码，此时才是最终值
+        const statusCode = this.statusCode;
+        if (skipFailedRequests && statusCode >= 400) {
           entry.count = Math.max(0, entry.count - 1);
         }
-        if (skipSuccessfulRequests && originalStatus < 400) {
+        if (skipSuccessfulRequests && statusCode < 400) {
           entry.count = Math.max(0, entry.count - 1);
         }
         originalEnd.call(this, chunk, encoding);

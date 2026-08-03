@@ -95,7 +95,7 @@ function getProjectStats(db, tables) {
  */
 async function cleanProjectFiles(fileDirs) {
   let deletedFiles = 0;
-  const uploadsDir = path.resolve(__dirname, '../../public');
+  const uploadsDir = require('../config/app-root').publicDir;
   for (const dir of fileDirs) {
     // 防止 file_dirs 越界（如 ../ 或空字符串指向 public 根目录），只允许 public 内且非根目录
     const dirPath = path.resolve(uploadsDir, dir);

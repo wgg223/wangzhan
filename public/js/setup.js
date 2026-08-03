@@ -72,6 +72,15 @@
   window.goPrev = goPrev;
   window.nextStep = goNext;
   window.prevStep = goPrev;
+  // 步骤指示器圆点点击跳转
+  window.goToStep = function(step) {
+    if (step >= 1 && step <= STEPS) {
+      if (step > currentStep && !validateStep(currentStep)) return;
+      collectFormData();
+      if (step === 2) renderSummary();
+      showStep(step);
+    }
+  };
 
   // ====== Alert ======
 

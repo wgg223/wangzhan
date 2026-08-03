@@ -9,6 +9,7 @@ const { settingsCache } = require('../../config/cache');
 const { upload } = require('./upload');
 const cdnConfig = require('../../../cdn-config');
 const { getSettings, upsertSettings } = require('../../utils/settings');
+const { backupDir } = require('../../config/app-root');
 
 // ============ 网站设置 ============
 
@@ -189,7 +190,7 @@ router.get('/settings/backup', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   try {
     const settings = queryAll(db, 'SELECT * FROM settings');
-    const backupDir = path.join(__dirname, '../../../backups');
+    const backupDir = require('../../config/app-root').backupDir;
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
     }
@@ -223,7 +224,7 @@ router.get('/settings/backup', isAuthenticated, isSuperAdmin, (req, res) => {
 });
 
 router.get('/settings/backup/list', isAuthenticated, isSuperAdmin, (req, res) => {
-  const backupDir = path.join(__dirname, '../../../backups');
+  const backupDir = require('../../config/app-root').backupDir;
   try {
     if (!fs.existsSync(backupDir)) {
       return res.json({ success: true, backups: [] });
@@ -254,7 +255,7 @@ router.post('/settings/backup/restore', isAuthenticated, isSuperAdmin, (req, res
     return res.status(400).json({ error: '请指定备份文件' });
   }
 
-  const backupDir = path.join(__dirname, '../../../backups');
+  const backupDir = require('../../config/app-root').backupDir;
   const filepath = path.join(backupDir, filename);
 
   // 安全检查：防止路径遍历
@@ -308,7 +309,7 @@ router.post('/settings/backup/restore', isAuthenticated, isSuperAdmin, (req, res
 });
 
 router.delete('/settings/backup/:filename', isAuthenticated, hasPermission('data.manage'), (req, res) => {
-  const backupDir = path.join(__dirname, '../../../backups');
+  const backupDir = require('../../config/app-root').backupDir;
   const filename = req.params.filename;
   const filepath = path.join(backupDir, filename);
 

@@ -200,8 +200,11 @@ router.post('/restore', (req, res) => {
       const tmpDir = require('path').dirname(uploadedPath);
       try { fs.rmdirSync(tmpDir); } catch (e) { /* ignore */ }
 
-      // 标记安装完成
-      markSetupCompleted();
+      // 标记安装完成（数据库已关闭，直接写文件标记；
+      // 重启后 ensureSetupStatus 会依据新库 app_setup 表同步状态）
+      try {
+        fs.writeFileSync(require('path').join(require('../config/app-root').projectRoot, '.setup_completed'), new Date().toISOString());
+      } catch (e) { /* 标记写入失败不影响主流程 */ }
 
       res.json({ success: true, redirect: '/admin' });
     } catch (err) {

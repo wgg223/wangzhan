@@ -44,7 +44,7 @@
       </div>
       
       <label class="remember-me">
-        <input type="checkbox" name="remember" id="remember"> 记住密码
+        <input type="checkbox" name="remember" id="remember"> 记住用户名
       </label>
       
       <button type="submit" class="auth-btn auth-btn-primary">
@@ -97,25 +97,35 @@
       }
     }
 
-    function saveCredentials(username, password) {
+    // 安全记住用户名（不保存密码，避免明文凭据泄露）
+    function saveUsername(username) {
       try {
         localStorage.setItem('auth_remember_<%= source %>', JSON.stringify({
-          username: btoa(unescape(encodeURIComponent(username))),
-          password: btoa(unescape(encodeURIComponent(password)))
+          username: encodeURIComponent(username || '')
         }));
       } catch(e) {}
     }
 
-    function loadCredentials() {
+    function decodeOldValue(value) {
+      try { return decodeURIComponent(escape(atob(value))); } catch(e) { return ''; }
+    }
+
+    function loadUsername() {
       try {
         var data = localStorage.getItem('auth_remember_<%= source %>');
-        if (data) {
-          var parsed = JSON.parse(data);
-          return {
-            username: decodeURIComponent(escape(atob(parsed.username))),
-            password: decodeURIComponent(escape(atob(parsed.password)))
-          };
+        if (!data) return null;
+        var parsed = JSON.parse(data);
+        var username = '';
+        if (typeof parsed.username === 'string') {
+          if (parsed.password !== undefined) {
+            // 旧版格式（含密码）：仅取用户名，并立即迁移为安全格式清除密码
+            username = decodeOldValue(parsed.username);
+            if (username) saveUsername(username);
+          } else {
+            username = decodeURIComponent(parsed.username);
+          }
         }
+        return username || null;
       } catch(e) {}
       return null;
     }
@@ -125,13 +135,11 @@
     }
 
     (function() {
-      var creds = loadCredentials();
-      if (creds) {
+      var savedUsername = loadUsername();
+      if (savedUsername) {
         var usernameInput = document.getElementById('username');
-        var passwordInput = document.getElementById('password');
         var rememberCheck = document.getElementById('remember');
-        if (usernameInput && creds.username) usernameInput.value = creds.username;
-        if (passwordInput && creds.password) passwordInput.value = creds.password;
+        if (usernameInput) usernameInput.value = savedUsername;
         if (rememberCheck) rememberCheck.checked = true;
       }
     })();
@@ -141,9 +149,8 @@
       loginForm.addEventListener('submit', function(e) {
         var rememberCheck = document.getElementById('remember');
         var usernameInput = document.getElementById('username');
-        var passwordInput = document.getElementById('password');
         if (rememberCheck && rememberCheck.checked) {
-          saveCredentials(usernameInput.value, passwordInput.value);
+          saveUsername(usernameInput.value);
         } else {
           clearCredentials();
         }

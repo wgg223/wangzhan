@@ -9,7 +9,7 @@ const { closeDatabase, getDbPath } = require('../../config/database');
 const { formatBytes } = require('../../utils/format');
 const { getDirSize, copyDir, removeDir } = require('../../utils/fs-helpers');
 
-const projectRoot = path.resolve(__dirname, '../../..');
+const projectRoot = require('../../config/app-root').projectRoot;
 const backupDir = path.join(projectRoot, 'backups');
 
 // Ensure backup directory exists
@@ -251,7 +251,14 @@ router.post('/backup/upload-restore', isAuthenticated, isSuperAdmin, (req, res) 
 router.delete('/backup/:name', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
     const backupName = req.params.name;
-    const backupPath = path.join(backupDir, backupName);
+    // 防路径穿越：仅允许安全字符的备份名，且解析后必须位于 backupDir 内
+    if (!/^[A-Za-z0-9._-]+$/.test(backupName)) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
+    const backupPath = path.resolve(backupDir, backupName);
+    if (backupPath !== backupDir && !backupPath.startsWith(backupDir + path.sep)) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
 
     if (!fs.existsSync(backupPath)) {
       return res.status(404).json({ success: false, error: '备份不存在' });
@@ -284,7 +291,14 @@ router.delete('/backup/:name', isAuthenticated, isSuperAdmin, async (req, res) =
 router.get('/backup/:name/download', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
     const backupName = req.params.name;
-    const backupPath = path.join(backupDir, backupName);
+    // 防路径穿越：与删除接口一致的白名单 + 目录包含校验
+    if (!/^[A-Za-z0-9._-]+$/.test(backupName)) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
+    const backupPath = path.resolve(backupDir, backupName);
+    if (backupPath !== backupDir && !backupPath.startsWith(backupDir + path.sep)) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
 
     if (!fs.existsSync(backupPath)) {
       return res.status(404).json({ success: false, error: '备份不存在' });

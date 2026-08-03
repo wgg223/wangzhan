@@ -93,14 +93,11 @@ function hasPermission(permKey) {
 
     // 层级匹配：高权限包含低权限
     // 例如：用户有 'articles.edit.all' 可匹配 'articles.edit.own'
-    // 规则：如果用户拥有的权限以请求权限为前缀，且后面是 'all' 或更高级别，则通过
+    // 仅当用户权限以 .all 结尾时，才允许其覆盖同一前缀下的子权限
     const hasHigherPerm = userPermKeys.some(userPerm => {
-      // 检查用户权限是否是请求权限的上级
-      // 例如：userPerm = 'articles.edit.all', permKey = 'articles.edit.own'
-      if (permKey.startsWith(userPerm.replace(/\.all$/, '.'))) {
-        return true;
-      }
-      return false;
+      if (!userPerm.endsWith('.all')) return false;
+      const base = userPerm.slice(0, -4);
+      return permKey.startsWith(base + '.');
     });
     if (hasHigherPerm) {
       return next();

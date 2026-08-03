@@ -12,7 +12,7 @@ const { sendMail } = require('../../config/mailer');
 const { formatBytes } = require('../../utils/format');
 const { getDirSize, copyDir } = require('../../utils/fs-helpers');
 
-const projectRoot = path.resolve(__dirname, '../../..');
+const projectRoot = require('../../config/app-root').projectRoot;
 const backupDir = path.join(projectRoot, 'backups');
 
 // Scheduled backup task
@@ -182,9 +182,9 @@ function ensureMaintenanceSettings(db) {
   ];
 
   for (const [key, value] of settings) {
-    const existing = queryOne(db, `SELECT id FROM settings WHERE setting_key = '${key}'`);
+    const existing = queryOne(db, `SELECT id FROM settings WHERE setting_key = ?`, [key]);
     if (!existing) {
-      db.run(`INSERT INTO settings (setting_key, setting_value) VALUES (${key}', '${value}')`);
+      db.run('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)', [key, value]);
     }
   }
   saveDatabase();
@@ -219,7 +219,7 @@ router.post('/maintenance/update', isAuthenticated, isSuperAdmin, (req, res) => 
     if (existingMode) {
       db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_mode'", [enabled ? 'true' : 'false']);
     } else {
-      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (maintenance_mode', ')", [enabled ? 'true' : 'false']);
+      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_mode', enabled ? 'true' : 'false']);
     }
 
     // Update or insert maintenance_title
@@ -227,7 +227,7 @@ router.post('/maintenance/update', isAuthenticated, isSuperAdmin, (req, res) => 
     if (existingTitle) {
       db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_title'", [title || '系统维护中']);
     } else {
-      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (maintenance_title', ')", [title || '系统维护中']);
+      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_title', title || '系统维护中']);
     }
 
     // Update or insert maintenance_message
@@ -235,7 +235,7 @@ router.post('/maintenance/update', isAuthenticated, isSuperAdmin, (req, res) => 
     if (existingMessage) {
       db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_message'", [message || '系统正在进行维护升级，请稍后再试。']);
     } else {
-      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (maintenance_message', ')", [message || '系统正在进行维护升级，请稍后再试。']);
+      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_message', message || '系统正在进行维护升级，请稍后再试。']);
     }
 
     saveDatabase();
@@ -340,7 +340,7 @@ router.post('/maintenance/clear-cache', isAuthenticated, isSuperAdmin, (req, res
 router.get('/maintenance/system-info', isAuthenticated, isSuperAdmin, (req, res) => {
   try {
     const db = getDb();
-    const projectRoot = path.resolve(__dirname, '../../..');
+    const projectRoot = require('../../config/app-root').projectRoot;
 
     // Database info
     let dbSize = 0;
@@ -428,7 +428,7 @@ router.get('/maintenance/system-info', isAuthenticated, isSuperAdmin, (req, res)
 // POST - Clean temp files
 router.post('/maintenance/clean-temp', isAuthenticated, isSuperAdmin, (req, res) => {
   try {
-    const projectRoot = path.resolve(__dirname, '../../..');
+    const projectRoot = require('../../config/app-root').projectRoot;
     const tempDirs = ['temp_update', 'temp'];
     let totalCleaned = 0;
 
@@ -527,7 +527,7 @@ router.post('/maintenance/clean-logs', isAuthenticated, isSuperAdmin, (req, res)
 router.post('/maintenance/optimize-db', isAuthenticated, isSuperAdmin, (req, res) => {
   try {
     const db = req.db;
-    const projectRoot = path.resolve(__dirname, '../../..');
+    const projectRoot = require('../../config/app-root').projectRoot;
     const dbPath = path.join(projectRoot, 'database.sqlite');
 
     const sizeBefore = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;

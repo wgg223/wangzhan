@@ -7,6 +7,7 @@ const { settingsCache, queryCache } = require('../config/cache');
 const { createNotification } = require('./community');
 const { getSettings } = require('../utils/settings');
 const { renderError } = require('../utils/response');
+const { sanitize } = require('../utils/html-sanitizer');
 
 // 缓存包装：对查询结果进行短时间缓存（10秒）
 function cachedQuery(cacheKey, db, sql, params = []) {
@@ -72,6 +73,9 @@ router.post('/articles/save', isAuthenticated, (req, res) => {
     return res.status(400).json({ error: '文章标题不能为空' });
   }
 
+  // 净化富文本，防止存储型 XSS（article-detail 页面原样输出正文）
+  const safeContent = sanitize(content);
+
   let articleId = id;
 
   if (id) {
@@ -84,18 +88,18 @@ router.post('/articles/save', isAuthenticated, (req, res) => {
       return res.status(403).json({ error: '无权编辑此文章' });
     }
     db.run('UPDATE articles SET title=?, content=?, category=?, location=?, status=?, cover_image=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-      [title, content, category || '', location || 'home', status || 'published', cover_image || '', id]);
+      [title, safeContent, category || '', location || 'home', status || 'published', cover_image || '', id]);
   } else {
     db.run('INSERT INTO articles (title, content, category, location, status, cover_image, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [title, content, category || '', location || 'home', status || 'published', cover_image || '', req.session.user.id]);
+      [title, safeContent, category || '', location || 'home', status || 'published', cover_image || '', req.session.user.id]);
     const newArticle = queryOne(db, 'SELECT id FROM articles WHERE title = ? AND author_id = ? ORDER BY id DESC LIMIT 1',
       [title, req.session.user.id]);
     if (newArticle) articleId = newArticle.id;
   }
 
-  // 清除相关缓存
-  queryCache.delete('home_articles');
-  queryCache.delete('articles_list');
+  // 清除相关缓存（键格式为 prefix:sql:params，需按前缀清除）
+  queryCache.deleteByPrefix('home_articles:');
+  queryCache.deleteByPrefix('articles_list:');
 
   saveDatabase();
 
@@ -518,7 +522,7 @@ router.get('/attachments/download/:id', (req, res) => {
     });
   }
 
-  const filePath = path.join(__dirname, '../../public', att.file_path);
+  const filePath = path.join(require('./config/app-root').publicDir, att.file_path);
   if (!require('fs').existsSync(filePath)) {
     return res.status(404).render('frontend/error', {
       message: '文件不存在',

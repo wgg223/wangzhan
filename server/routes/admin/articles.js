@@ -4,6 +4,7 @@ const { isAuthenticated, hasPermission, isAdminRole } = require('../../middlewar
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { renderError } = require('../../utils/response');
+const { sanitize } = require('../../utils/html-sanitizer');
 
 // ============ 文章管理 ============
 
@@ -67,6 +68,8 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
   }
 
   const locationValue = location || 'home';
+  // 净化富文本，防止存储型 XSS（前端 article-detail 页面原样输出正文）
+  const safeContent = sanitize(content);
   let articleId = id;
 
   if (id) {
@@ -74,24 +77,18 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
     if (existing && !isAdminRole(req.session.user) && existing.author_id !== req.session.user.id) {
       return res.status(403).json({ error: '无权编辑此文章' });
     }
-    try {
-      db.run('UPDATE articles SET title=?, content=?, category=?, status=?, cover_image=?, location=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-        [title, content, category || '', status || 'published', cover_image || '', locationValue, id]);
-    } catch (err) { throw err; }
+    db.run('UPDATE articles SET title=?, content=?, category=?, status=?, cover_image=?, location=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+      [title, safeContent, category || '', status || 'published', cover_image || '', locationValue, id]);
   } else {
-    try {
-      db.run('INSERT INTO articles (title, content, category, status, cover_image, location, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [title, content, category || '', status || 'published', cover_image || '', locationValue, req.session.user.id]);
-      const newArticle = queryOne(db, 'SELECT id FROM articles WHERE title = ? AND author_id = ? ORDER BY id DESC LIMIT 1',
-        [title, req.session.user.id]);
-      if (newArticle) articleId = newArticle.id;
-    } catch (err) { throw err; }
+    db.run('INSERT INTO articles (title, content, category, status, cover_image, location, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [title, safeContent, category || '', status || 'published', cover_image || '', locationValue, req.session.user.id]);
+    const newArticle = queryOne(db, 'SELECT id FROM articles WHERE title = ? AND author_id = ? ORDER BY id DESC LIMIT 1',
+      [title, req.session.user.id]);
+    if (newArticle) articleId = newArticle.id;
   }
 
-  try { saveDatabase(); } catch (err) { throw err; }
-  try {
-    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: id ? 'update' : 'create', target_type: 'article', target_id: id || null, target_title: title, detail: (id ? '更新' : '创建') + '文章：' + title, ip: req.ip });
-  } catch (err) { throw err; }
+  saveDatabase();
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: id ? 'update' : 'create', target_type: 'article', target_id: id || null, target_title: title, detail: (id ? '更新' : '创建') + '文章：' + title, ip: req.ip });
 
   // AJAX请求返回JSON
   if (req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest') {

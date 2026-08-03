@@ -19,7 +19,7 @@ try {
   initSqlJs = require('sql.js');
 }
 
-const dbPath = path.join(__dirname, '../../database.sqlite');
+const dbPath = require('./app-root').databasePath;
 
 let db = null;
 let saveTimer = null;
@@ -166,7 +166,7 @@ async function initDatabase() {
  * 确保安装状态正确
  */
 function ensureSetupStatus() {
-  const fileMarker = path.join(__dirname, '../../.setup_completed');
+  const fileMarker = path.join(require('./app-root').projectRoot, '.setup_completed');
 
   const existing = queryOne(db, "SELECT setup_value FROM app_setup WHERE setup_key = 'setup_completed'");
 
@@ -239,7 +239,7 @@ function markSetupCompleted() {
     db.run('INSERT INTO app_setup (setup_key, setup_value) VALUES (?, ?)', ['completed_at', now]);
   }
 
-  const fileMarker = path.join(__dirname, '../../.setup_completed');
+  const fileMarker = path.join(require('./app-root').projectRoot, '.setup_completed');
   try {
     fs.writeFileSync(fileMarker, now);
   } catch (e) {
@@ -282,7 +282,7 @@ function applyPragmaSettings(pragmaSettings) {
     if (existing) {
       db.run("UPDATE app_setup SET setup_value = ? WHERE setup_key = 'db_journal_mode'", [pragmaSettings.journal_mode]);
     } else {
-      db.run('INSERT INTO app_setup (setup_key, setup_value) VALUES (?, ?)', [pragmaSettings.journal_mode]);
+      db.run('INSERT INTO app_setup (setup_key, setup_value) VALUES (?, ?)', ['db_journal_mode', pragmaSettings.journal_mode]);
     }
   }
 
@@ -291,7 +291,7 @@ function applyPragmaSettings(pragmaSettings) {
     if (existingSync) {
       db.run("UPDATE app_setup SET setup_value = ? WHERE setup_key = 'db_synchronous'", [pragmaSettings.synchronous]);
     } else {
-      db.run('INSERT INTO app_setup (setup_key, setup_value) VALUES (?, ?)', [pragmaSettings.synchronous]);
+      db.run('INSERT INTO app_setup (setup_key, setup_value) VALUES (?, ?)', ['db_synchronous', pragmaSettings.synchronous]);
     }
   }
 
@@ -300,7 +300,7 @@ function applyPragmaSettings(pragmaSettings) {
     if (existingCache) {
       db.run("UPDATE app_setup SET setup_value = ? WHERE setup_key = 'db_cache_size'", [String(pragmaSettings.cache_size)]);
     } else {
-      db.run('INSERT INTO app_setup (setup_key, setup_value) VALUES (?, ?)', [String(pragmaSettings.cache_size)]);
+      db.run('INSERT INTO app_setup (setup_key, setup_value) VALUES (?, ?)', ['db_cache_size', String(pragmaSettings.cache_size)]);
     }
   }
 
@@ -349,7 +349,7 @@ function closeAndDeleteDatabase() {
     fsSafe.safeUnlinkSync(dbPath);
     const tempPath = dbPath + '.tmp';
     fsSafe.safeUnlinkSync(tempPath);
-    const fileMarker = path.join(__dirname, '../../.setup_completed');
+    const fileMarker = path.join(require('./app-root').projectRoot, '.setup_completed');
     fsSafe.safeUnlinkSync(fileMarker);
     logger.info('数据库文件及相关文件已删除');
   } catch (err) {

@@ -111,7 +111,7 @@ function getActivityStats(db, days = 7) {
   try {
     const total = queryOne(db, 'SELECT COUNT(*) as count FROM activity_logs')?.count || 0;
     const today = queryOne(db,
-      "SELECT COUNT(*) as count FROM activity_logs WHERE created_at >= datetime('now', '-1 day', '+8 hours')"
+      "SELECT COUNT(*) as count FROM activity_logs WHERE created_at >= datetime('now', '+8 hours', 'start of day')"
     )?.count || 0;
 
     // 各操作类型统计

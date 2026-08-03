@@ -32,8 +32,9 @@
               </form>
             </div>
           </div>
+          <% var safeMsgContent = String(msg.content || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); %>
           <div class="message-content" id="msg-content-<%= msg.id %>" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; line-height: 1.8; color: #555;">
-            <%- msg.content.replace(/\n/g, '<br>') %>
+            <%- safeMsgContent.replace(/\n/g, '<br>') %>
           </div>
         </div>
       <% }); %>

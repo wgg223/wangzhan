@@ -8,8 +8,10 @@ const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { formatBytes } = require('../../utils/format');
 
-const UPLOAD_DIR = path.join(__dirname, '../../../public/uploads/attachments');
-const CHUNKS_DIR = path.join(__dirname, '../../../public/uploads/.chunks');
+const { publicDir } = require('../../config/app-root');
+
+const UPLOAD_DIR = path.join(publicDir, 'uploads', 'attachments');
+const CHUNKS_DIR = path.join(publicDir, 'uploads', '.chunks');
 const MAX_FILE_SIZE = 200 * 1024 * 1024;
 
 const ALLOWED_EXTENSIONS = [

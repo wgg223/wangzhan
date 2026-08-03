@@ -6,6 +6,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { publicDir, backupDir } = require('../../config/app-root');
 
 const ALLOWED_IMAGE_MIME_TYPES = [
   'image/jpeg',
@@ -57,7 +58,7 @@ function validateFileContent(file) {
 // 普通文件上传
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../../public/uploads');
+    const uploadDir = path.join(publicDir, 'uploads');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -99,7 +100,7 @@ const upload = multer({
 // 图片文件上传（存入 uploads/images/）
 const imageStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../../public/uploads/images');
+    const uploadDir = path.join(publicDir, 'uploads', 'images');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -137,7 +138,7 @@ const imageUpload = multer({
 // 小说文件上传（仅允许 TXT / JSON）
 const novelStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../../public/uploads/novels');
+    const uploadDir = path.join(publicDir, 'uploads', 'novels');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -174,7 +175,7 @@ const novelUpload = multer({
 // 数据库文件上传（仅允许 .sqlite）
 const dbStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const tmpDir = path.join(__dirname, '../../../backups/tmp');
+    const tmpDir = path.join(backupDir, 'tmp');
     if (!fs.existsSync(tmpDir)) {
       fs.mkdirSync(tmpDir, { recursive: true });
     }

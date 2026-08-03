@@ -87,10 +87,20 @@ router.put('/users/:id', (req, res) => {
 
   const role = (req.body.role || '').trim();
   const status = (req.body.status || '').trim();
-  if (role && ['user', 'admin', 'super_admin'].includes(role)) {
+  // 角色修改仅限超级管理员，防止 admin 自我提权为 super_admin
+  if (role) {
+    if (req.apiUser.role !== 'super_admin') {
+      return res.status(403).json({ error: '仅超级管理员可修改用户角色' });
+    }
+    if (!['user', 'admin', 'super_admin'].includes(role)) {
+      return res.status(400).json({ error: '非法的角色值' });
+    }
     db.run('UPDATE users SET role = ? WHERE id = ?', [role, id]);
   }
-  if (status && ['active', 'disabled', 'pending'].includes(status)) {
+  if (status) {
+    if (!['active', 'disabled', 'pending'].includes(status)) {
+      return res.status(400).json({ error: '非法的状态值' });
+    }
     db.run('UPDATE users SET status = ? WHERE id = ?', [status, id]);
   }
   saveDatabase();

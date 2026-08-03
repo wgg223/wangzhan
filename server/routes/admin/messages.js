@@ -3,6 +3,7 @@ const router = express.Router();
 const { isAuthenticated, hasPermission } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
+const { sanitize } = require('../../utils/html-sanitizer');
 
 // ============ 站内信管理 ============
 
@@ -52,6 +53,10 @@ router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'),
 
   const popup = is_popup === '1' ? 1 : 0;
 
+  // 站内信按纯文本处理（前端按文本展示），剥离所有 HTML 防止存储型 XSS
+  const safeTitle = String(title || '').slice(0, 200);
+  const safeContent = sanitize(String(content || ''), { allowedTags: [], allowedAttributes: {} });
+
   if (broadcast === '1') {
     // 群发需要额外权限
     if (!req.session.user || (req.session.user.role !== 'super_admin' && req.session.user.role !== 'admin')) {
@@ -63,7 +68,7 @@ router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'),
     const allUsers = queryAll(db, "SELECT id FROM users WHERE status = 'active'");
     const stmt = db.prepare('INSERT INTO internal_messages (from_user_id, from_username, to_user_id, title, content, is_popup) VALUES (?, ?, ?, ?, ?, ?)');
     allUsers.forEach(u => {
-      stmt.run([req.session.user.id, req.session.user.username, u.id, title, content, popup]);
+      stmt.run([req.session.user.id, req.session.user.username, u.id, safeTitle, safeContent, popup]);
     });
   } else {
     if (!to_user_id) {
@@ -77,7 +82,7 @@ router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'),
       });
     }
     db.run('INSERT INTO internal_messages (from_user_id, from_username, to_user_id, title, content, is_popup) VALUES (?, ?, ?, ?, ?, ?)',
-      [req.session.user.id, req.session.user.username, to_user_id, title, content, popup]);
+      [req.session.user.id, req.session.user.username, to_user_id, safeTitle, safeContent, popup]);
   }
 
   saveDatabase();
@@ -86,8 +91,8 @@ router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'),
     username: req.session.user.username,
     action: 'send_message',
     target_type: 'message',
-    target_title: title,
-    detail: broadcast === '1' ? '群发站内信「' + title + '」' : '发送站内信「' + title + '」',
+    target_title: safeTitle,
+    detail: broadcast === '1' ? '群发站内信「' + safeTitle + '」' : '发送站内信「' + safeTitle + '」',
     ip: req.ip
   });
   res.redirect('/admin/messages?sent=1');

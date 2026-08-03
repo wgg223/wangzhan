@@ -26,7 +26,7 @@ function apiAuth(req, res, next) {
 
   const user = queryOne(
     db,
-    'SELECT id, uid, username, nickname, avatar, role, status, email, bio, image_no_review, password FROM users WHERE id = ?',
+    'SELECT id, uid, username, nickname, avatar, role, status, email, bio, image_no_review FROM users WHERE id = ?',
     [record.user_id]
   );
   if (!user) {

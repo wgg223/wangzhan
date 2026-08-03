@@ -479,7 +479,7 @@ router.post('/image-share/batch-delete', isAuthenticated, hasPermission('image-s
       const filePath = path.join(__dirname, '../../public', img.url);
       fsSafe.safeUnlinkSync(filePath);
       deletedFiles++;
-    } catch (e) {}
+    } catch (e) { /* 文件可能已不存在 */ }
   }
 
   // Delete from database
@@ -549,7 +549,7 @@ router.post('/image-share/batch-delete-categories', isAuthenticated, hasPermissi
       const filePath = path.join(__dirname, '../../public', img.url);
       fsSafe.safeUnlinkSync(filePath);
       deletedFiles++;
-    } catch (e) {}
+    } catch (e) { /* 文件可能已不存在 */ }
   }
 
   // Delete images in categories

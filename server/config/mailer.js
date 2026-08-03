@@ -73,6 +73,7 @@ function sendMail(db, options) {
           console.error('记录邮件发送日志出错:', logErr.message);
         }
         reject(new Error('SMTP服务器未配置，请在网站设置中配置SMTP'));
+        return;
       }
 
       const transporter = nodemailer.createTransport({

@@ -4,13 +4,22 @@ const path = require('path');
 const fs = require('fs');
 const { queryOne, queryAll, getDb, saveDatabase } = require('../../config/database');
 const { apiAuth } = require('../../middlewares/api-auth');
+const { publicDir } = require('../../config/app-root');
 
 const router = express.Router();
 
 // ============ 上传配置（与网页端一致） ============
+const IMAGE_EXT_MAP = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp'
+};
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../../public/uploads/images');
+    const uploadDir = path.join(publicDir, 'uploads', 'images');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -18,7 +27,8 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'img-' + uniqueSuffix + path.extname(file.originalname));
+    // 按 mimetype 生成安全扩展名，忽略原始文件名
+    cb(null, 'img-' + uniqueSuffix + (IMAGE_EXT_MAP[file.mimetype] || '.jpg'));
   }
 });
 
@@ -26,8 +36,9 @@ const imageUpload = multer({
   storage: storage,
   limits: { fileSize: 15 * 1024 * 1024, files: 10 },
   fileFilter: function (req, file, cb) {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.mimetype)) {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    if (!IMAGE_EXT_MAP[file.mimetype] || !allowedExts.includes(ext)) {
       return cb(new Error('只支持 JPG、PNG、GIF、WebP 格式的图片'));
     }
     cb(null, true);

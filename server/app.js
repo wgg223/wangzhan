@@ -65,6 +65,12 @@ app.use(express.static(path.join(__dirname, '../public'), {
   }
 }));
 
+// exe（pkg）模式下，上传文件写入 exe 同目录的 public/，需额外挂载静态目录
+if (process.pkg) {
+  const { publicDir } = require('./config/app-root');
+  app.use(express.static(publicDir));
+}
+
 app.use(session({
   secret: process.env.SESSION_SECRET || (() => {
     console.error('[安全] 未设置 SESSION_SECRET 环境变量，使用随机密钥（重启后所有会话失效）');

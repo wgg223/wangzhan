@@ -9,7 +9,7 @@ const { getProjectStats, cleanProjectFiles, getAllProjectDefinitions } = require
 const { DEPENDENT_TABLES, ALL_TABLES } = require('../../config/constants');
 const fsSafe = require('../../utils/fs-safe');
 
-const PUBLIC_DIR = path.resolve(__dirname, '../../public');
+const PUBLIC_DIR = require('../../config/app-root').publicDir;
 
 // 全局重置补充表：未包含在项目定义 / ALL_TABLES 中的业务表。
 // 注意：这些表大多通过外键级联到 users，但显式清空更可靠，不依赖 foreign_keys 开关状态。

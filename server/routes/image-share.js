@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
-const { isAuthenticated, hasFrontendPermission } = require('../middlewares/auth');
+const { isAuthenticated, hasFrontendPermission, hasPermission } = require('../middlewares/auth');
 const { validateMagicBytes } = require('../utils/file-validator');
 const { getImageConfigs, saveImageShareConfigs } = require('../utils/settings');
 const { addImageLog } = require('../utils/image-utils');
@@ -22,9 +22,28 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'img-' + uniqueSuffix + path.extname(file.originalname));
+    // 按 mimetype 生成安全扩展名，忽略原始文件名（防止 html 等可执行文件落盘）
+    cb(null, 'img-' + uniqueSuffix + (IMAGE_EXT_MAP[file.mimetype] || '.jpg'));
   }
 });
+
+const IMAGE_EXT_MAP = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp'
+};
+
+// 图片文件校验：MIME 白名单 + 扩展名白名单
+function imageFileFilter(req, file, cb) {
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+  if (!IMAGE_EXT_MAP[file.mimetype] || !allowedExts.includes(ext)) {
+    return cb(new Error('只支持 JPG、PNG、GIF、WebP 格式的图片'));
+  }
+  cb(null, true);
+}
 
 // 单文件上传配置
 const imageUpload = multer({
@@ -32,13 +51,7 @@ const imageUpload = multer({
   limits: {
     fileSize: 15 * 1024 * 1024 // 15MB
   },
-  fileFilter: function (req, file, cb) {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      return cb(new Error('只支持 JPG、PNG、GIF、WebP 格式的图片'));
-    }
-    cb(null, true);
-  }
+  fileFilter: imageFileFilter
 });
 
 // 批量上传配置 - 最多同时上传30张图片
@@ -48,13 +61,7 @@ const imageUploadMultiple = multer({
     fileSize: 15 * 1024 * 1024, // 15MB 每张
     files: 30 // 最多30张
   },
-  fileFilter: function (req, file, cb) {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      return cb(new Error('只支持 JPG、PNG、GIF、WebP 格式的图片'));
-    }
-    cb(null, true);
-  }
+  fileFilter: imageFileFilter
 });
 
 // 辅助：检查访客是否可以访问分类
@@ -481,7 +488,7 @@ router.get('/user/upload-batch', isAuthenticated, (req, res) => {
 
 // 处理批量上传
 router.post('/user/upload-batch', isAuthenticated, (req, res) => {
-  imageUploadMultiple.array('images', 20)(req, res, function (err) {
+  imageUploadMultiple.array('images', 30)(req, res, function (err) {
     if (err) {
       const db = req.db;
       const user = req.session.user;
@@ -833,7 +840,7 @@ router.get('/admin/settings', isAuthenticated, (req, res) => {
   res.redirect('/admin/image-share/settings');
 });
 
-router.post('/admin/settings', isAuthenticated, (req, res) => {
+router.post('/admin/settings', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
   const db = req.db;
 
   saveImageShareConfigs(db, req.body);
