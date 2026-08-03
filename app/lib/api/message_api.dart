@@ -2,6 +2,8 @@ import '../config/app_config.dart';
 import '../models/conversation.dart';
 import 'api_client.dart';
 
+export 'api_client.dart' show ApiException;
+
 /// 私信相关接口
 class MessageApi {
   static final ApiClient _client = ApiClient.instance;

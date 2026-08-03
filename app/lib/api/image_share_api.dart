@@ -2,6 +2,8 @@ import '../config/app_config.dart';
 import '../models/image_item.dart';
 import 'api_client.dart';
 
+export 'api_client.dart' show ApiException;
+
 /// 图片分享相关接口
 class ImageShareApi {
   static final ApiClient _client = ApiClient.instance;

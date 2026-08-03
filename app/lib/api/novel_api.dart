@@ -2,6 +2,8 @@ import '../config/app_config.dart';
 import '../models/novel.dart';
 import 'api_client.dart';
 
+export 'api_client.dart' show ApiException;
+
 /// 小说相关接口
 class NovelApi {
   static final ApiClient _client = ApiClient.instance;
@@ -18,7 +20,7 @@ class NovelApi {
     final data = await _client.get(AppConfig.api('/novels/$id'));
     final map = data as Map;
     final novel = Novel.fromJson(map['novel'] as Map<String, dynamic>);
-    final chapters = map['chapters'] is List ? map['chapters'] : const [];
+    final chapters = map['chapters'] is List ? map['chapters'] as List : const [];
     return (
       novel,
       chapters.map((e) => NovelChapter.fromJson(e as Map<String, dynamic>)).toList(),

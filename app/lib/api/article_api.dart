@@ -2,6 +2,8 @@ import '../config/app_config.dart';
 import '../models/article.dart';
 import 'api_client.dart';
 
+export 'api_client.dart' show ApiException;
+
 /// 文章相关接口
 class ArticleApi {
   static final ApiClient _client = ApiClient.instance;

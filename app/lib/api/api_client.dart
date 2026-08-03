@@ -96,9 +96,9 @@ class ApiClient {
   }
 
   /// DELETE 请求
-  Future<dynamic> delete(String path) async {
+  Future<dynamic> delete(String path, {Map<String, dynamic>? query}) async {
     try {
-      final res = await _dio.delete(path);
+      final res = await _dio.delete(path, queryParameters: query);
       return res.data;
     } on DioException catch (e) {
       throw _toApiError(e);
@@ -112,7 +112,7 @@ class ApiClient {
       final form = FormData();
       fields?.forEach((k, v) => form.fields.add(MapEntry(k, v.toString())));
       for (final p in filePaths) {
-        form.files.add(MapEntry('files', await dio.MultipartFile.fromFile(p)));
+        form.files.add(MapEntry('files', await MultipartFile.fromFile(p)));
       }
       final res = await _dio.post(
         path,

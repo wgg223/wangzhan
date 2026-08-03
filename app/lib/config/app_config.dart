@@ -6,7 +6,7 @@ class AppConfig {
   AppConfig._();
 
   /// 服务器根地址（不带末尾斜杠）
-  static const String serverBaseUrl = 'http://127.0.0.1:3000';
+  static const String serverBaseUrl = 'https://dalaowang233.top';
 
   /// API 命名空间
   static const String apiPrefix = '/api/v1';

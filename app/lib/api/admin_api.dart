@@ -6,6 +6,8 @@ import '../models/novel.dart';
 import '../models/user.dart';
 import 'api_client.dart';
 
+export 'api_client.dart' show ApiException;
+
 /// 管理后台接口（需要管理员权限）
 class AdminApi {
   static final ApiClient _client = ApiClient.instance;
@@ -26,10 +28,10 @@ class AdminApi {
       if (role != null && role.isNotEmpty) 'role': role,
     });
     final map = data as Map;
-    final list = map['users'] is List ? map['users'] : const [];
+    final list = map['users'] is List ? map['users'] as List : const [];
     return (
       list.map((e) => User.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] : int.tryParse('${map['total']}') ?? 0,
+      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
     );
   }
 
@@ -49,10 +51,10 @@ class AdminApi {
       if (q != null && q.isNotEmpty) 'q': q,
     });
     final map = data as Map;
-    final list = map['articles'] is List ? map['articles'] : const [];
+    final list = map['articles'] is List ? map['articles'] as List : const [];
     return (
       list.map((e) => Article.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] : int.tryParse('${map['total']}') ?? 0,
+      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
     );
   }
 
@@ -68,8 +70,8 @@ class AdminApi {
   static Future<(List<Map<String, dynamic>>, int)> comments({int page = 1, int limit = 10}) async {
     final data = await _client.get(_p('/comments'), query: {'page': page, 'limit': limit});
     final map = data as Map;
-    final list = map['comments'] is List ? map['comments'] : const [];
-    return (list.map((e) => e as Map<String, dynamic>).toList(), map['total'] is int ? map['total'] : 0);
+    final list = map['comments'] is List ? map['comments'] as List : const [];
+    return (list.map((e) => e as Map<String, dynamic>).toList(), map['total'] is int ? map['total'] as int : 0);
   }
 
   static Future<void> deleteComment(int id) async {
@@ -84,10 +86,10 @@ class AdminApi {
       if (status != null) 'status': status,
     });
     final map = data as Map;
-    final list = map['images'] is List ? map['images'] : const [];
+    final list = map['images'] is List ? map['images'] as List : const [];
     return (
       list.map((e) => ImageItem.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] : int.tryParse('${map['total']}') ?? 0,
+      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
     );
   }
 
@@ -117,10 +119,10 @@ class AdminApi {
   static Future<(List<Novel>, int)> novels({int page = 1, int limit = 10}) async {
     final data = await _client.get(_p('/novels'), query: {'page': page, 'limit': limit});
     final map = data as Map;
-    final list = map['novels'] is List ? map['novels'] : const [];
+    final list = map['novels'] is List ? map['novels'] as List : const [];
     return (
       list.map((e) => Novel.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] : int.tryParse('${map['total']}') ?? 0,
+      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
     );
   }
 
@@ -145,10 +147,10 @@ class AdminApi {
   static Future<(List<AdminLog>, int)> logs({int page = 1, int limit = 20}) async {
     final data = await _client.get(_p('/logs'), query: {'page': page, 'limit': limit});
     final map = data as Map;
-    final list = map['logs'] is List ? map['logs'] : const [];
+    final list = map['logs'] is List ? map['logs'] as List : const [];
     return (
       list.map((e) => AdminLog.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] : int.tryParse('${map['total']}') ?? 0,
+      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
     );
   }
 
@@ -171,10 +173,10 @@ class AdminApi {
   static Future<(List<MediaItem>, int)> media({int page = 1, int limit = 20}) async {
     final data = await _client.get(_p('/media'), query: {'page': page, 'limit': limit});
     final map = data as Map;
-    final list = map['media'] is List ? map['media'] : const [];
+    final list = map['media'] is List ? map['media'] as List : const [];
     return (
       list.map((e) => MediaItem.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] : int.tryParse('${map['total']}') ?? 0,
+      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
     );
   }
 

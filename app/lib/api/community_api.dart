@@ -3,6 +3,8 @@ import '../models/community.dart';
 import '../models/user.dart';
 import 'api_client.dart';
 
+export 'api_client.dart' show ApiException;
+
 /// 社区相关接口
 class CommunityApi {
   static final ApiClient _client = ApiClient.instance;
