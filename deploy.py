@@ -104,6 +104,13 @@ EXTRA_EXCLUDE_PATTERNS = [
     'build/app/outputs',
     # 部署文档（本地文档，不上传服务器）
     '部署指南.md',
+    # 所有带 deploy 字样的文件/目录（部署脚本、部署日志、CDN 部署工具等）
+    '*deploy*',
+    'deploy',
+    'deploy/',
+    'deploy-cdn.bat',
+    'deploy-cdn.sh',
+    'deploy_logs',
 ]
 
 # ============ 颜色输出 ============
