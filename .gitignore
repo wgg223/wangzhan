@@ -91,6 +91,9 @@ security-config.json
 # PM2
 .pm2/
 
+# MiMoCode runtime state
+.mimocode/.cron-lock
+
 # Editor
 *.sublime-project
 *.sublime-workspace
