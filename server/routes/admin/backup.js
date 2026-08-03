@@ -304,6 +304,78 @@ router.get('/backup/:name/download', isAuthenticated, isSuperAdmin, async (req, 
   }
 });
 
+// GET - 系统更新自动备份列表（项目根目录 backup_* 目录）
+router.get('/backup/update-backups', isAuthenticated, isSuperAdmin, (req, res) => {
+  try {
+    const updateBackups = [];
+    let items = [];
+    try {
+      items = fs.readdirSync(projectRoot);
+    } catch (e) { /* ignore */ }
+
+    for (const item of items) {
+      if (!/^backup_\d+$/.test(item)) continue;
+      const itemPath = path.join(projectRoot, item);
+      let stat;
+      try {
+        stat = fs.statSync(itemPath);
+      } catch (e) { continue; }
+      if (!stat.isDirectory()) continue;
+
+      let size = 0;
+      try { size = getDirSize(itemPath); } catch (e) { /* ignore */ }
+
+      updateBackups.push({
+        name: item,
+        createdAt: new Date(stat.mtime).toISOString(),
+        size,
+        sizeFormatted: formatSize(size)
+      });
+    }
+
+    updateBackups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json({ success: true, data: updateBackups });
+  } catch (err) {
+    res.status(500).json({ success: false, error: '获取更新自动备份失败: ' + err.message });
+  }
+});
+
+// DELETE - 删除系统更新自动备份
+router.delete('/backup/update-backup/:name', isAuthenticated, isSuperAdmin, async (req, res) => {
+  try {
+    const backupName = req.params.name;
+    // 防路径穿越：仅允许 backup_<时间戳> 格式
+    if (!/^backup_\d+$/.test(backupName)) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
+
+    const backupPath = path.join(projectRoot, backupName);
+    if (!fs.existsSync(backupPath)) {
+      return res.status(404).json({ success: false, error: '备份不存在' });
+    }
+
+    await removeDir(backupPath);
+
+    try {
+      logActivity(req.db, {
+        user_id: req.session.user.id,
+        username: req.session.user.username,
+        action: 'delete_backup',
+        target_type: 'system',
+        target_title: '删除更新自动备份',
+        detail: `删除系统更新自动备份: ${backupName}`,
+        ip: req.ip
+      });
+    } catch (logErr) {
+      console.error('[backup] logActivity error:', logErr.message);
+    }
+
+    res.json({ success: true, message: `备份已删除: ${backupName}` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: '删除备份失败: ' + err.message });
+  }
+});
+
 // Helper functions
 function getBackupList() {
   const backups = [];

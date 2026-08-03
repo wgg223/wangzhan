@@ -36,7 +36,10 @@
       </div>
       
       <div class="update-status" id="updateStatus">
-        <div class="status-message">点击下方按钮检查更新</div>
+        <div class="status-message" id="statusMessage">点击下方按钮检查更新</div>
+        <div class="progress-bar" id="progressBar" style="display: none;">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
       </div>
 
       <div class="github-link-section">
@@ -439,9 +442,14 @@ async function loadSystemInfo() {
       document.getElementById('platform').textContent = result.data.platform;
       
       const uptimeSeconds = Math.floor(result.data.uptime);
-      const hours = Math.floor(uptimeSeconds / 3600);
+      const days = Math.floor(uptimeSeconds / 86400);
+      const hours = Math.floor((uptimeSeconds % 86400) / 3600);
       const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-      document.getElementById('uptime').textContent = `${hours}小时${minutes}分钟`;
+      let uptimeStr = '';
+      if (days > 0) uptimeStr += days + '天';
+      if (hours > 0) uptimeStr += hours + '小时';
+      uptimeStr += minutes + '分钟';
+      document.getElementById('uptime').textContent = uptimeStr;
     }
   } catch (error) {
     console.error('加载系统信息失败:', error);
@@ -456,6 +464,7 @@ async function checkUpdate() {
   const btnText = btn.querySelector('.btn-text');
   const btnLoading = btn.querySelector('.btn-loading');
   const updateStatus = document.getElementById('updateStatus');
+  const statusMsg = document.getElementById('statusMessage');
   
   btn.disabled = true;
   btnText.style.display = 'none';
@@ -482,7 +491,7 @@ async function checkUpdate() {
 
       if (result.data.hasUpdate) {
         updateStatus.className = 'update-status has-update';
-        updateStatus.innerHTML = `<div class="status-message">发现新版本 ${result.data.latestVersion}！</div>`;
+        statusMsg.textContent = `发现新版本 ${result.data.latestVersion}！`;
 
         document.getElementById('releaseInfo').style.display = 'block';
         document.getElementById('releaseName').textContent = result.data.releaseName || '新版本可用';
@@ -499,7 +508,7 @@ async function checkUpdate() {
         addUpdateLog(`发现新版本 ${result.data.latestVersion}`, 'info');
       } else {
         updateStatus.className = 'update-status no-update';
-        updateStatus.innerHTML = '<div class="status-message">当前已是最新版本</div>';
+        statusMsg.textContent = '当前已是最新版本';
         document.getElementById('releaseInfo').style.display = 'none';
         document.getElementById('downloadBtn').style.display = 'none';
         document.getElementById('forceUpdateBtn').style.display = 'none';
@@ -516,7 +525,7 @@ async function checkUpdate() {
   } catch (error) {
     console.error('检查更新失败:', error);
     updateStatus.className = 'update-status error';
-    updateStatus.innerHTML = `<div class="status-message">检查更新失败: ${error.message}</div>`;
+    statusMsg.textContent = `检查更新失败: ${error.message}`;
     
     addUpdateLog(`检查更新失败: ${error.message}`, 'error');
   } finally {
@@ -526,31 +535,32 @@ async function checkUpdate() {
   }
 }
 
-// 下载并安装更新
-async function downloadUpdate() {
-  if (!updateData || !updateData.downloadUrl) {
-    alert('请先检查更新');
-    return;
-  }
-  
-  if (!confirm(`确定要下载并安装版本 ${updateData.latestVersion} 吗？\n\n更新前会自动备份当前项目。`)) {
-    return;
-  }
-  
-  const btn = document.getElementById('downloadBtn');
+// 启动更新任务（下载并安装最新版本，后台执行 + 进度轮询）
+async function startUpdateTask(force) {
+  const versionLabel = updateData && updateData.latestVersion ? updateData.latestVersion : '最新版';
+  const msg = force
+    ? `⚠️ 强制更新将直接下载并覆盖安装最新版本 v${versionLabel}，无论当前版本是否已是最新。\n\n更新前会自动备份，是否继续？`
+    : `确定要下载并安装版本 ${versionLabel} 吗？\n\n更新前会自动备份当前项目。`;
+
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById(force ? 'forceUpdateBtn' : 'downloadBtn');
   const btnText = btn.querySelector('.btn-text');
   const btnLoading = btn.querySelector('.btn-loading');
-  const updateStatus = document.getElementById('updateStatus');
-  
-  btn.disabled = true;
+  const statusEl = document.getElementById('updateStatus');
+  const statusMsg = document.getElementById('statusMessage');
+
+  setButtonsDisabled(true);
   btnText.style.display = 'none';
   btnLoading.style.display = 'inline';
-  
-  updateStatus.className = 'update-status downloading';
-  updateStatus.innerHTML = '<div class="status-message">正在下载并安装更新，请稍候...</div>';
-  
-  addUpdateLog(`开始下载版本 ${updateData.latestVersion}`, 'info');
-  
+
+  statusEl.className = 'update-status downloading';
+  statusMsg.textContent = '正在启动更新任务...';
+  document.getElementById('progressBar').style.display = 'block';
+  document.getElementById('progressBarFill').style.width = '0%';
+
+  addUpdateLog(`开始下载版本 v${versionLabel}`, 'info');
+
   try {
     const response = await fetch('/admin/system-update/download', {
       method: 'POST',
@@ -559,57 +569,31 @@ async function downloadUpdate() {
         'CSRF-Token': getCsrfToken(),
         'X-Requested-With': 'XMLHttpRequest'
       },
-      body: JSON.stringify({
-        downloadUrl: updateData.downloadUrl,
-        version: updateData.latestVersion
-      })
+      body: JSON.stringify({})
     });
-    
+
     const result = await response.json();
-    
-    if (result.success) {
-      updateStatus.className = 'update-status success';
-      updateStatus.innerHTML = `<div class="status-message">更新安装成功！${result.message}</div>`;
 
-      addUpdateLog(`版本 ${updateData.latestVersion} 安装成功`, 'success');
-      addUpdateLog(`备份已保存到: ${result.backupPath}`, 'info');
-
-      // 隐藏下载按钮
-      btn.style.display = 'none';
-
-      if (result.autoRestart) {
-        // 自动重启倒计时
-        addUpdateLog('服务器将在3秒后自动重启...', 'info');
-        let countdown = 3;
-        const countdownInterval = setInterval(() => {
-          updateStatus.innerHTML = `<div class="status-message">服务器将在 ${countdown} 秒后自动重启...</div>`;
-          countdown--;
-          if (countdown < 0) {
-            clearInterval(countdownInterval);
-            updateStatus.innerHTML = '<div class="status-message">正在重启，请稍后刷新页面...</div>';
-            setTimeout(() => { window.location.reload(); }, 5000);
-          }
-        }, 1000);
-      } else {
-        // 提示用户手动重启
-        if (confirm('更新已安装完成，是否立即重启服务器以应用更改？')) {
-          restartServer();
-        }
-      }
-    } else {
-      throw new Error(result.error || '下载更新失败');
+    if (!result.success) {
+      throw new Error(result.error || '启动更新失败');
     }
+
+    addUpdateLog(result.message, 'info');
+    startPolling();
   } catch (error) {
-    console.error('下载更新失败:', error);
-    updateStatus.className = 'update-status error';
-    updateStatus.innerHTML = `<div class="status-message">下载更新失败: ${error.message}</div>`;
-    
-    addUpdateLog(`下载更新失败: ${error.message}`, 'error');
-  } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
+    console.error('启动更新失败:', error);
+    statusEl.className = 'update-status error';
+    statusMsg.textContent = '启动更新失败: ' + error.message;
+
+    addUpdateLog(`启动更新失败: ${error.message}`, 'error');
+
+    resetButtonStates();
   }
+}
+
+// 下载并安装更新
+function downloadUpdate() {
+  startUpdateTask(false);
 }
 
 // 重启服务器
@@ -621,14 +605,15 @@ async function restartServer() {
   const btn = document.getElementById('restartBtn');
   const btnText = btn.querySelector('.btn-text');
   const btnLoading = btn.querySelector('.btn-loading');
-  const updateStatus = document.getElementById('updateStatus');
+  const statusEl = document.getElementById('updateStatus');
+  const statusMsg = document.getElementById('statusMessage');
   
   btn.disabled = true;
   btnText.style.display = 'none';
   btnLoading.style.display = 'inline';
   
-  updateStatus.className = 'update-status downloading';
-  updateStatus.innerHTML = '<div class="status-message">服务器正在重启，请稍候...</div>';
+  statusEl.className = 'update-status downloading';
+  statusMsg.textContent = '服务器正在重启，请稍候...';
   
   addUpdateLog('服务器即将重启...', 'info');
   
@@ -644,32 +629,16 @@ async function restartServer() {
     
     const result = await response.json();
     
-    if (result.success) {
-      addUpdateLog('服务器重启指令已发送', 'success');
-      
-      // 显示倒计时
-      let countdown = 3;
-      const countdownInterval = setInterval(() => {
-        updateStatus.innerHTML = `<div class="status-message">服务器将在 ${countdown} 秒后重启...</div>`;
-        countdown--;
-        
-        if (countdown < 0) {
-          clearInterval(countdownInterval);
-          updateStatus.innerHTML = '<div class="status-message">正在重启，请稍后刷新页面...</div>';
-          
-          // 5秒后尝试刷新页面
-          setTimeout(() => {
-            window.location.reload();
-          }, 5000);
-        }
-      }, 1000);
-    } else {
+    if (!result.success) {
       throw new Error(result.error || '重启服务器失败');
     }
+    
+    addUpdateLog('服务器重启指令已发送', 'success');
+    startRestartCountdown(3);
   } catch (error) {
     console.error('重启服务器失败:', error);
-    updateStatus.className = 'update-status error';
-    updateStatus.innerHTML = `<div class="status-message">重启服务器失败: ${error.message}</div>`;
+    statusEl.className = 'update-status error';
+    statusMsg.textContent = '重启服务器失败: ' + error.message;
     
     addUpdateLog(`重启服务器失败: ${error.message}`, 'error');
     
@@ -694,9 +663,117 @@ function addUpdateLog(message, type) {
   logContainer.insertBefore(logEntry, logContainer.firstChild);
 }
 
-// 页面加载时自动加载系统信息
+// ============ 更新任务进度轮询 ============
+let pollTimer = null;
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(pollTaskProgress, 1000);
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+async function pollTaskProgress() {
+  try {
+    const response = await fetch('/admin/system-update/progress', {
+      headers: {
+        'CSRF-Token': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    const result = await response.json();
+    if (!result.success || !result.data) return;
+    renderTask(result.data);
+  } catch (e) {
+    console.error('获取更新进度失败:', e);
+    stopPolling();
+  }
+}
+
+function renderTask(task) {
+  const statusEl = document.getElementById('updateStatus');
+  const statusMsg = document.getElementById('statusMessage');
+  const barWrap = document.getElementById('progressBar');
+  const barFill = document.getElementById('progressBarFill');
+
+  if (task.status === 'idle') {
+    stopPolling();
+    return;
+  }
+
+  barWrap.style.display = 'block';
+  barFill.style.width = (task.progress || 0) + '%';
+
+  if (task.status === 'error') {
+    statusEl.className = 'update-status error';
+    statusMsg.textContent = task.message || '更新失败';
+    addUpdateLog('更新失败: ' + (task.message || ''), 'error');
+    resetButtonStates();
+    stopPolling();
+    return;
+  }
+
+  if (task.status === 'done') {
+    statusEl.className = 'update-status success';
+    statusMsg.textContent = task.message || '更新安装成功';
+    addUpdateLog(`版本 v${task.version || ''} 安装成功`, 'success');
+    if (task.backupPath) {
+      addUpdateLog(`备份已保存到: ${task.backupPath}`, 'info');
+    }
+    document.getElementById('downloadBtn').style.display = 'none';
+    document.getElementById('forceUpdateBtn').style.display = 'none';
+    stopPolling();
+    startRestartCountdown(3);
+    return;
+  }
+
+  // 进行中
+  statusEl.className = 'update-status downloading';
+  statusMsg.textContent = task.message || '更新进行中...';
+}
+
+function setButtonsDisabled(disabled) {
+  ['checkUpdateBtn', 'downloadBtn', 'forceUpdateBtn', 'restartBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
+}
+
+function resetButtonStates() {
+  ['checkUpdateBtn', 'downloadBtn', 'forceUpdateBtn', 'restartBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = false;
+    const text = el.querySelector('.btn-text');
+    const loading = el.querySelector('.btn-loading');
+    if (text) text.style.display = 'inline';
+    if (loading) loading.style.display = 'none';
+  });
+}
+
+function startRestartCountdown(seconds) {
+  const statusMsg = document.getElementById('statusMessage');
+  let countdown = seconds;
+  const interval = setInterval(() => {
+    statusMsg.textContent = `服务器将在 ${countdown} 秒后自动重启...`;
+    countdown--;
+    if (countdown < 0) {
+      clearInterval(interval);
+      statusMsg.textContent = '正在重启，请稍后刷新页面...';
+      setTimeout(() => { window.location.reload(); }, 5000);
+    }
+  }, 1000);
+}
+
+// 页面加载时自动加载系统信息，并恢复进行中的更新任务状态
 document.addEventListener('DOMContentLoaded', function() {
   loadSystemInfo();
+  startPolling();
 });
 
 function renderMarkdown(text) {
@@ -744,113 +821,6 @@ function renderChangelog(changelog) {
 }
 
 async function forceUpdate() {
-  var btn = document.getElementById('forceUpdateBtn');
-  var btnText = btn.querySelector('.btn-text');
-  var btnLoading = btn.querySelector('.btn-loading');
-  var updateStatus = document.getElementById('updateStatus');
-
-  if (!updateData || !updateData.downloadUrl) {
-    btn.disabled = true;
-    btnText.style.display = 'none';
-    btnLoading.style.display = 'inline';
-    updateStatus.className = 'update-status downloading';
-    updateStatus.innerHTML = '<div class="status-message">正在获取最新版本信息...</div>';
-
-    try {
-      var checkRes = await fetch('/admin/system-update/check', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'CSRF-Token': getCsrfToken(),
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
-      var checkResult = await checkRes.json();
-      if (!checkResult.success || !checkResult.data || !checkResult.data.downloadUrl) {
-        throw new Error(checkResult.error || '无法获取最新版本信息');
-      }
-      updateData = checkResult.data;
-      addUpdateLog('获取到最新版本 v' + updateData.latestVersion, 'info');
-    } catch (err) {
-      updateStatus.className = 'update-status error';
-      updateStatus.innerHTML = '<div class="status-message">获取最新版本失败: ' + err.message + '</div>';
-      addUpdateLog('获取最新版本失败: ' + err.message, 'error');
-      btn.disabled = false;
-      btnText.style.display = 'inline';
-      btnLoading.style.display = 'none';
-      return;
-    }
-  }
-
-  if (!confirm('⚠️ 强制更新将直接下载并覆盖安装最新版本 v' + updateData.latestVersion + '，无论当前版本是否已是最新。\n\n更新前会自动备份，是否继续？')) {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
-    return;
-  }
-
-  btn.disabled = true;
-  btnText.style.display = 'none';
-  btnLoading.style.display = 'inline';
-
-  updateStatus.className = 'update-status downloading';
-  updateStatus.innerHTML = '<div class="status-message">正在强制更新到 v' + updateData.latestVersion + '，请稍候...</div>';
-
-  addUpdateLog('开始强制更新到 v' + updateData.latestVersion, 'info');
-
-  try {
-    var response = await fetch('/admin/system-update/download', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CSRF-Token': getCsrfToken(),
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      body: JSON.stringify({
-        downloadUrl: updateData.downloadUrl,
-        version: updateData.latestVersion
-      })
-    });
-
-    var result = await response.json();
-
-    if (result.success) {
-      updateStatus.className = 'update-status success';
-      updateStatus.innerHTML = '<div class="status-message">强制更新成功！已安装 v' + updateData.latestVersion + '</div>';
-      addUpdateLog('强制更新成功，已安装 v' + updateData.latestVersion, 'success');
-
-      document.getElementById('currentVersion').textContent = updateData.latestVersion;
-      btn.style.display = 'none';
-      document.getElementById('downloadBtn').style.display = 'none';
-
-      if (result.autoRestart) {
-        addUpdateLog('服务器将在3秒后自动重启...', 'info');
-        let countdown = 3;
-        const countdownInterval = setInterval(() => {
-          updateStatus.innerHTML = '<div class="status-message">服务器将在 ' + countdown + ' 秒后自动重启...</div>';
-          countdown--;
-          if (countdown < 0) {
-            clearInterval(countdownInterval);
-            updateStatus.innerHTML = '<div class="status-message">正在重启，请稍后刷新页面...</div>';
-            setTimeout(function() { window.location.reload(); }, 5000);
-          }
-        }, 1000);
-      } else {
-        if (confirm('更新已完成，是否立即重启服务器以应用更改？')) {
-          restartServer();
-        }
-      }
-    } else {
-      throw new Error(result.error || '更新失败');
-    }
-  } catch (error) {
-    updateStatus.className = 'update-status error';
-    updateStatus.innerHTML = '<div class="status-message">强制更新失败: ' + error.message + '</div>';
-    addUpdateLog('强制更新失败: ' + error.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btnText.style.display = 'inline';
-    btnLoading.style.display = 'none';
-  }
+  startUpdateTask(true);
 }
 </script>
