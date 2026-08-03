@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const { isAuthenticated, hasPermission, ROLE_HIERARCHY } = require('../../middlewares/auth');
+const { isAuthenticated, hasPermission, isSuperAdmin, ROLE_HIERARCHY } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne, generateUid } = require('../../config/database');
 const { grantDefaultPermissions } = require('../../config/db-helpers');
 const { logActivity } = require('../../config/activity');
@@ -16,11 +16,12 @@ router.get('/users', isAuthenticated, hasPermission('users.manage'), (req, res) 
   res.render('admin/users', {
     user: req.session.user,
     users: users,
+    readOnly: req.session.user.role !== 'super_admin',
     settings: res.locals.settings || {}
   });
 });
 
-router.post('/users/create', isAuthenticated, hasPermission('users.manage'), (req, res) => {
+router.post('/users/create', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { username, email, password, role } = req.body;
 
@@ -70,7 +71,7 @@ router.post('/users/create', isAuthenticated, hasPermission('users.manage'), (re
   res.json({ success: true, message: '账户创建成功' });
 });
 
-router.post('/users/approve/:id', isAuthenticated, hasPermission('users.manage'), (req, res) => {
+router.post('/users/approve/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const targetUser = queryOne(db, 'SELECT username, status FROM users WHERE id = ?', [req.params.id]);
   db.run("UPDATE users SET status = 'active' WHERE id = ?", [req.params.id]);
@@ -93,7 +94,7 @@ router.post('/users/approve/:id', isAuthenticated, hasPermission('users.manage')
   res.redirect('/admin/users');
 });
 
-router.post('/users/disable/:id', isAuthenticated, hasPermission('users.manage'), (req, res) => {
+router.post('/users/disable/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
   if (parseInt(req.params.id) === req.session.user.id) {
@@ -129,7 +130,7 @@ router.post('/users/disable/:id', isAuthenticated, hasPermission('users.manage')
   res.redirect('/admin/users');
 });
 
-router.post('/users/role/:id', isAuthenticated, hasPermission('users.manage'), (req, res) => {
+router.post('/users/role/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { role } = req.body;
 
@@ -152,7 +153,7 @@ router.post('/users/role/:id', isAuthenticated, hasPermission('users.manage'), (
   res.redirect('/admin/users');
 });
 
-router.post('/users/delete/:id', isAuthenticated, hasPermission('users.manage'), (req, res) => {
+router.post('/users/delete/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
   if (parseInt(req.params.id) === req.session.user.id) {
@@ -192,7 +193,7 @@ const csvUpload = multer({
   }
 });
 
-router.post('/users/import-csv', isAuthenticated, hasPermission('users.manage'), csvUpload.single('csv_file'), (req, res) => {
+router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single('csv_file'), (req, res) => {
   const db = req.db;
   if (!req.file) {
     return res.status(400).json({ error: '请上传 CSV 文件' });

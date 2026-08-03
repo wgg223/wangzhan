@@ -11,8 +11,10 @@ class MessageApi {
   /// 会话列表
   static Future<List<Conversation>> conversations() async {
     final data = await _client.get(AppConfig.api('/conversations'));
-    final list = (data as Map)['conversations'] is List ? (data as Map)['conversations'] : const [];
-    return list.map((e) => Conversation.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['conversations'];
+    return raw is List
+        ? raw.map((e) => Conversation.fromJson(e as Map<String, dynamic>)).toList()
+        : const <Conversation>[];
   }
 
   /// 创建会话（与某用户私聊）
@@ -24,8 +26,10 @@ class MessageApi {
   /// 消息列表
   static Future<List<ChatMessage>> messages(int conversationId, {int page = 1}) async {
     final data = await _client.get(AppConfig.api('/conversations/$conversationId'), query: {'page': page});
-    final list = (data as Map)['messages'] is List ? (data as Map)['messages'] : const [];
-    return list.map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['messages'];
+    return raw is List
+        ? raw.map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList()
+        : const <ChatMessage>[];
   }
 
   /// 发送消息

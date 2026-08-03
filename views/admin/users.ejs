@@ -1,11 +1,20 @@
 <% var active = 'users' %>
+<% var readOnly = typeof readOnly !== 'undefined' && readOnly; %>
 <div class="admin-page">
   <div class="page-header">
     <h1>👥 用户管理</h1>
     <div class="actions">
+      <% if (!readOnly) { %>
       <button type="button" class="btn btn-primary" onclick="openCreateUserModal()">+ 添加用户</button>
+      <% } %>
     </div>
   </div>
+  
+  <% if (readOnly) { %>
+  <div class="alert alert-info read-only-banner">
+    <span>👁️</span> 当前为只读模式：您仅可查看用户列表，添加、禁用、删除、修改角色等操作仅超级管理员可用。如需操作权限，请前往 <a href="/permissions/apply">🔑 权限申请</a> 页面申请。
+  </div>
+  <% } %>
   
   <div class="section-card accent-primary">
     <div class="section-header bg-gradient-primary">
@@ -21,7 +30,7 @@
             <th>角色</th>
             <th>状态</th>
             <th>注册时间</th>
-            <th>操作</th>
+            <% if (!readOnly) { %><th>操作</th><% } %>
           </tr>
         </thead>
         <tbody>
@@ -38,7 +47,7 @@
                     <% if (u.role === 'user') { %>👤 用户<% } %>
                     <% if (u.role === 'visitor') { %>👁️ 访客<% } %>
                   </span>
-                  <% if (u.role !== 'super_admin') { %>
+                  <% if (!readOnly && u.role !== 'super_admin') { %>
                     <form action="/admin/users/role/<%= u.id %>" method="POST" class="inline-form" style="margin-left:6px;">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                       <select name="role" onchange="this.form.submit()" style="font-size:11px;padding:2px 6px;border-radius:4px;border:1px solid var(--gray-200);" <%= (u.id === user.id) ? 'disabled' : '' %>>
@@ -57,6 +66,7 @@
                   </span>
                 </td>
                 <td><%= new Date(u.created_at).toLocaleDateString('zh-CN') %></td>
+                <% if (!readOnly) { %>
                 <td class="actions">
                   <% if (u.id !== user.id) { %>
                     <% if (u.status === 'pending') { %>
@@ -86,11 +96,12 @@
                     <span class="current-user-label">当前登录</span>
                   <% } %>
                 </td>
+                <% } %>
               </tr>
             <% }) %>
           <% } else { %>
             <tr>
-              <td colspan="7" class="empty-row">暂无用户</td>
+              <td colspan="<%= readOnly ? 6 : 7 %>" class="empty-row">暂无用户</td>
             </tr>
           <% } %>
         </tbody>
@@ -107,6 +118,11 @@
   background: var(--gray-50);
   padding: 2px 8px;
   border-radius: var(--radius-xs);
+}
+
+.read-only-banner a {
+  font-weight: 600;
+  text-decoration: underline;
 }
 </style>
 

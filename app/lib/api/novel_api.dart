@@ -11,8 +11,10 @@ class NovelApi {
   /// 小说列表
   static Future<List<Novel>> list({int page = 1, int limit = 10}) async {
     final data = await _client.get(AppConfig.api('/novels'), query: {'page': page, 'limit': limit});
-    final items = (data as Map)['novels'] is List ? (data as Map)['novels'] : const [];
-    return items.map((e) => Novel.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['novels'];
+    return raw is List
+        ? raw.map((e) => Novel.fromJson(e as Map<String, dynamic>)).toList()
+        : const <Novel>[];
   }
 
   /// 小说详情（含章节列表）

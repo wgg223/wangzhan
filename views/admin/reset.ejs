@@ -47,14 +47,14 @@
       </label>
       
       <label class="selective-reset-item">
-        <input type="checkbox" name="reset-items" value="content" data-count="<%= globalStats.media %>">
+        <input type="checkbox" name="reset-items" value="content" data-count="<%= globalStats.content %>">
         <div class="selective-reset-content">
           <span class="selective-reset-icon">📝</span>
           <div>
             <span class="selective-reset-name">内容数据</span>
             <span class="selective-reset-desc">文章、页面、评论、草稿</span>
           </div>
-          <span class="selective-reset-count"><%= globalStats.media %></span>
+          <span class="selective-reset-count"><%= globalStats.content %></span>
         </div>
       </label>
       
@@ -71,14 +71,14 @@
       </label>
       
       <label class="selective-reset-item">
-        <input type="checkbox" name="reset-items" value="social" data-count="<%= globalStats.content_likes + globalStats.user_follows %>">
+        <input type="checkbox" name="reset-items" value="social" data-count="<%= globalStats.social %>">
         <div class="selective-reset-content">
           <span class="selective-reset-icon">💬</span>
           <div>
             <span class="selective-reset-name">社交数据</span>
             <span class="selective-reset-desc">站内信、通知、点赞、关注</span>
           </div>
-          <span class="selective-reset-count"><%= globalStats.content_likes + globalStats.user_follows %></span>
+          <span class="selective-reset-count"><%= globalStats.social %></span>
         </div>
       </label>
       

@@ -11,8 +11,10 @@ class ImageShareApi {
   /// 分类列表
   static Future<List<ImageCategory>> categories() async {
     final data = await _client.get(AppConfig.api('/image-categories'));
-    final list = (data as Map)['categories'] is List ? (data as Map)['categories'] : const [];
-    return list.map((e) => ImageCategory.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['categories'];
+    return raw is List
+        ? raw.map((e) => ImageCategory.fromJson(e as Map<String, dynamic>)).toList()
+        : const <ImageCategory>[];
   }
 
   /// 图片列表
@@ -28,8 +30,10 @@ class ImageShareApi {
       if (categoryId != null) 'category': categoryId,
       if (q != null && q.isNotEmpty) 'q': q,
     });
-    final items = (data as Map)['images'] is List ? (data as Map)['images'] : const [];
-    return items.map((e) => ImageItem.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['images'];
+    return raw is List
+        ? raw.map((e) => ImageItem.fromJson(e as Map<String, dynamic>)).toList()
+        : const <ImageItem>[];
   }
 
   /// 图片详情
@@ -41,8 +45,10 @@ class ImageShareApi {
   /// 我的收藏
   static Future<List<ImageItem>> favorites({int page = 1}) async {
     final data = await _client.get(AppConfig.api('/images/favorites'), query: {'page': page});
-    final items = (data as Map)['images'] is List ? (data as Map)['images'] : const [];
-    return items.map((e) => ImageItem.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['images'];
+    return raw is List
+        ? raw.map((e) => ImageItem.fromJson(e as Map<String, dynamic>)).toList()
+        : const <ImageItem>[];
   }
 
   /// 收藏/取消收藏
@@ -60,8 +66,10 @@ class ImageShareApi {
   /// 图片评论列表
   static Future<List<ImageComment>> comments(int imageId) async {
     final data = await _client.get(AppConfig.api('/images/$imageId/comments'));
-    final list = (data as Map)['comments'] is List ? (data as Map)['comments'] : const [];
-    return list.map((e) => ImageComment.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['comments'];
+    return raw is List
+        ? raw.map((e) => ImageComment.fromJson(e as Map<String, dynamic>)).toList()
+        : const <ImageComment>[];
   }
 
   /// 发表评论

@@ -12,8 +12,10 @@ class CommunityApi {
   /// 动态流
   static Future<List<CommunityPost>> feed({int page = 1, int limit = 10}) async {
     final data = await _client.get(AppConfig.api('/community/feed'), query: {'page': page, 'limit': limit});
-    final list = (data as Map)['posts'] is List ? (data as Map)['posts'] : const [];
-    return list.map((e) => CommunityPost.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['posts'];
+    return raw is List
+        ? raw.map((e) => CommunityPost.fromJson(e as Map<String, dynamic>)).toList()
+        : const <CommunityPost>[];
   }
 
   /// 发布动态
@@ -42,8 +44,10 @@ class CommunityApi {
   /// 通知列表
   static Future<List<AppNotification>> notifications({int page = 1}) async {
     final data = await _client.get(AppConfig.api('/notifications'), query: {'page': page});
-    final list = (data as Map)['notifications'] is List ? (data as Map)['notifications'] : const [];
-    return list.map((e) => AppNotification.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['notifications'];
+    return raw is List
+        ? raw.map((e) => AppNotification.fromJson(e as Map<String, dynamic>)).toList()
+        : const <AppNotification>[];
   }
 
   /// 标记通知已读

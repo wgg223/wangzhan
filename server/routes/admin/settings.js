@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated, hasPermission } = require('../../middlewares/auth');
+const { isAuthenticated, hasPermission, isSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { testSmtpConfig } = require('../../config/mailer');
@@ -12,13 +12,17 @@ const { getSettings, upsertSettings } = require('../../utils/settings');
 
 // ============ 网站设置 ============
 
-router.get('/settings', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
+router.get('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const settingsObj = getSettings(db);
 
-  // 获取用户权限
-  const userPermissions = queryAll(db, 'SELECT permission_key FROM user_permissions WHERE user_id = ?', [req.session.user.id]);
-  const permissions = userPermissions.map(p => p.permission_key);
+  // 获取用户权限（super_admin/admin 拥有全部权限）
+  let permissions;
+  if (req.session.user.role === 'super_admin' || req.session.user.role === 'admin') {
+    permissions = queryAll(db, 'SELECT perm_key FROM permissions').map(p => p.perm_key);
+  } else {
+    permissions = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [req.session.user.id]).map(p => p.perm_key);
+  }
 
   res.render('admin/settings', {
     user: req.session.user,
@@ -28,7 +32,7 @@ router.get('/settings', isAuthenticated, hasPermission('settings.manage'), (req,
   });
 });
 
-router.post('/settings', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
+router.post('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { site_name, site_description, icp_number, icp_link, footer_text, logo, user_agreement, privacy_policy, delete_account_agreement, welcome_popup_enabled, welcome_popup_title, welcome_popup_content } = req.body;
 
@@ -75,7 +79,7 @@ router.post('/settings', isAuthenticated, hasPermission('settings.manage'), (req
 // ============ SMTP 配置测试 ============
 
 // 测试SMTP连接
-router.post('/settings/test-smtp', isAuthenticated, hasPermission('settings.manage'), async (req, res) => {
+router.post('/settings/test-smtp', isAuthenticated, isSuperAdmin, async (req, res) => {
   const { smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass } = req.body;
 
   if (!smtp_host || !smtp_user || !smtp_pass) {
@@ -99,7 +103,7 @@ router.post('/settings/test-smtp', isAuthenticated, hasPermission('settings.mana
 // ============ CDN 配置测试 ============
 
 // 测试CDN连接
-router.post('/settings/test-cdn', isAuthenticated, hasPermission('settings.manage'), async (req, res) => {
+router.post('/settings/test-cdn', isAuthenticated, isSuperAdmin, async (req, res) => {
   const { cdn_base_url } = req.body;
 
   if (!cdn_base_url) {
@@ -149,7 +153,7 @@ router.post('/settings/test-cdn', isAuthenticated, hasPermission('settings.manag
   }
 });
 
-router.post('/upload-background', isAuthenticated, hasPermission('settings.manage'), upload.single('background'), (req, res) => {
+router.post('/upload-background', isAuthenticated, isSuperAdmin, upload.single('background'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '没有上传文件' });
   }
@@ -163,7 +167,7 @@ router.post('/upload-background', isAuthenticated, hasPermission('settings.manag
   res.json({ success: true, path: filePath });
 });
 
-router.post('/upload-logo', isAuthenticated, hasPermission('settings.manage'), upload.single('logo'), (req, res) => {
+router.post('/upload-logo', isAuthenticated, isSuperAdmin, upload.single('logo'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '没有上传文件' });
   }
@@ -181,7 +185,7 @@ router.post('/upload-logo', isAuthenticated, hasPermission('settings.manage'), u
 const fs = require('fs');
 const path = require('path');
 
-router.get('/settings/backup', isAuthenticated, hasPermission('data.manage'), (req, res) => {
+router.get('/settings/backup', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   try {
     const settings = queryAll(db, 'SELECT * FROM settings');
@@ -218,7 +222,7 @@ router.get('/settings/backup', isAuthenticated, hasPermission('data.manage'), (r
   }
 });
 
-router.get('/settings/backup/list', isAuthenticated, hasPermission('data.manage'), (req, res) => {
+router.get('/settings/backup/list', isAuthenticated, isSuperAdmin, (req, res) => {
   const backupDir = path.join(__dirname, '../../../backups');
   try {
     if (!fs.existsSync(backupDir)) {
@@ -242,7 +246,7 @@ router.get('/settings/backup/list', isAuthenticated, hasPermission('data.manage'
   }
 });
 
-router.post('/settings/backup/restore', isAuthenticated, hasPermission('data.manage'), (req, res) => {
+router.post('/settings/backup/restore', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { filename } = req.body;
 
@@ -378,7 +382,7 @@ router.post('/settings/oauth', isAuthenticated, hasPermission('settings.manage')
 
 // ============ 数据库维护 ============
 
-router.post('/settings/dedup', isAuthenticated, hasPermission('data.manage'), (req, res) => {
+router.post('/settings/dedup', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { deduplicateDatabase } = require('../../config/db-dedup');
 
@@ -401,7 +405,7 @@ router.post('/settings/dedup', isAuthenticated, hasPermission('data.manage'), (r
   }
 });
 
-router.post('/settings/vacuum', isAuthenticated, hasPermission('data.manage'), (req, res) => {
+router.post('/settings/vacuum', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
   try {

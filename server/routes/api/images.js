@@ -72,6 +72,26 @@ router.get('/image-categories', (req, res) => {
   res.json({ categories: categories || [] });
 });
 
+// ============ 我的收藏 ============
+router.get('/images/favorites', apiAuth, (req, res) => {
+  const db = getDb();
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+  const offset = (page - 1) * limit;
+
+  const rows = queryAll(db, `
+    SELECT i.*, u.username, u.nickname, u.avatar AS user_avatar, c.name AS category_name
+    FROM image_favorites f
+    JOIN images i ON f.image_id = i.id
+    LEFT JOIN users u ON i.user_id = u.id
+    LEFT JOIN image_categories c ON i.cate_id = c.id
+    WHERE f.user_id = ? AND i.status = 1
+    ORDER BY f.created_at DESC LIMIT ? OFFSET ?
+  `, [req.apiUser.id, limit, offset]);
+
+  res.json({ images: rows.map((r) => imageWithMeta(r, req.apiUser.id)) });
+});
+
 // ============ 图片列表 ============
 router.get('/images', (req, res) => {
   const db = getDb();
@@ -136,26 +156,6 @@ router.get('/images/:id', (req, res) => {
   if (!isAllowed) return res.status(403).json({ error: '无权查看该图片' });
 
   res.json({ image: imageWithMeta(row, user ? user.id : null) });
-});
-
-// ============ 我的收藏 ============
-router.get('/images/favorites', apiAuth, (req, res) => {
-  const db = getDb();
-  const page = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
-  const offset = (page - 1) * limit;
-
-  const rows = queryAll(db, `
-    SELECT i.*, u.username, u.nickname, u.avatar AS user_avatar, c.name AS category_name
-    FROM image_favorites f
-    JOIN images i ON f.image_id = i.id
-    LEFT JOIN users u ON i.user_id = u.id
-    LEFT JOIN image_categories c ON i.cate_id = c.id
-    WHERE f.user_id = ? AND i.status = 1
-    ORDER BY f.created_at DESC LIMIT ? OFFSET ?
-  `, [req.apiUser.id, limit, offset]);
-
-  res.json({ images: rows.map((r) => imageWithMeta(r, req.apiUser.id)) });
 });
 
 // ============ 收藏/取消收藏 ============

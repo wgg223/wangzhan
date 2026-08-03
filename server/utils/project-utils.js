@@ -21,12 +21,50 @@ function getProjectInfo(db, projectId) {
   if (project) {
     return {
       ...project,
-      tables: JSON.parse(project.tables),
-      file_dirs: JSON.parse(project.file_dirs || '[]')
+      tables: parseJsonArray(project.tables),
+      file_dirs: parseJsonArray(project.file_dirs)
     };
   }
   // 后备：使用硬编码定义
   return PROJECT_DEFINITIONS[projectId] || null;
+}
+
+/**
+ * 获取所有已启用项目定义（优先从数据库读取，后备使用硬编码定义）
+ * @param {Object} db - 数据库实例
+ * @returns {Object[]} 项目定义数组
+ */
+function getAllProjectDefinitions(db) {
+  let projects = [];
+  try {
+    const dbProjects = queryAll(db, 'SELECT * FROM projects WHERE is_active = 1 ORDER BY created_at ASC');
+    if (dbProjects.length > 0) {
+      projects = dbProjects.map(p => ({
+        ...p,
+        tables: parseJsonArray(p.tables),
+        file_dirs: parseJsonArray(p.file_dirs)
+      }));
+    }
+  } catch (e) { /* 表不存在等异常，回退硬编码定义 */ }
+
+  if (projects.length === 0) {
+    projects = Object.values(PROJECT_DEFINITIONS);
+  }
+
+  return projects;
+}
+
+/**
+ * 安全解析 JSON 数组字段，脏数据不抛异常
+ */
+function parseJsonArray(json) {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 /**
@@ -57,9 +95,11 @@ function getProjectStats(db, tables) {
  */
 async function cleanProjectFiles(fileDirs) {
   let deletedFiles = 0;
-  const uploadsDir = path.join(__dirname, '../../public');
+  const uploadsDir = path.resolve(__dirname, '../../public');
   for (const dir of fileDirs) {
-    const dirPath = path.join(uploadsDir, dir);
+    // 防止 file_dirs 越界（如 ../ 或空字符串指向 public 根目录），只允许 public 内且非根目录
+    const dirPath = path.resolve(uploadsDir, dir);
+    if (dirPath === uploadsDir || !dirPath.startsWith(uploadsDir + path.sep)) continue;
     try {
       const stat = await fs.promises.stat(dirPath).catch(() => null);
       if (!stat || !stat.isDirectory()) continue;
@@ -222,6 +262,7 @@ function getDeployStatus(projectId) {
 
 module.exports = {
   getProjectInfo,
+  getAllProjectDefinitions,
   getProjectStats,
   cleanProjectFiles,
   isValidGithubUrl,

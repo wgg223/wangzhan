@@ -24,77 +24,130 @@
 </head>
 <body>
 <%
-  // 辅助函数：检查用户是否有某个模块的任意权限（前缀匹配）
+  // 辅助函数：检查用户是否拥有某个权限（精确匹配 + 通配符 xxx.* + 层级 xxx.edit.all 覆盖 xxx.edit.own）
   function hasPerm(permissions, permKey) {
     if (!permissions || !Array.isArray(permissions)) return false;
     if (permissions.indexOf(permKey) !== -1) return true;
-    var prefix = permKey.split('.')[0] + '.';
-    return permissions.some(function(key) { return key.indexOf(prefix) === 0; });
+    var wildcard = permKey.split('.')[0] + '.*';
+    if (permissions.indexOf(wildcard) !== -1) return true;
+    return permissions.some(function(key) {
+      var kp = key.split('.');
+      var pp = permKey.split('.');
+      // 层级匹配：articles.edit.all 覆盖 articles.edit.own
+      if (kp.length === 3 && kp[2] === 'all' && kp[0] === pp[0] && kp[1] === pp[1]) return true;
+      return false;
+    });
   }
+  // 辅助函数：判断当前菜单是否处于激活状态
+  var _cur = typeof currentPath !== 'undefined' ? currentPath : '';
+  function isActive(path) {
+    if (!_cur) return false;
+    if (path === '/admin' && _cur !== '/admin') return false;
+    return _cur.indexOf(path) === 0;
+  }
+  var _isSuper = user && user.role === 'super_admin';
+  var _roleName = _isSuper ? '超级管理员' : (user.role === 'admin' ? '管理员' : (user.role === 'visitor' ? '访客' : '普通用户'));
+  var _roleIcon = _isSuper ? '👑' : (user.role === 'admin' ? '🛡️' : (user.role === 'visitor' ? '👁️' : '👤'));
 %>
 <div class="admin-container">
     <aside class="sidebar">
       <div class="sidebar-header">
         <h2>后台管理</h2>
       </div>
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar"><%= _roleIcon %></div>
+        <div class="sidebar-user-info">
+          <span class="sidebar-user-name"><%= user.username %></span>
+          <span class="sidebar-user-role role-<%= user.role %>"><%= _roleName %></span>
+        </div>
+      </div>
       <nav class="sidebar-nav">
-        <ul>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'site_stats.view')) { %>
-          <li><a href="/admin/site-stats">📈 站点统计</a></li>
-          <% } %>
-          <% if (user.role === 'super_admin') { %>
-          <li><a href="/admin">📊 仪表盘</a></li>
-          <% } %>
-          <% if (user.role === 'super_admin') { %>
-          <li><a href="/admin/activity-logs">📋 操作日志</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'pages.manage')) { %>
-          <li><a href="/admin/pages">📄 页面管理</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'articles.manage')) { %>
-          <li><a href="/admin/articles">📝 文章管理</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'novels.manage')) { %>
-          <li><a href="/admin/novels">📚 小说管理</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'users.manage')) { %>
-          <li><a href="/admin/users">👥 用户管理</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'permissions.manage')) { %>
-          <li><a href="/admin/permissions">🔐 权限管理</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'comments.manage')) { %>
-          <li><a href="/admin/comments">💬 评论管理</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'messages.manage')) { %>
-          <li><a href="/admin/messages">📬 站内信</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'leaderboard.manage')) { %>
-          <li><a href="/admin/leaderboard">🏆 排行榜</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.manage')) { %>
-          <li><a href="/admin/image-share">🖼️ 图片分享</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'settings.manage')) { %>
-          <li><a href="/admin/settings/basic">⚙️ 基础设置</a></li>
-          <li><a href="/admin/settings/smtp">📧 SMTP配置</a></li>
-          <li><a href="/admin/settings/oauth">🔗 第三方登录</a></li>
-          <li><a href="/admin/settings/agreement">📄 协议设置</a></li>
-          <li><a href="/admin/settings/popup">🪟 弹窗设置</a></li>
-          <li><a href="/admin/settings">🚀 CDN设置</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'settings.manage')) { %>
-          <li><a href="/admin/system-update">🔄 系统更新</a></li>
-          <% } %>
-          <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'data.manage')) { %>
-            <li><a href="/admin/backup">💾 备份管理</a></li>
-          <% } %>
-          <% if (user.role === 'super_admin') { %>
-            <li><a href="/admin/maintenance">🔧 服务器维护</a></li>
-            <li><a href="/admin/projects">📦 项目管理</a></li>
-            <li><a href="/admin/reset" style="color:#ef4444;">⚠️ 重置服务器</a></li>
-          <% } %>
-        </ul>
+        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'site_stats.view') || user.role === 'super_admin')) { %>
+        <div class="nav-group">
+          <p class="nav-group-title">概览</p>
+          <ul>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'site_stats.view')) { %>
+            <li><a href="/admin/site-stats" class="<%= isActive('/admin/site-stats') ? 'active' : '' %>">📈 站点统计</a></li>
+            <% } %>
+            <% if (user.role === 'super_admin') { %>
+            <li><a href="/admin" class="<%= isActive('/admin') ? 'active' : '' %>">📊 仪表盘</a></li>
+            <li><a href="/admin/activity-logs" class="<%= isActive('/admin/activity-logs') ? 'active' : '' %>">📋 操作日志</a></li>
+            <% } %>
+          </ul>
+        </div>
+        <% } %>
+        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'pages.manage') || hasPerm(userPermissions, 'articles.manage') || hasPerm(userPermissions, 'novels.manage') || hasPerm(userPermissions, 'comments.manage'))) { %>
+        <div class="nav-group">
+          <p class="nav-group-title">内容管理</p>
+          <ul>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'pages.manage')) { %>
+            <li><a href="/admin/pages" class="<%= isActive('/admin/pages') ? 'active' : '' %>">📄 页面管理</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'articles.manage')) { %>
+            <li><a href="/admin/articles" class="<%= isActive('/admin/articles') ? 'active' : '' %>">📝 文章管理</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'novels.manage')) { %>
+            <li><a href="/admin/novels" class="<%= isActive('/admin/novels') ? 'active' : '' %>">📚 小说管理</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'comments.manage')) { %>
+            <li><a href="/admin/comments" class="<%= isActive('/admin/comments') ? 'active' : '' %>">💬 评论管理</a></li>
+            <% } %>
+          </ul>
+        </div>
+        <% } %>
+        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'messages.manage') || hasPerm(userPermissions, 'leaderboard.manage') || hasPerm(userPermissions, 'image-share.manage'))) { %>
+        <div class="nav-group">
+          <p class="nav-group-title">社区互动</p>
+          <ul>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'messages.manage')) { %>
+            <li><a href="/admin/messages" class="<%= isActive('/admin/messages') ? 'active' : '' %>">📬 站内信</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'leaderboard.manage')) { %>
+            <li><a href="/admin/leaderboard" class="<%= isActive('/admin/leaderboard') ? 'active' : '' %>">🏆 排行榜</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.manage')) { %>
+            <li><a href="/admin/image-share" class="<%= isActive('/admin/image-share') ? 'active' : '' %>">🖼️ 图片分享</a></li>
+            <% } %>
+          </ul>
+        </div>
+        <% } %>
+        <div class="nav-group">
+          <p class="nav-group-title">用户与权限</p>
+          <ul>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'users.manage')) { %>
+            <li><a href="/admin/users" class="<%= isActive('/admin/users') ? 'active' : '' %>">👥 用户管理</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'permissions.manage')) { %>
+            <li><a href="/admin/permissions" class="<%= isActive('/admin/permissions') ? 'active' : '' %>">🔐 权限管理</a></li>
+            <% } %>
+            <li><a href="/permissions/apply" class="<%= isActive('/permissions/apply') ? 'active' : '' %>">🔑 权限申请</a></li>
+          </ul>
+        </div>
+        <% if ((user.role === 'admin' || user.role === 'super_admin') && typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'settings.manage')) { %>
+        <div class="nav-group">
+          <p class="nav-group-title">网站设置</p>
+          <ul>
+            <li><a href="/admin/settings/basic" class="<%= isActive('/admin/settings/basic') ? 'active' : '' %>">⚙️ 基础设置</a></li>
+            <li><a href="/admin/settings/smtp" class="<%= isActive('/admin/settings/smtp') ? 'active' : '' %>">📧 SMTP配置</a></li>
+            <li><a href="/admin/settings/oauth" class="<%= isActive('/admin/settings/oauth') ? 'active' : '' %>">🔗 第三方登录</a></li>
+            <li><a href="/admin/settings/agreement" class="<%= isActive('/admin/settings/agreement') ? 'active' : '' %>">📄 协议设置</a></li>
+            <li><a href="/admin/settings/popup" class="<%= isActive('/admin/settings/popup') ? 'active' : '' %>">🪟 弹窗设置</a></li>
+          </ul>
+        </div>
+        <% } %>
+        <% if (user.role === 'super_admin') { %>
+        <div class="nav-group">
+          <p class="nav-group-title">服务器设置</p>
+          <ul>
+            <li><a href="/admin/settings" class="<%= isActive('/admin/settings') && !isActive('/admin/settings/basic') && !isActive('/admin/settings/smtp') && !isActive('/admin/settings/oauth') && !isActive('/admin/settings/agreement') && !isActive('/admin/settings/popup') ? 'active' : '' %>">🚀 CDN设置</a></li>
+            <li><a href="/admin/system-update" class="<%= isActive('/admin/system-update') ? 'active' : '' %>">🔄 系统更新</a></li>
+            <li><a href="/admin/backup" class="<%= isActive('/admin/backup') ? 'active' : '' %>">💾 备份管理</a></li>
+            <li><a href="/admin/maintenance" class="<%= isActive('/admin/maintenance') ? 'active' : '' %>">🔧 服务器维护</a></li>
+            <li><a href="/admin/projects" class="<%= isActive('/admin/projects') ? 'active' : '' %>">📦 项目管理</a></li>
+            <li><a href="/admin/reset" class="danger-link <%= isActive('/admin/reset') ? 'active' : '' %>">⚠️ 重置服务器</a></li>
+          </ul>
+        </div>
+        <% } %>
       </nav>
       <div class="sidebar-footer">
         <p>当前用户：<%= user.username %></p>

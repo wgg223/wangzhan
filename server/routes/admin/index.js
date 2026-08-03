@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated, canAccessAdmin, hasPermission, isAdmin } = require('../../middlewares/auth');
+const { isAuthenticated, canAccessAdmin, isAdmin, isSuperAdmin } = require('../../middlewares/auth');
 
 // 导入子路由模块
 const dashboardRouter = require('./dashboard');
@@ -76,7 +76,7 @@ router.use(leaderboardRouter);
 router.use(imageShareRouter);
 router.use(mediaRouter);
 router.use(messagesRouter);
-router.use('/system-update', hasPermission('settings.manage'), systemUpdateRouter);
+router.use('/system-update', isSuperAdmin, systemUpdateRouter);
 router.use(backupRouter);
 router.use(maintenanceRouter);
 

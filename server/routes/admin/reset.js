@@ -2,12 +2,52 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const bcrypt = require('bcryptjs');
-const { isAuthenticated, canAccessAdmin, isSuperAdmin } = require('../../middlewares/auth');
+const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne, closeAndDeleteDatabase } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
-const { getProjectStats, cleanProjectFiles } = require('../../utils/project-utils');
-const { PROJECT_DEFINITIONS, DEPENDENT_TABLES, ALL_TABLES } = require('../../config/constants');
+const { getProjectStats, cleanProjectFiles, getAllProjectDefinitions } = require('../../utils/project-utils');
+const { DEPENDENT_TABLES, ALL_TABLES } = require('../../config/constants');
 const fsSafe = require('../../utils/fs-safe');
+
+const PUBLIC_DIR = path.resolve(__dirname, '../../public');
+
+// 全局重置补充表：未包含在项目定义 / ALL_TABLES 中的业务表。
+// 注意：这些表大多通过外键级联到 users，但显式清空更可靠，不依赖 foreign_keys 开关状态。
+const EXTRA_RESET_TABLES = [
+  'conversations', 'private_messages', 'user_message_settings',
+  'user_oauth_bindings', 'permission_applications', 'article_attachments', 'api_tokens'
+];
+
+// 选择性重置的合法类型
+const VALID_RESET_TYPES = ['users', 'content', 'media', 'social', 'logs', 'tags'];
+
+/**
+ * 将数据库中的相对路径（如 /uploads/xxx）解析为 public 目录内的绝对路径。
+ * 防止 file_path 含 ../ 或绝对路径时删除 public 目录之外的文件。
+ * @returns {string|null} 越界或非法时返回 null
+ */
+function safeFilePath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return null;
+  const rel = filePath.replace(/^[/\\]+/, '');
+  const full = path.resolve(PUBLIC_DIR, rel);
+  if (full !== PUBLIC_DIR && !full.startsWith(PUBLIC_DIR + path.sep)) return null;
+  return full;
+}
+
+/**
+ * 按 SQL 查询出的文件路径字段逐一删除文件，返回删除数量
+ */
+async function deleteDbFiles(db, sql, pathColumn) {
+  const rows = queryAll(db, sql);
+  let deleted = 0;
+  for (const row of rows) {
+    const filePath = safeFilePath(row[pathColumn]);
+    if (filePath && await fsSafe.safeUnlink(filePath)) {
+      deleted++;
+    }
+  }
+  return deleted;
+}
 
 /**
  * 收集所有项目的统计数据和全局统计
@@ -39,7 +79,10 @@ function collectAllStats(db) {
     tags: queryOne(db, 'SELECT COUNT(*) as count FROM tags')?.count || 0,
     content_tags: queryOne(db, 'SELECT COUNT(*) as count FROM content_tags')?.count || 0,
     content_versions: queryOne(db, 'SELECT COUNT(*) as count FROM content_versions')?.count || 0,
-    article_drafts: queryOne(db, 'SELECT COUNT(*) as count FROM article_drafts')?.count || 0
+    article_drafts: queryOne(db, 'SELECT COUNT(*) as count FROM article_drafts')?.count || 0,
+    // 选择性重置页面使用的汇总计数（修正原先 content 项误显示媒体数的问题）
+    content: queryOne(db, 'SELECT (SELECT COUNT(*) FROM articles) + (SELECT COUNT(*) FROM pages) + (SELECT COUNT(*) FROM comments) + (SELECT COUNT(*) FROM article_drafts) + (SELECT COUNT(*) FROM content_versions) AS count')?.count || 0,
+    social: queryOne(db, 'SELECT (SELECT COUNT(*) FROM internal_messages) + (SELECT COUNT(*) FROM notifications) + (SELECT COUNT(*) FROM content_likes) + (SELECT COUNT(*) FROM user_follows) AS count')?.count || 0
   };
 
   let totalRecords = 0;
@@ -63,6 +106,12 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
     return res.status(400).json({ success: false, error: '请选择要重置的数据类型' });
   }
 
+  // 过滤非法类型，避免前端伪造任意 type
+  const validTypes = types.filter(t => VALID_RESET_TYPES.includes(t));
+  if (validTypes.length === 0) {
+    return res.status(400).json({ success: false, error: '请选择要重置的数据类型' });
+  }
+
   const admin = queryOne(db, 'SELECT * FROM users WHERE id = ?', [req.session.user.id]);
   if (!admin || !bcrypt.compareSync(password, admin.password)) {
     return res.status(403).json({ success: false, error: '密码验证失败' });
@@ -72,7 +121,7 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
 
   try {
     // 用户数据
-    if (types.includes('users')) {
+    if (validTypes.includes('users')) {
       db.run("DELETE FROM users WHERE role != 'super_admin'");
       db.run('DELETE FROM user_permissions WHERE user_id NOT IN (SELECT id FROM users)');
       db.run('DELETE FROM user_follows');
@@ -80,7 +129,7 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
     }
 
     // 内容数据
-    if (types.includes('content')) {
+    if (validTypes.includes('content')) {
       db.run('DELETE FROM articles');
       db.run('DELETE FROM pages');
       db.run('DELETE FROM comments');
@@ -90,18 +139,11 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
     }
 
     // 媒体文件
-    if (types.includes('media')) {
+    if (validTypes.includes('media')) {
       // 删除文件
-      const mediaFiles = queryAll(db, 'SELECT file_path FROM media');
-      for (const m of mediaFiles) {
-        const filePath = path.join(__dirname, '../../public', m.file_path);
-        await fsSafe.safeUnlink(filePath);
-      }
-      const imageFiles = queryAll(db, 'SELECT url AS file_path FROM images');
-      for (const m of imageFiles) {
-        const filePath = path.join(__dirname, '../../public', m.file_path);
-        await fsSafe.safeUnlink(filePath);
-      }
+      await deleteDbFiles(db, 'SELECT file_path FROM media', 'file_path');
+      await deleteDbFiles(db, 'SELECT url AS file_path FROM images', 'file_path');
+      await deleteDbFiles(db, 'SELECT file_path FROM article_attachments', 'file_path');
       db.run('DELETE FROM media');
       db.run('DELETE FROM images');
       db.run('DELETE FROM image_favorites');
@@ -109,7 +151,7 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
     }
 
     // 社交数据
-    if (types.includes('social')) {
+    if (validTypes.includes('social')) {
       db.run('DELETE FROM internal_messages');
       db.run('DELETE FROM notifications');
       db.run('DELETE FROM content_likes');
@@ -119,13 +161,13 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
     }
 
     // 日志数据
-    if (types.includes('logs')) {
+    if (validTypes.includes('logs')) {
       db.run('DELETE FROM activity_logs');
       results.push('日志数据');
     }
 
     // 标签数据
-    if (types.includes('tags')) {
+    if (validTypes.includes('tags')) {
       db.run('DELETE FROM tags');
       db.run('DELETE FROM content_tags');
       results.push('标签数据');
@@ -157,7 +199,7 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
 
 // ============ 重置服务器 ============
 
-router.get('/reset', isAuthenticated, canAccessAdmin, isSuperAdmin, (req, res) => {
+router.get('/reset', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
   const { projectStatsList, globalStats, totalRecords } = collectAllStats(db);
@@ -192,52 +234,31 @@ router.post('/reset/execute', isAuthenticated, isSuperAdmin, async (req, res) =>
     totalDeletedFiles += deleted;
   }
 
-  // 清理 media 表中的文件
-  const mediaFiles = queryAll(db, 'SELECT file_path FROM media');
-  for (const m of mediaFiles) {
-    const filePath = path.join(__dirname, '../../public', m.file_path);
-    await fsSafe.safeUnlink(filePath);
-  }
-
-  // 清理 novel_chapters 中的文件
-  const novelFiles = queryAll(db, 'SELECT file_path FROM novel_chapters');
-  for (const ch of novelFiles) {
-    const filePath = path.join(__dirname, '../../public', ch.file_path);
-    await fsSafe.safeUnlink(filePath);
-  }
-
-  // 清理 images 表中的文件
-  const imageFiles = queryAll(db, 'SELECT url AS file_path FROM images');
-  for (const m of imageFiles) {
-    const filePath = path.join(__dirname, '../../public', m.file_path);
-    await fsSafe.safeUnlink(filePath);
-  }
+  // 清理 media / 小说章节 / 图片 / 文章附件中的文件
+  totalDeletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM media', 'file_path');
+  totalDeletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM novel_chapters', 'file_path');
+  totalDeletedFiles += await deleteDbFiles(db, 'SELECT url AS file_path FROM images', 'file_path');
+  totalDeletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM article_attachments', 'file_path');
 
   // 2. 按依赖顺序删除所有业务数据表
   // 先删除有外键依赖的子表
+  const resetTables = new Set([
+    ...DEPENDENT_TABLES,
+    ...ALL_TABLES,
+    ...EXTRA_RESET_TABLES,
+    ...getAllTablesToReset(db)
+  ]);
+  // user_permissions 单独处理（需保留超级管理员的权限记录）
+  resetTables.delete('user_permissions');
+
   const dependentTables = [...DEPENDENT_TABLES];
   dependentTables.forEach(table => {
     try { db.run('DELETE FROM ' + table); } catch (e) { /* 表可能不存在 */ }
   });
 
-  // 删除所有项目关联的表
-  const allTables = getAllTablesToReset(db);
-  allTables.forEach(table => {
-    try { db.run('DELETE FROM ' + table); } catch (e) { /* 表可能不存在 */ }
-  });
-
-  // 删除其他独立表
-  const extraTables = [
-    'media', 'media_comments',
-    'article_drafts', 'tags', 'content_tags', 'content_versions',
-    'internal_messages', 'notifications', 'content_likes', 'user_follows',
-    'poem_leaderboard',
-    'activity_logs',
-    'image_categories', 'image_configs', 'image_favorites', 'image_tags', 'image_tag_relations',
-    'ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings',
-    'ai_knowledge_docs', 'ai_knowledge_chunks'
-  ];
-  extraTables.forEach(table => {
+  // 删除其余业务表
+  const otherTables = [...resetTables].filter(t => !DEPENDENT_TABLES.includes(t));
+  otherTables.forEach(table => {
     try { db.run('DELETE FROM ' + table); } catch (e) { /* 表可能不存在 */ }
   });
 
@@ -295,17 +316,16 @@ router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, async (req,
   }
 
   try {
-    const mediaFiles = queryAll(db, 'SELECT url AS file_path FROM images');
-    for (const m of mediaFiles) {
-      const filePath = path.join(__dirname, '../../public', m.file_path);
-      await fsSafe.safeUnlink(filePath);
+    // 与全局重置一致，先清理所有已上传文件（数据库删除后记录将消失，文件会成孤儿）
+    let deletedFiles = 0;
+    const allProjectDefs = getAllProjectDefinitions(db);
+    for (const project of allProjectDefs) {
+      deletedFiles += await cleanProjectFiles(project.file_dirs);
     }
-
-    const novelFiles = queryAll(db, 'SELECT file_path FROM novel_chapters');
-    for (const ch of novelFiles) {
-      const filePath = path.join(__dirname, '../../public', ch.file_path);
-      await fsSafe.safeUnlink(filePath);
-    }
+    deletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM media', 'file_path');
+    deletedFiles += await deleteDbFiles(db, 'SELECT url AS file_path FROM images', 'file_path');
+    deletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM novel_chapters', 'file_path');
+    deletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM article_attachments', 'file_path');
 
     const deletedCount = closeAndDeleteDatabase();
 
@@ -318,7 +338,7 @@ router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, async (req,
     res.json({
       success: true,
       message: '✅ 恢复出厂设置成功！数据库文件已被删除。',
-      detail: '已删除 ' + deletedCount + ' 个数据库相关文件。所有数据已被清除，服务器需要重启以重新初始化数据库。',
+      detail: '已删除 ' + deletedCount + ' 个数据库相关文件，清理 ' + deletedFiles + ' 个上传文件。所有数据已被清除，服务器需要重启以重新初始化数据库。',
       needReboot: true
     });
   } catch (err) {
@@ -326,29 +346,6 @@ router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, async (req,
     res.status(500).json({ success: false, error: '恢复出厂设置失败: ' + err.message });
   }
 });
-
-/**
- * 获取所有项目定义（优先从数据库读取，后备使用硬编码定义）
- */
-function getAllProjectDefinitions(db) {
-  let projects = [];
-  try {
-    const dbProjects = queryAll(db, 'SELECT * FROM projects WHERE is_active = 1 ORDER BY created_at ASC');
-    if (dbProjects.length > 0) {
-      projects = dbProjects.map(p => ({
-        ...p,
-        tables: JSON.parse(p.tables),
-        file_dirs: JSON.parse(p.file_dirs || '[]')
-      }));
-    }
-  } catch (e) { /* 忽略 */ }
-
-  if (projects.length === 0) {
-    projects = Object.values(PROJECT_DEFINITIONS);
-  }
-
-  return projects;
-}
 
 /**
  * 获取所有需要重置的业务数据表（去重）
@@ -365,4 +362,3 @@ function getAllTablesToReset(db) {
 }
 
 module.exports = router;
-module.exports.getAllProjectDefinitions = getAllProjectDefinitions;

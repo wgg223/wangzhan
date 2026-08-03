@@ -6,7 +6,7 @@ const router = express.Router();
 
 // 文章列表字段（含统计）
 const ARTICLE_SELECT = `
-  SELECT a.id, a.title, a.summary, a.content, a.cover_image, a.category, a.location, a.status,
+  SELECT a.id, a.title, substr(a.content, 1, 150) AS summary, a.content, a.cover_image, a.category, a.location, a.status,
          a.author_id, a.created_at, a.updated_at,
          u.username AS author_name, u.nickname AS author_nickname, u.avatar AS author_avatar,
          (SELECT COUNT(*) FROM content_likes l WHERE l.target_type = 'article' AND l.target_id = a.id) AS like_count,

@@ -30,7 +30,7 @@ router.get('/community/feed', (req, res) => {
       WHERE c.user_id IN (
         SELECT following_id FROM user_follows WHERE follower_id = ?
       ) AND c.status = 'approved'
-      ORDER BY created_at DESC
+      ORDER BY 5 DESC
       LIMIT ? OFFSET ?
     `, [userId, userId, limit, offset]);
   } else {

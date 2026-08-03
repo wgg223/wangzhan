@@ -4,9 +4,8 @@ const bcrypt = require('bcryptjs');
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
-const { getProjectInfo, getProjectStats, cleanProjectFiles, deployFromGithub, getDeployStatus, isValidGithubUrl } = require('../../utils/project-utils');
+const { getProjectInfo, getProjectStats, cleanProjectFiles, deployFromGithub, getDeployStatus, isValidGithubUrl, getAllProjectDefinitions } = require('../../utils/project-utils');
 const { DEPENDENT_TABLES } = require('../../config/constants');
-const { getAllProjectDefinitions } = require('./reset');
 const { renderError } = require('../../utils/response');
 
 // ============ 项目管理 ============

@@ -1552,7 +1552,7 @@ router.post('/:source/force-change-password', changePasswordLimiter, (req, res) 
 // ============================================================
 
 router.post('/admin-reset-password/:userId', resetPasswordLimiter, (req, res) => {
-  if (!req.session.user || (req.session.user.role !== 'admin' && req.session.user.role !== 'super_admin')) {
+  if (!req.session.user || req.session.user.role !== 'super_admin') {
     return res.status(403).json({ error: '权限不足' });
   }
 

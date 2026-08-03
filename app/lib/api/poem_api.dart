@@ -12,8 +12,10 @@ class PoemApi {
       'count': count,
       if (category != null && category.isNotEmpty) 'category': category,
     });
-    final list = data is Map && data['poems'] is List ? data['poems'] : const [];
-    return list.map((e) => Poem.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = data is Map ? data['poems'] : null;
+    return raw is List
+        ? raw.map((e) => Poem.fromJson(e as Map<String, dynamic>)).toList()
+        : const <Poem>[];
   }
 
   /// 排行榜
@@ -27,8 +29,10 @@ class PoemApi {
       'difficulty': difficulty,
       'limit': limit,
     });
-    final list = data is Map && data['leaderboard'] is List ? data['leaderboard'] : const [];
-    return list.map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = data is Map ? data['leaderboard'] : null;
+    return raw is List
+        ? raw.map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>)).toList()
+        : const <LeaderboardEntry>[];
   }
 
   /// 提交成绩

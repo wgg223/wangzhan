@@ -16,8 +16,10 @@ class ArticleApi {
       if (q != null && q.isNotEmpty) 'q': q,
       if (tag != null && tag.isNotEmpty) 'tag': tag,
     });
-    final items = (data as Map)['articles'] is List ? (data as Map)['articles'] : const [];
-    return items.map((e) => Article.fromJson(e as Map<String, dynamic>)).toList();
+    final raw = (data as Map)['articles'];
+    return raw is List
+        ? raw.map((e) => Article.fromJson(e as Map<String, dynamic>)).toList()
+        : const <Article>[];
   }
 
   /// 文章详情
