@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const { isAuthenticated, hasPermission, isSuperAdmin, ROLE_HIERARCHY } = require('../../middlewares/auth');
+const { isAuthenticated, hasPermission, isSuperAdmin, ROLE_HIERARCHY, ROLE_WHITELIST, canOperateUser, ensureAtLeastOneActiveSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne, generateUid } = require('../../config/database');
 const { grantDefaultPermissions } = require('../../config/db-helpers');
 const { logActivity } = require('../../config/activity');
@@ -112,6 +112,11 @@ router.post('/users/disable/:id', isAuthenticated, isSuperAdmin, (req, res) => {
     return res.status(403).json({ error: '权限不足：不能操作同级别或更高级别的用户' });
   }
 
+  // 禁用超管前防管理端锁死
+  if (targetUser.role === 'super_admin' && !ensureAtLeastOneActiveSuperAdmin(db, targetUser.id)) {
+    return res.status(400).json({ error: '不能禁用最后一个超级管理员' });
+  }
+
   db.run("UPDATE users SET status = 'disabled' WHERE id = ?", [req.params.id]);
   saveDatabase();
   if (targetUser) {
@@ -139,10 +144,20 @@ router.post('/users/role/:id', isAuthenticated, isSuperAdmin, (req, res) => {
     return res.status(404).json({ error: '用户不存在' });
   }
 
-  const currentUserRoleVal = ROLE_HIERARCHY[req.session.user.role] || 0;
-  const targetUserRoleVal = ROLE_HIERARCHY[targetUser.role] || 0;
-  if (targetUserRoleVal >= currentUserRoleVal && req.session.user.role !== 'super_admin') {
-    return res.status(403).json({ error: '权限不足：不能操作同级别或更高级别的用户' });
+  // 改角色白名单校验，非法值直接拒绝
+  if (!ROLE_WHITELIST.includes(role)) {
+    return res.status(400).json({ error: '非法的角色值' });
+  }
+
+  const check = canOperateUser(req.session.user, targetUser);
+  if (!check.ok) {
+    return res.status(403).json({ error: check.reason });
+  }
+
+  // 降级超管前防管理端锁死（目标本身仍是 active 超管且要被降级）
+  if (targetUser.role === 'super_admin' && role !== 'super_admin' &&
+      !ensureAtLeastOneActiveSuperAdmin(db, targetUser.id)) {
+    return res.status(400).json({ error: '不能降级最后一个超级管理员' });
   }
 
   db.run('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
@@ -169,6 +184,11 @@ router.post('/users/delete/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const targetUserRoleVal = ROLE_HIERARCHY[targetUser.role] || 0;
   if (targetUserRoleVal >= currentUserRoleVal && req.session.user.role !== 'super_admin') {
     return res.status(403).json({ error: '权限不足：不能操作同级别或更高级别的用户' });
+  }
+
+  // 删除超管前防管理端锁死
+  if (targetUser.role === 'super_admin' && !ensureAtLeastOneActiveSuperAdmin(db, targetUser.id)) {
+    return res.status(400).json({ error: '不能删除最后一个超级管理员' });
   }
 
   db.run('DELETE FROM users WHERE id = ?', [req.params.id]);
