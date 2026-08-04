@@ -8,6 +8,47 @@ const ROLE_HIERARCHY = {
   'super_admin': 10
 };
 
+// 可被后台修改的角色白名单（统一改角色校验）
+const ROLE_WHITELIST = ['user', 'admin', 'super_admin'];
+
+/**
+ * 检查 operator 能否对 target 执行管理操作（禁用/删除/改角色/重置密码等）。
+ * 规则：不能操作自己；非超管不能操作超管；同级/高级不可动；
+ * 特例：超管可操作其他超管（除自己）。
+ * @returns {{ok: boolean, reason?: string}}
+ */
+function canOperateUser(operator, target) {
+  if (!operator || !target) {
+    return { ok: false, reason: '参数不完整' };
+  }
+  if (operator.id === target.id) {
+    return { ok: false, reason: '不能操作自己的账号' };
+  }
+  if (target.role === 'super_admin' && operator.role !== 'super_admin') {
+    return { ok: false, reason: '无权操作超级管理员' };
+  }
+  const opLevel = ROLE_HIERARCHY[operator.role] || 0;
+  const tgtLevel = ROLE_HIERARCHY[target.role] || 0;
+  if (opLevel <= tgtLevel && operator.role !== 'super_admin') {
+    return { ok: false, reason: '权限不足：不能操作同级别或更高级别的用户' };
+  }
+  return { ok: true };
+}
+
+/**
+ * 确保排除 excludeUserId 后仍至少存在一个 active 的超级管理员，
+ * 用于禁用/删除/降级超管前防管理端锁死。
+ * @returns {boolean}
+ */
+function ensureAtLeastOneActiveSuperAdmin(db, excludeUserId) {
+  const rows = queryAll(
+    db,
+    "SELECT COUNT(*) AS count FROM users WHERE role = 'super_admin' AND status = 'active' AND id != ?",
+    [excludeUserId]
+  );
+  return (rows && rows[0] && rows[0].count > 0) || false;
+}
+
 // 检查用户是否已登录
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.user) {
@@ -292,6 +333,7 @@ function hasFrontendPermission(permKey) {
 
 module.exports = {
   isAuthenticated, isSuperAdmin, isAdmin, hasPermission, canAccessAdmin,
-  getUserPermissions, canEditArticle, ROLE_HIERARCHY,
+  getUserPermissions, canEditArticle, ROLE_HIERARCHY, ROLE_WHITELIST,
+  canOperateUser, ensureAtLeastOneActiveSuperAdmin,
   isAdminRole, canManageArticle, canManageMedia, hasFrontendPermission
 };
