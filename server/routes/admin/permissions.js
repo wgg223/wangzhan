@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated, hasPermission } = require('../../middlewares/auth');
+const { isAuthenticated, hasPermission, canOperateUser } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 
@@ -62,9 +62,29 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.ma
     return res.status(400).json({ error: '参数不完整' });
   }
 
+  // 授予权限仅限超级管理员
+  if (req.session.user.role !== 'super_admin') {
+    return res.status(403).json({ error: '仅超级管理员可授予权限' });
+  }
+
+  // perm_key 必须真实存在于 permissions 表
+  const permExists = queryOne(db, 'SELECT id FROM permissions WHERE perm_key = ?', [perm_key]);
+  if (!permExists) {
+    return res.status(400).json({ error: '非法的权限项' });
+  }
+
+  const targetUser = queryOne(db, 'SELECT id, role, username FROM users WHERE id = ?', [user_id]);
+  if (!targetUser) {
+    return res.status(404).json({ error: '用户不存在' });
+  }
+  // 不能操作自己、非超管不能动超管、同级/高级不可动
+  const check = canOperateUser(req.session.user, targetUser);
+  if (!check.ok) {
+    return res.status(403).json({ error: check.reason });
+  }
+
   const existing = queryOne(db, 'SELECT id FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user_id, perm_key]);
   if (!existing) {
-    const targetUser = queryOne(db, 'SELECT username FROM users WHERE id = ?', [user_id]);
     db.run('INSERT INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
       [user_id, perm_key, req.session.user.id]);
     saveDatabase();
@@ -84,7 +104,22 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.m
     return res.status(400).json({ error: '参数不完整' });
   }
 
-  const targetUser = queryOne(db, 'SELECT username FROM users WHERE id = ?', [user_id]);
+  // perm_key 必须真实存在于 permissions 表
+  const permExists = queryOne(db, 'SELECT id FROM permissions WHERE perm_key = ?', [perm_key]);
+  if (!permExists) {
+    return res.status(400).json({ error: '非法的权限项' });
+  }
+
+  const targetUser = queryOne(db, 'SELECT id, role, username FROM users WHERE id = ?', [user_id]);
+  if (!targetUser) {
+    return res.status(404).json({ error: '用户不存在' });
+  }
+  // 不能操作自己、非超管不能动超管、同级/高级不可动
+  const check = canOperateUser(req.session.user, targetUser);
+  if (!check.ok) {
+    return res.status(403).json({ error: check.reason });
+  }
+
   db.run('DELETE FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user_id, perm_key]);
   saveDatabase();
   if (targetUser) {
@@ -93,13 +128,18 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.m
   res.redirect('/admin/permissions');
 });
 
-// 批准权限申请
+// 批准权限申请（授予权限，仅限超级管理员）
 router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { application_id } = req.body;
 
   if (!application_id) {
     return res.status(400).json({ error: '参数不完整' });
+  }
+
+  // 批准=授予，仅超级管理员可执行
+  if (req.session.user.role !== 'super_admin') {
+    return res.status(403).json({ error: '仅超级管理员可批准权限申请' });
   }
 
   const application = queryOne(db, 'SELECT * FROM permission_applications WHERE id = ? AND status = ?', [application_id, 'pending']);
