@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const { isAuthenticated, hasPermission, isAdminRole } = require('../../middlewares/auth');
+const { isAuthenticated, hasPermission, isAdminRole, canOperateUser, ensureAtLeastOneActiveSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { addImageLog } = require('../../utils/image-utils');
 const { getImageConfigs, saveImageShareConfigs } = require('../../utils/settings');
@@ -442,6 +442,18 @@ router.post('/image-share/users/toggle', isAuthenticated, hasPermission('image-s
   const targetUser = queryOne(db, 'SELECT * FROM users WHERE id = ?', [parseInt(id)]);
   if (!targetUser) {
     return res.json({ success: false, message: '用户不存在' });
+  }
+
+  // 权限校验：不能操作自己、非超管不能动超管、同级/高级不可动
+  const check = canOperateUser(req.session.user, targetUser);
+  if (!check.ok) {
+    return res.status(403).json({ success: false, message: check.reason });
+  }
+
+  // 禁用超管前防管理端锁死
+  if (status !== 'active' && targetUser.role === 'super_admin' &&
+      !ensureAtLeastOneActiveSuperAdmin(db, targetUser.id)) {
+    return res.status(400).json({ success: false, message: '不能禁用最后一个超级管理员' });
   }
 
   const newStatus = status === 'active' ? 'active' : 'disabled';
