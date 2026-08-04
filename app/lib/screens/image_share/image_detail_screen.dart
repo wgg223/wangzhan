@@ -7,6 +7,8 @@ import '../../config/app_config.dart';
 import '../../models/image_item.dart';
 import '../../state/auth_state.dart';
 import '../../utils/time_format.dart';
+import '../../widgets/cached_image.dart';
+import '../../widgets/comment_dialog.dart';
 import '../../widgets/common.dart';
 
 /// 图片详情页
@@ -54,18 +56,7 @@ class _ImageDetailScreenState extends State<ImageDetailScreen> {
   }
 
   Future<void> _addComment() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('发表评论'),
-        content: TextField(controller: controller, maxLines: 3, decoration: const InputDecoration(hintText: '说点什么...')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('发表')),
-        ],
-      ),
-    );
+    final result = await showCommentDialog(context);
     if (result == null || result.trim().isEmpty) return;
     try {
       await ImageShareApi.addComment(widget.imageId, result.trim());
@@ -85,14 +76,11 @@ class _ImageDetailScreenState extends State<ImageDetailScreen> {
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
-              ClipRRect(
+              CachedImage(
+                url: AppConfig.asset(image.url),
+                fit: BoxFit.contain,
+                height: 260,
                 borderRadius: BorderRadius.circular(12),
-                child: CachedNetworkImage(
-                  imageUrl: AppConfig.asset(image.url),
-                  fit: BoxFit.contain,
-                  placeholder: (c, u) => Container(height: 260, color: Colors.grey.shade200),
-                  errorWidget: (c, u, e) => Container(height: 260, color: Colors.grey.shade200, child: const Icon(Icons.broken_image_outlined)),
-                ),
               ),
               const SizedBox(height: 12),
               Text(image.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),

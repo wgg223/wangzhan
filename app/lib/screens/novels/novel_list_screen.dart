@@ -1,9 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../api/novel_api.dart';
 import '../../config/app_config.dart';
 import '../../models/novel.dart';
+import '../../widgets/cached_image.dart';
 import '../../widgets/common.dart';
 import 'novel_detail_screen.dart';
 
@@ -79,16 +79,11 @@ class _NovelListScreenState extends State<NovelListScreen> {
                         child: Row(
                           children: [
                             if (novel.cover.isNotEmpty) ...[
-                              ClipRRect(
+                              CachedImage(
+                                url: AppConfig.asset(novel.cover),
+                                width: 64,
+                                height: 84,
                                 borderRadius: BorderRadius.circular(8),
-                                child: CachedNetworkImage(
-                                  imageUrl: AppConfig.asset(novel.cover),
-                                  width: 64,
-                                  height: 84,
-                                  fit: BoxFit.cover,
-                                  placeholder: (c, u) => Container(width: 64, height: 84, color: Colors.grey.shade200),
-                                  errorWidget: (c, u, e) => Container(width: 64, height: 84, color: Colors.grey.shade200, child: const Icon(Icons.menu_book_outlined)),
-                                ),
                               ),
                               const SizedBox(width: 12),
                             ],

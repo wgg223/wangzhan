@@ -6,6 +6,7 @@ import '../../api/article_api.dart';
 import '../../models/article.dart';
 import '../../state/auth_state.dart';
 import '../../utils/time_format.dart';
+import '../../widgets/comment_dialog.dart';
 import '../../widgets/common.dart';
 
 /// 文章详情页
@@ -61,18 +62,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   }
 
   Future<void> _addComment(Article article) async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('发表评论'),
-        content: TextField(controller: controller, maxLines: 3, decoration: const InputDecoration(hintText: '说点什么...')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('发表')),
-        ],
-      ),
-    );
+    final result = await showCommentDialog(context);
     if (result == null || result.trim().isEmpty) return;
     try {
       await ArticleApi.addComment(article.id, result.trim());

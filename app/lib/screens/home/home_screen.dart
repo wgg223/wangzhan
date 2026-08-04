@@ -5,6 +5,8 @@ import '../../models/article.dart';
 import '../../widgets/article_card.dart';
 import '../../widgets/common.dart';
 import '../articles/article_detail_screen.dart';
+import '../community/community_screen.dart';
+import '../image_share/image_share_screen.dart';
 import '../novels/novel_list_screen.dart';
 import '../search/search_screen.dart';
 
@@ -78,11 +80,11 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
               child: Row(
                 children: [
-                  _QuickEntry(icon: Icons.photo_library, label: '图片分享', color: const Color(0xFF10B981), onTap: () {}),
+                  _QuickEntry(icon: Icons.photo_library, label: '图片分享', color: const Color(0xFF10B981), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ImageShareScreen()))),
                   const SizedBox(width: 8),
                   _QuickEntry(icon: Icons.menu_book, label: '小说', color: const Color(0xFFF59E0B), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NovelListScreen()))),
                   const SizedBox(width: 8),
-                  _QuickEntry(icon: Icons.forum, label: '社区', color: const Color(0xFF6366F1), onTap: () {}),
+                  _QuickEntry(icon: Icons.forum, label: '社区', color: const Color(0xFF6366F1), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityScreen()))),
                 ],
               ),
             ),
