@@ -1,8 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../models/image_item.dart';
+import 'cached_image.dart';
 
 /// 图片网格卡片
 class ImageGridCard extends StatelessWidget {
@@ -20,12 +20,7 @@ class ImageGridCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CachedNetworkImage(
-              imageUrl: AppConfig.asset(item.url),
-              fit: BoxFit.cover,
-              placeholder: (c, u) => Container(color: Colors.grey.shade200),
-              errorWidget: (c, u, e) => Container(color: Colors.grey.shade200, child: const Icon(Icons.broken_image_outlined)),
-            ),
+            CachedImage(url: AppConfig.asset(item.url)),
             if (item.status != 1)
               Positioned(
                 top: 6,

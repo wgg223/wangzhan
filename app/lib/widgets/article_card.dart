@@ -1,9 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../models/article.dart';
 import '../utils/time_format.dart';
+import 'cached_image.dart';
 
 /// 文章卡片
 class ArticleCard extends StatelessWidget {
@@ -25,16 +25,11 @@ class ArticleCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (article.cover.isNotEmpty) ...[
-                ClipRRect(
+                CachedImage(
+                  url: AppConfig.asset(article.cover),
+                  width: 96,
+                  height: 72,
                   borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: AppConfig.asset(article.cover),
-                    width: 96,
-                    height: 72,
-                    fit: BoxFit.cover,
-                    placeholder: (c, u) => Container(width: 96, height: 72, color: Colors.grey.shade200),
-                    errorWidget: (c, u, e) => Container(width: 96, height: 72, color: Colors.grey.shade200, child: const Icon(Icons.image_outlined)),
-                  ),
                 ),
                 const SizedBox(width: 12),
               ],
