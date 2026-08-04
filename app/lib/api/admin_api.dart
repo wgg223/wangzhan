@@ -4,6 +4,7 @@ import '../models/article.dart';
 import '../models/image_item.dart';
 import '../models/novel.dart';
 import '../models/user.dart';
+import '../utils/paged.dart';
 import 'api_client.dart';
 
 export 'api_client.dart' show ApiException;
@@ -19,7 +20,7 @@ class AdminApi {
     return DashboardStats.fromJson(data as Map<String, dynamic>);
   }
 
-  // ---------- 用户管理（仅查询，删除/改角色/改状态仅支持网页端操作） ----------
+  // ---------- 用户管理（删除/改角色/改状态仅超管可用） ----------
   static Future<(List<User>, int)> users({int page = 1, int limit = 10, String? q, String? role}) async {
     final data = await _client.get(_p('/users'), query: {
       'page': page,
@@ -27,12 +28,48 @@ class AdminApi {
       if (q != null && q.isNotEmpty) 'q': q,
       if (role != null && role.isNotEmpty) 'role': role,
     });
-    final map = data as Map;
-    final list = map['users'] is List ? map['users'] as List : const [];
-    return (
-      list.map((e) => User.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
-    );
+    return parsePage<User>(data as Map, 'users', User.fromJson);
+  }
+
+  /// 修改用户状态（active/disabled/pending）
+  static Future<void> updateUserStatus(int id, String status) async {
+    await _client.put(_p('/users/$id'), data: {'status': status});
+  }
+
+  /// 修改用户角色（仅超管，服务端校验）
+  static Future<void> updateUserRole(int id, String role) async {
+    await _client.put(_p('/users/$id'), data: {'role': role});
+  }
+
+  /// 删除用户（仅超管，服务端校验）
+  static Future<void> deleteUser(int id) async {
+    await _client.delete(_p('/users/$id'));
+  }
+
+  /// 创建用户（仅超管）
+  static Future<void> createUser({
+    required String username,
+    required String password,
+    String email = '',
+    String role = 'user',
+  }) async {
+    await _client.post(_p('/users'), data: {
+      'username': username,
+      'password': password,
+      'email': email,
+      'role': role,
+    });
+  }
+
+  /// 重置用户密码（仅超管），返回随机新密码
+  static Future<String> resetPassword(int id) async {
+    final data = await _client.post(_p('/users/$id/reset-password'));
+    return (data as Map)['new_password']?.toString() ?? '';
+  }
+
+  /// 设置用户权限集（超管可任意改；普通 admin 仅可撤销，服务端校验）
+  static Future<void> updateUserPermissions(int id, List<String> permKeys) async {
+    await _client.put(_p('/users/$id/permissions'), data: {'perm_keys': permKeys});
   }
 
   // ---------- 文章管理 ----------
@@ -42,12 +79,7 @@ class AdminApi {
       'limit': limit,
       if (q != null && q.isNotEmpty) 'q': q,
     });
-    final map = data as Map;
-    final list = map['articles'] is List ? map['articles'] as List : const [];
-    return (
-      list.map((e) => Article.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
-    );
+    return parsePage<Article>(data as Map, 'articles', Article.fromJson);
   }
 
   static Future<void> deleteArticle(int id) async {
@@ -77,12 +109,7 @@ class AdminApi {
       'limit': limit,
       if (status != null) 'status': status,
     });
-    final map = data as Map;
-    final list = map['images'] is List ? map['images'] as List : const [];
-    return (
-      list.map((e) => ImageItem.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
-    );
+    return parsePage<ImageItem>(data as Map, 'images', ImageItem.fromJson);
   }
 
   static Future<void> setImageStatus(int id, int status) async {
@@ -110,12 +137,7 @@ class AdminApi {
   // ---------- 小说管理 ----------
   static Future<(List<Novel>, int)> novels({int page = 1, int limit = 10}) async {
     final data = await _client.get(_p('/novels'), query: {'page': page, 'limit': limit});
-    final map = data as Map;
-    final list = map['novels'] is List ? map['novels'] as List : const [];
-    return (
-      list.map((e) => Novel.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
-    );
+    return parsePage<Novel>(data as Map, 'novels', Novel.fromJson);
   }
 
   static Future<void> deleteNovel(int id) async {
@@ -138,12 +160,7 @@ class AdminApi {
   // ---------- 日志 ----------
   static Future<(List<AdminLog>, int)> logs({int page = 1, int limit = 20}) async {
     final data = await _client.get(_p('/logs'), query: {'page': page, 'limit': limit});
-    final map = data as Map;
-    final list = map['logs'] is List ? map['logs'] as List : const [];
-    return (
-      list.map((e) => AdminLog.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
-    );
+    return parsePage<AdminLog>(data as Map, 'logs', AdminLog.fromJson);
   }
 
   static Future<void> clearLogs(int days) async {
@@ -160,12 +177,7 @@ class AdminApi {
   // ---------- 媒体 ----------
   static Future<(List<MediaItem>, int)> media({int page = 1, int limit = 20}) async {
     final data = await _client.get(_p('/media'), query: {'page': page, 'limit': limit});
-    final map = data as Map;
-    final list = map['media'] is List ? map['media'] as List : const [];
-    return (
-      list.map((e) => MediaItem.fromJson(e as Map<String, dynamic>)).toList(),
-      map['total'] is int ? map['total'] as int : int.tryParse('${map['total']}') ?? 0,
-    );
+    return parsePage<MediaItem>(data as Map, 'media', MediaItem.fromJson);
   }
 
   static Future<void> deleteMedia(int id) async {
