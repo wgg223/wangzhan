@@ -68,9 +68,42 @@ router.put('/users/:id/permissions', (req, res) => {
   const userId = toInt(req.params.id);
   const permKeys = Array.isArray(req.body.perm_keys) ? req.body.perm_keys.map((k) => String(k).slice(0, 64)) : [];
 
+  const targetUser = queryOne(db, 'SELECT id, role FROM users WHERE id = ?', [userId]);
+  if (!targetUser) {
+    return res.status(404).json({ error: '用户不存在' });
+  }
+  // 超级管理员的 user_permissions 统一禁止修改（超管权限不依赖该表）
+  if (targetUser.role === 'super_admin') {
+    return res.status(403).json({ error: '无权修改超级管理员的权限' });
+  }
+  // 不能操作自己
+  if (targetUser.id === req.apiUser.id) {
+    return res.status(400).json({ error: '不能操作自己的账号' });
+  }
+
+  // perm_key 必须真实存在于 permissions 表
+  const validKeys = new Set(
+    (queryAll(db, 'SELECT perm_key FROM permissions') || []).map((p) => p.perm_key)
+  );
+  const unknownKey = permKeys.find((k) => !validKeys.has(k));
+  if (unknownKey) {
+    return res.status(400).json({ error: '非法的权限项：' + unknownKey });
+  }
+
+  // 普通 admin 仅允许"纯撤销"：请求集必须 ⊆ 当前已拥有集（不可授予）
+  if (req.apiUser.role !== 'super_admin') {
+    const currentKeys = new Set(
+      (queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [userId]) || [])
+        .map((p) => p.perm_key)
+    );
+    const granting = permKeys.find((k) => !currentKeys.has(k));
+    if (granting) {
+      return res.status(403).json({ error: '仅超级管理员可授予权限' });
+    }
+  }
+
   db.run('DELETE FROM user_permissions WHERE user_id = ?', [userId]);
   for (const key of permKeys) {
-    if (!/^[a-zA-Z0-9.*]{1,64}$/.test(key)) continue;
     db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)', [userId, key, req.apiUser.id]);
   }
   saveDatabase();
