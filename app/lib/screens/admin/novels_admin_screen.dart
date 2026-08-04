@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../api/admin_api.dart';
 import '../../models/novel.dart';
 import '../../utils/time_format.dart';
-import '../../widgets/common.dart';
+import '../../widgets/paged_list_view.dart';
 
 /// 小说管理
 class NovelsAdminScreen extends StatefulWidget {
@@ -14,40 +14,8 @@ class NovelsAdminScreen extends StatefulWidget {
 }
 
 class _NovelsAdminScreenState extends State<NovelsAdminScreen> {
-  final List<Novel> _novels = [];
-  int _page = 1;
-  int _total = 0;
-  bool _loading = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load({bool refresh = false}) async {
-    if (_loading) return;
-    if (refresh) {
-      _page = 1;
-      setState(() => _error = null);
-    }
-    setState(() => _loading = true);
-    try {
-      final (list, total) = await AdminApi.novels(page: _page);
-      setState(() {
-        if (refresh || _page == 1) _novels.clear();
-        _novels.addAll(list);
-        _total = total;
-        _page++;
-      });
-    } on ApiException catch (e) {
-      setState(() => _error = e.message);
-    } catch (_) {
-      setState(() => _error = '网络错误');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  Future<(List<Novel>, int)> _fetch(int page) {
+    return AdminApi.novels(page: page);
   }
 
   Future<void> _delete(Novel n) async {
@@ -62,9 +30,11 @@ class _NovelsAdminScreenState extends State<NovelsAdminScreen> {
         ],
       ),
     );
-    if (ok == true) {
-      await AdminApi.deleteNovel(n.id);
-      _load(refresh: true);
+    if (ok != true) return;
+    await AdminApi.deleteNovel(n.id);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已删除')));
+      setState(() {});
     }
   }
 
@@ -73,31 +43,34 @@ class _NovelsAdminScreenState extends State<NovelsAdminScreen> {
     return Column(
       children: [
         Expanded(
-          child: _error != null && _novels.isEmpty
-              ? ErrorView(message: _error!, onRetry: () => _load(refresh: true))
-              : ListView.builder(
-                  itemCount: _novels.length + (_loading ? 1 : 0),
-                  itemBuilder: (context, i) {
-                    if (i >= _novels.length) return const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
-                    final n = _novels[i];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      child: ListTile(
-                        leading: const Icon(Icons.menu_book_outlined),
-                        title: Text(n.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('作者：${n.author} · ${n.chapterCount} 章 · ${TimeFormat.from(n.createdAt)}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _delete(n),
-                        ),
-                      ),
-                    );
-                  },
+          child: PagedListView<Novel>(
+            futurePage: _fetch,
+            pageSize: 10,
+            emptyMessage: '暂无小说',
+            onRefresh: () async => setState(() {}),
+            footer: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text('已加载全部',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              ),
+            ),
+            itemBuilder: (context, n, _) {
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: ListTile(
+                  leading: const Icon(Icons.menu_book_outlined),
+                  title: Text(n.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                      '作者：${n.author} · ${n.chapterCount} 章 · ${TimeFormat.from(n.createdAt)}'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _delete(n),
+                  ),
                 ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text('共 $_total 部小说', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              );
+            },
+          ),
         ),
       ],
     );

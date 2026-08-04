@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api/admin_api.dart';
 import '../../utils/time_format.dart';
-import '../../widgets/common.dart';
+import '../../widgets/paged_list_view.dart';
 
 /// 评论管理
 class CommentsScreen extends StatefulWidget {
@@ -13,45 +13,28 @@ class CommentsScreen extends StatefulWidget {
 }
 
 class _CommentsScreenState extends State<CommentsScreen> {
-  List<Map<String, dynamic>> _comments = [];
-  int _page = 1;
-  int _total = 0;
-  bool _loading = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
+  Future<(List<Map<String, dynamic>>, int)> _fetch(int page) {
+    return AdminApi.comments(page: page);
   }
 
-  Future<void> _load({bool refresh = false}) async {
-    if (_loading) return;
-    if (refresh) {
-      _page = 1;
-      setState(() => _error = null);
+  Future<void> _delete(Map<String, dynamic> c) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除评论'),
+        content: const Text('确定删除这条评论吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await AdminApi.deleteComment(c['id'] is int ? c['id'] : int.parse('${c['id']}'));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已删除')));
+      setState(() {});
     }
-    setState(() => _loading = true);
-    try {
-      final (list, total) = await AdminApi.comments(page: _page);
-      setState(() {
-        if (refresh || _page == 1) _comments.clear();
-        _comments.addAll(list);
-        _total = total;
-        _page++;
-      });
-    } on ApiException catch (e) {
-      setState(() => _error = e.message);
-    } catch (_) {
-      setState(() => _error = '网络错误');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _delete(int id) async {
-    await AdminApi.deleteComment(id);
-    _load(refresh: true);
   }
 
   @override
@@ -59,31 +42,41 @@ class _CommentsScreenState extends State<CommentsScreen> {
     return Column(
       children: [
         Expanded(
-          child: _error != null && _comments.isEmpty
-              ? ErrorView(message: _error!, onRetry: () => _load(refresh: true))
-              : ListView.builder(
-                  itemCount: _comments.length + (_loading ? 1 : 0),
-                  itemBuilder: (context, i) {
-                    if (i >= _comments.length) return const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
-                    final c = _comments[i];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      child: ListTile(
-                        leading: CircleAvatar(child: Text((c['username']?.toString() ?? '?').isNotEmpty ? c['username'].toString()[0] : '?')),
-                        title: Text(c['content']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('${c['username']} · ${TimeFormat.from(c['created_at']?.toString())} · ${c['status']}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _delete(c['id'] is int ? c['id'] : int.parse('${c['id']}')),
-                        ),
-                      ),
-                    );
-                  },
+          child: PagedListView<Map<String, dynamic>>(
+            futurePage: _fetch,
+            pageSize: 10,
+            emptyMessage: '暂无评论',
+            onRefresh: () async => setState(() {}),
+            footer: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text('已加载全部',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              ),
+            ),
+            itemBuilder: (context, c, _) {
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    child: Text(
+                      (c['username']?.toString() ?? '?').isNotEmpty
+                          ? c['username'].toString()[0]
+                          : '?',
+                    ),
+                  ),
+                  title: Text(c['content']?.toString() ?? '',
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                      '${c['username']} · ${TimeFormat.from(c['created_at']?.toString())} · ${c['status']}'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _delete(c),
+                  ),
                 ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text('共 $_total 条评论', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              );
+            },
+          ),
         ),
       ],
     );

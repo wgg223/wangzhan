@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../api/admin_api.dart';
 import '../../models/admin_models.dart';
 import '../../utils/time_format.dart';
-import '../../widgets/common.dart';
+import '../../widgets/paged_list_view.dart';
 
 /// 操作日志
 class LogsScreen extends StatefulWidget {
@@ -14,40 +14,8 @@ class LogsScreen extends StatefulWidget {
 }
 
 class _LogsScreenState extends State<LogsScreen> {
-  final List<AdminLog> _logs = [];
-  int _page = 1;
-  int _total = 0;
-  bool _loading = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load({bool refresh = false}) async {
-    if (_loading) return;
-    if (refresh) {
-      _page = 1;
-      setState(() => _error = null);
-    }
-    setState(() => _loading = true);
-    try {
-      final (list, total) = await AdminApi.logs(page: _page);
-      setState(() {
-        if (refresh || _page == 1) _logs.clear();
-        _logs.addAll(list);
-        _total = total;
-        _page++;
-      });
-    } on ApiException catch (e) {
-      setState(() => _error = e.message);
-    } catch (_) {
-      setState(() => _error = '网络错误');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  Future<(List<AdminLog>, int)> _fetch(int page) {
+    return AdminApi.logs(page: page);
   }
 
   Future<void> _clear() async {
@@ -66,8 +34,10 @@ class _LogsScreenState extends State<LogsScreen> {
     );
     if (days != null) {
       await AdminApi.clearLogs(days);
-      _load(refresh: true);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('日志已清理')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('日志已清理')));
+        setState(() {});
+      }
     }
   }
 
@@ -76,31 +46,35 @@ class _LogsScreenState extends State<LogsScreen> {
     return Column(
       children: [
         Expanded(
-          child: _error != null && _logs.isEmpty
-              ? ErrorView(message: _error!, onRetry: () => _load(refresh: true))
-              : ListView.builder(
-                  itemCount: _logs.length + (_loading ? 1 : 0),
-                  itemBuilder: (context, i) {
-                    if (i >= _logs.length) return const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
-                    final log = _logs[i];
-                    return ListTile(
-                      dense: true,
-                      leading: CircleAvatar(radius: 14, child: Text(log.username.isNotEmpty ? log.username[0] : '?', style: const TextStyle(fontSize: 12))),
-                      title: Text('${log.username} · ${log.action}', style: const TextStyle(fontSize: 14)),
-                      subtitle: Text('${log.targetType} ${log.targetTitle} · ${TimeFormat.from(log.createdAt)}', style: const TextStyle(fontSize: 12)),
-                      trailing: log.ip.isNotEmpty ? Text(log.ip, style: TextStyle(fontSize: 11, color: Colors.grey.shade400)) : null,
-                    );
-                  },
+          child: PagedListView<AdminLog>(
+            futurePage: _fetch,
+            pageSize: 20,
+            emptyMessage: '暂无日志',
+            onRefresh: () async => setState(() {}),
+            itemBuilder: (context, log, _) {
+              return ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 14,
+                  child: Text(log.username.isNotEmpty ? log.username[0] : '?',
+                      style: const TextStyle(fontSize: 12)),
                 ),
+                title: Text('${log.username} · ${log.action}', style: const TextStyle(fontSize: 14)),
+                subtitle: Text('${log.targetType} ${log.targetTitle} · ${TimeFormat.from(log.createdAt)}',
+                    style: const TextStyle(fontSize: 12)),
+                trailing: log.ip.isNotEmpty
+                    ? Text(log.ip, style: TextStyle(fontSize: 11, color: Colors.grey.shade400))
+                    : null,
+              );
+            },
+          ),
         ),
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                Expanded(
-                  child: Text('共 $_total 条日志', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-                ),
+                const Spacer(),
                 OutlinedButton.icon(
                   onPressed: _clear,
                   icon: const Icon(Icons.cleaning_services_outlined, size: 18),
