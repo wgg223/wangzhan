@@ -48,29 +48,22 @@ class ThemeState extends ChangeNotifier {
     } catch (_) {/* ignore */}
   }
 
-  Future<void> setMode(AppThemeMode value) async {
-    mode = value;
+  /// 更新状态并持久化
+  Future<void> _update(void Function() apply) async {
+    apply();
     notifyListeners();
     await _save();
   }
 
-  Future<void> setFont(AppFont value) async {
-    font = value;
-    notifyListeners();
-    await _save();
-  }
+  Future<void> setMode(AppThemeMode value) => _update(() => mode = value);
 
-  Future<void> setBackground(AppBackground value) async {
-    background = value;
-    notifyListeners();
-    await _save();
-  }
+  Future<void> setFont(AppFont value) => _update(() => font = value);
 
-  Future<void> setCustomBgUrl(String url) async {
-    customBgUrl = url.trim();
-    notifyListeners();
-    await _save();
-  }
+  Future<void> setBackground(AppBackground value) =>
+      _update(() => background = value);
+
+  Future<void> setCustomBgUrl(String url) =>
+      _update(() => customBgUrl = url.trim());
 
   /// Flutter 亮暗模式
   ThemeMode get flutterMode => switch (mode) {

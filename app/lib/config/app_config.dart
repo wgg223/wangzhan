@@ -5,8 +5,12 @@
 class AppConfig {
   AppConfig._();
 
-  /// 服务器根地址（不带末尾斜杠）
-  static const String serverBaseUrl = 'https://dalaowang233.top';
+  /// 服务器根地址（不带末尾斜杠）。
+  /// 默认使用生产域名，dev 可用 `--dart-define=API_BASE_URL=...` 覆盖。
+  static const String serverBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://dalaowang233.top',
+  );
 
   /// API 命名空间
   static const String apiPrefix = '/api/v1';

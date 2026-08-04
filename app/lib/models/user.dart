@@ -1,3 +1,5 @@
+import '../utils/coercion.dart';
+
 /// 用户模型
 class User {
   User({
@@ -35,7 +37,7 @@ class User {
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id'] is int ? json['id'] : int.tryParse('${json['id']}') ?? 0,
+      id: toInt(json['id']),
       username: json['username']?.toString() ?? '',
       nickname: json['nickname']?.toString(),
       avatar: json['avatar']?.toString() ?? '',
@@ -44,15 +46,9 @@ class User {
       bio: json['bio']?.toString() ?? '',
       status: json['status']?.toString() ?? 'active',
       createdAt: json['created_at']?.toString(),
-      followerCount: _toInt(json['follower_count']),
-      followingCount: _toInt(json['following_count']),
-      articleCount: _toInt(json['article_count']),
+      followerCount: toInt(json['follower_count']),
+      followingCount: toInt(json['following_count']),
+      articleCount: toInt(json['article_count']),
     );
-  }
-
-  static int _toInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    return int.tryParse('$v') ?? 0;
   }
 }

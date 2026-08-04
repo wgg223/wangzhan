@@ -29,9 +29,12 @@ class ArticleApi {
   }
 
   /// 文章评论列表
-  static Future<List<dynamic>> comments(int articleId, {int page = 1}) async {
+  static Future<List<ArticleComment>> comments(int articleId, {int page = 1}) async {
     final data = await _client.get(AppConfig.api('/articles/$articleId/comments'), query: {'page': page});
-    return (data as Map)['comments'] is List ? (data as Map)['comments'] : const [];
+    final raw = (data as Map)['comments'];
+    return raw is List
+        ? raw.map((e) => ArticleComment.fromJson(e as Map<String, dynamic>)).toList()
+        : const <ArticleComment>[];
   }
 
   /// 发表评论

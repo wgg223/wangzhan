@@ -2,6 +2,8 @@ import '../config/app_config.dart';
 import '../models/user.dart';
 import 'api_client.dart';
 
+export 'api_client.dart' show ApiException;
+
 /// 认证相关接口
 class AuthApi {
   static final ApiClient _client = ApiClient.instance;

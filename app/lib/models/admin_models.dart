@@ -1,3 +1,5 @@
+import '../utils/coercion.dart';
+
 /// 管理后台 - 各类模型
 
 /// 仪表盘统计
@@ -27,16 +29,15 @@ class DashboardStats {
   final String dbSize;
 
   factory DashboardStats.fromJson(Map<String, dynamic> json) {
-    int i(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     return DashboardStats(
-      userCount: i(json['user_count']),
-      articleCount: i(json['article_count']),
-      imageCount: i(json['image_count']),
-      novelCount: i(json['novel_count']),
-      commentCount: i(json['comment_count']),
-      pendingImages: i(json['pending_images']),
-      pendingComments: i(json['pending_comments']),
-      todayVisits: i(json['today_visits']),
+      userCount: toInt(json['user_count']),
+      articleCount: toInt(json['article_count']),
+      imageCount: toInt(json['image_count']),
+      novelCount: toInt(json['novel_count']),
+      commentCount: toInt(json['comment_count']),
+      pendingImages: toInt(json['pending_images']),
+      pendingComments: toInt(json['pending_comments']),
+      todayVisits: toInt(json['today_visits']),
       uptime: json['uptime']?.toString() ?? '',
       dbSize: json['db_size']?.toString() ?? '',
     );
@@ -69,8 +70,8 @@ class AdminLog {
 
   factory AdminLog.fromJson(Map<String, dynamic> json) {
     return AdminLog(
-      id: _int(json['id']),
-      userId: _int(json['user_id']),
+      id: toInt(json['id']),
+      userId: toInt(json['user_id']),
       username: json['username']?.toString() ?? '',
       action: json['action']?.toString() ?? '',
       targetType: json['target_type']?.toString() ?? '',
@@ -80,8 +81,6 @@ class AdminLog {
       createdAt: json['created_at']?.toString(),
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }
 
 /// 权限项
@@ -129,19 +128,17 @@ class MediaItem {
 
   factory MediaItem.fromJson(Map<String, dynamic> json) {
     return MediaItem(
-      id: _int(json['id']),
+      id: toInt(json['id']),
       filename: json['filename']?.toString() ?? '',
       originalName: json['original_name']?.toString() ?? '',
       filePath: json['file_path']?.toString() ?? '',
       fileType: json['file_type']?.toString() ?? '',
-      fileSize: _int(json['file_size']),
-      uploadedBy: _int(json['uploaded_by']),
+      fileSize: toInt(json['file_size']),
+      uploadedBy: toInt(json['uploaded_by']),
       uploaderName: json['uploader_name']?.toString() ?? '',
       createdAt: json['created_at']?.toString(),
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }
 
 /// 备份文件
@@ -156,7 +153,7 @@ class BackupItem {
   factory BackupItem.fromJson(Map<String, dynamic> json) {
     return BackupItem(
       name: json['name']?.toString() ?? '',
-      size: json['size'] is int ? json['size'] : int.tryParse('${json['size']}') ?? 0,
+      size: toInt(json['size']),
       createdAt: json['created_at']?.toString() ?? '',
       type: json['type']?.toString() ?? '',
     );
@@ -197,7 +194,7 @@ class SystemInfo {
       memory: json['memory']?.toString() ?? '',
       cpu: json['cpu']?.toString() ?? '',
       dbSize: json['db_size']?.toString() ?? '',
-      dbTables: json['db_tables'] is int ? json['db_tables'] : int.tryParse('${json['db_tables']}') ?? 0,
+      dbTables: toInt(json['db_tables']),
       uploadSize: json['upload_size']?.toString() ?? '',
       backupSize: json['backup_size']?.toString() ?? '',
       cacheHitRate: json['cache_hit_rate']?.toString() ?? '',

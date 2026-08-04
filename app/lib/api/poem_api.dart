@@ -2,6 +2,8 @@ import '../config/app_config.dart';
 import '../models/poem.dart';
 import 'api_client.dart';
 
+export 'api_client.dart' show ApiException;
+
 /// 诗词游戏相关接口
 class PoemApi {
   static final ApiClient _client = ApiClient.instance;

@@ -1,3 +1,5 @@
+import '../utils/coercion.dart';
+
 /// 文章模型
 class Article {
   Article({
@@ -40,19 +42,19 @@ class Article {
 
   factory Article.fromJson(Map<String, dynamic> json) {
     return Article(
-      id: _int(json['id']),
+      id: toInt(json['id']),
       title: json['title']?.toString() ?? '',
       summary: json['summary']?.toString() ?? '',
       content: json['content']?.toString() ?? '',
       cover: json['cover']?.toString() ?? '',
-      authorId: _int(json['author_id']),
+      authorId: toInt(json['author_id']),
       authorName: json['author_name']?.toString() ?? '',
       authorAvatar: json['author_avatar']?.toString() ?? '',
       category: json['category']?.toString() ?? '',
       status: json['status']?.toString() ?? 'published',
-      viewCount: _int(json['view_count']),
-      likeCount: _int(json['like_count']),
-      commentCount: _int(json['comment_count']),
+      viewCount: toInt(json['view_count']),
+      likeCount: toInt(json['like_count']),
+      commentCount: toInt(json['comment_count']),
       createdAt: json['created_at']?.toString(),
       tags: (json['tags'] is List) ? json['tags'].map((e) => e.toString()).toList() : const [],
       attachments: (json['attachments'] is List)
@@ -63,8 +65,6 @@ class Article {
       isLiked: json['is_liked'] == true,
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }
 
 /// 文章附件
@@ -93,14 +93,47 @@ class Attachment {
 
   factory Attachment.fromJson(Map<String, dynamic> json) {
     return Attachment(
-      id: _int(json['id']),
+      id: toInt(json['id']),
       filename: json['filename']?.toString() ?? '',
-      filesize: _int(json['filesize']),
+      filesize: toInt(json['filesize']),
       filetype: json['filetype']?.toString() ?? '',
       filepath: json['filepath']?.toString() ?? '',
-      downloadCount: _int(json['download_count']),
+      downloadCount: toInt(json['download_count']),
     );
   }
+}
 
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+/// 文章评论
+class ArticleComment {
+  ArticleComment({
+    required this.id,
+    this.articleId = 0,
+    this.userId = 0,
+    this.content = '',
+    this.userName = '',
+    this.userAvatar = '',
+    this.createdAt,
+  });
+
+  final int id;
+  final int articleId;
+  final int userId;
+  final String content;
+  final String userName;
+  final String userAvatar;
+  final String? createdAt;
+
+  factory ArticleComment.fromJson(Map<String, dynamic> json) {
+    return ArticleComment(
+      id: toInt(json['id']),
+      articleId: toInt(json['article_id']),
+      userId: toInt(json['user_id']),
+      content: json['content']?.toString() ?? '',
+      userName: (json['nickname']?.toString() ?? '').isNotEmpty
+          ? json['nickname'].toString()
+          : (json['username']?.toString() ?? ''),
+      userAvatar: json['avatar']?.toString() ?? '',
+      createdAt: json['created_at']?.toString(),
+    );
+  }
 }

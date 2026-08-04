@@ -1,3 +1,5 @@
+import '../utils/coercion.dart';
+
 /// 社区动态
 class CommunityPost {
   CommunityPost({
@@ -32,25 +34,23 @@ class CommunityPost {
 
   factory CommunityPost.fromJson(Map<String, dynamic> json) {
     return CommunityPost(
-      id: _int(json['id']),
-      userId: _int(json['user_id']),
+      id: toInt(json['id']),
+      userId: toInt(json['user_id']),
       userName: json['username']?.toString() ?? '',
       userAvatar: json['user_avatar']?.toString() ?? '',
       content: json['content']?.toString() ?? '',
       targetType: json['target_type']?.toString() ?? '',
-      targetId: _int(json['target_id']),
+      targetId: toInt(json['target_id']),
       targetTitle: json['target_title']?.toString() ?? '',
       images: (json['images'] is List)
           ? json['images'].map((e) => e.toString()).toList()
           : const [],
-      likeCount: _int(json['like_count']),
-      commentCount: _int(json['comment_count']),
+      likeCount: toInt(json['like_count']),
+      commentCount: toInt(json['comment_count']),
       isLiked: json['is_liked'] == true,
       createdAt: json['created_at']?.toString(),
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }
 
 /// 通知
@@ -83,19 +83,17 @@ class AppNotification {
 
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     return AppNotification(
-      id: _int(json['id']),
+      id: toInt(json['id']),
       type: json['type']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       content: json['content']?.toString() ?? '',
-      fromUserId: _int(json['from_user_id']),
+      fromUserId: toInt(json['from_user_id']),
       fromUserName: json['from_username']?.toString() ?? '',
       fromAvatar: json['from_avatar']?.toString() ?? '',
       targetType: json['target_type']?.toString() ?? '',
       targetId: json['target_id']?.toString() ?? '',
-      isRead: _int(json['is_read']),
+      isRead: toInt(json['is_read']),
       createdAt: json['created_at']?.toString(),
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }

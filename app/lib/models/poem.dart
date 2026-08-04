@@ -1,3 +1,5 @@
+import '../utils/coercion.dart';
+
 /// 诗词模型（题目）
 class Poem {
   Poem({
@@ -61,18 +63,17 @@ class LeaderboardEntry {
   final String? createdAt;
 
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
-    int i(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     return LeaderboardEntry(
-      id: i(json['id']),
-      userId: i(json['user_id']),
+      id: toInt(json['id']),
+      userId: toInt(json['user_id']),
       username: json['username']?.toString() ?? '',
       gameMode: json['game_mode']?.toString() ?? '',
       difficulty: json['difficulty']?.toString() ?? '',
-      score: i(json['score']),
-      comboMax: i(json['combo_max']),
-      correctCount: i(json['correct_count']),
-      totalCount: i(json['total_count']),
-      duration: i(json['duration']),
+      score: toInt(json['score']),
+      comboMax: toInt(json['combo_max']),
+      correctCount: toInt(json['correct_count']),
+      totalCount: toInt(json['total_count']),
+      duration: toInt(json['duration']),
       createdAt: json['created_at']?.toString(),
     );
   }

@@ -1,3 +1,5 @@
+import '../utils/coercion.dart';
+
 /// 私信会话
 class Conversation {
   Conversation({
@@ -20,17 +22,15 @@ class Conversation {
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
     return Conversation(
-      id: _int(json['id']),
-      otherUserId: _int(json['other_user_id']),
+      id: toInt(json['id']),
+      otherUserId: toInt(json['other_user_id']),
       otherName: json['other_name']?.toString() ?? '',
       otherAvatar: json['other_avatar']?.toString() ?? '',
       lastMessage: json['last_message']?.toString() ?? '',
       lastMessageAt: json['last_message_at']?.toString(),
-      unreadCount: _int(json['unread_count']),
+      unreadCount: toInt(json['unread_count']),
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }
 
 /// 私信消息
@@ -53,14 +53,12 @@ class ChatMessage {
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     return ChatMessage(
-      id: _int(json['id']),
-      conversationId: _int(json['conversation_id']),
-      senderId: _int(json['sender_id']),
+      id: toInt(json['id']),
+      conversationId: toInt(json['conversation_id']),
+      senderId: toInt(json['sender_id']),
       content: json['content']?.toString() ?? '',
-      isRead: _int(json['is_read']),
+      isRead: toInt(json['is_read']),
       createdAt: json['created_at']?.toString(),
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }

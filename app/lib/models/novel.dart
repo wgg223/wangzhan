@@ -1,3 +1,5 @@
+import '../utils/coercion.dart';
+
 /// 小说模型
 class Novel {
   Novel({
@@ -22,18 +24,16 @@ class Novel {
 
   factory Novel.fromJson(Map<String, dynamic> json) {
     return Novel(
-      id: _int(json['id']),
+      id: toInt(json['id']),
       title: json['title']?.toString() ?? '',
       author: json['author']?.toString() ?? '',
       cover: json['cover_image']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
       status: json['status']?.toString() ?? 'published',
-      chapterCount: _int(json['chapter_count']),
+      chapterCount: toInt(json['chapter_count']),
       createdAt: json['created_at']?.toString(),
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }
 
 /// 小说章节
@@ -58,15 +58,13 @@ class NovelChapter {
 
   factory NovelChapter.fromJson(Map<String, dynamic> json) {
     return NovelChapter(
-      id: _int(json['id']),
-      novelId: _int(json['novel_id']),
+      id: toInt(json['id']),
+      novelId: toInt(json['novel_id']),
       title: json['title']?.toString() ?? '',
       content: json['content']?.toString() ?? '',
-      chapterNumber: _int(json['chapter_number']),
-      fileSize: _int(json['file_size']),
+      chapterNumber: toInt(json['chapter_number']),
+      fileSize: toInt(json['file_size']),
       createdAt: json['created_at']?.toString(),
     );
   }
-
-  static int _int(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
 }
