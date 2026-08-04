@@ -1,8 +1,13 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { queryOne, queryAll, getDb, saveDatabase, getDbPath } = require('../../config/database');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const { queryOne, queryAll, getDb, saveDatabase, getDbPath, generateUid } = require('../../config/database');
 const { apiAuth, apiRequireAdmin } = require('../../middlewares/api-auth');
+const { ROLE_WHITELIST, canOperateUser, ensureAtLeastOneActiveSuperAdmin } = require('../../middlewares/auth');
+const { grantDefaultPermissions } = require('../../config/db-helpers');
+const { logActivity } = require('../../config/activity');
 
 const router = express.Router();
 router.use(apiAuth, apiRequireAdmin);
@@ -81,8 +86,11 @@ router.put('/users/:id', (req, res) => {
   const id = toInt(req.params.id);
   const user = queryOne(db, 'SELECT * FROM users WHERE id = ?', [id]);
   if (!user) return res.status(404).json({ error: '用户不存在' });
-  if (user.role === 'super_admin' && req.apiUser.role !== 'super_admin') {
-    return res.status(403).json({ error: '无权操作超级管理员' });
+
+  // 统一操作校验：不能操作自己、非超管不能动超管、同级/高级不可动
+  const check = canOperateUser(req.apiUser, user);
+  if (!check.ok) {
+    return res.status(403).json({ error: check.reason });
   }
 
   const role = (req.body.role || '').trim();
@@ -92,8 +100,13 @@ router.put('/users/:id', (req, res) => {
     if (req.apiUser.role !== 'super_admin') {
       return res.status(403).json({ error: '仅超级管理员可修改用户角色' });
     }
-    if (!['user', 'admin', 'super_admin'].includes(role)) {
+    if (!ROLE_WHITELIST.includes(role)) {
       return res.status(400).json({ error: '非法的角色值' });
+    }
+    // 降级超管前防管理端锁死
+    if (user.role === 'super_admin' && role !== 'super_admin' &&
+        !ensureAtLeastOneActiveSuperAdmin(db, user.id)) {
+      return res.status(400).json({ error: '不能降级最后一个超级管理员' });
     }
     db.run('UPDATE users SET role = ? WHERE id = ?', [role, id]);
   }
@@ -101,10 +114,118 @@ router.put('/users/:id', (req, res) => {
     if (!['active', 'disabled', 'pending'].includes(status)) {
       return res.status(400).json({ error: '非法的状态值' });
     }
+    // 禁用超管前防管理端锁死
+    if (status !== 'active' && user.role === 'super_admin' &&
+        !ensureAtLeastOneActiveSuperAdmin(db, user.id)) {
+      return res.status(400).json({ error: '不能禁用最后一个超级管理员' });
+    }
     db.run('UPDATE users SET status = ? WHERE id = ?', [status, id]);
   }
   saveDatabase();
   res.json({ success: true });
+});
+
+// 创建用户（仅超级管理员，逻辑对齐 Web 版 /admin/users/create）
+router.post('/users', (req, res) => {
+  if (req.apiUser.role !== 'super_admin') {
+    return res.status(403).json({ error: '仅超级管理员可创建用户' });
+  }
+
+  const db = getDb();
+  const { username, email, password, role } = req.body || {};
+
+  if (!username || !password) {
+    return res.status(400).json({ error: '用户名和密码不能为空' });
+  }
+  if (username.length < 3) {
+    return res.status(400).json({ error: '用户名至少3个字符' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: '密码至少6位' });
+  }
+
+  const existingUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+  if (existingUser) {
+    return res.status(400).json({ error: '用户名已被使用' });
+  }
+  if (email) {
+    const existingEmail = queryOne(db, "SELECT id FROM users WHERE email = ? AND email != ''", [email]);
+    if (existingEmail) {
+      return res.status(400).json({ error: '邮箱已被使用' });
+    }
+  }
+
+  const userRole = role || 'user';
+  const validRoles = ['user', 'visitor', 'admin'];
+  if (!validRoles.includes(userRole)) {
+    return res.status(400).json({ error: '无效的用户角色' });
+  }
+
+  const hashedPassword = bcrypt.hashSync(password, 10);
+  const newUid = generateUid(db);
+  db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
+    [newUid, username, hashedPassword, email || '', userRole]);
+
+  const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+  if (newUser) {
+    grantDefaultPermissions(db, newUser.id, req.apiUser.id);
+  }
+
+  saveDatabase();
+  logActivity(db, {
+    user_id: req.apiUser.id,
+    username: req.apiUser.username,
+    action: 'create',
+    target_type: 'user',
+    target_id: newUser ? newUser.id : null,
+    target_title: username,
+    detail: 'API 创建账户：' + username + ' (角色: ' + userRole + ')',
+    ip: req.ip,
+    route: req.path,
+    method: req.method
+  });
+  res.json({ success: true, message: '账户创建成功' });
+});
+
+// 重置用户密码（仅超级管理员，返回随机新密码，逻辑对齐 Web 版 /auth/admin-reset-password/:userId）
+router.post('/users/:id/reset-password', (req, res) => {
+  if (req.apiUser.role !== 'super_admin') {
+    return res.status(403).json({ error: '仅超级管理员可重置密码' });
+  }
+
+  const db = getDb();
+  const id = toInt(req.params.id);
+  const user = queryOne(db, 'SELECT * FROM users WHERE id = ?', [id]);
+  if (!user) {
+    return res.status(404).json({ error: '用户不存在' });
+  }
+
+  // 统一操作校验：不能操作自己、非超管不能动超管、同级/高级不可动
+  const check = canOperateUser(req.apiUser, user);
+  if (!check.ok) {
+    return res.status(403).json({ error: check.reason });
+  }
+
+  const newPassword = crypto.randomBytes(4).toString('hex');
+  const hashedPassword = bcrypt.hashSync(newPassword, 10);
+  db.run('UPDATE users SET password = ?, must_change_password = 1, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+    [hashedPassword, id]);
+  saveDatabase();
+
+  logActivity(db, {
+    user_id: req.apiUser.id,
+    username: req.apiUser.username,
+    action: 'change_password',
+    target_type: 'password',
+    target_id: id,
+    target_title: user.username,
+    detail: '管理员 ' + req.apiUser.username + ' 重置了用户 ' + user.username + ' 的密码',
+    ip: req.ip,
+    route: req.path,
+    method: req.method
+  });
+
+  res.json({ success: true, message: '密码已重置', new_password: newPassword });
 });
 
 router.delete('/users/:id', (req, res) => {
@@ -112,8 +233,15 @@ router.delete('/users/:id', (req, res) => {
   const id = toInt(req.params.id);
   const user = queryOne(db, 'SELECT * FROM users WHERE id = ?', [id]);
   if (!user) return res.status(404).json({ error: '用户不存在' });
-  if (user.role === 'super_admin') {
-    return res.status(403).json({ error: '不能删除超级管理员' });
+
+  // 统一操作校验：不能操作自己、非超管不能动超管、同级/高级不可动
+  const check = canOperateUser(req.apiUser, user);
+  if (!check.ok) {
+    return res.status(403).json({ error: check.reason });
+  }
+  // 删除超管前防管理端锁死
+  if (user.role === 'super_admin' && !ensureAtLeastOneActiveSuperAdmin(db, user.id)) {
+    return res.status(400).json({ error: '不能删除最后一个超级管理员' });
   }
   db.run('DELETE FROM users WHERE id = ?', [id]);
   saveDatabase();
