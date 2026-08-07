@@ -71,12 +71,30 @@ function insertDefaultDataIfNeeded(db) {
     ['cdn_enabled', '0'],
     ['cdn_provider', 'custom'],
     ['cdn_base_url', 'https://dalaowang233.top'],
-    ['cdn_version', '1.0.0']
+    ['cdn_version', '1.0.0'],
+    ['agreement_version', '1.0']
   ];
 
   settings.forEach(([key, value]) => {
     db.run('INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES (?, ?)', [key, value]);
   });
+
+  // 协议版本升级：当 agreement_version 变更时强制更新协议内容
+  const AGREEMENT_CURRENT_VERSION = '1.0';
+  const versionRow = queryAll(db, "SELECT setting_value FROM settings WHERE setting_key = 'agreement_version'");
+  const currentVersion = versionRow.length > 0 ? versionRow[0].setting_value : '0';
+
+  if (currentVersion !== AGREEMENT_CURRENT_VERSION) {
+    const agreementEntry = settings.find(([k]) => k === 'user_agreement');
+    const privacyEntry = settings.find(([k]) => k === 'privacy_policy');
+    if (agreementEntry) {
+      db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'user_agreement'", [agreementEntry[1]]);
+    }
+    if (privacyEntry) {
+      db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'privacy_policy'", [privacyEntry[1]]);
+    }
+    db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'agreement_version'", [AGREEMENT_CURRENT_VERSION]);
+  }
 
   // 插入默认权限（简化版：按模块合并，每个模块一个管理权限）
   const defaultPermissions = [
