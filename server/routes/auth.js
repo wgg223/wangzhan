@@ -407,14 +407,10 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   const oauthProviders = getEnabledProviders(db);
 
   // 获取协议内容
-  let userAgreement = '';
-  let privacyPolicy = '';
-  if (source === 'frontend') {
-    const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
-    const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
-    userAgreement = agreement ? agreement.setting_value : '';
-    privacyPolicy = privacy ? privacy.setting_value : '';
-  }
+  const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
+  const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
+  const userAgreement = agreement ? agreement.setting_value : '';
+  const privacyPolicy = privacy ? privacy.setting_value : '';
 
   function renderLogin(errorMsg) {
     const modeInfo = getModeInfo('login', source);
@@ -437,8 +433,8 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
     });
   }
 
-  // 主站点登录需要同意用户协议
-  if (source === 'frontend' && agree !== '1' && agree !== 'on') {
+  // 登录需要同意用户协议
+  if (agree !== '1' && agree !== 'on') {
     return renderLogin('请阅读并同意用户协议和隐私政策');
   }
 
@@ -758,11 +754,9 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     });
   }
 
-  // 主站点需要同意用户协议
-  if (source === 'frontend') {
-    if (agree !== '1' && agree !== 'on') {
-      return renderRegister('请阅读并同意用户协议和隐私政策', 'info');
-    }
+  // 需要同意用户协议
+  if (agree !== '1' && agree !== 'on') {
+    return renderRegister('请阅读并同意用户协议和隐私政策', 'info');
   }
 
   if (!username || !password || !email) {
