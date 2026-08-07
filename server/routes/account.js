@@ -10,20 +10,30 @@ const { saveDatabase, queryOne, queryAll } = require('../config/database');
 const { getSettings } = require('../utils/settings');
 const { sendMail } = require('../config/mailer');
 const { logActivity } = require('../config/activity');
+const { createRateLimiter } = require('../middlewares/rate-limiter');
+
+const emailCodeLimiter = createRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 3,
+  message: '验证码发送过于频繁，请5分钟后再试'
+});
+
+const ALLOWED_AVATAR_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+const AVATAR_DIR = path.join(__dirname, '../../public/uploads/avatars');
 
 // 头像上传配置
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../public/uploads/avatars');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    if (!fs.existsSync(AVATAR_DIR)) {
+      fs.mkdirSync(AVATAR_DIR, { recursive: true });
     }
-    cb(null, uploadDir);
+    cb(null, AVATAR_DIR);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, 'avatar-' + req.session.user.id + '-' + uniqueSuffix + ext);
+    const ext = path.extname(file.originalname).toLowerCase();
+    const safeExt = ALLOWED_AVATAR_EXTS.includes(ext) ? ext : '.jpg';
+    cb(null, 'avatar-' + req.session.user.id + '-' + uniqueSuffix + safeExt);
   }
 });
 
@@ -130,8 +140,8 @@ router.post('/account/password', isAuthenticated, (req, res) => {
     return res.redirect('/account?error=请填写所有密码字段');
   }
 
-  if (new_password.length < 6) {
-    return res.redirect('/account?error=新密码至少6位');
+  if (new_password.length < 8) {
+    return res.redirect('/account?error=新密码至少8位');
   }
 
   if (new_password !== confirm_password) {
@@ -206,7 +216,7 @@ router.post('/account/username', isAuthenticated, (req, res) => {
 });
 
 // 发送邮箱验证码
-router.post('/account/email/send-code', isAuthenticated, async (req, res) => {
+router.post('/account/email/send-code', isAuthenticated, emailCodeLimiter, async (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
   const { new_email } = req.body;
@@ -316,11 +326,12 @@ router.post('/account/avatar', isAuthenticated, avatarUpload.single('avatar'), (
 
   const avatarUrl = '/uploads/avatars/' + req.file.filename;
 
-  // 删除旧头像
+  // 删除旧头像（校验路径必须在 uploads/avatars 目录内）
   const oldUser = queryOne(db, 'SELECT avatar FROM users WHERE id = ?', [userId]);
   if (oldUser && oldUser.avatar && !oldUser.avatar.includes('default-avatar')) {
-    const oldAvatarPath = path.join(__dirname, '../../public', oldUser.avatar);
-    if (fs.existsSync(oldAvatarPath)) {
+    const oldAvatarPath = path.resolve(path.join(__dirname, '../../public', oldUser.avatar));
+    const avatarDirResolved = path.resolve(AVATAR_DIR);
+    if (oldAvatarPath.startsWith(avatarDirResolved) && fs.existsSync(oldAvatarPath)) {
       try { fs.unlinkSync(oldAvatarPath); } catch (e) { /* 忽略 */ }
     }
   }

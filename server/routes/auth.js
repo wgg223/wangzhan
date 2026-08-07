@@ -452,7 +452,6 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   if (user.status === 'disabled' || user.status === 0) {
     // 检查是否有 deactivated_at 字段，判断是否因注销而被禁用
     const deactivated = user.deactivated_at && user.deactivated_at !== null;
-    const errorMsg = deactivated ? '该账号已注销，无法登录' : '账号已被禁用';
 
     // 记录登录失败日志
     try {
@@ -466,7 +465,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
         ip: req.ip
       });
     } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
-    return renderLogin(errorMsg);
+    return renderLogin('用户名或密码错误');
   }
   if (user.status === 'pending') {
     // 记录登录失败日志 - 账户未激活
@@ -481,7 +480,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
         ip: req.ip
       });
     } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
-    return renderLogin('账户未激活或已被禁用，请联系管理员审核');
+    return renderLogin('用户名或密码错误');
   }
 
   // 兼容 SHA-256 和 bcrypt（SHA-256 密码登录后自动升级为 bcrypt）
@@ -759,8 +758,8 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     return renderRegister('两次输入的密码不一致', 'info');
   }
 
-  if (password.length < 6) {
-    return renderRegister('密码长度不能少于6位', 'info');
+  if (password.length < 8) {
+    return renderRegister('密码长度不能少于8位', 'info');
   }
 
   if (username.length < 3 || username.length > 20) {
@@ -1186,8 +1185,8 @@ router.post('/:source/forgot-password/reset', resetPasswordLimiter, (req, res) =
     return renderVerify('请填写所有字段', null);
   }
 
-  if (new_password.length < 6) {
-    return renderVerify('密码长度不能少于6位', null);
+  if (new_password.length < 8) {
+    return renderVerify('密码长度不能少于8位', null);
   }
 
   if (new_password !== confirm_password) {
@@ -1313,8 +1312,8 @@ router.post('/:source/change-password', changePasswordLimiter, (req, res) => {
     });
   }
 
-  if (!new_password || new_password.length < 6) {
-    return renderChangePassword('新密码长度不能少于6位', null);
+  if (!new_password || new_password.length < 8) {
+    return renderChangePassword('新密码长度不能少于8位', null);
   }
 
   if (new_password !== confirm_password) {
@@ -1514,8 +1513,8 @@ router.post('/:source/force-change-password', changePasswordLimiter, (req, res) 
     return renderForceChange('请填写所有字段');
   }
 
-  if (new_password.length < 6) {
-    return renderForceChange('密码长度不能少于6位');
+  if (new_password.length < 8) {
+    return renderForceChange('密码长度不能少于8位');
   }
 
   if (new_password !== confirm_password) {

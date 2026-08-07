@@ -33,7 +33,7 @@
   
   <div class="image-grid">
     <% images.forEach(function(img) { %>
-      <div class="image-card" onclick="openLightbox('<%= img.url %>', '<%= img.title %>', '<%= img.nickname || "匿名" %>', '<%= img.cate_name || "未分类" %>', '<%= img.description || "" %>')" style="cursor: pointer;">
+      <div class="image-card" data-url="<%= img.url %>" data-title="<%= img.title %>" data-nickname="<%= img.nickname || '匿名' %>" data-cate="<%= img.cate_name || '未分类' %>" data-desc="<%= img.description || '' %>" onclick="openLightboxFromCard(this)" style="cursor: pointer;">
         <img src="<%= img.url %>" alt="<%= img.title %>" loading="lazy">
         <div class="info">
           <div class="title"><%= img.title %></div>
@@ -89,6 +89,16 @@ function openLightbox(url, title, author, category, description) {
   lb.style.display = 'flex';
   lb.classList.add('lightbox-enter');
   document.body.style.overflow = 'hidden';
+}
+
+function openLightboxFromCard(el) {
+  openLightbox(
+    el.getAttribute('data-url'),
+    el.getAttribute('data-title'),
+    el.getAttribute('data-nickname'),
+    el.getAttribute('data-cate'),
+    el.getAttribute('data-desc')
+  );
 }
 
 function closeLightbox(e) {

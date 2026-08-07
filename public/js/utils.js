@@ -29,7 +29,7 @@ function getCsrfToken() {
  */
 function showToast(message, type, duration) {
   if (!message) return;
-  duration = duration || 3000;
+  duration = duration || Math.max(3000, Math.min(8000, message.length * 80));
 
   var existing = document.querySelector('.toast-message, .admin-toast, .ds-toast');
   if (existing) {

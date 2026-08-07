@@ -62,7 +62,7 @@ module.exports = {
     max_restarts: 10,
     restart_delay: 5000,
     kill_timeout: 30000,
-    pre_start: 'mkdir -p logs',
+    pre_start: 'node -e "require(\'fs\').mkdirSync(\'logs\',{recursive:true})"',
     // 健康检查配置
     min_uptime: '60s',
     wait_ready: true,

@@ -33,7 +33,7 @@ router.post('/users/create', isAuthenticated, isSuperAdmin, (req, res) => {
     return res.status(400).json({ error: '用户名至少3个字符' });
   }
 
-  if (password.length < 6) {
+  if (password.length < 8) {
     return res.status(400).json({ error: '密码至少6位' });
   }
 
@@ -252,7 +252,7 @@ router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single
         results.errors.push(`第 ${i + 1} 行: 用户名无效 (至少3个字符)`);
         continue;
       }
-      if (!password || password.length < 6) {
+      if (!password || password.length < 8) {
         results.failed++;
         results.errors.push(`第 ${i + 1} 行: 用户 "${username}" 密码无效 (至少6位)`);
         continue;

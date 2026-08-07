@@ -204,11 +204,29 @@ async function getUserInfo(provider, config, accessToken, openid) {
           headers: { Authorization: `token ${accessToken}`, 'User-Agent': 'NodeApp' }
         });
         const data = response.data;
+
+        // 获取已验证的邮箱（防止未验证邮箱导致账号接管）
+        let verifiedEmail = null;
+        try {
+          const emailsResp = await axios.get('https://api.github.com/user/emails', {
+            headers: { Authorization: `token ${accessToken}`, 'User-Agent': 'NodeApp' }
+          });
+          const primary = emailsResp.data.find(e => e.primary && e.verified);
+          if (primary) {
+            verifiedEmail = primary.email;
+          } else {
+            const anyVerified = emailsResp.data.find(e => e.verified);
+            if (anyVerified) verifiedEmail = anyVerified.email;
+          }
+        } catch (e) {
+          // 获取邮箱列表失败，不使用 email
+        }
+
         return {
           open_id: String(data.id),
           nickname: data.name || data.login,
           avatar: data.avatar_url,
-          email: data.email
+          email: verifiedEmail
         };
       }
 

@@ -53,7 +53,7 @@ const PRAGMA_PRESETS = {
  */
 router.use((req, res, next) => {
   if (!req.db) {
-    return res.status(500).send('数据库未初始化');
+    return res.status(503).send('<h1>服务暂时不可用</h1><p>数据库正在初始化，请刷新页面重试</p>');
   }
 
   // 检查安装状态

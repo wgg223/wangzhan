@@ -83,26 +83,31 @@ class SystemMonitor {
    * 执行健康检查
    */
   check() {
-    const memUsage = process.memoryUsage();
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const systemMemPercent = ((totalMem - freeMem) / totalMem) * 100;
+    try {
+      const memUsage = process.memoryUsage();
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const systemMemPercent = ((totalMem - freeMem) / totalMem) * 100;
 
-    // 检查进程内存
-    const heapPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+      // 检查进程内存
+      const heapPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
 
-    // 检查系统内存
-    if (systemMemPercent > this.criticalMemoryPercent) {
-      this.logger.warn(`[监控] 系统内存使用率临界: ${systemMemPercent.toFixed(1)}%`);
-      this._tryGC();
-    } else if (systemMemPercent > this.warningMemoryPercent) {
-      this.logger.warn(`[监控] 系统内存使用率预警: ${systemMemPercent.toFixed(1)}%`);
-    }
+      // 检查系统内存
+      if (systemMemPercent > this.criticalMemoryPercent) {
+        this.logger.warn(`[监控] 系统内存使用率临界: ${systemMemPercent.toFixed(1)}%`);
+        this._tryGC();
+      } else if (systemMemPercent > this.warningMemoryPercent) {
+        this.logger.warn(`[监控] 系统内存使用率预警: ${systemMemPercent.toFixed(1)}%`);
+      }
 
-    // 检查堆内存
-    if (heapPercent > 90) {
-      this.logger.warn(`[监控] V8堆内存使用率过高: ${heapPercent.toFixed(1)}%`);
-      this._tryGC();
+      // 检查堆内存
+      if (heapPercent > 90) {
+        this.logger.warn(`[监控] V8堆内存使用率过高: ${heapPercent.toFixed(1)}%`);
+        this._tryGC();
+      }
+    } catch (err) {
+      // 健康检查失败不应影响主流程
+      this.logger.error('[监控] 健康检查异常:', err.message);
     }
   }
 

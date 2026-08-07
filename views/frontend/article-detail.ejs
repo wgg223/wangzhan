@@ -9,7 +9,7 @@
           作者：<a href="/user/<%= article.author_uid || article.author_id %>"><%= article.author_name %></a>
           <% if (typeof user !== 'undefined' && user && user.id !== article.author_id) { %>
             <button class="btn-follow-small follow-btn" data-user-id="<%= article.author_id %>" data-following="false">+ 关注</button>
-            <button class="btn-message-small" onclick="openChatWithUser(<%= article.author_id %>, '<%= article.author_name %>', '/assets/images/default-avatar.png')">私信</button>
+            <button class="btn-message-small" data-author-id="<%= article.author_id %>" data-author-name="<%= article.author_name %>" onclick="openChatFromBtn(this)">私信</button>
           <% } %>
         </span>
       <% } %>
@@ -573,6 +573,14 @@
 </style>
 
 <script>
+function openChatFromBtn(el) {
+  var userId = parseInt(el.getAttribute('data-author-id'), 10);
+  var authorName = el.getAttribute('data-author-name');
+  if (typeof openChatWithUser === 'function' && userId) {
+    openChatWithUser(userId, authorName, '/assets/images/default-avatar.png');
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   // 关注按钮
   document.querySelectorAll('.follow-btn').forEach(function(btn) {

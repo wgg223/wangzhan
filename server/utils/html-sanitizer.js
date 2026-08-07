@@ -11,15 +11,12 @@ const DEFAULT_OPTIONS = {
     'div', 'span', 'section', 'article', 'aside', 'header', 'footer', 'main', 'nav',
     'details', 'summary',
     'sup', 'sub', 'small', 'abbr', 'cite', 'q',
-    'iframe',
-    'video', 'audio', 'source',
-    'svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'g', 'defs', 'use', 'symbol'
+    'video', 'audio', 'source'
   ],
   allowedAttributes: {
-    '*': ['class', 'id', 'style', 'title', 'lang', 'dir', 'role', 'aria-*', 'data-*'],
+    '*': ['class', 'id', 'title', 'lang', 'dir', 'role', 'aria-*', 'data-*'],
     'a': ['href', 'target', 'rel'],
     'img': ['src', 'alt', 'width', 'height', 'loading'],
-    'iframe': ['src', 'width', 'height', 'frameborder', 'allowfullscreen', 'allow', 'sandbox'],
     'video': ['src', 'controls', 'autoplay', 'loop', 'muted', 'poster', 'width', 'height'],
     'audio': ['src', 'controls', 'autoplay', 'loop', 'muted'],
     'source': ['src', 'type'],
@@ -29,27 +26,15 @@ const DEFAULT_OPTIONS = {
     'colgroup': ['span'],
     'ol': ['start', 'type', 'reversed'],
     'blockquote': ['cite'],
-    'q': ['cite'],
-    'svg': ['viewBox', 'xmlns', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'width', 'height'],
-    'path': ['d', 'fill', 'stroke', 'stroke-width'],
-    'circle': ['cx', 'cy', 'r', 'fill', 'stroke'],
-    'rect': ['x', 'y', 'width', 'height', 'fill', 'stroke', 'rx', 'ry'],
-    'line': ['x1', 'y1', 'x2', 'y2', 'stroke'],
-    'polyline': ['points', 'fill', 'stroke'],
-    'polygon': ['points', 'fill', 'stroke'],
-    'g': ['transform', 'fill', 'stroke'],
-    'use': ['href', 'xlink:href'],
-    'symbol': ['viewBox', 'id']
+    'q': ['cite']
   },
-  allowedSchemes: ['http', 'https', 'mailto', 'tel', 'data'],
+  allowedSchemes: ['http', 'https', 'mailto', 'tel'],
   allowedSchemesByTag: {
     'img': ['http', 'https', 'data', 'blob'],
-    'iframe': ['http', 'https'],
     'video': ['http', 'https'],
     'audio': ['http', 'https'],
     'source': ['http', 'https']
   },
-  allowedIframeHostnames: ['www.youtube.com'],
   disallowedTagsMode: 'discard'
 };
 

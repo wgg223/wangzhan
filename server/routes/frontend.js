@@ -228,6 +228,10 @@ router.post('/articles/:id/comment', (req, res) => {
     return res.redirect(`/articles/${articleId}?error=评论内容不能为空`);
   }
 
+  if (content.trim().length > 2000) {
+    return res.redirect(`/articles/${articleId}?error=评论内容不能超过2000字`);
+  }
+
   // 检查文章是否存在
   const article = queryOne(db, "SELECT id FROM articles WHERE id = ? AND status = 'published'", [articleId]);
   if (!article) {

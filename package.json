@@ -12,7 +12,7 @@
     "pm2:logs": "pm2 logs website-admin",
     "pm2:monit": "pm2 monit",
     "start:prod": "npm run pm2",
-    "health": "curl http://localhost:3000/health",
+    "health": "node -e \"fetch('http://localhost:3000/health').then(r=>r.json()).then(d=>console.log(JSON.stringify(d,null,2))).catch(e=>console.error('健康检查失败:',e.message))\"",
     "lint": "eslint . --ext .js,.mjs",
     "lint:fix": "eslint . --ext .js,.mjs --fix",
     "lint:frontend": "eslint public/js/ -c .eslintrc-frontend.json --ext .js",
@@ -77,6 +77,6 @@
     "nodemon": "^3.0.2"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=16.0.0"
   }
 }

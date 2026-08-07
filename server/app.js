@@ -4,7 +4,6 @@ const path = require('path');
 const session = require('express-session');
 const expressLayouts = require('express-ejs-layouts');
 const fs = require('fs');
-const os = require('os');
 const cookieParser = require('cookie-parser');
 const { queryAll, initDatabase, getDb, isSetupCompleted } = require('./config/database');
 const { settingsCache, pageCache } = require('./config/cache');
@@ -138,7 +137,15 @@ function getCachedNavPages(db) {
 app.use((req, res, next) => {
   req.db = getDb();
   if (!req.db) {
-    return res.status(500).send('数据库未初始化');
+    if (req.path.startsWith('/api/')) {
+      return res.status(503).json({ error: '服务暂时不可用，数据库正在初始化' });
+    }
+    return res.status(503).render('frontend/error', {
+      message: '服务暂时不可用',
+      error: '数据库正在初始化，请稍后刷新页面',
+      user: null,
+      settings: {}
+    });
   }
 
   res.locals.user = req.session.user || null;
@@ -329,6 +336,18 @@ async function start() {
         process.send('ready');
       }
     });
+
+    // 端口冲突检测
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`[错误] 端口 ${PORT} 已被占用，请更换端口（PORT环境变量）或关闭占用进程`);
+        process.exit(1);
+      }
+    });
+
+    // 请求超时保护（30秒）
+    server.timeout = 30000;
+    server.keepAliveTimeout = 65000;
 
     // 进程错误处理
     process.on('uncaughtException', (err) => {

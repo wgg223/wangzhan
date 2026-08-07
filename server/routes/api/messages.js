@@ -1,6 +1,7 @@
 const express = require('express');
 const { queryOne, queryAll, getDb, saveDatabase } = require('../../config/database');
 const { apiAuth } = require('../../middlewares/api-auth');
+const { sanitize } = require('../../utils/html-sanitizer');
 
 const router = express.Router();
 
@@ -96,7 +97,10 @@ router.post('/conversations/:id', apiAuth, (req, res) => {
   const content = (req.body.content || '').trim();
 
   if (!content) return res.status(400).json({ error: '消息内容不能为空' });
-  if (content.length > 2000) return res.status(400).json({ error: '消息过长' });
+
+  // 净化消息内容（纯文本，去除所有 HTML 标签）
+  const safeContent = sanitize(content.trim(), { allowedTags: [], allowedAttributes: {} });
+  if (safeContent.length > 2000) return res.status(400).json({ error: '消息过长' });
 
   const conv = queryOne(db,
     'SELECT * FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)',
@@ -111,7 +115,7 @@ router.post('/conversations/:id', apiAuth, (req, res) => {
 
   db.run(
     'INSERT INTO private_messages (conversation_id, sender_id, content, is_read) VALUES (?, ?, ?, 0)',
-    [conversationId, userId, content]
+    [conversationId, userId, safeContent]
   );
   db.run('UPDATE conversations SET last_message_at = ? WHERE id = ?', [new Date().toISOString(), conversationId]);
   saveDatabase();

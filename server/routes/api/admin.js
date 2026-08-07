@@ -140,8 +140,8 @@ router.post('/users', (req, res) => {
   if (username.length < 3) {
     return res.status(400).json({ error: '用户名至少3个字符' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: '密码至少6位' });
+  if (password.length < 8) {
+    return res.status(400).json({ error: '密码至少8位' });
   }
 
   const existingUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);

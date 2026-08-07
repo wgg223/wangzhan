@@ -42,6 +42,10 @@ function resetPassword(userId, username) {
     });
 }
 
+function resetPasswordFromBtn(el) {
+  resetPassword(parseInt(el.getAttribute('data-user-id'), 10), el.getAttribute('data-username'));
+}
+
 // 复制链接到剪贴板
 function copyUrl(url) {
   var fullUrl = window.location.origin + url;

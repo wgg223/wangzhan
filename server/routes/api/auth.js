@@ -67,8 +67,8 @@ router.post('/register', (req, res) => {
   if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username)) {
     return res.status(400).json({ error: '用户名格式不正确（2-20位，仅限字母数字下划线中文）' });
   }
-  if (password.length < 6 || password.length > 64) {
-    return res.status(400).json({ error: '密码长度需在 6-64 位之间' });
+  if (password.length < 8 || password.length > 64) {
+    return res.status(400).json({ error: '密码长度需在 8-64 位之间' });
   }
 
   // 图形验证码校验
@@ -105,19 +105,24 @@ router.post('/login', (req, res) => {
   const db = getDb();
   const username = (req.body.username || '').trim();
   const password = req.body.password || '';
+  const captchaId = (req.body.captcha_id || '').toString();
+  const captchaInput = (req.body.captcha || '').toString();
+
   if (!username || !password) {
     return res.status(400).json({ error: '请输入用户名和密码' });
   }
 
+  // 图形验证码校验
+  const stored = captchaId ? captchaStore.get(captchaId) : null;
+  if (!stored || stored.expires < Date.now() || stored.text.toLowerCase() !== captchaInput.trim().toLowerCase()) {
+    if (captchaId) captchaStore.delete(captchaId);
+    return res.status(400).json({ error: '图形验证码错误或已过期' });
+  }
+  captchaStore.delete(captchaId);
+
   const user = queryOne(db, 'SELECT * FROM users WHERE username = ? OR email = ?', [username, username]);
-  if (!user) {
+  if (!user || (user.status !== 'active')) {
     return res.status(400).json({ error: '用户名或密码错误' });
-  }
-  if (user.status === 'disabled' || user.status === 0) {
-    return res.status(403).json({ error: '账号已被禁用' });
-  }
-  if (user.status === 'pending') {
-    return res.status(403).json({ error: '账号待审核' });
   }
 
   // 兼容 SHA-256 旧密码（登录后自动升级为 bcrypt）
@@ -160,13 +165,23 @@ router.put('/profile', apiAuth, (req, res) => {
   const userId = req.apiUser.id;
   const nickname = (req.body.nickname !== undefined ? String(req.body.nickname).trim() : req.apiUser.nickname);
   const bio = (req.body.bio !== undefined ? String(req.body.bio).trim() : req.apiUser.bio);
-  const avatar = (req.body.avatar !== undefined ? String(req.body.avatar).trim() : req.apiUser.avatar);
+  let avatar = (req.body.avatar !== undefined ? String(req.body.avatar).trim() : req.apiUser.avatar);
 
   if (nickname.length > 30) {
     return res.status(400).json({ error: '昵称不能超过30个字符' });
   }
   if (bio.length > 200) {
     return res.status(400).json({ error: '简介不能超过200个字符' });
+  }
+
+  // 校验 avatar 路径：必须是合法的 uploads 路径或默认头像
+  if (req.body.avatar !== undefined) {
+    if (avatar && !avatar.startsWith('/assets/') && !avatar.startsWith('/uploads/avatars/')) {
+      return res.status(400).json({ error: '非法的头像路径' });
+    }
+    if (avatar && avatar.includes('..')) {
+      return res.status(400).json({ error: '非法的头像路径' });
+    }
   }
 
   db.run('UPDATE users SET nickname = ?, bio = ?, avatar = ? WHERE id = ?', [nickname, bio, avatar, userId]);
@@ -180,8 +195,8 @@ router.put('/password', apiAuth, (req, res) => {
   const oldPassword = req.body.old_password || '';
   const newPassword = req.body.new_password || '';
 
-  if (newPassword.length < 6 || newPassword.length > 64) {
-    return res.status(400).json({ error: '新密码长度需在 6-64 位之间' });
+  if (newPassword.length < 8 || newPassword.length > 64) {
+    return res.status(400).json({ error: '新密码长度需在 8-64 位之间' });
   }
   if (!bcrypt.compareSync(oldPassword, req.apiUser.password)) {
     return res.status(400).json({ error: '当前密码不正确' });

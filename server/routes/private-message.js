@@ -3,6 +3,7 @@ const router = express.Router();
 const { queryOne, queryAll, getDb, saveDatabase } = require('../config/database');
 const { isAuthenticated } = require('../middlewares/auth');
 const { createNotification } = require('./community');
+const { sanitize } = require('../utils/html-sanitizer');
 
 // 检查是否可以给目标用户发私信
 function canSendMessage(db, senderId, targetUserId) {
@@ -183,7 +184,10 @@ router.post('/api/messages/conversations/:id', isAuthenticated, (req, res) => {
     return res.status(400).json({ success: false, error: '消息内容不能为空' });
   }
 
-  if (content.trim().length > 2000) {
+  // 净化消息内容（纯文本，去除所有 HTML 标签）
+  const safeContent = sanitize(content.trim(), { allowedTags: [], allowedAttributes: {} });
+
+  if (safeContent.length > 2000) {
     return res.status(400).json({ success: false, error: '消息内容不能超过2000字' });
   }
 
@@ -204,7 +208,7 @@ router.post('/api/messages/conversations/:id', isAuthenticated, (req, res) => {
 
   db.run(
     'INSERT INTO private_messages (conversation_id, sender_id, content) VALUES (?, ?, ?)',
-    [convId, userId, content.trim()]
+    [convId, userId, safeContent]
   );
   db.run(
     'UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?',

@@ -16,16 +16,28 @@ const MAX_FILE_SIZE = 200 * 1024 * 1024;
 
 const ALLOWED_EXTENSIONS = [
   '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
-  '.exe', '.msi', '.dmg', '.apk', '.ipa',
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
   '.txt', '.csv', '.json', '.xml', '.yaml', '.yml',
   '.mp3', '.wav', '.flac', '.aac', '.ogg',
   '.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv',
-  '.iso', '.img',
   '.psd', '.ai', '.sketch',
-  '.ttf', '.otf', '.woff', '.woff2',
-  '.db', '.sqlite', '.sql'
+  '.ttf', '.otf', '.woff', '.woff2'
 ];
+
+// 附件文件路径校验：必须以 /uploads/attachments/ 开头且不含 ..
+function isValidAttachmentPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false;
+  if (filePath.includes('..')) return false;
+  return filePath.startsWith('/uploads/attachments/');
+}
+
+function safeResolveAttachment(filePath) {
+  if (!isValidAttachmentPath(filePath)) return null;
+  const resolved = path.resolve(publicDir, '.' + filePath);
+  const attachmentsDir = path.resolve(UPLOAD_DIR);
+  if (!resolved.startsWith(attachmentsDir)) return null;
+  return resolved;
+}
 
 const BLOCKED_EXTENSIONS = [
   '.bat', '.cmd', '.com', '.vbs', '.js', '.jse',
@@ -238,13 +250,18 @@ router.post('/upload/merge', isAuthenticated, hasPermission('articles.manage'), 
 // POST /admin/attachments/upload/cancel - Cancel upload
 router.post('/upload/cancel', isAuthenticated, (req, res) => {
   const { uploadId } = req.body;
-  if (uploadId) {
-    const sessionChunkDir = path.join(CHUNKS_DIR, uploadId);
-    if (fs.existsSync(sessionChunkDir)) {
-      fs.rmSync(sessionChunkDir, { recursive: true, force: true });
-    }
-    uploadSessions.delete(uploadId);
+  if (!uploadId || !/^[a-f0-9]{32}$/.test(uploadId)) {
+    return res.status(400).json({ error: '无效的上传ID' });
   }
+  const sessionChunkDir = path.join(CHUNKS_DIR, uploadId);
+  const resolved = path.resolve(sessionChunkDir);
+  if (!resolved.startsWith(path.resolve(CHUNKS_DIR))) {
+    return res.status(403).json({ error: '路径越界' });
+  }
+  if (fs.existsSync(resolved)) {
+    fs.rmSync(resolved, { recursive: true, force: true });
+  }
+  uploadSessions.delete(uploadId);
   res.json({ success: true });
 });
 
@@ -255,6 +272,10 @@ router.post('/save', isAuthenticated, hasPermission('articles.manage'), (req, re
 
   if (!original_name || !file_name || !file_path) {
     return res.status(400).json({ error: '缺少必要参数' });
+  }
+
+  if (!isValidAttachmentPath(file_path)) {
+    return res.status(400).json({ error: '非法的文件路径' });
   }
 
   try {
@@ -297,6 +318,7 @@ router.post('/batch-save', isAuthenticated, hasPermission('articles.manage'), (r
   try {
     for (const att of attachments) {
       if (!att.original_name || !att.file_name || !att.file_path) continue;
+      if (!isValidAttachmentPath(att.file_path)) continue;
       db.run(
         'INSERT INTO article_attachments (article_id, original_name, file_name, file_path, file_size, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)',
         [article_id || null, att.original_name, att.file_name, att.file_path, att.file_size || 0, req.session.user.id]
@@ -331,8 +353,8 @@ router.post('/delete/:id', isAuthenticated, hasPermission('articles.manage'), (r
     return res.status(404).json({ error: '附件不存在' });
   }
 
-  const filePath = path.join(__dirname, '../../../public', att.file_path);
-  if (fs.existsSync(filePath)) {
+  const filePath = safeResolveAttachment(att.file_path);
+  if (filePath && fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
   }
 
@@ -353,8 +375,8 @@ router.post('/delete/:id', isAuthenticated, hasPermission('articles.manage'), (r
   res.json({ success: true });
 });
 
-// GET /admin/attachments/download/:id - Download attachment (public)
-router.get('/download/:id', (req, res) => {
+// GET /admin/attachments/download/:id - Download attachment
+router.get('/download/:id', isAuthenticated, (req, res) => {
   const db = req.db;
   const att = queryOne(db, 'SELECT * FROM article_attachments WHERE id = ?', [req.params.id]);
 
@@ -362,8 +384,8 @@ router.get('/download/:id', (req, res) => {
     return res.status(404).json({ error: '附件不存在' });
   }
 
-  const filePath = path.join(__dirname, '../../../public', att.file_path);
-  if (!fs.existsSync(filePath)) {
+  const filePath = safeResolveAttachment(att.file_path);
+  if (!filePath || !fs.existsSync(filePath)) {
     return res.status(404).json({ error: '文件不存在' });
   }
 
@@ -413,8 +435,8 @@ router.post('/cleanup', isAuthenticated, hasPermission('articles.manage'), (req,
     );
 
     for (const att of toRemove) {
-      const filePath = path.join(__dirname, '../../../public', att.file_path);
-      if (fs.existsSync(filePath)) {
+      const filePath = safeResolveAttachment(att.file_path);
+      if (filePath && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
       db.run('DELETE FROM article_attachments WHERE id = ?', [att.id]);

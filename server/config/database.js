@@ -61,11 +61,24 @@ function performSave() {
     const data = db.export();
     const buffer = Buffer.from(data);
     const tempPath = dbPath + '.tmp';
-    fs.writeFileSync(tempPath, buffer);
-    fs.renameSync(tempPath, dbPath);
+    fs.writeFile(tempPath, buffer, (writeErr) => {
+      if (writeErr) {
+        console.error('数据库保存失败(写入):', writeErr.message);
+        isSaving = false;
+        return;
+      }
+      fs.rename(tempPath, dbPath, (renameErr) => {
+        if (renameErr) {
+          console.error('数据库保存失败(重命名):', renameErr.message);
+        }
+        isSaving = false;
+        if (pendingSaves > 0) {
+          saveTimer = setTimeout(performSave, 100);
+        }
+      });
+    });
   } catch (err) {
     console.error('数据库保存失败:', err.message);
-  } finally {
     isSaving = false;
     if (pendingSaves > 0) {
       saveTimer = setTimeout(performSave, 100);
@@ -101,7 +114,7 @@ async function initDatabase() {
       try {
         return this.prepare(sql).run(params || []);
       } catch (err) {
-        console.error('SQL执行错误:', err.message, 'SQL:', sql, 'Params:', params);
+        console.error('SQL执行错误:', err.message, 'SQL:', sql);
         throw err;
       }
     };

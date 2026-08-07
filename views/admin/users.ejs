@@ -87,7 +87,7 @@
                         <button type="submit" class="btn btn-small btn-success">启用</button>
                       </form>
                     <% } %>
-                    <button type="button" class="btn btn-small btn-info" onclick="resetPassword(<%= u.id %>, '<%= u.username %>')">🔑 重置</button>
+                    <button type="button" class="btn btn-small btn-info" data-user-id="<%= u.id %>" data-username="<%= u.username %>" onclick="resetPasswordFromBtn(this)">🔑 重置</button>
                     <form action="/admin/users/delete/<%= u.id %>" method="POST" class="inline-form" onsubmit="return confirm('确定要删除这个用户吗？')">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                       <button type="submit" class="btn btn-small btn-danger">删除</button>

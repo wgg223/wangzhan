@@ -11,11 +11,11 @@ const cdnConfig = {
   // CDN服务商
   provider: 'custom',
 
-  // CDN基础域名
-  baseUrl: 'https://dalaowang233.top',
+  // CDN基础域名（需在 .env 或后台设置中配置）
+  baseUrl: '',
 
-  // 原站域名
-  originUrl: 'https://dalaowang233.top',
+  // 原站域名（需在 .env 或后台设置中配置）
+  originUrl: '',
 
   // 静态资源版本号（用于缓存更新）
   version: '1.0.0',
@@ -45,7 +45,7 @@ const cdnConfig = {
 
       this.enabled = settingsObj.cdn_enabled === '1';
       this.provider = settingsObj.cdn_provider || 'custom';
-      this.baseUrl = settingsObj.cdn_base_url || 'https://dalaowang233.top';
+      this.baseUrl = settingsObj.cdn_base_url || '';
       this.version = settingsObj.cdn_version || '1.0.0';
     } catch (err) {
       // 如果数据库查询失败，使用环境变量
@@ -58,8 +58,8 @@ const cdnConfig = {
   loadFromEnv() {
     this.enabled = process.env.CDN_ENABLED === 'true' || false;
     this.provider = process.env.CDN_PROVIDER || 'custom';
-    this.baseUrl = process.env.CDN_BASE_URL || 'https://dalaowang233.top';
-    this.originUrl = process.env.ORIGIN_URL || 'https://dalaowang233.top';
+    this.baseUrl = process.env.CDN_BASE_URL || '';
+    this.originUrl = process.env.ORIGIN_URL || '';
     this.version = process.env.CDN_VERSION || '1.0.0';
   },
 
