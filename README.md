@@ -7,8 +7,7 @@
 - **后端**: Node.js, Express.js
 - **模板引擎**: EJS + express-ejs-layouts
 - **数据库**: SQLite（优先 better-sqlite3，回退 sql.js WASM）
-- **客户端 API**: `/api/v1` JSON 接口层（Token 鉴权，供 Flutter 客户端使用）
-- **客户端**: Flutter（Android APK + Windows 桌面程序，见 `app/` 目录）
+- **客户端 API**: `/api/v1` JSON 接口层（Token 鉴权，供原生客户端使用）
 - **前端**: 原生 JavaScript, CSS, Quill 富文本编辑器
 - **进程管理**: PM2
 - **安全**: bcryptjs, AES-256-GCM 加密, SVG 验证码, TOTP 双因素认证
@@ -147,9 +146,11 @@ mi/
 │   ├── uploads/                     # 用户上传文件
 │   └── assets/                      # 图片资源
 │
+├── .env.example                     # 环境变量配置示例
 ├── scripts/                         # 部署/运维脚本（Python）
 ├── package.json                     # 项目配置
 ├── ecosystem.config.js              # PM2 配置
+├── cdn-config.js                    # CDN 加速配置
 ├── deploy.py                        # 部署脚本（跨平台）
 ├── AGENTS.md                        # AI 助手指令
 └── README.md                        # 本文件
@@ -159,7 +160,7 @@ mi/
 
 ### 环境要求
 
-- Node.js >= 14.0.0
+- Node.js >= 16.0.0
 - npm
 
 ### 安装
@@ -196,22 +197,6 @@ npm run health           # 健康检查
 - 安装向导: `http://localhost:3000/setup`
 - 客户端 API: `http://localhost:3000/api/v1`
 
-## 安卓 / Windows 客户端
-
-项目附带 Flutter 原生客户端（`app/` 目录），一套代码同时构建 **Android APK** 和 **Windows 桌面程序**，通过服务器的 `/api/v1` 接口与网站共用同一数据库（SQLite 集中在服务器端），支持完整的用户端功能和管理后台。
-
-```bash
-# 首次构建前初始化平台工程（只需一次）
-cd app && flutter create --project-name mi_app --platforms android,windows .
-flutter pub get
-
-# 修改 lib/config/app_config.dart 中的服务器地址后：
-flutter build apk --release        # 安卓 APK
-flutter build windows --release    # Windows 桌面程序
-```
-
-详细说明见 [app/README.md](./app/README.md)。
-
 ## 客户端 API 接口层
 
 服务器新增 `/api/v1` JSON 接口层（`server/routes/api/`），供原生客户端使用，不影响原有网页功能：
@@ -220,7 +205,6 @@ flutter build windows --release    # Windows 桌面程序
 - **用户端**: 注册/登录/资料/改密、文章（列表/详情/评论/点赞）、图片分享（分类/浏览/上传/收藏/评论）、诗词游戏（随机题库/排行榜）、小说（列表/目录/章节）、社区（动态流/关注/点赞/通知）、私信（会话/消息/未读数）、搜索。
 - **管理端**（需管理员权限）: 仪表盘、用户、文章、评论、图片审核、分类、小说、设置、日志、权限、媒体、备份、维护模式。
 - 所有写操作与网页端走同一套数据库表，数据实时互通。
-- 验证脚本: `node scripts/api-test.js`（启动临时服务器跑全量接口测试，测试后自动还原数据库）。
 
 ## 后台管理功能
 
@@ -312,6 +296,35 @@ python deploy.py --check
 本项目采用 [LICENSE](./LICENSE) 文件。
 
 ## 版本历史
+
+### v5.4.0 (2026-08-07)
+
+**安全漏洞修复（高危）**
+- 附件模块路径穿越修复：移除 .exe/.msi/.apk/.db/.sql 等可执行文件扩展名白名单，新增文件路径校验函数（`isValidAttachmentPath` / `safeResolveAttachment`），修复 `/upload/cancel` 路径穿越（任意目录递归删除）、`/save` `/batch-save` 客户端 file_path 注入、`/delete` `/cleanup` 任意文件删除、`/download` 无鉴权公开下载
+- 头像上传存储型 XSS 修复：扩展名白名单限制为 .jpg/.jpeg/.png/.gif/.webp，非法扩展名降级为 .jpg
+- API 用户资料接口任意文件删除修复：avatar 字段校验路径格式，旧头像删除前校验路径边界
+- EJS onclick 注入 XSS 修复（4 处）：image-share/index.ejs、search.ejs、article-detail.ejs、admin/users.ejs 改用 data 属性 + JS 安全读取
+- OAuth GitHub 邮箱未验证自动绑定修复：改用 `/user/emails` API 获取已验证邮箱，未验证邮箱不用于自动绑定
+
+**安全漏洞修复（中危）**
+- API 登录接口添加图形验证码校验，统一错误消息防用户枚举
+- 密码策略升级至 8 位（auth / api / admin / account 全路径）
+- HTML sanitizer 配置加固：移除 iframe/svg/use/style 等高风险标签和 data: scheme
+- 私信内容写入时净化（`sanitize(content, {allowedTags:[]})`），防御存储型 XSS
+- 评论内容长度限制 2000 字，邮箱验证码发送限流 3 次/5 分钟
+
+**可用性修复**
+- ecosystem.config.js Windows 兼容：`mkdir -p` 改为 `node -e "require('fs').mkdirSync(...)"`
+- app.js：端口冲突检测（EADDRINUSE 友好提示）、请求超时 30 秒保护、数据库未初始化改 HTML/JSON 响应
+- cdn-config.js：移除硬编码域名 `dalaowang233.top`，默认值改为空
+- package.json：Node.js 引擎版本从 >=14.0.0 升级至 >=16.0.0，health 脚本跨平台
+- monitor.js：check() 添加异常保护，防止定时器静默失效
+- database.js：performSave 从同步 IO 改为异步（fs.writeFile + fs.rename），db.run 错误日志移除敏感参数
+- .env.example：补全所有可配置环境变量（SESSION_SECRET、DATA_ENCRYPTION_KEY、SITE_URL、PORT 等）
+- error.ejs：美化错误页面（图标 + 区分 404/500 + 返回上一页按钮）
+- utils.js：Toast 持续时间改为动态计算（根据文本长度 3~8 秒）
+- layout.ejs：通知"全部已读"添加错误处理
+- 部署指南.md：移除硬编码服务器 IP/域名
 
 ### v5.3.0 (2026-08-04)
 
