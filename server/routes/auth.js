@@ -188,6 +188,10 @@ router.get('/:source/login', (req, res) => {
   try { initDefaultProviders(db); } catch (e) { /* 初始化失败不影响登录 */ }
   const oauthProviders = getEnabledProviders(db);
 
+  // 获取协议内容
+  const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
+  const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
+
   res.render('auth/auth-page', { layout: false,
     source,
     mode: 'login',
@@ -200,8 +204,8 @@ router.get('/:source/login', (req, res) => {
     username: '',
     step: null,
     email: '',
-    userAgreement: '',
-    privacyPolicy: '',
+    userAgreement: agreement ? agreement.setting_value : '',
+    privacyPolicy: privacy ? privacy.setting_value : '',
     oauthProviders,
     csrfToken: req.csrfToken ? req.csrfToken() : ''
   });
@@ -217,14 +221,11 @@ router.get('/:source/register', (req, res) => {
   const siteName = getSiteName(db, source);
   const modeInfo = getModeInfo('register', source);
 
-  let userAgreement = '';
-  let privacyPolicy = '';
-  if (source === 'frontend') {
-    const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
-    const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
-    userAgreement = agreement ? agreement.setting_value : '';
-    privacyPolicy = privacy ? privacy.setting_value : '';
-  }
+  // 获取协议内容
+  const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
+  const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
+  const userAgreement = agreement ? agreement.setting_value : '';
+  const privacyPolicy = privacy ? privacy.setting_value : '';
 
   // 判断是否是验证码步骤（从注册信息提交后跳转）
   const step = req.query.step || null;
