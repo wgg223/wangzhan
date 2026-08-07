@@ -98,55 +98,63 @@
 
 <script>
 var quill = null;
+var quillToolbarConfig = [
+  [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+  [{ 'font': [] }],
+  [{ 'size': ['small', false, 'large', 'huge'] }],
+  ['bold', 'italic', 'underline', 'strike'],
+  [{ 'color': [] }, { 'background': [] }],
+  [{ 'script': 'sub'}, { 'script': 'super' }],
+  [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+  [{ 'indent': '-1'}, { 'indent': '+1' }],
+  [{ 'direction': 'rtl' }],
+  [{ 'align': [] }],
+  ['link', 'image', 'video'],
+  ['blockquote', 'code-block'],
+  ['clean']
+];
 
-// 安全初始化 Quill 编辑器
-try {
-  if (typeof Quill !== 'undefined') {
+function doInitQuill() {
+  try {
+    if (typeof Quill === 'undefined') throw new Error('Quill not loaded');
     quill = new Quill('#editor-container', {
       theme: 'snow',
-      modules: {
-        toolbar: [
-          [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
-          [{ 'font': [] }],
-          [{ 'size': ['small', false, 'large', 'huge'] }],
-          ['bold', 'italic', 'underline', 'strike'],
-          [{ 'color': [] }, { 'background': [] }],
-          [{ 'script': 'sub'}, { 'script': 'super' }],
-          [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-          [{ 'indent': '-1'}, { 'indent': '+1' }],
-          [{ 'direction': 'rtl' }],
-          [{ 'align': [] }],
-          ['link', 'image', 'video'],
-          ['blockquote', 'code-block'],
-          ['clean']
-        ]
-      },
+      modules: { toolbar: quillToolbarConfig },
       placeholder: '请输入页面内容...'
     });
-
-    // 设置初始内容
     var contentElement = document.getElementById('content');
-    if (contentElement.value) {
-      quill.root.innerHTML = contentElement.value;
-    }
-
-    // 表单提交前更新隐藏字段
+    if (contentElement.value) { quill.root.innerHTML = contentElement.value; }
     document.querySelector('.admin-form').addEventListener('submit', function(e) {
       document.getElementById('content').value = quill.root.innerHTML;
     });
-
-    // 自定义图片处理器 - 使用媒体库
     var toolbar = quill.getModule('toolbar');
-    toolbar.addHandler('image', function() {
-      openMediaSelectorForEditor();
-    });
-  } else {
-    document.getElementById('editor-container').innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid var(--border-color);border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + (document.getElementById('content').value || '') + '</textarea>';
+    toolbar.addHandler('image', function() { openMediaSelectorForEditor(); });
+  } catch (e) {
+    console.error('Quill编辑器初始化失败:', e);
+    showEditorFallback();
   }
-} catch (e) {
-  console.error('Quill编辑器初始化失败:', e);
-  document.getElementById('editor-container').innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid var(--border-color);border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + (document.getElementById('content').value || '') + '</textarea>';
 }
+
+function showEditorFallback() {
+  var el = document.getElementById('editor-container');
+  var val = document.getElementById('content').value || '';
+  el.innerHTML = '<textarea id="content-fallback" name="content" style="width:100%;min-height:400px;padding:10px;border:1px solid var(--border-color);border-radius:5px;font-size:14px;font-family:inherit;" placeholder="请输入页面内容...">' + val + '</textarea>';
+}
+
+function initQuillWhenReady(retries) {
+  retries = retries || 0;
+  if (typeof Quill !== 'undefined') {
+    doInitQuill();
+  } else if (retries < 20) {
+    setTimeout(function() { initQuillWhenReady(retries + 1); }, 200);
+  } else {
+    console.error('Quill编辑器加载超时');
+    showEditorFallback();
+  }
+}
+
+initQuillWhenReady();
+</script>
 
 // 自动生成 slug
 document.getElementById('title').addEventListener('input', function() {

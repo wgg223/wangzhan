@@ -85,18 +85,36 @@ function fallbackCopy(text, successMsg) {
 }
 
 /**
- * 带 CSRF Token 的 fetch 封装
+ * 带 CSRF Token 的 fetch 封装（含超时控制）
  * @param {string} url
  * @param {Object} options - fetch 选项，自动注入 CSRF token
+ * @param {number} timeoutMs - 超时毫秒数，默认15秒
  * @returns {Promise}
  */
-function csrfFetch(url, options) {
+function csrfFetch(url, options, timeoutMs) {
+  timeoutMs = timeoutMs || 15000;
   options = options || {};
   options.headers = options.headers || {};
   options.headers['Content-Type'] = options.headers['Content-Type'] || 'application/json';
   options.headers['X-CSRF-Token'] = getCsrfToken();
+
+  var controller = null;
+  var timer = null;
+  if (typeof AbortController !== 'undefined') {
+    controller = new AbortController();
+    options.signal = controller.signal;
+    timer = setTimeout(function() { controller.abort(); }, timeoutMs);
+  }
+
   return fetch(url, options).then(function(response) {
+    if (timer) clearTimeout(timer);
     return response.json();
+  }).catch(function(err) {
+    if (timer) clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      showToast('请求超时，请检查网络后重试', 'error');
+    }
+    throw err;
   });
 }
 

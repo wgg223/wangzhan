@@ -8,7 +8,7 @@ const cookieParser = require('cookie-parser');
 const { queryAll, initDatabase, getDb, isSetupCompleted } = require('./config/database');
 const { settingsCache, pageCache } = require('./config/cache');
 const { monitor } = require('./config/monitor');
-const { globalLimiter, loginLimiter } = require('./middlewares/rate-limiter');
+const { globalLimiter, loginLimiter, apiLimiter } = require('./middlewares/rate-limiter');
 const { maintenanceMiddleware } = require('./middlewares/maintenance');
 const cdnConfig = require('../cdn-config');
 const { getSettings } = require('./utils/settings');
@@ -36,12 +36,12 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 
 app.use(express.json({
-  limit: '10mb',
+  limit: '50mb',
   strict: true
 }));
 app.use(express.urlencoded({
   extended: true,
-  limit: '10mb',
+  limit: '50mb',
   parameterLimit: 1000
 }));
 
@@ -219,7 +219,7 @@ app.use('/oauth', globalLimiter, oauthRoutes);
 app.use('/', globalLimiter, accountRoutes);
 app.use('/admin', globalLimiter, adminRoutes);
 app.use('/', globalLimiter, permissionApplicationsRoutes);
-app.use('/api/v1', globalLimiter, apiAccessLogger, apiRoutes);
+app.use('/api/v1', globalLimiter, apiLimiter, apiAccessLogger, apiRoutes);
 
 // Maintenance mode middleware - only affects frontend routes
 app.use(maintenanceMiddleware);
@@ -253,12 +253,17 @@ app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: '接口不存在' });
   }
-  res.status(404).render('frontend/error', {
-    message: '页面未找到',
-    error: '您请求的页面不存在',
-    user: req.session.user || null,
-    settings: res.locals.settings || {}
-  });
+  try {
+    res.status(404).render('frontend/error', {
+      message: '页面未找到',
+      error: '您请求的页面不存在',
+      user: req.session.user || null,
+      settings: res.locals.settings || {}
+    });
+  } catch (renderErr) {
+    console.error('[404] 错误模板渲染失败:', renderErr.message);
+    res.status(404).send('<h1>404 - 页面未找到</h1>');
+  }
 });
 
 app.use((err, req, res, next) => {
@@ -289,12 +294,17 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: err.message });
   }
 
-  res.status(500).render('frontend/error', {
-    message: '服务器内部错误',
-    error: process.env.NODE_ENV === 'production' ? '请稍后再试' : '发生错误，请查看服务器日志',
-    user: req.session.user || null,
-    settings: res.locals.settings || {}
-  });
+  try {
+    res.status(500).render('frontend/error', {
+      message: '服务器内部错误',
+      error: process.env.NODE_ENV === 'production' ? '请稍后再试' : '发生错误，请查看服务器日志',
+      user: req.session ? req.session.user : null,
+      settings: res.locals ? (res.locals.settings || {}) : {}
+    });
+  } catch (renderErr) {
+    console.error('[500] 错误模板渲染失败:', renderErr.message);
+    res.status(500).send('<h1>500 - 服务器内部错误</h1>');
+  }
 });
 
 async function start() {
@@ -352,9 +362,12 @@ async function start() {
     // 进程错误处理
     process.on('uncaughtException', (err) => {
       console.error('[FATAL] uncaughtException:', err);
-      const { closeDatabase } = require('./config/database');
-      closeDatabase();
-      process.exit(1);
+      server.close(() => {
+        const { closeDatabase } = require('./config/database');
+        closeDatabase();
+        setTimeout(() => process.exit(1), 2000);
+      });
+      setTimeout(() => process.exit(1), 10000);
     });
 
     process.on('unhandledRejection', (reason) => {

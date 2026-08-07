@@ -8,9 +8,10 @@ const { generateCaptcha } = require('../../config/captcha');
 
 const router = express.Router();
 
-// 图形验证码（内存存储，5分钟过期，用后即焚）
+// 图形验证码（内存存储，5分钟过期，用后即焚，上限10000条防OOM）
 const captchaStore = new Map();
 const CAPTCHA_TTL = 5 * 60 * 1000;
+const MAX_CAPTCHA_STORE = 10000;
 
 setInterval(() => {
   const now = Date.now();
@@ -39,6 +40,11 @@ function sanitizeUser(u) {
 router.get('/captcha', (req, res) => {
   const captcha = generateCaptcha();
   const id = crypto.randomBytes(8).toString('hex');
+  // 超出上限时清理最旧条目防止 OOM
+  if (captchaStore.size >= MAX_CAPTCHA_STORE) {
+    const oldest = captchaStore.keys().next().value;
+    captchaStore.delete(oldest);
+  }
   captchaStore.set(id, { text: captcha.text, expires: Date.now() + CAPTCHA_TTL });
   res.json({ captcha_id: id, svg: captcha.data });
 });

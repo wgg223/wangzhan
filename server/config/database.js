@@ -343,12 +343,21 @@ function closeDatabase() {
   if (db) {
     try {
       if (!useNativeSql) {
-        performSave();
+        // 同步保存确保数据落盘，避免异步 performSave 未完成就 close
+        try {
+          const data = db.export();
+          const buffer = Buffer.from(data);
+          const tempPath = dbPath + '.tmp';
+          fs.writeFileSync(tempPath, buffer);
+          fs.renameSync(tempPath, dbPath);
+        } catch (saveErr) {
+          logger.error('关闭时数据库保存失败:', saveErr.message);
+        }
       }
       db.close();
       db = null;
     } catch (err) {
-      // 关闭失败不影响主流程
+      logger.error('关闭数据库失败:', err.message);
     }
   }
 }

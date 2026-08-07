@@ -28,7 +28,7 @@ function getOrCreateSecret() {
   // 首次运行：生成新密钥并保存到文件
   const newSecret = crypto.randomBytes(32).toString('hex');
   try {
-    fs.writeFileSync(secretFile, newSecret, 'utf-8');
+    fs.writeFileSync(secretFile, newSecret, { encoding: 'utf-8', mode: 0o600 });
     console.log('[ecosystem] 已生成新的 SESSION_SECRET 并持久化到 .session_secret');
   } catch (err) {
     console.error('[ecosystem] 保存 .session_secret 文件失败:', err.message);
@@ -46,17 +46,22 @@ module.exports = {
     cwd: __dirname,
     instances: 1,
     exec_mode: 'fork',
-    max_memory_restart: '1200M',
-    node_args: ['--max-old-space-size=1024', '--expose-gc'],
+    max_memory_restart: '800M',
+    node_args: ['--max-old-space-size=768', '--expose-gc'],
     env: {
       NODE_ENV: 'production',
       PORT: 3000,
       SESSION_SECRET: sessionSecret
     },
+    env_development: {
+      NODE_ENV: 'development',
+      PORT: 3000,
+      SESSION_SECRET: 'dev-secret-not-for-production'
+    },
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
     error_file: './logs/pm2-error.log',
     out_file: './logs/pm2-out.log',
-    merge_logs: true,
+    merge_logs: false,
     watch: false,
     autorestart: true,
     max_restarts: 10,

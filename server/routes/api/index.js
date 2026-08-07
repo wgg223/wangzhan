@@ -17,6 +17,15 @@ router.get('/health', (req, res) => {
   res.json({ status: 'ok', version: '1.0.0' });
 });
 
+// 数据库可用性检查中间件 — 确保所有 API 路由在 db 不可用时统一返回 503
+router.use((req, res, next) => {
+  const { getDb } = require('../../config/database');
+  if (!getDb()) {
+    return res.status(503).json({ error: '数据库暂时不可用，请稍后重试' });
+  }
+  next();
+});
+
 router.use('/auth', authRoutes);
 router.use('/', articleRoutes);
 router.use('/', imageRoutes);

@@ -41,7 +41,13 @@ function createTables(db) {
     'ALTER TABLE users ADD COLUMN deactivated_at DATETIME',
     "ALTER TABLE users ADD COLUMN uid TEXT DEFAULT ''"
   ];
-  userMigrations.forEach(sql => { try { db.run(sql); } catch (e) { /* 列已存在 */ } });
+  userMigrations.forEach(sql => {
+    try { db.run(sql); } catch (e) {
+      if (!e.message || !e.message.includes('duplicate column name')) {
+        console.error('[DB迁移] 执行失败:', sql, '错误:', e.message);
+      }
+    }
+  });
 
   // 创建页面表
   db.run(`CREATE TABLE IF NOT EXISTS pages (
@@ -57,7 +63,7 @@ function createTables(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-  try { db.run("ALTER TABLE pages ADD COLUMN font_color TEXT DEFAULT ''"); } catch (e) { /* 列已存在 */ }
+  try { db.run("ALTER TABLE pages ADD COLUMN font_color TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 创建文章表
   db.run(`CREATE TABLE IF NOT EXISTS articles (
@@ -73,7 +79,7 @@ function createTables(db) {
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (author_id) REFERENCES users(id)
   )`);
-  try { db.run("ALTER TABLE articles ADD COLUMN location TEXT DEFAULT 'home'"); } catch (e) { /* 列已存在 */ }
+  try { db.run("ALTER TABLE articles ADD COLUMN location TEXT DEFAULT 'home'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 文章草稿表
   db.run(`CREATE TABLE IF NOT EXISTS article_drafts (
@@ -179,7 +185,7 @@ function createTables(db) {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (reviewed_by) REFERENCES users(id)
   )`);
-  try { db.run("ALTER TABLE permission_applications ADD COLUMN reject_reason TEXT DEFAULT ''"); } catch (e) { /* 列已存在 */ }
+  try { db.run("ALTER TABLE permission_applications ADD COLUMN reject_reason TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 创建评论表
   db.run(`CREATE TABLE IF NOT EXISTS comments (
@@ -252,8 +258,8 @@ function createTables(db) {
     method TEXT DEFAULT '',
     created_at DATETIME
   )`);
-  try { db.run("ALTER TABLE activity_logs ADD COLUMN route TEXT DEFAULT ''"); } catch (e) { /* 列已存在 */ }
-  try { db.run("ALTER TABLE activity_logs ADD COLUMN method TEXT DEFAULT ''"); } catch (e) { /* 列已存在 */ }
+  try { db.run("ALTER TABLE activity_logs ADD COLUMN route TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE activity_logs ADD COLUMN method TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 创建诗词游戏排行榜表
   db.run(`CREATE TABLE IF NOT EXISTS poem_leaderboard (
@@ -296,9 +302,9 @@ function createTables(db) {
     FOREIGN KEY (cate_id) REFERENCES image_categories(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
   )`);
-  try { db.run('ALTER TABLE images ADD COLUMN download_count INTEGER DEFAULT 0'); } catch (e) { /* 列已存在 */ }
-  try { db.run("ALTER TABLE images ADD COLUMN visibility TEXT DEFAULT 'public'"); } catch (e) { /* 列已存在 */ }
-  try { db.run("ALTER TABLE images ADD COLUMN allowed_user_ids TEXT DEFAULT '[]'"); } catch (e) { /* 列已存在 */ }
+  try { db.run('ALTER TABLE images ADD COLUMN download_count INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE images ADD COLUMN visibility TEXT DEFAULT 'public'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE images ADD COLUMN allowed_user_ids TEXT DEFAULT '[]'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 图片操作日志表
   db.run(`CREATE TABLE IF NOT EXISTS image_logs (
@@ -466,8 +472,8 @@ function createTables(db) {
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-  try { db.run("ALTER TABLE projects ADD COLUMN github_url TEXT DEFAULT ''"); } catch (e) { /* 列已存在 */ }
-  try { db.run("ALTER TABLE projects ADD COLUMN deploy_status TEXT DEFAULT 'none'"); } catch (e) { /* 列已存在 */ }
+  try { db.run("ALTER TABLE projects ADD COLUMN github_url TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE projects ADD COLUMN deploy_status TEXT DEFAULT 'none'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // ============ AI 聊天模块表 ============
 
@@ -500,8 +506,8 @@ function createTables(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
   )`);
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN is_pinned INTEGER DEFAULT 0'); } catch (e) { /* 列已存在 */ }
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN quoted_message_id INTEGER'); } catch (e) { /* 列已存在 */ }
+  try { db.run('ALTER TABLE ai_messages ADD COLUMN is_pinned INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_messages ADD COLUMN quoted_message_id INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 为已有用户生成UID（如果还没有的话）
   try {
