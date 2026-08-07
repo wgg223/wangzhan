@@ -398,7 +398,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   if (!['frontend', 'image-share'].includes(source)) {
     return res.redirect('/');
   }
-  const { username, password, agree } = req.body;
+  const { username, password, agree_terms, agree_privacy } = req.body;
   const db = req.db;
   const siteName = getSiteName(db, source);
 
@@ -434,8 +434,8 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
     });
   }
 
-  // 登录需要同意用户协议
-  if (agree !== '1' && agree !== 'on') {
+  // 登录需要同意用户协议和隐私政策
+  if (agree_terms !== '1' || agree_privacy !== '1') {
     return renderLogin('请阅读并同意用户协议和隐私政策');
   }
 
@@ -590,7 +590,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
   if (!['frontend', 'image-share'].includes(source)) {
     return res.redirect('/');
   }
-  const { username, password, email, confirm_password, agree, nickname, code } = req.body;
+  const { username, password, email, confirm_password, agree_terms, agree_privacy, nickname, code } = req.body;
   const db = req.db;
   const siteName = getSiteName(db, source);
 
@@ -755,8 +755,8 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     });
   }
 
-  // 需要同意用户协议
-  if (agree !== '1' && agree !== 'on') {
+  // 需要同意用户协议和隐私政策
+  if (agree_terms !== '1' || agree_privacy !== '1') {
     return renderRegister('请阅读并同意用户协议和隐私政策', 'info');
   }
 

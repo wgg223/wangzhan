@@ -50,10 +50,14 @@
         <!-- 用户协议 -->
         <div class="form-group agreement-group">
           <label class="auth-checkbox-label">
-            <input type="checkbox" id="loginAgreeCheck" name="agree" value="1" required>
+            <input type="checkbox" id="loginAgreeTerms" name="agree_terms" value="1" required>
             <span>我已阅读并同意
               <a href="javascript:void(0)" onclick="showAuthModal('terms')" style="color:#2563eb;text-decoration:underline;">《用户协议》</a>
-              和
+            </span>
+          </label>
+          <label class="auth-checkbox-label" style="margin-top:6px;">
+            <input type="checkbox" id="loginAgreePrivacy" name="agree_privacy" value="1" required>
+            <span>我已阅读并同意
               <a href="javascript:void(0)" onclick="showAuthModal('privacy')" style="color:#2563eb;text-decoration:underline;">《隐私政策》</a>
             </span>
           </label>
@@ -163,10 +167,14 @@
         <!-- 用户协议 -->
         <div class="form-group agreement-group">
           <label class="auth-checkbox-label">
-            <input type="checkbox" id="agreeCheck" name="agree" value="1" required>
+            <input type="checkbox" id="agreeTerms" name="agree_terms" value="1" required>
             <span>我已阅读并同意
               <a href="javascript:void(0)" onclick="showAuthModal('terms')" style="color:#2563eb;text-decoration:underline;">《用户协议》</a>
-              和
+            </span>
+          </label>
+          <label class="auth-checkbox-label" style="margin-top:6px;">
+            <input type="checkbox" id="agreePrivacy" name="agree_privacy" value="1" required>
+            <span>我已阅读并同意
               <a href="javascript:void(0)" onclick="showAuthModal('privacy')" style="color:#2563eb;text-decoration:underline;">《隐私政策》</a>
             </span>
           </label>
@@ -432,11 +440,13 @@
           <h2>用户协议</h2>
           <button class="auth-modal-close" onclick="closeAuthModal('terms')">&times;</button>
         </div>
-        <div class="auth-modal-body">
+        <div class="auth-modal-body" id="termsBody" onscroll="onModalScroll('terms')">
           <%- userAgreement || '<p>暂无用户协议内容</p>' %>
         </div>
         <div class="auth-modal-footer">
-          <button class="auth-btn auth-btn-primary" style="width:auto; padding: 10px 24px;" onclick="agreeAndCloseAuth('terms')">我已阅读并同意</button>
+          <button class="auth-btn auth-btn-primary" id="termsAgreeBtn" style="width:auto; padding: 10px 24px; opacity:0.5; cursor:not-allowed;" disabled onclick="agreeAndCloseAuth('terms')">
+            请阅读协议 (<span id="termsCountdown">5</span>s)
+          </button>
           <button class="auth-btn" style="width:auto; padding: 10px 24px; background:#f0f0f0; color:#666;" onclick="closeAuthModal('terms')">关闭</button>
         </div>
       </div>
@@ -448,11 +458,13 @@
           <h2>隐私政策</h2>
           <button class="auth-modal-close" onclick="closeAuthModal('privacy')">&times;</button>
         </div>
-        <div class="auth-modal-body">
+        <div class="auth-modal-body" id="privacyBody" onscroll="onModalScroll('privacy')">
           <%- privacyPolicy || '<p>暂无隐私政策内容</p>' %>
         </div>
         <div class="auth-modal-footer">
-          <button class="auth-btn auth-btn-primary" style="width:auto; padding: 10px 24px;" onclick="agreeAndCloseAuth('privacy')">我已阅读并同意</button>
+          <button class="auth-btn auth-btn-primary" id="privacyAgreeBtn" style="width:auto; padding: 10px 24px; opacity:0.5; cursor:not-allowed;" disabled onclick="agreeAndCloseAuth('privacy')">
+            请阅读协议 (<span id="privacyCountdown">5</span>s)
+          </button>
           <button class="auth-btn" style="width:auto; padding: 10px 24px; background:#f0f0f0; color:#666;" onclick="closeAuthModal('privacy')">关闭</button>
         </div>
       </div>
@@ -589,19 +601,71 @@
     <% } %>
 
     <% if (mode === 'register' || mode === 'login') { %>
-    // 弹窗控制
+    // 弹窗控制与5秒阅读倒计时
+    var modalTimers = {};
+
     function showAuthModal(type) {
       document.getElementById(type + 'Modal').classList.add('active');
       document.body.style.overflow = 'hidden';
+      // 启动5秒倒计时
+      startModalTimer(type);
     }
 
     function closeAuthModal(type) {
       document.getElementById(type + 'Modal').classList.remove('active');
       document.body.style.overflow = '';
+      // 重置倒计时
+      resetModalTimer(type);
+    }
+
+    function startModalTimer(type) {
+      var countdownEl = document.getElementById(type + 'Countdown');
+      var btnEl = document.getElementById(type + 'AgreeBtn');
+      if (!countdownEl || !btnEl) return;
+
+      countdownEl.textContent = '5';
+      btnEl.disabled = true;
+      btnEl.style.opacity = '0.5';
+      btnEl.style.cursor = 'not-allowed';
+      btnEl.innerHTML = '请阅读协议 (<span id="' + type + 'Countdown">5</span>s)';
+
+      var seconds = 5;
+      modalTimers[type] = setInterval(function() {
+        seconds--;
+        var el = document.getElementById(type + 'Countdown');
+        if (el) el.textContent = seconds;
+        if (seconds <= 0) {
+          clearInterval(modalTimers[type]);
+          modalTimers[type] = null;
+          btnEl.disabled = false;
+          btnEl.style.opacity = '1';
+          btnEl.style.cursor = 'pointer';
+          btnEl.textContent = '我已阅读并同意';
+        }
+      }, 1000);
+    }
+
+    function resetModalTimer(type) {
+      if (modalTimers[type]) {
+        clearInterval(modalTimers[type]);
+        modalTimers[type] = null;
+      }
+      var btnEl = document.getElementById(type + 'AgreeBtn');
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.style.opacity = '0.5';
+        btnEl.style.cursor = 'not-allowed';
+        btnEl.innerHTML = '请阅读协议 (<span id="' + type + 'Countdown">5</span>s)';
+      }
     }
 
     function agreeAndCloseAuth(type) {
-      document.getElementById('agreeCheck').checked = true;
+      // 根据当前模式选择对应的复选框
+      var checkboxId = '<%= mode %>' === 'login'
+        ? 'loginAgree' + (type === 'terms' ? 'Terms' : 'Privacy')
+        : 'agree' + (type === 'terms' ? 'Terms' : 'Privacy');
+      var checkbox = document.getElementById(checkboxId);
+      if (checkbox) checkbox.checked = true;
       closeAuthModal(type);
     }
 
