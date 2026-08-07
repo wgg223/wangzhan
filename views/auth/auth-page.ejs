@@ -47,6 +47,20 @@
           </div>
         </div>
         
+        <% if (source === 'frontend') { %>
+          <!-- 用户协议 - 仅主站点 -->
+          <div class="form-group agreement-group">
+            <label class="auth-checkbox-label">
+              <input type="checkbox" id="loginAgreeCheck" name="agree" value="1" required>
+              <span>我已阅读并同意
+                <a href="javascript:void(0)" onclick="showAuthModal('terms')">《用户协议》</a>
+                和
+                <a href="javascript:void(0)" onclick="showAuthModal('privacy')">《隐私政策》</a>
+              </span>
+            </label>
+          </div>
+        <% } %>
+
         <label class="remember-me">
           <input type="checkbox" name="remember" id="remember"> 记住密码
         </label>
@@ -415,7 +429,7 @@
   </div>
 
   <!-- 用户协议弹窗 - 仅前端站点 -->
-  <% if (source === 'frontend' && mode === 'register') { %>
+  <% if (source === 'frontend' && (mode === 'register' || mode === 'login')) { %>
     <div class="auth-modal-overlay" id="termsModal">
       <div class="auth-modal-content">
         <div class="auth-modal-header">

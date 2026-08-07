@@ -397,7 +397,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   if (!['frontend', 'image-share'].includes(source)) {
     return res.redirect('/');
   }
-  const { username, password } = req.body;
+  const { username, password, agree } = req.body;
   const db = req.db;
   const siteName = getSiteName(db, source);
 
@@ -405,6 +405,16 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   const { getEnabledProviders, initDefaultProviders } = require('./oauth');
   try { initDefaultProviders(db); } catch (e) { /* 初始化失败不影响登录 */ }
   const oauthProviders = getEnabledProviders(db);
+
+  // 获取协议内容
+  let userAgreement = '';
+  let privacyPolicy = '';
+  if (source === 'frontend') {
+    const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
+    const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
+    userAgreement = agreement ? agreement.setting_value : '';
+    privacyPolicy = privacy ? privacy.setting_value : '';
+  }
 
   function renderLogin(errorMsg) {
     const modeInfo = getModeInfo('login', source);
@@ -420,11 +430,16 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
       username: username || '',
       step: null,
       email: '',
-      userAgreement: '',
-      privacyPolicy: '',
+      userAgreement,
+      privacyPolicy,
       oauthProviders,
       csrfToken: req.csrfToken ? req.csrfToken() : ''
     });
+  }
+
+  // 主站点登录需要同意用户协议
+  if (source === 'frontend' && agree !== '1' && agree !== 'on') {
+    return renderLogin('请阅读并同意用户协议和隐私政策');
   }
 
   if (!username || !password) {
