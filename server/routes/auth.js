@@ -145,6 +145,15 @@ function getModeInfo(mode, source, step) {
   return info[mode] || info['login'];
 }
 
+// 辅助函数：绑定OAuth到新注册用户
+function bindOAuthToUser(db, userId, oauthData) {
+  db.run('INSERT INTO user_oauth_bindings (user_id, provider, open_id, access_token, nickname, avatar) VALUES (?, ?, ?, ?, ?, ?)',
+    [userId, oauthData.provider, oauthData.userInfo.open_id, oauthData.accessToken, oauthData.userInfo.nickname || '', oauthData.userInfo.avatar || '']);
+  if (oauthData.userInfo.avatar) {
+    db.run('UPDATE users SET avatar = ? WHERE id = ?', [oauthData.userInfo.avatar, userId]);
+  }
+}
+
 // ============================================================
 // 兼容路由重定向 - 无 source 参数时默认使用 frontend
 // ============================================================
@@ -227,10 +236,13 @@ router.get('/:source/register', (req, res) => {
   const userAgreement = agreement ? agreement.setting_value : '';
   const privacyPolicy = privacy ? privacy.setting_value : '';
 
+  // 检查是否有待完成的OAuth注册
+  const oauthPending = req.session.oauthPending || null;
+
   // 判断是否是验证码步骤（从注册信息提交后跳转）
   const step = req.query.step || null;
-  const tempUsername = req.session.tempRegister ? req.session.tempRegister.username : '';
-  const tempEmail = req.session.tempRegister ? req.session.tempRegister.email : '';
+  const tempUsername = req.session.tempRegister ? req.session.tempRegister.username : (oauthPending ? (oauthPending.userInfo.nickname || '') : '');
+  const tempEmail = req.session.tempRegister ? req.session.tempRegister.email : (oauthPending ? (oauthPending.userInfo.email || '') : '');
   const smtpConfigured = isSmtpConfigured(db);
 
   // 如果是从基本信息页面进入且有暂存数据，显示验证码步骤
@@ -268,7 +280,8 @@ router.get('/:source/register', (req, res) => {
     userAgreement,
     privacyPolicy,
     smtpConfigured,
-    captchaSvg
+    captchaSvg,
+    oauthPending
   });
 });
 
@@ -593,6 +606,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
   const { username, password, email, confirm_password, agree_terms, agree_privacy, nickname, code } = req.body;
   const db = req.db;
   const siteName = getSiteName(db, source);
+  const oauthPending = req.session.oauthPending || null;
 
   let userAgreement = '';
   let privacyPolicy = '';
@@ -641,7 +655,8 @@ router.post('/:source/register', registerLimiter, (req, res) => {
         email: tempData.email,
         userAgreement,
         privacyPolicy,
-        smtpConfigured: true
+        smtpConfigured: true,
+        oauthPending
       });
     }
 
@@ -682,7 +697,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     }
 
     // 验证通过，创建用户（状态为 active 自动激活）
-    const hashedPassword = bcrypt.hashSync(tempData.password, 10);
+    const hashedPassword = tempData.password ? bcrypt.hashSync(tempData.password, 10) : bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
     const uid1 = generateUid(db);
     db.run("INSERT INTO users (uid, username, password, email, nickname, role, status, avatar) VALUES (?, ?, ?, ?, ?, 'user', 'active', '/assets/images/default-avatar.png')",
       [uid1, tempData.username, hashedPassword, tempData.email, tempData.nickname || tempData.username]);
@@ -692,6 +707,10 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [tempData.username]);
     if (newUser) {
       grantDefaultPermissions(db, newUser.id, newUser.id);
+      // 绑定OAuth
+      if (oauthPending) {
+        bindOAuthToUser(db, newUser.id, oauthPending);
+      }
       saveDatabase();
     }
 
@@ -710,6 +729,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
 
     // 清除暂存数据
     delete req.session.tempRegister;
+    delete req.session.oauthPending;
 
     const modeInfoLogin = getModeInfo('login', source);
     return res.render('auth/auth-page', { layout: false,
@@ -751,7 +771,8 @@ router.post('/:source/register', registerLimiter, (req, res) => {
       userAgreement,
       privacyPolicy,
       smtpConfigured: isSmtpConfigured(db),
-      captchaSvg: captcha.data
+      captchaSvg: captcha.data,
+      oauthPending
     });
   }
 
@@ -760,7 +781,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     return renderRegister('请阅读并同意用户协议和隐私政策', 'info');
   }
 
-  if (!username || !password || !email) {
+  if (!username || !email || (!oauthPending && !password)) {
     return renderRegister('请填写所有必填项', 'info');
   }
 
@@ -768,7 +789,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     return renderRegister('两次输入的密码不一致', 'info');
   }
 
-  if (password.length < 8) {
+  if (!oauthPending && password.length < 8) {
     return renderRegister('密码长度不能少于8位', 'info');
   }
 
@@ -781,8 +802,8 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     return renderRegister('邮箱格式不正确', 'info');
   }
 
-  // 邮箱域名白名单验证
-  if (!isEmailAllowed(email)) {
+  // 邮箱域名白名单验证（OAuth来源的邮箱跳过检查）
+  if (!oauthPending && !isEmailAllowed(email)) {
     // 记录被拦截的邮箱域名到活动日志
     try {
       const emailDomain = email.match(/@([\w.-]+)$/);
@@ -838,7 +859,7 @@ router.post('/:source/register', registerLimiter, (req, res) => {
 
   if (source === 'image-share') {
     // 图片分享注册直接激活
-    const hashedPassword = bcrypt.hashSync(password, 10);
+    const hashedPassword = password ? bcrypt.hashSync(password, 10) : bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
     const uid2 = generateUid(db);
     db.run("INSERT INTO users (uid, username, password, email, nickname, role, status, avatar) VALUES (?, ?, ?, ?, ?, 'user', 'active', '/assets/images/default-avatar.png')",
       [uid2, username, hashedPassword, email, nickname || username]);
@@ -848,6 +869,10 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
     if (newUser) {
       grantDefaultPermissions(db, newUser.id, newUser.id);
+      // 绑定OAuth
+      if (oauthPending) {
+        bindOAuthToUser(db, newUser.id, oauthPending);
+      }
       saveDatabase();
     }
 
@@ -863,6 +888,9 @@ router.post('/:source/register', registerLimiter, (req, res) => {
         ip: req.ip
       });
     } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
+
+    // 清除OAuth暂存
+    delete req.session.oauthPending;
 
     const modeInfo = getModeInfo('login', source);
     return res.render('auth/auth-page', { layout: false,
@@ -887,11 +915,22 @@ router.post('/:source/register', registerLimiter, (req, res) => {
 
   if (!smtpConfigured) {
     // 未配置SMTP，回退到管理员审核模式
-    const hashedPassword = bcrypt.hashSync(password, 10);
+    const hashedPassword = password ? bcrypt.hashSync(password, 10) : bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
     const uid3 = generateUid(db);
     db.run('INSERT INTO users (uid, username, password, email, role, status, avatar) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [uid3, username, hashedPassword, email, 'user', 'pending', '/assets/images/default-avatar.png']);
+
+    // 绑定OAuth
+    if (oauthPending) {
+      const pendingUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+      if (pendingUser) {
+        bindOAuthToUser(db, pendingUser.id, oauthPending);
+      }
+    }
     saveDatabase();
+
+    // 清除OAuth暂存
+    delete req.session.oauthPending;
 
     // 记录注册成功日志（管理员审核模式）
     try {
@@ -970,7 +1009,8 @@ router.post('/:source/register', registerLimiter, (req, res) => {
         email: email,
         userAgreement,
         privacyPolicy,
-        smtpConfigured: true
+        smtpConfigured: true,
+        oauthPending
       });
     }
     // 跳转到验证码步骤
@@ -989,7 +1029,8 @@ router.post('/:source/register', registerLimiter, (req, res) => {
       email: email,
       userAgreement,
       privacyPolicy,
-      smtpConfigured: true
+      smtpConfigured: true,
+      oauthPending
     });
   });
 });
@@ -1047,7 +1088,8 @@ router.post('/:source/register/resend-code', sendCodeLimiter, (req, res) => {
       email: tempData.email,
       userAgreement: '',
       privacyPolicy: '',
-      smtpConfigured: true
+      smtpConfigured: true,
+      oauthPending: req.session.oauthPending || null
     });
   });
 });

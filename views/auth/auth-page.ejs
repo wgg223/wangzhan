@@ -102,6 +102,12 @@
 
     <!-- 注册表单 - 信息填写步骤 -->
     <% } else if (mode === 'register' && step !== 'verify') { %>
+      <% if (typeof oauthPending !== 'undefined' && oauthPending) { %>
+        <div class="auth-alert auth-alert-success" style="margin-bottom:16px;">
+          <i class="fas fa-link"></i>
+          <span>您正在通过 <strong><%= oauthPending.providerName %></strong> 第三方账号注册，请填写以下信息完成注册。</span>
+        </div>
+      <% } %>
       <form action="/auth/<%= source %>/register" method="POST" class="auth-form" id="registerForm">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <div class="form-group">
@@ -118,14 +124,19 @@
         
         <div class="form-group">
           <label for="email">邮箱 <span class="required">*</span></label>
-          <input type="text" id="email" name="email" class="auth-input" placeholder="请输入邮箱地址（格式如：username@domain.com）" required value="<%= typeof email !== 'undefined' ? email : '' %>" oninput="validateEmailFormat(this)">
-          <small id="emailHelp" class="form-text" style="color:#999;font-size:12px;display:block;margin-top:4px;">邮箱格式：用户名@域名（如：username@example.com）</small>
+          <% if (typeof oauthPending !== 'undefined' && oauthPending && oauthPending.userInfo.email) { %>
+            <input type="text" id="email" name="email" class="auth-input" required value="<%= email %>" readonly style="background:#f5f5f5;cursor:not-allowed;">
+            <small class="form-text" style="color:#999;font-size:12px;display:block;margin-top:4px;">邮箱来自第三方账号，不可修改</small>
+          <% } else { %>
+            <input type="text" id="email" name="email" class="auth-input" placeholder="请输入邮箱地址（格式如：username@domain.com）" required value="<%= typeof email !== 'undefined' ? email : '' %>" oninput="validateEmailFormat(this)">
+            <small id="emailHelp" class="form-text" style="color:#999;font-size:12px;display:block;margin-top:4px;">邮箱格式：用户名@域名（如：username@example.com）</small>
+          <% } %>
         </div>
         
         <div class="form-group">
-          <label for="password">密码 <span class="required">*</span></label>
+          <label for="password">密码 <% if (typeof oauthPending === 'undefined' || !oauthPending) { %><span class="required">*</span><% } else { %><small style="color:#999;font-weight:normal;">（选填，设置后可用密码登录）</small><% } %></label>
           <div class="password-field">
-            <input type="password" id="password" name="password" class="auth-input" placeholder="至少6个字符" required minlength="6">
+            <input type="password" id="password" name="password" class="auth-input" placeholder="<%= (typeof oauthPending !== 'undefined' && oauthPending) ? '可选，至少6位' : '至少6个字符' %>" <%= (typeof oauthPending === 'undefined' || !oauthPending) ? 'required' : '' %> minlength="6">
             <button type="button" class="toggle-password" onclick="togglePassword('password')">
               <i class="fas fa-eye"></i>
             </button>
@@ -133,9 +144,9 @@
         </div>
         
         <div class="form-group">
-          <label for="confirm_password">确认密码 <span class="required">*</span></label>
+          <label for="confirm_password">确认密码 <% if (typeof oauthPending === 'undefined' || !oauthPending) { %><span class="required">*</span><% } %></label>
           <div class="password-field">
-            <input type="password" id="confirm_password" name="confirm_password" class="auth-input" placeholder="请再次输入密码" required minlength="6">
+            <input type="password" id="confirm_password" name="confirm_password" class="auth-input" placeholder="请再次输入密码" <%= (typeof oauthPending === 'undefined' || !oauthPending) ? 'required' : '' %> minlength="6">
             <button type="button" class="toggle-password" onclick="togglePassword('confirm_password')">
               <i class="fas fa-eye"></i>
             </button>

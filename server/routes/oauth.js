@@ -418,56 +418,16 @@ router.get('/callback/:provider', async (req, res) => {
     }
   }
 
-  // 没有已绑定或相同邮箱的用户，创建新用户
-  const username = `oauth_${provider}_${userInfo.open_id.substring(0, 8)}`;
-  const hashedPassword = crypto.randomBytes(16).toString('hex');
-  const uid = generateUid(db);
+  // 没有已绑定或相同邮箱的用户，存储OAuth信息到session，跳转注册流程
+  req.session.oauthPending = {
+    provider: provider,
+    providerName: OAUTH_CONFIGS[provider]?.name || provider,
+    userInfo: userInfo,
+    accessToken: tokenResult.accessToken,
+    source: source
+  };
 
-  // 检查用户名是否已存在
-  let finalUsername = username;
-  let counter = 1;
-  while (queryOne(db, 'SELECT id FROM users WHERE username = ?', [finalUsername])) {
-    finalUsername = `${username}_${counter}`;
-    counter++;
-  }
-
-  db.run("INSERT INTO users (uid, username, password, email, nickname, role, status, avatar) VALUES (?, ?, ?, ?, ?, 'user', 'active', ?)",
-    [uid, finalUsername, hashedPassword, userInfo.email || '', userInfo.nickname || finalUsername, userInfo.avatar || '/assets/images/default-avatar.png']);
-  saveDatabase();
-
-  const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [finalUsername]);
-  if (!newUser) {
-    return res.redirect('/auth/' + source + '/login?error=创建用户失败');
-  }
-
-  // 授予默认权限
-  const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
-  defaultPerms.forEach(perm => {
-    db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-      [newUser.id, perm, newUser.id]);
-  });
-
-  // 绑定OAuth
-  db.run('INSERT INTO user_oauth_bindings (user_id, provider, open_id, access_token, nickname, avatar) VALUES (?, ?, ?, ?, ?, ?)',
-    [newUser.id, provider, userInfo.open_id, tokenResult.accessToken, userInfo.nickname || '', userInfo.avatar || '']);
-  saveDatabase();
-
-  // 记录日志
-  try {
-    logActivity(db, {
-      user_id: newUser.id,
-      username: finalUsername,
-      action: 'oauth_register',
-      target_type: 'auth',
-      target_title: OAUTH_CONFIGS[provider]?.name || provider,
-      detail: `用户 ${finalUsername} 通过 ${OAUTH_CONFIGS[provider]?.name || provider} 注册并登录`,
-      ip: req.ip
-    });
-  } catch (e) {
-    // 日志记录失败不影响登录流程
-  }
-
-  return establishSession(req, res, newUser, redirectBase);
+  return res.redirect('/auth/' + source + '/register');
 });
 
 /**
