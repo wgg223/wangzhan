@@ -200,6 +200,7 @@ router.get('/:source/login', (req, res) => {
   // 获取协议内容
   const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
   const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
+  const oauthPrivacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'oauth_privacy_policy'");
 
   res.render('auth/auth-page', { layout: false,
     source,
@@ -215,6 +216,7 @@ router.get('/:source/login', (req, res) => {
     email: '',
     userAgreement: agreement ? agreement.setting_value : '',
     privacyPolicy: privacy ? privacy.setting_value : '',
+    oauthPrivacyPolicy: oauthPrivacy ? oauthPrivacy.setting_value : '',
     oauthProviders,
     csrfToken: req.csrfToken ? req.csrfToken() : ''
   });
@@ -423,6 +425,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   // 获取协议内容
   const agreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'user_agreement'");
   const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
+  const oauthPrivacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'oauth_privacy_policy'");
   const userAgreement = agreement ? agreement.setting_value : '';
   const privacyPolicy = privacy ? privacy.setting_value : '';
 
@@ -443,6 +446,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
       userAgreement,
       privacyPolicy,
       oauthProviders,
+      oauthPrivacyPolicy: oauthPrivacy ? oauthPrivacy.setting_value : '',
       csrfToken: req.csrfToken ? req.csrfToken() : ''
     });
   }

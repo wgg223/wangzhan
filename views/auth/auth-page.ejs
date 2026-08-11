@@ -77,6 +77,22 @@
         <div class="auth-divider">
           <span>其他登录方式</span>
         </div>
+        <div class="form-group agreement-group" style="margin-bottom:12px;">
+          <label class="auth-checkbox-label">
+            <input type="checkbox" id="oauthAgreePrivacy" value="1">
+            <span>使用第三方登录即表示您同意
+              <a href="javascript:void(0)" onclick="showAuthModal('oauthPrivacy')" style="color:#2563eb;text-decoration:underline;">《第三方登录隐私政策》</a>
+            </span>
+          </label>
+          <label class="auth-checkbox-label" style="margin-top:6px;">
+            <input type="checkbox" id="oauthAgreeTerms" value="1">
+            <span>我已阅读并同意
+              <a href="javascript:void(0)" onclick="showAuthModal('terms')" style="color:#2563eb;text-decoration:underline;">《用户协议》</a>
+              和
+              <a href="javascript:void(0)" onclick="showAuthModal('privacy')" style="color:#2563eb;text-decoration:underline;">《隐私政策》</a>
+            </span>
+          </label>
+        </div>
         <div class="oauth-buttons">
           <% oauthProviders.forEach(function(provider) { %>
             <button type="button" class="oauth-btn oauth-btn-<%= provider.provider %>" 
@@ -480,6 +496,24 @@
         </div>
       </div>
     </div>
+
+    <div class="auth-modal-overlay" id="oauthPrivacyModal">
+      <div class="auth-modal-content">
+        <div class="auth-modal-header">
+          <h2>第三方登录隐私政策</h2>
+          <button class="auth-modal-close" onclick="closeAuthModal('oauthPrivacy')">&times;</button>
+        </div>
+        <div class="auth-modal-body" id="oauthPrivacyBody" onscroll="onModalScroll('oauthPrivacy')">
+          <%- (typeof oauthPrivacyPolicy !== 'undefined' && oauthPrivacyPolicy) ? oauthPrivacyPolicy : '<p>暂无第三方登录隐私政策内容</p>' %>
+        </div>
+        <div class="auth-modal-footer">
+          <button class="auth-btn auth-btn-primary" id="oauthPrivacyAgreeBtn" style="width:auto; padding: 10px 24px; opacity:0.5; cursor:not-allowed;" disabled onclick="agreeAndCloseAuth('oauthPrivacy')">
+            请阅读协议 (<span id="oauthPrivacyCountdown">5</span>s)
+          </button>
+          <button class="auth-btn" style="width:auto; padding: 10px 24px; background:#f0f0f0; color:#666;" onclick="closeAuthModal('oauthPrivacy')">关闭</button>
+        </div>
+      </div>
+    </div>
   <% } %>
 
   <script>
@@ -671,12 +705,18 @@
     }
 
     function agreeAndCloseAuth(type) {
-      // 根据当前模式选择对应的复选框
-      var checkboxId = '<%= mode %>' === 'login'
-        ? 'loginAgree' + (type === 'terms' ? 'Terms' : 'Privacy')
-        : 'agree' + (type === 'terms' ? 'Terms' : 'Privacy');
-      var checkbox = document.getElementById(checkboxId);
-      if (checkbox) checkbox.checked = true;
+      if (type === 'oauthPrivacy') {
+        // 第三方登录隐私政策 -> 勾选对应的复选框
+        var oauthPrivacyCheckbox = document.getElementById('oauthAgreePrivacy');
+        if (oauthPrivacyCheckbox) oauthPrivacyCheckbox.checked = true;
+      } else {
+        // 根据当前模式选择对应的复选框
+        var checkboxId = '<%= mode %>' === 'login'
+          ? 'loginAgree' + (type === 'terms' ? 'Terms' : 'Privacy')
+          : 'agree' + (type === 'terms' ? 'Terms' : 'Privacy');
+        var checkbox = document.getElementById(checkboxId);
+        if (checkbox) checkbox.checked = true;
+      }
       closeAuthModal(type);
     }
 
@@ -832,6 +872,20 @@
 
     // 第三方登录
     function oauthLogin(provider, source) {
+      // 检查协议勾选
+      var agreePrivacy = document.getElementById('oauthAgreePrivacy');
+      var agreeTerms = document.getElementById('oauthAgreeTerms');
+      if (!agreePrivacy || !agreePrivacy.checked) {
+        alert('请先阅读并同意《第三方登录隐私政策》');
+        if (agreePrivacy) agreePrivacy.focus();
+        return;
+      }
+      if (!agreeTerms || !agreeTerms.checked) {
+        alert('请先阅读并同意《用户协议》和《隐私政策》');
+        if (agreeTerms) agreeTerms.focus();
+        return;
+      }
+
       var btn = document.querySelector('.oauth-btn-' + provider);
       if (btn) {
         btn.disabled = true;
