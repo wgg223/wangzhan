@@ -422,6 +422,37 @@ function createTables(db) {
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_content_likes_unique ON content_likes(user_id, target_type, target_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_content_likes_target ON content_likes(target_type, target_id)');
 
+  // ============ 社区动态表 ============
+
+  // 用户动态表
+  db.run(`CREATE TABLE IF NOT EXISTS community_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    images TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'published',
+    like_count INTEGER DEFAULT 0,
+    comment_count INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_community_posts_user ON community_posts(user_id, created_at DESC)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_community_posts_status ON community_posts(status, created_at DESC)');
+
+  // 动态评论表
+  db.run(`CREATE TABLE IF NOT EXISTS community_post_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT DEFAULT 'approved',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (post_id) REFERENCES community_posts(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_post_comments_post ON community_post_comments(post_id, created_at DESC)');
+
   // ============ 用户私信系统表 ============
 
   // 对话表

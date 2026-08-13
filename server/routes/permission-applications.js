@@ -66,7 +66,14 @@ function getPermCategory(permKey) {
     'permissions.manage': 'system',
     'settings.manage': 'system',
     'data.manage': 'system',
-    'leaderboard.manage': 'system'
+    'leaderboard.manage': 'system',
+    'community.access': 'basic',
+    'community.detail.access': 'basic',
+    'articles.detail.access': 'basic',
+    'novels.detail.access': 'basic',
+    'images.detail.access': 'basic',
+    'community.posts.create': 'community',
+    'community.notifications.manage': 'system'
   };
   if (categoryMap[permKey]) return categoryMap[permKey];
   if (permKey.endsWith('.access')) return 'basic';

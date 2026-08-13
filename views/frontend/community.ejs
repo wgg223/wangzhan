@@ -1,35 +1,82 @@
 <div class="container">
   <div class="community-page">
     <div class="community-header">
-      <h1>社区动态</h1>
-      <p class="subtitle">关注的人的最新动态</p>
+      <h1>社区</h1>
+      <p class="subtitle">最新内容动态</p>
+      <% if (canPublish) { %>
+        <button class="btn-publish" id="publishBtn" onclick="openPublishModal()">+ 发布动态</button>
+      <% } %>
     </div>
 
+    <!-- Tab 筛选 -->
+    <div class="community-tabs">
+      <a href="/community?filter=all" class="tab-item <%= filter === 'all' ? 'active' : '' %>">全部</a>
+      <a href="/community?filter=article" class="tab-item <%= filter === 'article' ? 'active' : '' %>">文章</a>
+      <a href="/community?filter=novel" class="tab-item <%= filter === 'novel' ? 'active' : '' %>">小说</a>
+      <a href="/community?filter=image" class="tab-item <%= filter === 'image' ? 'active' : '' %>">图片</a>
+      <a href="/community?filter=dynamic" class="tab-item <%= filter === 'dynamic' ? 'active' : '' %>">动态</a>
+    </div>
+
+    <!-- 内容列表 -->
     <div class="feed-container">
       <% if (feed && feed.length > 0) { %>
         <% feed.forEach(function(item) { %>
           <div class="feed-item">
             <div class="feed-user">
               <a href="/user/<%= item.user_uid || item.user_id %>">
-                <img src="<%= item.avatar || '/assets/images/default-avatar.png' %>" alt="<%= item.username %>" class="user-avatar">
+                <img src="<%= item.avatar || '/assets/images/default-avatar.png' %>" alt="<%= item.username %>" class="user-avatar" loading="lazy">
               </a>
               <div class="user-info">
-                <a href="/user/<%= item.user_id %>" class="username"><%= item.nickname || item.username %></a>
+                <a href="/user/<%= item.user_uid || item.user_id %>" class="username"><%= item.nickname || item.username %></a>
                 <span class="feed-time"><%= new Date(item.created_at).toLocaleString('zh-CN') %></span>
               </div>
             </div>
             <div class="feed-content">
               <% if (item.type === 'article') { %>
-                <div class="feed-type-badge">发布了文章</div>
+                <div class="feed-type-badge badge-article">文章</div>
                 <a href="/articles/<%= item.id %>" class="feed-title"><%= item.content %></a>
                 <% if (item.cover_image) { %>
                   <div class="feed-cover">
-                    <img src="<%= item.cover_image %>" alt="封面">
+                    <img src="<%= item.cover_image %>" alt="封面" loading="lazy">
                   </div>
                 <% } %>
-              <% } else if (item.type === 'comment') { %>
-                <div class="feed-type-badge">发表了评论</div>
+              <% } else if (item.type === 'novel') { %>
+                <div class="feed-type-badge badge-novel">小说</div>
+                <a href="/novels/<%= item.id %>" class="feed-title"><%= item.content %></a>
+                <% if (item.cover_image) { %>
+                  <div class="feed-cover">
+                    <img src="<%= item.cover_image %>" alt="封面" loading="lazy">
+                  </div>
+                <% } %>
+              <% } else if (item.type === 'image') { %>
+                <div class="feed-type-badge badge-image">图片</div>
+                <a href="/image-share/image?id=<%= item.id %>" class="feed-title"><%= item.content %></a>
+                <% if (item.cover_image) { %>
+                  <div class="feed-cover">
+                    <img src="<%= item.cover_image %>" alt="图片" loading="lazy">
+                  </div>
+                <% } %>
+              <% } else if (item.type === 'dynamic') { %>
+                <div class="feed-type-badge badge-dynamic">动态</div>
                 <p class="feed-text"><%= item.content %></p>
+                <% 
+                  var postImages = [];
+                  try { postImages = JSON.parse(item.images || '[]'); } catch(e) {}
+                %>
+                <% if (postImages.length > 0) { %>
+                  <div class="post-images-grid grid-<%= Math.min(postImages.length, 9) %>">
+                    <% postImages.forEach(function(img) { %>
+                      <div class="post-image-item">
+                        <img src="<%= img %>" alt="动态图片" loading="lazy">
+                      </div>
+                    <% }); %>
+                  </div>
+                <% } %>
+                <div class="feed-stats">
+                  <span class="stat-item"><%= item.like_count || 0 %> 赞</span>
+                  <span class="stat-item"><%= item.comment_count || 0 %> 评论</span>
+                </div>
+                <a href="/community/post/<%= item.id %>" class="feed-link">查看详情</a>
               <% } %>
             </div>
           </div>
@@ -37,20 +84,50 @@
 
         <% if (hasMore) { %>
           <div class="load-more">
-            <a href="/community?page=<%= page + 1 %>" class="btn btn-secondary">加载更多</a>
+            <a href="/community?page=<%= page + 1 %>&filter=<%= filter %>" class="btn btn-secondary">加载更多</a>
           </div>
         <% } %>
       <% } else { %>
         <div class="empty-state">
           <div class="empty-icon">📱</div>
-          <h3>暂无动态</h3>
-          <p>关注更多用户，查看他们的最新动态</p>
-          <a href="/articles" class="btn btn-primary">浏览文章</a>
+          <h3>暂无内容</h3>
+          <p>还没有发布的内容，快来第一个分享吧！</p>
+          <% if (canPublish) { %>
+            <button class="btn btn-primary" onclick="openPublishModal()">发布动态</button>
+          <% } %>
         </div>
       <% } %>
     </div>
   </div>
 </div>
+
+<!-- 发布动态弹窗 -->
+<% if (canPublish) { %>
+<div class="modal-overlay" id="publishModal" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>发布动态</h3>
+      <button class="modal-close" onclick="closePublishModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <textarea id="postContent" class="post-textarea" placeholder="分享你的想法..." maxlength="2000"></textarea>
+      <div class="char-counter"><span id="charCount">0</span>/2000</div>
+      <div class="image-upload-area">
+        <label for="imageInput" class="upload-label">
+          <span class="upload-icon">📷</span>
+          <span>添加图片（最多9张）</span>
+        </label>
+        <input type="file" id="imageInput" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none;">
+      </div>
+      <div id="imagePreview" class="image-preview-grid"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closePublishModal()">取消</button>
+      <button class="btn btn-primary" id="submitPostBtn" onclick="submitPost()">发布</button>
+    </div>
+  </div>
+</div>
+<% } %>
 
 <style>
 .community-page {
@@ -61,7 +138,8 @@
 
 .community-header {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
+  position: relative;
 }
 
 .community-header h1 {
@@ -70,27 +148,85 @@
 }
 
 .subtitle {
-  color: var(--text-secondary);
+  color: var(--text-secondary, #666);
 }
 
+.btn-publish {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 8px 20px;
+  background: var(--primary, #4f46e5);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-publish:hover {
+  background: var(--primary-dark, #4338ca);
+}
+
+/* Tabs */
+.community-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  background: var(--bg-card, #fff);
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.1));
+}
+
+.tab-item {
+  flex: 1;
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text-secondary, #666);
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.tab-item:hover {
+  background: var(--gray-100, #f5f5f5);
+  color: var(--text-primary, #333);
+}
+
+.tab-item.active {
+  background: var(--primary, #4f46e5);
+  color: #fff;
+}
+
+/* Feed */
 .feed-container {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .feed-item {
-  background: var(--bg-card);
+  background: var(--bg-card, #fff);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.1));
+  transition: box-shadow 0.2s;
+}
+
+.feed-item:hover {
+  box-shadow: var(--shadow-md, 0 4px 6px rgba(0,0,0,0.1));
 }
 
 .feed-user {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .user-avatar {
@@ -107,44 +243,49 @@
 
 .username {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-primary, #333);
   text-decoration: none;
 }
 
 .username:hover {
-  color: var(--primary);
+  color: var(--primary, #4f46e5);
 }
 
 .feed-time {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-muted, #999);
 }
 
 .feed-type-badge {
   display: inline-block;
   font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--gray-100);
-  padding: 4px 10px;
+  padding: 3px 10px;
   border-radius: 12px;
   margin-bottom: 10px;
+  font-weight: 500;
 }
+
+.badge-article { background: #dbeafe; color: #1d4ed8; }
+.badge-novel { background: #fce7f3; color: #be185d; }
+.badge-image { background: #d1fae5; color: #065f46; }
+.badge-dynamic { background: #e0e7ff; color: #4338ca; }
 
 .feed-title {
   display: block;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-primary, #333);
   text-decoration: none;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  line-height: 1.4;
 }
 
 .feed-title:hover {
-  color: var(--primary);
+  color: var(--primary, #4f46e5);
 }
 
 .feed-cover {
-  margin-top: 12px;
+  margin-top: 10px;
   border-radius: 8px;
   overflow: hidden;
 }
@@ -156,19 +297,109 @@
 }
 
 .feed-text {
-  color: var(--text-secondary);
+  color: var(--text-secondary, #555);
   line-height: 1.6;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
+.feed-stats {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted, #999);
+}
+
+.feed-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--primary, #4f46e5);
+  text-decoration: none;
+}
+
+.feed-link:hover {
+  text-decoration: underline;
+}
+
+/* Post images grid */
+.post-images-grid {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.post-images-grid.grid-1 { grid-template-columns: 1fr; max-width: 360px; }
+.post-images-grid.grid-2 { grid-template-columns: repeat(2, 1fr); max-width: 400px; }
+.post-images-grid.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.post-images-grid.grid-4 { grid-template-columns: repeat(2, 1fr); max-width: 400px; }
+.post-images-grid.grid-5,
+.post-images-grid.grid-6 { grid-template-columns: repeat(3, 1fr); }
+.post-images-grid.grid-7,
+.post-images-grid.grid-8,
+.post-images-grid.grid-9 { grid-template-columns: repeat(3, 1fr); }
+
+.post-image-item {
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+
+.post-image-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.post-image-item img:hover {
+  transform: scale(1.05);
+}
+
+/* Load more */
 .load-more {
   text-align: center;
   padding: 20px;
 }
 
+.btn {
+  display: inline-block;
+  padding: 10px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--primary, #4f46e5);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark, #4338ca);
+}
+
+.btn-secondary {
+  background: var(--gray-100, #f5f5f5);
+  color: var(--text-primary, #333);
+}
+
+.btn-secondary:hover {
+  background: var(--gray-200, #e5e5e5);
+}
+
+/* Empty state */
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  background: var(--bg-card);
+  background: var(--bg-card, #fff);
   border-radius: 12px;
 }
 
@@ -182,76 +413,257 @@
 }
 
 .empty-state p {
-  color: var(--text-secondary);
+  color: var(--text-secondary, #666);
   margin-bottom: 20px;
 }
 
-.btn {
-  display: inline-block;
-  padding: 10px 24px;
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-content {
+  background: var(--bg-card, #fff);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light, #eee);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-muted, #999);
+  padding: 0 4px;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.post-textarea {
+  width: 100%;
+  min-height: 120px;
+  border: 1px solid var(--border-color, #ddd);
   border-radius: 8px;
-  text-decoration: none;
+  padding: 12px;
+  font-size: 15px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.post-textarea:focus {
+  border-color: var(--primary, #4f46e5);
+}
+
+.char-counter {
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-muted, #999);
+  margin-top: 4px;
+}
+
+.image-upload-area {
+  margin-top: 12px;
+}
+
+.upload-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--gray-100, #f5f5f5);
+  border-radius: 8px;
+  cursor: pointer;
   font-size: 14px;
-  transition: all 0.2s;
+  color: var(--text-secondary, #666);
+  transition: background 0.2s;
 }
 
-.btn-primary {
-  background: var(--primary);
+.upload-label:hover {
+  background: var(--gray-200, #e5e5e5);
+}
+
+.image-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.preview-item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  background: rgba(0,0,0,0.6);
   color: #fff;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.btn-primary:hover {
-  background: var(--primary-dark);
-}
-
-.btn-secondary {
-  background: var(--gray-100);
-  color: var(--text-primary);
-}
-
-.btn-secondary:hover {
-  background: var(--gray-200);
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-light, #eee);
 }
 
 @media (max-width: 768px) {
-  .community-page {
-    padding: 12px;
-  }
-  .community-header h1 {
-    font-size: 22px;
-  }
-  .feed-item {
-    padding: 16px;
-  }
-  .user-avatar {
-    width: 36px;
-    height: 36px;
-  }
-  .feed-title {
-    font-size: 16px;
-  }
-  .feed-cover img {
-    max-height: 200px;
-  }
+  .community-page { padding: 12px; }
+  .community-header h1 { font-size: 22px; }
+  .btn-publish { position: static; transform: none; margin-top: 10px; }
+  .feed-item { padding: 16px; }
+  .user-avatar { width: 36px; height: 36px; }
+  .feed-title { font-size: 15px; }
+  .tab-item { padding: 8px 6px; font-size: 13px; }
 }
 
 @media (max-width: 480px) {
-  .community-page {
-    padding: 8px;
-  }
-  .community-header {
-    margin-bottom: 20px;
-  }
-  .community-header h1 {
-    font-size: 20px;
-  }
-  .feed-item {
-    padding: 12px;
-    border-radius: 8px;
-  }
-  .feed-user {
-    gap: 8px;
-    margin-bottom: 12px;
-  }
+  .community-page { padding: 8px; }
+  .community-header h1 { font-size: 20px; }
+  .feed-item { padding: 12px; border-radius: 8px; }
+  .feed-user { gap: 8px; margin-bottom: 10px; }
+  .modal-content { border-radius: 12px; }
 }
 </style>
+
+<% if (canPublish) { %>
+<script>
+var selectedFiles = [];
+
+function openPublishModal() {
+  document.getElementById('publishModal').style.display = 'flex';
+  document.getElementById('postContent').focus();
+}
+
+function closePublishModal() {
+  document.getElementById('publishModal').style.display = 'none';
+  document.getElementById('postContent').value = '';
+  document.getElementById('charCount').textContent = '0';
+  selectedFiles = [];
+  document.getElementById('imagePreview').innerHTML = '';
+  document.getElementById('imageInput').value = '';
+}
+
+document.getElementById('postContent').addEventListener('input', function() {
+  document.getElementById('charCount').textContent = this.value.length;
+});
+
+document.getElementById('imageInput').addEventListener('change', function(e) {
+  var files = Array.from(e.target.files);
+  var remaining = 9 - selectedFiles.length;
+  if (remaining <= 0) return;
+  files.slice(0, remaining).forEach(function(file) {
+    selectedFiles.push(file);
+  });
+  renderPreviews();
+  e.target.value = '';
+});
+
+function renderPreviews() {
+  var container = document.getElementById('imagePreview');
+  container.innerHTML = '';
+  selectedFiles.forEach(function(file, index) {
+    var div = document.createElement('div');
+    div.className = 'preview-item';
+    var img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    div.appendChild(img);
+    var btn = document.createElement('button');
+    btn.className = 'preview-remove';
+    btn.innerHTML = '&times;';
+    btn.onclick = function() { selectedFiles.splice(index, 1); renderPreviews(); };
+    div.appendChild(btn);
+    container.appendChild(div);
+  });
+}
+
+function submitPost() {
+  var content = document.getElementById('postContent').value.trim();
+  if (!content) { alert('请输入动态内容'); return; }
+
+  var btn = document.getElementById('submitPostBtn');
+  btn.disabled = true;
+  btn.textContent = '发布中...';
+
+  var formData = new FormData();
+  formData.append('content', content);
+  selectedFiles.forEach(function(file) {
+    formData.append('images', file);
+  });
+
+  fetch('/api/community/posts', {
+    method: 'POST',
+    body: formData
+  }).then(function(res) { return res.json(); }).then(function(data) {
+    if (data.success) {
+      closePublishModal();
+      window.location.reload();
+    } else {
+      alert(data.error || '发布失败');
+    }
+  }).catch(function() {
+    alert('网络错误，请稍后重试');
+  }).finally(function() {
+    btn.disabled = false;
+    btn.textContent = '发布';
+  });
+}
+
+// 点击遮罩关闭
+document.getElementById('publishModal').addEventListener('click', function(e) {
+  if (e.target === this) closePublishModal();
+});
+</script>
+<% } %>

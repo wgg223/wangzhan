@@ -123,7 +123,14 @@ function insertDefaultDataIfNeeded(db) {
     // 系统管理
     ['settings.manage', '系统设置', '网站基础设置、SMTP、协议、弹窗、CDN等配置'],
     ['data.manage', '数据管理', '数据备份、恢复、导入和导出'],
-    ['leaderboard.manage', '排行榜管理', '排行榜数据的查看和管理']
+    ['leaderboard.manage', '排行榜管理', '排行榜数据的查看和管理'],
+    ['community.access', '社区访问', '访问社区页面，浏览动态列表'],
+    ['community.detail.access', '动态详情访问', '查看社区动态的详细内容和评论'],
+    ['articles.detail.access', '文章详情访问', '查看文章详情内容'],
+    ['novels.detail.access', '小说详情访问', '查看小说详情和章节内容'],
+    ['images.detail.access', '图片详情访问', '查看图片详情和大图'],
+    ['community.posts.create', '发布动态', '在社区发布文字动态和图片'],
+    ['community.notifications.manage', '社区通知管理', '查询和删除社区通知']
   ];
 
   defaultPermissions.forEach(([key, name, desc]) => {
@@ -244,7 +251,9 @@ function insertDefaultDataIfNeeded(db) {
   try {
     const defaultUserPerms = [
       'homepage.access', 'articles.access', 'novels.access',
-      'image-share.access', 'poem-game.access', 'site_stats.view'
+      'image-share.access', 'poem-game.access', 'site_stats.view',
+      'community.access', 'community.detail.access', 'articles.detail.access',
+      'novels.detail.access', 'images.detail.access'
     ];
     const activeUsers = queryAll(db, "SELECT id FROM users WHERE status = 'active'");
     activeUsers.forEach(user => {

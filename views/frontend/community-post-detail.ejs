@@ -1,0 +1,423 @@
+<div class="container">
+  <div class="post-detail-page">
+    <div class="post-detail-card">
+      <!-- 用户信息 -->
+      <div class="post-user">
+        <a href="/user/<%= post.user_uid || post.user_id %>">
+          <img src="<%= post.avatar || '/assets/images/default-avatar.png' %>" alt="<%= post.username %>" class="user-avatar">
+        </a>
+        <div class="user-info">
+          <a href="/user/<%= post.user_uid || post.user_id %>" class="username"><%= post.nickname || post.username %></a>
+          <span class="post-time"><%= new Date(post.created_at).toLocaleString('zh-CN') %></span>
+        </div>
+        <a href="/community" class="back-link">← 返回社区</a>
+      </div>
+
+      <!-- 动态内容 -->
+      <div class="post-content">
+        <p class="post-text"><%= post.content %></p>
+        <%
+          var postImages = [];
+          try { postImages = JSON.parse(post.images || '[]'); } catch(e) {}
+        %>
+        <% if (postImages.length > 0) { %>
+          <div class="post-images-grid grid-<%= Math.min(postImages.length, 9) %>">
+            <% postImages.forEach(function(img) { %>
+              <div class="post-image-item">
+                <img src="<%= img %>" alt="动态图片" loading="lazy" onclick="window.open(this.src)">
+              </div>
+            <% }); %>
+          </div>
+        <% } %>
+      </div>
+
+      <!-- 互动区 -->
+      <div class="post-actions">
+        <button class="like-btn <%= isLiked ? 'liked' : '' %>" id="likeBtn" onclick="toggleLike()">
+          <span class="like-icon"><%= isLiked ? '❤️' : '🤍' %></span>
+          <span id="likeCount"><%= post.like_count || 0 %></span>
+        </button>
+        <span class="comment-count">💬 <%= post.comment_count || 0 %> 评论</span>
+      </div>
+    </div>
+
+    <!-- 评论区 -->
+    <div class="comments-section">
+      <h3 class="comments-title">评论 (<%= comments.length %>)</h3>
+
+      <% if (user) { %>
+        <form class="comment-form" id="commentForm" onsubmit="submitComment(event)">
+          <textarea id="commentContent" class="comment-textarea" placeholder="写下你的评论..." maxlength="500" required></textarea>
+          <button type="submit" class="btn btn-primary btn-sm">发表评论</button>
+        </form>
+      <% } else { %>
+        <div class="login-hint">
+          <a href="/auth/frontend/login">登录</a>后参与评论
+        </div>
+      <% } %>
+
+      <div class="comments-list" id="commentsList">
+        <% if (comments.length > 0) { %>
+          <% comments.forEach(function(comment) { %>
+            <div class="comment-item">
+              <a href="/user/<%= comment.user_uid || comment.user_id %>">
+                <img src="<%= comment.avatar || '/assets/images/default-avatar.png' %>" alt="<%= comment.username %>" class="comment-avatar">
+              </a>
+              <div class="comment-body">
+                <div class="comment-header">
+                  <a href="/user/<%= comment.user_uid || comment.user_id %>" class="comment-username"><%= comment.nickname || comment.username %></a>
+                  <span class="comment-time"><%= new Date(comment.created_at).toLocaleString('zh-CN') %></span>
+                </div>
+                <p class="comment-text"><%= comment.content %></p>
+              </div>
+            </div>
+          <% }); %>
+        <% } else { %>
+          <div class="empty-comments">暂无评论，快来抢沙发吧！</div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.post-detail-page {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.post-detail-card {
+  background: var(--bg-card, #fff);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.1));
+  margin-bottom: 20px;
+}
+
+.post-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.user-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.username {
+  font-weight: 600;
+  color: var(--text-primary, #333);
+  text-decoration: none;
+}
+
+.username:hover {
+  color: var(--primary, #4f46e5);
+}
+
+.post-time {
+  font-size: 13px;
+  color: var(--text-muted, #999);
+}
+
+.back-link {
+  font-size: 14px;
+  color: var(--text-secondary, #666);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--primary, #4f46e5);
+}
+
+.post-content {
+  margin-bottom: 16px;
+}
+
+.post-text {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-primary, #333);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 12px;
+}
+
+.post-images-grid {
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.post-images-grid.grid-1 { grid-template-columns: 1fr; max-width: 400px; }
+.post-images-grid.grid-2 { grid-template-columns: repeat(2, 1fr); max-width: 440px; }
+.post-images-grid.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.post-images-grid.grid-4 { grid-template-columns: repeat(2, 1fr); max-width: 440px; }
+.post-images-grid.grid-5,
+.post-images-grid.grid-6 { grid-template-columns: repeat(3, 1fr); }
+.post-images-grid.grid-7,
+.post-images-grid.grid-8,
+.post-images-grid.grid-9 { grid-template-columns: repeat(3, 1fr); }
+
+.post-image-item {
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+
+.post-image-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.post-image-item img:hover {
+  transform: scale(1.05);
+}
+
+.post-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light, #eee);
+}
+
+.like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: transparent;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary, #666);
+  transition: all 0.2s;
+}
+
+.like-btn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.like-btn.liked {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.comment-count {
+  font-size: 14px;
+  color: var(--text-muted, #999);
+}
+
+/* Comments */
+.comments-section {
+  background: var(--bg-card, #fff);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.1));
+}
+
+.comments-title {
+  font-size: 18px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light, #eee);
+}
+
+.comment-form {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comment-textarea {
+  width: 100%;
+  min-height: 80px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.comment-textarea:focus {
+  border-color: var(--primary, #4f46e5);
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 20px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--primary, #4f46e5);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark, #4338ca);
+}
+
+.btn-sm {
+  align-self: flex-end;
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
+.login-hint {
+  text-align: center;
+  padding: 16px;
+  color: var(--text-muted, #999);
+  background: var(--gray-50, #fafafa);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.login-hint a {
+  color: var(--primary, #4f46e5);
+  text-decoration: none;
+}
+
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.comment-item {
+  display: flex;
+  gap: 10px;
+}
+
+.comment-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.comment-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.comment-username {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  text-decoration: none;
+}
+
+.comment-username:hover {
+  color: var(--primary, #4f46e5);
+}
+
+.comment-time {
+  font-size: 12px;
+  color: var(--text-muted, #999);
+}
+
+.comment-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary, #555);
+  word-break: break-word;
+}
+
+.empty-comments {
+  text-align: center;
+  padding: 30px;
+  color: var(--text-muted, #999);
+}
+
+@media (max-width: 768px) {
+  .post-detail-page { padding: 12px; }
+  .post-detail-card { padding: 16px; }
+  .post-user { flex-wrap: wrap; }
+  .back-link { width: 100%; text-align: right; margin-top: -8px; }
+  .user-avatar { width: 40px; height: 40px; }
+}
+
+@media (max-width: 480px) {
+  .post-detail-page { padding: 8px; }
+  .post-detail-card, .comments-section { padding: 12px; border-radius: 8px; }
+}
+</style>
+
+<script>
+var postId = <%= post.id %>;
+
+function toggleLike() {
+  fetch('/api/like/community_post/' + postId, { method: 'POST' })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var btn = document.getElementById('likeBtn');
+        var countEl = document.getElementById('likeCount');
+        if (data.data.liked) {
+          btn.classList.add('liked');
+          btn.querySelector('.like-icon').textContent = '❤️';
+        } else {
+          btn.classList.remove('liked');
+          btn.querySelector('.like-icon').textContent = '🤍';
+        }
+        countEl.textContent = data.data.like_count;
+      }
+    });
+}
+
+function submitComment(e) {
+  e.preventDefault();
+  var content = document.getElementById('commentContent').value.trim();
+  if (!content) return;
+
+  fetch('/api/community/posts/' + postId + '/comments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: content })
+  }).then(function(res) { return res.json(); }).then(function(data) {
+    if (data.success) {
+      window.location.reload();
+    } else {
+      alert(data.error || '评论失败');
+    }
+  }).catch(function() {
+    alert('网络错误');
+  });
+}
+</script>

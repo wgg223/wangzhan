@@ -156,7 +156,7 @@ router.get('/articles', (req, res) => {
 });
 
 // 文章详情（含评论）
-router.get('/articles/:id', (req, res) => {
+router.get('/articles/:id', hasFrontendPermission('articles.detail.access'), (req, res) => {
   const db = req.db;
 
   const settings = getSettings(db);
@@ -336,8 +336,8 @@ router.get('/novels', isAuthenticated, hasFrontendPermission('novels.access'), (
   });
 });
 
-// 小说详情/阅读页（需登录）
-router.get('/novels/:id', isAuthenticated, (req, res) => {
+// 小说详情/阅读页（需登录+权限）
+router.get('/novels/:id', hasFrontendPermission('novels.detail.access'), (req, res) => {
   const db = req.db;
   const settings = getSettings(db);
 
@@ -548,52 +548,156 @@ router.get('/attachments/download/:id', (req, res) => {
 router.get('/community', (req, res) => {
   const db = req.db;
   const settings = getSettings(db);
-  const userId = req.session && req.session.user ? req.session.user.id : null;
   const page = parseInt(req.query.page) || 1;
   const limit = 20;
   const offset = (page - 1) * limit;
+  const filter = req.query.filter || 'all';
 
+  const user = req.session && req.session.user ? req.session.user : null;
+
+  // 检查发布动态权限
+  let canPublish = false;
+  if (user) {
+    if (user.role === 'super_admin' || user.role === 'admin') {
+      canPublish = true;
+    } else {
+      const userPerms = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [user.id]);
+      canPublish = userPerms.some(p => p.perm_key === 'community.posts.create');
+    }
+  }
+
+  // 构建 UNION ALL 查询
   let feedItems = [];
 
-  if (userId) {
-    feedItems = queryAll(db, `
-      SELECT 'article' as type, a.id, a.title as content, a.cover_image, a.created_at,
-        u.id as user_id, u.uid as user_uid, u.username, u.nickname, u.avatar
-      FROM articles a
-      JOIN users u ON a.author_id = u.id
-      WHERE a.status = 'published' AND a.author_id IN (
-        SELECT following_id FROM user_follows WHERE follower_id = ?
-      )
-      UNION ALL
-      SELECT 'comment' as type, c.id, substr(c.content, 1, 100) as content, NULL as cover_image, c.created_at,
-        u.id as user_id, u.uid as user_uid, u.username, u.nickname, u.avatar
-      FROM comments c
-      JOIN users u ON c.user_id = u.id
-      WHERE c.user_id IN (
-        SELECT following_id FROM user_follows WHERE follower_id = ?
-      ) AND c.status = 'approved'
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `, [userId, userId, limit, offset]);
+  const articleQuery = `
+    SELECT 'article' as type, a.id, a.title as content, a.cover_image, a.created_at,
+      NULL as images, 0 as like_count, 0 as comment_count,
+      u.id as user_id, u.uid as user_uid, u.username, u.nickname, u.avatar
+    FROM articles a
+    JOIN users u ON a.author_id = u.id
+    WHERE a.status = 'published'`;
+
+  const novelQuery = `
+    SELECT 'novel' as type, n.id, n.title as content, n.cover_image, n.created_at,
+      NULL as images, 0 as like_count, 0 as comment_count,
+      u.id as user_id, u.uid as user_uid, u.username, u.nickname, u.avatar
+    FROM novels n
+    JOIN users u ON n.uploaded_by = u.id
+    WHERE n.status = 'published'`;
+
+  const imageQuery = `
+    SELECT 'image' as type, i.id, i.title as content, i.url as cover_image, i.created_at,
+      NULL as images, 0 as like_count, 0 as comment_count,
+      u.id as user_id, u.uid as user_uid, u.username, u.nickname, u.avatar
+    FROM images i
+    JOIN users u ON i.user_id = u.id
+    WHERE i.status = 1`;
+
+  const postQuery = `
+    SELECT 'dynamic' as type, p.id, substr(p.content, 1, 200) as content, NULL as cover_image, p.created_at,
+      p.images, p.like_count, p.comment_count,
+      u.id as user_id, u.uid as user_uid, u.username, u.nickname, u.avatar
+    FROM community_posts p
+    JOIN users u ON p.user_id = u.id
+    WHERE p.status = 'published'`;
+
+  let unionSQL = '';
+  let queryParams = [];
+
+  if (filter === 'article') {
+    unionSQL = articleQuery;
+  } else if (filter === 'novel') {
+    unionSQL = novelQuery;
+  } else if (filter === 'image') {
+    unionSQL = imageQuery;
+  } else if (filter === 'dynamic') {
+    unionSQL = postQuery;
   } else {
-    feedItems = queryAll(db, `
-      SELECT 'article' as type, a.id, a.title as content, a.cover_image, a.created_at,
-        u.id as user_id, u.uid as user_uid, u.username, u.nickname, u.avatar
-      FROM articles a
-      JOIN users u ON a.author_id = u.id
-      WHERE a.status = 'published'
-      ORDER BY a.created_at DESC
-      LIMIT ? OFFSET ?
-    `, [limit, offset]);
+    unionSQL = [articleQuery, novelQuery, imageQuery, postQuery].join(' UNION ALL ');
+  }
+
+  try {
+    feedItems = queryAll(db,
+      `SELECT * FROM (${unionSQL}) ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      [...queryParams, limit, offset]
+    );
+  } catch (err) {
+    console.error('[社区] 查询失败:', err.message);
+    feedItems = [];
   }
 
   res.render('frontend/community', {
-    user: req.session ? req.session.user : null,
+    user: user,
     settings: settings,
-    feed: feedItems,
+    feed: feedItems || [],
     page: page,
-    hasMore: feedItems.length === limit
+    hasMore: (feedItems || []).length === limit,
+    filter: filter,
+    canPublish: canPublish
   });
+});
+
+// ============ 动态详情页 ============
+router.get('/community/post/:id', hasFrontendPermission('community.detail.access'), (req, res) => {
+  const db = req.db;
+  const settings = getSettings(db);
+  const postId = parseInt(req.params.id);
+  const user = req.session && req.session.user ? req.session.user : null;
+
+  try {
+    const post = queryOne(db,
+      `SELECT p.*, u.username, u.nickname, u.avatar, u.uid as user_uid
+       FROM community_posts p
+       JOIN users u ON p.user_id = u.id
+       WHERE p.id = ?`,
+      [postId]
+    );
+
+    if (!post) {
+      return res.status(404).render('frontend/error', {
+        message: '动态不存在',
+        error: '您查看的动态已被删除或不存在',
+        user: user,
+        settings: settings
+      });
+    }
+
+    // 获取评论
+    const comments = queryAll(db,
+      `SELECT c.*, u.username, u.nickname, u.avatar, u.uid as user_uid
+       FROM community_post_comments c
+       JOIN users u ON c.user_id = u.id
+       WHERE c.post_id = ? AND c.status = 'approved'
+       ORDER BY c.created_at ASC`,
+      [postId]
+    );
+
+    // 检查当前用户是否点赞
+    let isLiked = false;
+    if (user) {
+      const like = queryOne(db,
+        'SELECT id FROM content_likes WHERE user_id = ? AND target_type = ? AND target_id = ?',
+        [user.id, 'community_post', postId]
+      );
+      isLiked = Boolean(like);
+    }
+
+    res.render('frontend/community-post-detail', {
+      user: user,
+      settings: settings,
+      post: post,
+      comments: comments || [],
+      isLiked: isLiked
+    });
+  } catch (err) {
+    console.error('[社区] 动态详情查询失败:', err.message);
+    res.status(500).render('frontend/error', {
+      message: '加载失败',
+      error: '动态详情加载失败，请稍后重试',
+      user: user,
+      settings: settings
+    });
+  }
 });
 
 // ============ 用户个人主页 ============
