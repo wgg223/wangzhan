@@ -696,45 +696,83 @@
     }
   }
 
-  // ============ 提示词库选择弹窗 ============
-  function renderPromptList(filter) {
-    if (!els.promptList) return;
-    filter = (filter || '').toLowerCase();
-    var list = prompts.filter(function(p) {
-      return !filter || (p.title || '').toLowerCase().indexOf(filter) !== -1 ||
-        (p.excerpt || '').toLowerCase().indexOf(filter) !== -1;
+  // ============ 提示词库选择弹窗（可浏览全部 + 搜索过滤 + 分页加载） ============
+  var PROMPT_PAGE_SIZE = 100;
+  var promptFilter = '';
+  var promptShown = 0;
+
+  function matchedPrompts() {
+    var f = promptFilter.toLowerCase();
+    if (!f) return prompts;
+    return prompts.filter(function(p) {
+      return (p.title || '').toLowerCase().indexOf(f) !== -1 ||
+        (p.excerpt || '').toLowerCase().indexOf(f) !== -1;
     });
-    if (!list.length) {
-      els.promptList.innerHTML = '<div class="aiimg-empty">未找到匹配的提示词</div>';
+  }
+
+  function updatePromptCount(total) {
+    var el = document.getElementById('aiimgPromptCount');
+    if (el) el.textContent = '共 ' + total + ' 条' + (promptShown < total ? ' · 已显示 ' + promptShown : '');
+  }
+
+  function setPromptMore(show) {
+    var btn = document.getElementById('aiimgPromptMore');
+    if (btn) btn.style.display = show ? '' : 'none';
+  }
+
+  function renderPromptList(append) {
+    if (!els.promptList) return;
+    var list = matchedPrompts();
+    if (!append) {
+      els.promptList.innerHTML = '';
+      promptShown = 0;
+    }
+    var chunk = list.slice(promptShown, promptShown + PROMPT_PAGE_SIZE);
+    promptShown += chunk.length;
+    if (!chunk.length) {
+      if (promptShown === 0) els.promptList.innerHTML = '<div class="aiimg-empty">未找到匹配的提示词</div>';
+      updatePromptCount(list.length);
+      setPromptMore(false);
       return;
     }
     var html = '';
-    list.slice(0, 50).forEach(function(p) {
+    chunk.forEach(function(p) {
       html += '<div class="aiimg-prompt-item" data-id="' + p.id + '">' +
         '<div class="aiimg-prompt-item-title">' + escapeHtml(p.title) + '</div>' +
         (p.excerpt ? '<div class="aiimg-prompt-item-excerpt">' + escapeHtml(p.excerpt) + '</div>' : '') +
         '</div>';
     });
-    els.promptList.innerHTML = html;
-    els.promptList.querySelectorAll('.aiimg-prompt-item').forEach(function(item) {
-      item.addEventListener('click', function() {
-        var id = parseInt(item.getAttribute('data-id'), 10);
-        var found = null;
-        prompts.forEach(function(p) { if (p.id === id) found = p; });
-        if (found) {
-          els.prompt.value = found.excerpt || found.title;
-          els.promptCount.textContent = els.prompt.value.length;
-          showToast('已填充提示词，可编辑后生成', 'success');
-        }
-        closeModal();
-      });
+    if (append) {
+      els.promptList.insertAdjacentHTML('beforeend', html);
+    } else {
+      els.promptList.innerHTML = html;
+    }
+    updatePromptCount(list.length);
+    setPromptMore(promptShown < list.length);
+  }
+
+  // 事件委托：点击任意提示词条目（含分页追加的条目）
+  if (els.promptList) {
+    els.promptList.addEventListener('click', function(e) {
+      var item = e.target && e.target.closest ? e.target.closest('.aiimg-prompt-item') : null;
+      if (!item) return;
+      var id = parseInt(item.getAttribute('data-id'), 10);
+      var found = null;
+      prompts.forEach(function(p) { if (p.id === id) found = p; });
+      if (found) {
+        els.prompt.value = found.excerpt || found.title;
+        els.promptCount.textContent = els.prompt.value.length;
+        showToast('已填充提示词，可编辑后生成', 'success');
+      }
+      closeModal();
     });
   }
 
   function openModal() {
     els.modalMask.style.display = 'flex';
     els.promptSearch.value = '';
-    renderPromptList('');
+    promptFilter = '';
+    renderPromptList(false);
     els.promptSearch.focus();
   }
 
@@ -744,6 +782,13 @@
 
   if (els.pick) {
     els.pick.addEventListener('click', openModal);
+  }
+
+  var promptMoreBtn = document.getElementById('aiimgPromptMore');
+  if (promptMoreBtn) {
+    promptMoreBtn.addEventListener('click', function() {
+      renderPromptList(true);
+    });
   }
 
   // ============ 提示词优化 ============
@@ -795,7 +840,8 @@
   }
   if (els.promptSearch) {
     els.promptSearch.addEventListener('input', function() {
-      renderPromptList(els.promptSearch.value);
+      promptFilter = els.promptSearch.value;
+      renderPromptList(false);
     });
   }
   document.addEventListener('keydown', function(e) {
