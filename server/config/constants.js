@@ -44,11 +44,28 @@ const PROJECT_DEFINITIONS = {
     tables: ['ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings'],
     file_dirs: [],
     icon: '🤖'
+  },
+  'ai-prompts': {
+    id: 'ai-prompts',
+    name: 'AI提示词库',
+    description: '板块、分类、提示词、评论',
+    tables: ['prompt_sections', 'prompt_categories', 'prompts', 'prompt_comments'],
+    file_dirs: [],
+    icon: '🤖'
+  },
+  'ai-image': {
+    id: 'ai-image',
+    name: 'AI生图',
+    description: '生成记录、用户自填 Key（服务商配置不随重置清除）',
+    tables: ['ai_image_records', 'ai_image_user_keys'],
+    file_dirs: ['uploads/ai-images'],
+    icon: '🎨'
   }
 };
 
 // 需要按依赖顺序先删除的子表
-const DEPENDENT_TABLES = ['image_comments', 'image_logs', 'novel_chapters', 'comments', 'media_comments'];
+const DEPENDENT_TABLES = ['image_comments', 'image_logs', 'novel_chapters', 'comments', 'media_comments',
+  'prompt_categories', 'prompts', 'prompt_comments', 'ai_image_records', 'ai_image_user_keys'];
 
 // 所有业务数据表（用于全局重置）
 const ALL_TABLES = [
@@ -81,6 +98,10 @@ const ALL_TABLES = [
   'ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings',
   // AI 知识库
   'ai_knowledge_docs', 'ai_knowledge_chunks',
+  // AI 提示词库
+  'prompt_sections', 'prompt_categories', 'prompts', 'prompt_comments',
+  // AI 生图
+  'ai_image_providers', 'ai_image_records', 'ai_image_user_keys',
   // 活动日志
   'activity_logs',
   // 用户权限

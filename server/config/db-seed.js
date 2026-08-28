@@ -245,7 +245,13 @@ function insertDefaultDataIfNeeded(db) {
       JSON.stringify(['uploads/images']), '🖼️'],
     ['poem', '诗词游戏', '排行榜数据',
       JSON.stringify(['poem_leaderboard']),
-      JSON.stringify([]), '🎮']
+      JSON.stringify([]), '🎮'],
+    ['ai-prompts', 'AI提示词库', '板块、分类、提示词、评论',
+      JSON.stringify(['prompt_sections', 'prompt_categories', 'prompts', 'prompt_comments']),
+      JSON.stringify([]), '🤖'],
+    ['ai-image', 'AI生图', '生成记录、用户自填 Key（服务商配置不随重置清除）',
+      JSON.stringify(['ai_image_records', 'ai_image_user_keys']),
+      JSON.stringify(['uploads/ai-images']), '🎨']
   ];
 
   defaultProjects.forEach(([id, name, desc, tables, dirs, icon]) => {
