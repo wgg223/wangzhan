@@ -308,6 +308,15 @@ python deploy.py --check
 
 ## 版本历史
 
+### v5.6.1 (2026-08-29)
+
+**Bug 修复**
+- 修复系统更新后服务器未自动重启、新版本代码未生效的问题
+  - 根因：`doRestart` 依赖子进程 PATH 中的 `pm2` 命令，找不到时静默失败，进程继续运行旧代码
+  - PM2 重启命令依次尝试 `pm2 restart website-admin` → `pm2 restart all` → `npx --no-install pm2 restart website-admin`，全部失败退回直接拉起新进程（PM2 autorestart 兜底）
+  - 修复 Windows 下 `spawn('npm')` 找不到 npm.cmd 导致兜底重启失败的问题
+  - 重启失败时输出明确错误日志，不再静默
+
 ### v5.6.0 (2026-08-29)
 
 **AI 提示词模块**

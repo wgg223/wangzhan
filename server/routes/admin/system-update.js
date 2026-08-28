@@ -276,24 +276,45 @@ function doRestart(projectRoot, delayMs) {
   setTimeout(() => {
     console.log('[system-update] 更新完成，正在重启服务器...');
 
-    const startFallback = () => {
+    // 直接拉起新进程兜底（拉起后当前进程退出，由新进程接管端口）
+    const spawnAndExit = () => {
       console.log('[system-update] 使用 npm run start 重启...');
-      const child = spawn('npm', ['run', 'start'], { cwd: projectRoot, detached: true, stdio: 'ignore' });
+      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      const child = spawn(npmCmd, ['run', 'start'], {
+        cwd: projectRoot,
+        detached: true,
+        stdio: 'ignore',
+        shell: process.platform === 'win32'
+      });
       child.unref();
       process.exit(0);
     };
 
     if (process.env.PM2_HOME || process.env.pm_id) {
-      exec('pm2 restart website-admin', (error) => {
-        if (error) {
-          console.error('[system-update] pm2 restart website-admin 失败:', error.message);
-          exec('pm2 restart all', (err2) => {
-            if (err2) startFallback();
-          });
+      // PM2 环境：依次尝试多种重启命令（pm2 可能不在子进程 PATH 中），全部失败才退回直接拉起
+      const attempts = [
+        'pm2 restart website-admin',
+        'pm2 restart all',
+        'npx --no-install pm2 restart website-admin'
+      ];
+      const tryNext = (i) => {
+        if (i >= attempts.length) {
+          console.error('[system-update] PM2 重启全部失败，回退到直接启动（PM2 autorestart 会自动拉起）');
+          spawnAndExit();
+          return;
         }
-      });
+        exec(attempts[i], (error, stdout, stderr) => {
+          if (!error) {
+            console.log('[system-update] 重启命令执行成功:', attempts[i]);
+            return;
+          }
+          console.error(`[system-update] ${attempts[i]} 失败:`, error.message, (stderr || '').trim());
+          tryNext(i + 1);
+        });
+      };
+      tryNext(0);
     } else {
-      startFallback();
+      spawnAndExit();
     }
   }, delayMs);
 }
