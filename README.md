@@ -308,6 +308,16 @@ python deploy.py --check
 
 ## 版本历史
 
+### v5.6.2 (2026-08-29)
+
+**Bug 修复**
+- 修复 Linux 服务器上「系统更新」目录复制失效的问题（v4.3.0 起存在，Windows 不受影响）
+  - 根因：`copyDirCrossPlatform` 使用 `cp -r "src" "dest"`，当 dest 已存在时新代码被嵌套复制成 `dest/src`（如 `server/server/`），实际只有 package.json 等单文件被更新，server/views/public 仍是旧代码，且复制失败仅静默告警
+  - 修复：Linux 复制改用 `cp -r "src/." "dest/"` 内容复制语义（与 Windows robocopy 一致）
+  - 复制失败改为中止安装并自动回滚，不再静默跳过
+  - 安装后校验：检测本次更新是否产生 `server/server` 等嵌套目录，存在即判定安装失败并回滚
+  - 安装前自动清理历史残留的嵌套目录
+
 ### v5.6.1 (2026-08-29)
 
 **Bug 修复**

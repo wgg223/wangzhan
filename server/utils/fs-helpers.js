@@ -78,7 +78,8 @@ function copyDirCrossPlatform(src, dest) {
         resolve(error && error.code > 7 ? false : true);
       });
     } else {
-      exec(`cp -r "${src}" "${dest}"`, (error) => {
+      // 注意：必须用 "src/." "dest/" 形式复制目录内容，否则 dest 已存在时会嵌套成 dest/src
+      exec(`cp -r "${src}/." "${dest}/"`, (error) => {
         resolve(!error);
       });
     }

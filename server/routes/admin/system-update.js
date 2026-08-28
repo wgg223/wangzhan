@@ -433,6 +433,16 @@ async function runUpdateTask(projectRoot, db, actor) {
 
     // 6. 复制更新文件到项目目录
     setTask({ status: 'installing', progress: 78, message: '正在安装更新文件...' });
+
+    // 预清理历史嵌套目录（cp -r 旧版语义错误在历史更新中可能残留 server/server 等垃圾目录）
+    for (const d of ['server', 'views', 'public']) {
+      const nested = path.join(projectRoot, d, d);
+      if (fs.existsSync(nested)) {
+        console.warn(`[system-update] 更新前清理历史嵌套目录: ${nested}`);
+        await removeDir(nested);
+      }
+    }
+
     const updateItems = fs.readdirSync(sourceDir);
     for (const item of updateItems) {
       const sourcePath = path.join(sourceDir, item);
@@ -445,7 +455,8 @@ async function runUpdateTask(projectRoot, db, actor) {
       try {
         const stat = fs.statSync(sourcePath);
         if (stat.isDirectory()) {
-          await copyDirCrossPlatform(sourcePath, destPath);
+          const ok = await copyDirCrossPlatform(sourcePath, destPath);
+          if (!ok) throw new Error('复制目录失败');
         } else {
           const destDir = path.dirname(destPath);
           if (!fs.existsSync(destDir)) {
@@ -455,10 +466,19 @@ async function runUpdateTask(projectRoot, db, actor) {
         }
         console.log(`[system-update] 复制 ${item} 成功`);
       } catch (err) {
-        console.warn(`[system-update] 复制 ${item} 失败:`, err.message);
+        // 复制失败必须中止安装并回滚，不能静默跳过（否则会出现新 package.json + 旧代码的脏状态）
+        console.error(`[system-update] 复制 ${item} 失败:`, err.message);
+        throw new Error(`更新文件复制失败（${item}）: ${err.message}`);
       }
     }
     projectModified = true;
+
+    // 6.1 校验复制结果：检测 cp -r 语义错误导致的嵌套目录（server/server 等），存在即视为安装失败
+    for (const d of ['server', 'views', 'public']) {
+      if (fs.existsSync(path.join(projectRoot, d, d))) {
+        throw new Error(`更新文件复制异常：检测到 ${d}/${d} 嵌套目录（复制逻辑错误），已触发回滚`);
+      }
+    }
 
     // 7. 安装依赖（依赖未变化时跳过，加速更新）
     if (needsNpmInstall(path.join(backupDir, 'package.json'), projectRoot)) {
