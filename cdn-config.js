@@ -4,6 +4,9 @@
  * 支持从数据库或环境变量读取配置
  */
 
+// 应用版本号：静态资源缓存破坏的默认版本（每次发版自动变化）
+const appVersion = require('./package.json').version;
+
 const cdnConfig = {
   // 是否启用CDN
   enabled: false,
@@ -17,8 +20,8 @@ const cdnConfig = {
   // 原站域名（需在 .env 或后台设置中配置）
   originUrl: '',
 
-  // 静态资源版本号（用于缓存更新）
-  version: '1.0.0',
+  // 静态资源版本号（用于缓存更新；默认跟随应用版本，发版自动换版本）
+  version: appVersion,
 
   // 需要CDN加速的资源类型
   staticExtensions: ['.css', '.js', '.jpg', '.jpeg', '.png', '.gif', '.ico', '.svg', '.webp', '.woff', '.woff2', '.ttf', '.eot'],
@@ -46,7 +49,7 @@ const cdnConfig = {
       this.enabled = settingsObj.cdn_enabled === '1';
       this.provider = settingsObj.cdn_provider || 'custom';
       this.baseUrl = settingsObj.cdn_base_url || '';
-      this.version = settingsObj.cdn_version || '1.0.0';
+      this.version = settingsObj.cdn_version || appVersion;
     } catch (err) {
       // 如果数据库查询失败，使用环境变量
       console.error('[CDN] 数据库加载失败，使用环境变量:', err.message);
@@ -60,16 +63,12 @@ const cdnConfig = {
     this.provider = process.env.CDN_PROVIDER || 'custom';
     this.baseUrl = process.env.CDN_BASE_URL || '';
     this.originUrl = process.env.ORIGIN_URL || '';
-    this.version = process.env.CDN_VERSION || '1.0.0';
+    this.version = process.env.CDN_VERSION || appVersion;
   },
 
   // 获取CDN URL
   getUrl(path) {
-    if (!this.enabled) {
-      return path;
-    }
-
-    // 检查是否在排除路径中
+    // 排除路径不参与版本化（用户上传、接口等动态内容）
     for (const excludePath of this.excludePaths) {
       if (path.startsWith(excludePath)) {
         return path;
@@ -78,7 +77,15 @@ const cdnConfig = {
 
     // 检查文件扩展名
     const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
-    if (!this.staticExtensions.includes(ext)) {
+    const isStatic = this.staticExtensions.includes(ext);
+
+    if (!this.enabled) {
+      // CDN 未启用时也追加应用版本号做缓存破坏，避免浏览器/边缘缓存旧版 JS/CSS
+      // 直接用 appVersion（部署代码版本），不受后台 cdn_version 设置影响
+      return isStatic ? `${path}?v=${appVersion}` : path;
+    }
+
+    if (!isStatic) {
       return path;
     }
 
