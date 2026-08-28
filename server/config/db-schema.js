@@ -690,6 +690,61 @@ function createTables(db) {
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_docs_created ON ai_knowledge_docs(created_at)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunks_doc ON ai_knowledge_chunks(doc_id, chunk_index)');
 
+  // ============ AI 提示词模块表 ============
+  // 板块表（一级）
+  db.run(`CREATE TABLE IF NOT EXISTS prompt_sections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    icon TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  // 分类表（二级，挂在板块下）
+  db.run(`CREATE TABLE IF NOT EXISTS prompt_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    section_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (section_id) REFERENCES prompt_sections(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_prompt_categories_section ON prompt_categories(section_id)');
+
+  // 提示词表（三级）
+  db.run(`CREATE TABLE IF NOT EXISTS prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    excerpt TEXT DEFAULT '',
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES prompt_categories(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompts(category_id)');
+
+  // 提示词评论表
+  db.run(`CREATE TABLE IF NOT EXISTS prompt_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (prompt_id) REFERENCES prompts(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_prompt_comments_prompt ON prompt_comments(prompt_id)');
+
   // ============ 文章附件表 ============
   db.run(`CREATE TABLE IF NOT EXISTS article_attachments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -734,6 +789,67 @@ function createTables(db) {
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_api_logs_created ON api_access_logs(created_at)');
   db.run('CREATE INDEX IF NOT EXISTS idx_api_logs_user ON api_access_logs(user_id)');
+
+  // ============ AI 图片生成模块表 ============
+  // AI 生图服务商配置表（Key 密文存储）
+  db.run(`CREATE TABLE IF NOT EXISTS ai_image_providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_key TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    enabled INTEGER DEFAULT 0,
+    api_key_enc TEXT DEFAULT '',
+    api_base TEXT DEFAULT '',
+    api_path TEXT DEFAULT '',
+    default_model TEXT DEFAULT '',
+    models TEXT DEFAULT '[]',
+    api_key_url TEXT DEFAULT '',
+    supports_negative INTEGER DEFAULT 0,
+    supports_n INTEGER DEFAULT 1,
+    supports_img2img INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_aiprovider_key ON ai_image_providers(provider_key)');
+  // 存量表迁移：补充 api_key_url 列
+  try { db.run("ALTER TABLE ai_image_providers ADD COLUMN api_key_url TEXT DEFAULT ''"); } catch (e) {
+    if (!e.message || !e.message.includes('duplicate column name')) {
+      console.error('[DB迁移] ai_image_providers.api_key_url 添加失败:', e.message);
+    }
+  }
+
+  // AI 生图生成记录表
+  db.run(`CREATE TABLE IF NOT EXISTS ai_image_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    prompt TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT DEFAULT '',
+    size TEXT DEFAULT '',
+    seed INTEGER DEFAULT 0,
+    style TEXT DEFAULT '',
+    reference_image TEXT DEFAULT '',
+    status TEXT DEFAULT 'success',
+    image_path TEXT DEFAULT '',
+    error TEXT DEFAULT '',
+    shared INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_aiimg_records_user ON ai_image_records(user_id, created_at DESC)');
+
+  // 用户自填的 AI 生图服务商 Key（加密存储；用户 Key 优先于后台全局 Key）
+  db.run(`CREATE TABLE IF NOT EXISTS ai_image_user_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    provider_key TEXT NOT NULL,
+    api_key_enc TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (user_id, provider_key)
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_aiimg_user_keys_user ON ai_image_user_keys(user_id)');
 }
 
 module.exports = { createTables };

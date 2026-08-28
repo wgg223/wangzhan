@@ -77,7 +77,7 @@
           </ul>
         </div>
         <% } %>
-        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'pages.manage') || hasPerm(userPermissions, 'articles.manage') || hasPerm(userPermissions, 'novels.manage') || hasPerm(userPermissions, 'comments.manage'))) { %>
+        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'pages.manage') || hasPerm(userPermissions, 'articles.manage') || hasPerm(userPermissions, 'novels.manage') || hasPerm(userPermissions, 'comments.manage') || hasPerm(userPermissions, 'prompts.view') || hasPerm(userPermissions, 'prompts.manage') || hasPerm(userPermissions, 'imagegen.manage'))) { %>
         <div class="nav-group">
           <p class="nav-group-title">内容管理</p>
           <ul>
@@ -86,6 +86,12 @@
             <% } %>
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'articles.manage')) { %>
             <li><a href="/admin/articles" class="<%= isActive('/admin/articles') ? 'active' : '' %>">📝 文章管理</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'prompts.view') || hasPerm(userPermissions, 'prompts.manage'))) { %>
+            <li><a href="/admin/prompts" class="<%= isActive('/admin/prompts') ? 'active' : '' %>">🤖 AI提示词</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'imagegen.manage')) { %>
+            <li><a href="/admin/ai-image" class="<%= isActive('/admin/ai-image') ? 'active' : '' %>">🎨 AI生图</a></li>
             <% } %>
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'novels.manage')) { %>
             <li><a href="/admin/novels" class="<%= isActive('/admin/novels') ? 'active' : '' %>">📚 小说管理</a></li>

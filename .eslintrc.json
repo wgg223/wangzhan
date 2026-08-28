@@ -135,7 +135,16 @@
         "define": "readonly",
         "require": "readonly",
         "module": "readonly",
-        "exports": "readonly"
+        "exports": "readonly",
+        "escapeHtml": "readonly",
+        "showToast": "readonly",
+        "copyToClipboard": "readonly",
+        "getCsrfToken": "readonly",
+        "csrfFetch": "readonly",
+        "openModal": "readonly",
+        "closeModal": "readonly",
+        "formatTime": "readonly",
+        "withButtonLoading": "readonly"
       }
     },
     {

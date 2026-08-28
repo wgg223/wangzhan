@@ -1,0 +1,331 @@
+<%# AI 图片生成页（常规站点布局） %>
+<div class="aiimg-page">
+  <div class="aiimg-header">
+    <h1 class="aiimg-title">🎨 AI 图片生成</h1>
+    <p class="aiimg-subtitle">接入国内外主流生图服务商，支持手动输入提示词或从 AI 提示词库选择</p>
+    <% if (unlimited) { %>
+      <span class="aiimg-badge aiimg-badge-admin">管理员 · 不限次数</span>
+    <% } else { %>
+      <span class="aiimg-badge" id="aiimgQuota">今日剩余：<b id="aiimgRemain"><%= Math.max(0, dailyLimit - used) %></b> / <%= dailyLimit %> 次</span>
+    <% } %>
+  </div>
+
+  <div class="aiimg-grid">
+    <!-- 左侧：生成表单 -->
+    <div class="aiimg-card aiimg-form-card">
+      <div class="aiimg-card-title">生成参数</div>
+
+      <div class="aiimg-field">
+        <label class="aiimg-label" for="aiimgProvider">服务商</label>
+        <select id="aiimgProvider" class="aiimg-select">
+          <% providers.forEach(function(p) { %>
+            <option value="<%= p.provider_key %>"><%= p.name %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="aiimg-field">
+        <label class="aiimg-label" for="aiimgModel">模型</label>
+        <select id="aiimgModel" class="aiimg-select"></select>
+      </div>
+
+      <div class="aiimg-field">
+        <label class="aiimg-label" for="aiimgPrompt">
+          提示词 <span class="aiimg-char-count"><span id="aiimgPromptCount">0</span>/1000</span>
+        </label>
+        <textarea id="aiimgPrompt" class="aiimg-textarea" rows="4" maxlength="1000"
+          placeholder="描述你想生成的画面，例如：一只在月球上打伞的橘猫，电影感光影，8k"></textarea>
+        <div class="aiimg-prompt-actions">
+          <button type="button" class="aiimg-btn aiimg-btn-ghost" id="aiimgEnhancePrompt" title="用 AI 把你的描述扩展为高质量英文提示词（免费接口，站长可配置更优模型）">✨ 优化提示词</button>
+          <% if (canPickPrompt) { %>
+            <button type="button" class="aiimg-btn aiimg-btn-ghost" id="aiimgPickPrompt">📚 从提示词库选择</button>
+          <% } else { %>
+            <span class="aiimg-hint">📚 选择提示词库需 <a href="/permissions/apply" class="aiimg-link">申请「AI提示词查询」权限</a>，也可先手动输入</span>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="aiimg-field" id="aiimgNegWrap" style="display:none;">
+        <label class="aiimg-label" for="aiimgNegPrompt">
+          负向提示词 <span class="aiimg-char-count"><span id="aiimgNegCount">0</span>/500</span>
+        </label>
+        <textarea id="aiimgNegPrompt" class="aiimg-textarea" rows="2" maxlength="500"
+          placeholder="不希望出现的内容，如：模糊、低质量、变形"></textarea>
+      </div>
+
+      <div class="aiimg-row">
+        <div class="aiimg-field">
+          <label class="aiimg-label" for="aiimgMode">生成模式</label>
+          <select id="aiimgMode" class="aiimg-select">
+            <option value="t2i">🖼 文生图</option>
+            <option value="i2i">🖌 图生图</option>
+          </select>
+        </div>
+        <div class="aiimg-field">
+          <label class="aiimg-label" for="aiimgSize">尺寸</label>
+          <select id="aiimgSize" class="aiimg-select">
+            <option value="1024x1024">1024 × 1024</option>
+            <option value="1024x1792">1024 × 1792（竖版）</option>
+            <option value="1792x1024">1792 × 1024（横版）</option>
+            <option value="768x768">768 × 768</option>
+            <option value="512x512">512 × 512</option>
+            <option value="1280x720">1280 × 720（横版）</option>
+            <option value="720x1280">720 × 1280（竖版）</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="aiimg-field" id="aiimgNWrap">
+        <label class="aiimg-label" for="aiimgN">数量</label>
+        <select id="aiimgN" class="aiimg-select">
+          <option value="1">1 张</option>
+          <option value="2">2 张</option>
+          <option value="3">3 张</option>
+          <option value="4">4 张</option>
+        </select>
+      </div>
+
+      <div class="aiimg-field" id="aiimgRefWrap" style="display:none;">
+        <label class="aiimg-label" for="aiimgRef">参考图（图生图必填，≤5MB，JPG/PNG/WebP）</label>
+        <input type="file" id="aiimgRef" class="aiimg-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+        <div id="aiimgRefPreview" class="aiimg-ref-preview" style="display:none;">
+          <img id="aiimgRefPreviewImg" alt="参考图预览">
+          <div class="aiimg-ref-preview-meta">
+            <span id="aiimgRefPreviewName"></span>
+            <button type="button" id="aiimgRefRemove" class="aiimg-btn aiimg-btn-sm">移除</button>
+          </div>
+        </div>
+        <span class="aiimg-hint" id="aiimgRefHint"></span>
+      </div>
+
+      <details class="aiimg-advanced">
+        <summary class="aiimg-advanced-summary">⚙️ 高级选项</summary>
+        <div class="aiimg-advanced-body">
+          <div class="aiimg-field">
+            <label class="aiimg-label" for="aiimgSeed">种子数（留空随机）</label>
+            <input type="number" id="aiimgSeed" class="aiimg-input" min="0" max="4294967295" placeholder="0 - 4294967295">
+          </div>
+          <div class="aiimg-field">
+            <label class="aiimg-label" for="aiimgStyle">风格预设</label>
+            <select id="aiimgStyle" class="aiimg-select">
+              <option value="">无</option>
+              <option value="photo">📷 摄影写实</option>
+              <option value="illustration">🎨 插画</option>
+              <option value="3d">🧊 3D 渲染</option>
+              <option value="guofeng">🏮 国风</option>
+              <option value="cyberpunk">🌃 赛博朋克</option>
+              <option value="watercolor">💧 水彩</option>
+              <option value="anime">🌸 动漫</option>
+              <option value="pixel">👾 像素风</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      <button type="button" class="aiimg-btn aiimg-btn-primary aiimg-generate" id="aiimgGenerate">
+        ✨ 生成图片
+      </button>
+      <div id="aiimgGenerateHint" class="aiimg-hint" style="display:none;"></div>
+    </div>
+
+    <!-- 右侧：生成结果 -->
+    <div class="aiimg-card aiimg-result-card">
+      <div class="aiimg-card-title">生成结果</div>
+      <div id="aiimgProgress" class="aiimg-progress" style="display:none;">
+        <div class="aiimg-progress-status" id="aiimgProgressText">⏳ 正在提交到服务商...</div>
+        <div class="aiimg-progress-track"><div class="aiimg-progress-fill" id="aiimgProgressFill"></div></div>
+        <div class="aiimg-progress-meta" id="aiimgProgressMeta"></div>
+      </div>
+      <div id="aiimgResults" class="aiimg-results">
+        <div class="aiimg-empty">填写提示词后点击「生成图片」，结果将显示在这里</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 我的 API Key（独立卡片，直接平铺） -->
+  <div class="aiimg-card aiimg-keys-card">
+    <div class="aiimg-card-title">🔑 我的 API Key
+      <span class="aiimg-hint" style="font-weight:normal;">自填优先，留空自动使用站长全局 Key</span>
+    </div>
+    <% allProviders.forEach(function(p) { %>
+      <% if (p.provider_key === 'pollinations') return; %>
+      <div class="aiimg-key-line">
+        <span class="aiimg-key-line-name" title="<%= p.name %>"><%= p.name %></span>
+        <span class="aiimg-key-line-status" id="keyLineStatus-<%= p.provider_key %>" style="<%= userKeys.indexOf(p.provider_key) !== -1 ? 'color:#10b981;' : 'color:var(--text-muted);' %>">
+          <% if (userKeys.indexOf(p.provider_key) !== -1) { %>✓ 已配置<% } else { %>未配置<% } %>
+        </span>
+        <input type="password" class="aiimg-input aiimg-key-line-input" id="keyLineInput-<%= p.provider_key %>"
+          placeholder="填入你的 Key（留空使用全局 Key）" autocomplete="off">
+        <% if (p.api_key_url) { %>
+        <a class="aiimg-btn aiimg-btn-sm aiimg-key-line-get" href="<%= p.api_key_url %>" target="_blank" rel="noopener">🔗 获取</a>
+        <% } %>
+        <button type="button" class="aiimg-btn aiimg-btn-sm aiimg-btn-primary" onclick="saveKeyLine('<%= p.provider_key %>')">保存</button>
+        <button type="button" class="aiimg-btn aiimg-btn-sm aiimg-key-line-clear" id="keyLineClear-<%= p.provider_key %>"
+          onclick="clearKeyLine('<%= p.provider_key %>')" style="<%= userKeys.indexOf(p.provider_key) === -1 ? 'display:none;' : '' %>">清除</button>
+      </div>
+    <% }) %>
+    <div class="aiimg-hint" style="margin-top:10px;">密钥加密存储、不会明文显示；填了自己的 Key 优先使用，未配置的服务商自动兜底到可用服务商。也可在 <a href="/account#aiimg" class="aiimg-link">个人中心 → AI生图密钥</a> 统一管理。</div>
+  </div>
+
+  <!-- 历史记录 -->
+  <div class="aiimg-card aiimg-history-card">
+    <div class="aiimg-card-title">我的生成记录</div>
+    <div id="aiimgHistory" class="aiimg-history">
+      <div class="aiimg-empty">暂无记录</div>
+    </div>
+    <div class="aiimg-pagination" id="aiimgPagination" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- 提示词库选择弹窗 -->
+<div class="aiimg-modal-mask" id="aiimgModalMask" style="display:none;">
+  <div class="aiimg-modal">
+    <div class="aiimg-modal-head">
+      <span>从提示词库选择</span>
+      <button type="button" class="aiimg-modal-close" id="aiimgModalClose">✕</button>
+    </div>
+    <input type="text" id="aiimgPromptSearch" class="aiimg-input aiimg-modal-search" placeholder="搜索提示词标题...">
+    <div class="aiimg-modal-list" id="aiimgPromptList"></div>
+  </div>
+</div>
+
+<style>
+  .aiimg-page { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  .aiimg-header { margin-bottom: 20px; }
+  .aiimg-title { font-size: var(--text-3xl); color: var(--text-primary); margin: 0 0 6px; }
+  .aiimg-subtitle { color: var(--text-secondary); font-size: var(--text-base); margin: 0 0 10px; }
+  .aiimg-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: var(--text-sm);
+    background: var(--primary-bg); color: var(--primary); }
+  .aiimg-badge-admin { background: rgba(16, 185, 129, .15); color: #10b981; }
+  .aiimg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 768px) { .aiimg-grid { grid-template-columns: 1fr; } }
+  .aiimg-card { background: var(--bg-card); border: 1px solid var(--primary-border); border-radius: 12px; padding: 16px; }
+  .aiimg-card-title { font-size: var(--text-lg); font-weight: 600; color: var(--text-primary); margin-bottom: 14px; }
+  .aiimg-field { margin-bottom: 12px; }
+  .aiimg-label { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-sm);
+    color: var(--text-secondary); margin-bottom: 6px; }
+  .aiimg-char-count { color: var(--text-muted); font-size: var(--text-xs); font-weight: normal; }
+  .aiimg-textarea, .aiimg-select, .aiimg-input { width: 100%; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--primary-border); background: var(--bg-secondary); color: var(--text-primary);
+    font-size: var(--text-base); box-sizing: border-box; }
+  .aiimg-textarea { resize: vertical; }
+  .aiimg-select:focus, .aiimg-textarea:focus, .aiimg-input:focus { outline: none; border-color: var(--primary); }
+  .aiimg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .aiimg-keys-card { margin-bottom: 16px; }
+  .aiimg-keys-card .aiimg-card-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .aiimg-key-line {
+    display: grid;
+    grid-template-columns: 128px 56px minmax(160px, 1fr) auto auto auto;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  @media (max-width: 760px) {
+    .aiimg-key-line { grid-template-columns: 1fr 1fr; }
+    .aiimg-key-line .aiimg-key-line-input { grid-column: 1 / -1; grid-row: 2; }
+    .aiimg-key-line .aiimg-key-line-get,
+    .aiimg-key-line .aiimg-btn { width: auto; }
+  }
+  .aiimg-key-line-name { font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aiimg-key-line-status { font-size: 11px; }
+  .aiimg-key-line .aiimg-key-line-input { padding: 6px 8px; font-size: var(--text-sm); }
+  .aiimg-key-line .aiimg-key-line-get { text-decoration: none; white-space: nowrap; }
+  .aiimg-advanced { margin: 4px 0 12px; border: 1px dashed var(--primary-border); border-radius: 8px; padding: 8px 10px; }
+  .aiimg-advanced-summary { cursor: pointer; color: var(--primary); font-size: var(--text-sm); }
+  .aiimg-advanced-body { margin-top: 10px; }
+  .aiimg-btn { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--primary-border);
+    background: var(--bg-secondary); color: var(--text-primary); font-size: var(--text-base); cursor: pointer; }
+  .aiimg-btn-primary { width: 100%; padding: 11px; background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff; border: none; font-size: var(--text-lg); font-weight: 600; }
+  .aiimg-btn-primary:hover { opacity: .92; }
+  .aiimg-btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+  .aiimg-btn-ghost { background: transparent; color: var(--primary); font-size: var(--text-sm); padding: 4px 8px; }
+  .aiimg-btn-sm { padding: 4px 10px; font-size: var(--text-xs); border-radius: 6px; }
+  .aiimg-hint { color: var(--text-muted); font-size: var(--text-sm); margin-top: 6px; }
+  .aiimg-prompt-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .aiimg-link { color: var(--primary); }
+  .aiimg-ref-preview { display: flex; align-items: center; gap: 12px; margin-top: 10px;
+    padding: 10px; border: 1px solid var(--primary-border); border-radius: 10px; background: var(--bg-secondary); }
+  .aiimg-ref-preview img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; display: block; flex-shrink: 0; }
+  .aiimg-ref-preview-meta { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
+  .aiimg-ref-preview-meta span { font-size: var(--text-xs); color: var(--text-secondary); max-width: 220px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aiimg-results { min-height: 200px; }
+  .aiimg-progress { margin-bottom: 14px; }
+  .aiimg-progress-status { font-size: var(--text-sm); color: var(--text-primary); margin-bottom: 8px; }
+  .aiimg-progress-track { height: 8px; border-radius: 4px; background: var(--bg-secondary); overflow: hidden; }
+  .aiimg-progress-fill { height: 100%; width: 0%; border-radius: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+    transition: width .3s ease; }
+  .aiimg-progress-meta { font-size: var(--text-xs); color: var(--text-muted); margin-top: 6px; }
+  .aiimg-fail-card { padding: 20px; text-align: center; border: 1px solid rgba(239,68,68,.35);
+    border-radius: 10px; background: rgba(239,68,68,.06); }
+  .aiimg-fail-title { font-size: var(--text-lg); font-weight: 600; color: #ef4444; margin-bottom: 8px; }
+  .aiimg-fail-meta { font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 6px; }
+  .aiimg-fail-msg { font-size: var(--text-sm); color: var(--text-primary); word-break: break-all;
+    margin-bottom: 14px; line-height: 1.6; }
+  .aiimg-fail-card .aiimg-btn-primary { width: auto; padding: 8px 20px; font-size: var(--text-base); }
+  .aiimg-fail-attempts { text-align: left; margin: 0 0 14px; padding: 10px 12px; border-top: 1px dashed rgba(239,68,68,.3); }
+  .aiimg-fail-attempts-title { font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 6px; }
+  .aiimg-fail-attempt { font-size: var(--text-xs); color: var(--text-secondary); padding: 3px 0; line-height: 1.5; }
+  .aiimg-fail-attempt b { color: var(--text-primary); }
+  .aiimg-empty { color: var(--text-muted); font-size: var(--text-sm); text-align: center; padding: 40px 0; }
+  .aiimg-result-time { font-size: var(--text-xs); color: #10b981; margin-bottom: 10px; }
+  .aiimg-result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .aiimg-result-item { border: 1px solid var(--primary-border); border-radius: 10px; overflow: hidden; }
+  .aiimg-result-item img { width: 100%; display: block; aspect-ratio: 1 / 1; object-fit: cover; background: var(--bg-secondary); }
+  .aiimg-result-actions { display: flex; gap: 8px; padding: 8px; }
+  .aiimg-result-actions .aiimg-btn { flex: 1; text-align: center; text-decoration: none; }
+  .aiimg-history-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-bottom: 1px solid var(--primary-border); }
+  .aiimg-history-item:last-child { border-bottom: none; }
+  .aiimg-history-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: var(--bg-secondary); flex-shrink: 0; }
+  .aiimg-history-info { flex: 1; min-width: 0; }
+  .aiimg-history-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  .aiimg-history-prompt { font-size: var(--text-sm); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aiimg-history-meta { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+  .aiimg-history-error { color: #ef4444; font-size: var(--text-xs); margin-top: 2px; }
+  .aiimg-pagination { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
+  .aiimg-pagination .aiimg-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .aiimg-modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .aiimg-modal { width: 100%; max-width: 560px; max-height: 80vh; background: var(--bg-card); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
+  .aiimg-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; font-weight: 600; color: var(--text-primary); border-bottom: 1px solid var(--primary-border); }
+  .aiimg-modal-close { background: none; border: none; font-size: 16px; color: var(--text-muted); cursor: pointer; }
+  .aiimg-modal-search { margin: 12px 16px; width: calc(100% - 32px); }
+  .aiimg-modal-list { overflow-y: auto; padding: 0 16px 16px; }
+  .aiimg-prompt-item { padding: 10px 12px; border: 1px solid var(--primary-border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+  .aiimg-prompt-item:hover { border-color: var(--primary); background: var(--primary-bg); }
+  .aiimg-prompt-item-title { font-size: var(--text-sm); color: var(--text-primary); font-weight: 600; }
+  .aiimg-prompt-item-excerpt { font-size: var(--text-xs); color: var(--text-muted); margin-top: 3px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  /* Toast（常规 layout 无 toast 样式，此处自备） */
+  .toast-message.admin-toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 9999;
+    background: rgba(17,24,39,.94); color: #f1f5f9; padding: 10px 18px; border-radius: 10px; font-size: 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25); border: 1px solid rgba(99,102,241,.4); max-width: 80vw;
+    transition: opacity .3s; }
+  .toast-message.admin-toast.toast-success { border-color: rgba(16,185,129,.5); }
+  .toast-message.admin-toast.toast-error { border-color: rgba(239,68,68,.5); }
+  .toast-message.admin-toast.toast-warning { border-color: rgba(245,158,11,.5); }
+  .toast-message.admin-toast.hiding { opacity: 0; }
+</style>
+
+<script type="application/json" id="ai-image-data"><%- JSON.stringify({
+  providers: providers,
+  dailyLimit: dailyLimit,
+  used: used,
+  unlimited: !!unlimited,
+  canPickPrompt: !!canPickPrompt,
+  canShare: !!canShare,
+  userKeys: userKeys || [],
+  allProviders: allProviders || [],
+  prompts: canPickPrompt ? prompts.map(function(p) { return { id: p.id, title: p.title, excerpt: p.excerpt || '' }; }) : [],
+  stylePresets: {
+    photo: 'professional photography, photorealistic, 8k, sharp focus, natural lighting',
+    illustration: 'digital illustration, vibrant colors, highly detailed',
+    '3d': '3D render, octane render, cinematic lighting, depth of field',
+    guofeng: 'traditional Chinese ink wash painting style, elegant, artistic',
+    cyberpunk: 'cyberpunk style, neon lights, futuristic city, high contrast',
+    watercolor: 'watercolor painting, soft colors, artistic, delicate',
+    anime: 'anime style, beautiful detailed, vibrant, studio quality',
+    pixel: 'pixel art, retro game style, 16-bit'
+  }
+}).replace(/</g, '\\u003c') %></script>
+<script defer src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-image.js') : '/js/ai-image.js' %>"></script>

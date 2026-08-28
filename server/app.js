@@ -163,6 +163,8 @@ app.use((req, res, next) => {
     res.locals.layout = false;
   } else if (req.path.startsWith('/image-share')) {
     res.locals.layout = false;
+  } else if (req.path.startsWith('/ai-prompts')) {
+    res.locals.layout = false;
   } else if (req.path.startsWith('/auth/') && !req.path.startsWith('/auth/delete-account')) {
     res.locals.layout = false;
   } else if (req.path.startsWith('/setup')) {

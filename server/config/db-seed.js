@@ -105,6 +105,7 @@ function insertDefaultDataIfNeeded(db) {
     ['novels.access', '小说访问', '访问小说模块'],
     ['image-share.access', '图片分享访问', '访问图片分享模块'],
     ['poem-game.access', '诗词游戏访问', '访问诗词游戏模块'],
+    ['prompts.view', 'AI提示词查询', '访问AI提示词页面并查看提示词内容'],
     // 站点统计权限
     ['site_stats.view', '站点统计', '查看站点基本统计数据（用户数、运行状态等）'],
     // 内容管理权限
@@ -120,6 +121,11 @@ function insertDefaultDataIfNeeded(db) {
     ['comments.manage', '评论管理', '评论的查看、审核、编辑和删除'],
     // 图片分享管理
     ['image-share.manage', '图片分享管理', '图片的查看、上传、编辑、删除、审核、分类及用户管理'],
+    // AI提示词管理
+    ['prompts.manage', 'AI提示词管理', '提示词板块、分类、提示词的创建、编辑和删除'],
+    // AI生图
+    ['imagegen.use', 'AI生图使用', '访问AI图片生成页并生成图片'],
+    ['imagegen.manage', 'AI生图管理', '后台配置AI生图服务商、密钥与每日限额，管理生成记录'],
     // 系统管理
     ['settings.manage', '系统设置', '网站基础设置、SMTP、协议、弹窗、CDN等配置'],
     ['data.manage', '数据管理', '数据备份、恢复、导入和导出'],
@@ -246,6 +252,81 @@ function insertDefaultDataIfNeeded(db) {
     db.run('INSERT OR IGNORE INTO projects (id, name, description, tables, file_dirs, icon) VALUES (?, ?, ?, ?, ?, ?)',
       [id, name, desc, tables, dirs, icon]);
   });
+
+  // 插入默认 AI 生图服务商（Key 留空由用户/后台填写；INSERT OR IGNORE 幂等）
+  // 默认全部启用：前台直接可选任一服务商，用户自填 Key 即可使用（无 Key 自动兜底到免费/已配置服务商）
+  // 数组结构：[provider_key, name, api_base, api_path, default_model, models, supports_negative, supports_n, supports_img2img, enabled, sort_order, api_key_url]
+  const defaultAiImageProviders = [
+    ['openai', 'OpenAI DALL·E 3', 'https://api.openai.com/v1', '', 'dall-e-3',
+      JSON.stringify(['dall-e-3']), 0, 1, 0, 1, 1, 'https://platform.openai.com/api-keys'],
+    ['stability', 'Stability AI', 'https://api.stability.ai/v2beta', '', 'sd3.5-large',
+      JSON.stringify(['sd3.5-large', 'sd3.5-medium', 'sd3.5-large-turbo']), 1, 1, 1, 1, 2, 'https://platform.stability.ai/account/keys'],
+    ['siliconflow', '硅基流动', 'https://api.siliconflow.cn/v1', '', 'black-forest-labs/FLUX.1-schnell',
+      JSON.stringify(['black-forest-labs/FLUX.1-schnell', 'Qwen/Qwen-Image']), 1, 1, 1, 1, 3, 'https://cloud.siliconflow.cn/account/ak'],
+    ['zhipu', '智谱 CogView', 'https://open.bigmodel.cn/api', '', 'cogview-3-flash',
+      JSON.stringify(['cogview-3-flash', 'cogview-4']), 0, 1, 0, 1, 4, 'https://open.bigmodel.cn/usercenter/apikeys'],
+    ['dashscope', '通义万相', 'https://dashscope.aliyuncs.com/api/v1', '', 'wanx-v1',
+      JSON.stringify(['wanx-v1', 'wan2.1-t2i-turbo']), 1, 1, 1, 1, 5, 'https://bailian.console.aliyun.com/#/api-key'],
+    ['baidu', '文心一格', 'https://aip.baidubce.com', '', 'ernie-vilg-xl-2',
+      JSON.stringify(['ernie-vilg-xl-2']), 1, 1, 0, 1, 6, 'https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application'],
+    ['pollinations', 'Pollinations.ai', 'https://image.pollinations.ai', '', 'flux',
+      JSON.stringify(['flux', 'turbo']), 0, 1, 0, 1, 7, ''],
+    ['runninghub', 'RunningHub', 'https://www.runninghub.cn/openapi/v2', '', '',
+      JSON.stringify([]), 0, 1, 0, 1, 8, 'https://www.runninghub.cn/enterprise-api/consumerApi'],
+    ['hunyuan', '腾讯混元', 'https://api.hunyuan.cloud.tencent.com/v1', '', 'hunyuan-image',
+      JSON.stringify(['hunyuan-image']), 0, 1, 0, 1, 9, 'https://console.cloud.tencent.com/cam/capi'],
+    ['stepfun', '阶跃星辰', 'https://api.stepfun.com/v1', '', 'step-1x-medium',
+      JSON.stringify(['step-1x-medium']), 1, 1, 0, 1, 10, 'https://platform.stepfun.com/interface'],
+    ['minimax', 'MiniMax', 'https://api.minimax.chat/v1', '', 'image-01',
+      JSON.stringify(['image-01']), 0, 1, 0, 1, 11, 'https://platform.minimaxi.com/user-center/basic-information/interface-key'],
+    ['replicate', 'Replicate', 'https://api.replicate.com/v1', 'black-forest-labs/flux-schnell', '',
+      JSON.stringify(['black-forest-labs/flux-schnell', 'stability-ai/sdxl']), 1, 1, 1, 1, 12, 'https://replicate.com/account/api-tokens'],
+    ['doubao', '火山引擎豆包', 'https://ark.cn-beijing.volces.com/api/v3', '', 'doubao-seedream-4-0-250828',
+      JSON.stringify(['doubao-seedream-4-0-250828', 'doubao-seedream-4-5-251128', 'doubao-seedream-5-0-260128']), 1, 1, 1, 1, 13, 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey'],
+    ['fal', 'fal.ai', 'https://queue.fal.run', 'fal-ai/flux/dev', '',
+      JSON.stringify(['fal-ai/flux/dev', 'fal-ai/flux/schnell']), 0, 1, 1, 1, 14, 'https://fal.ai/dashboard/keys'],
+    ['aihubmix', 'AIHubMix', 'https://aihubmix.com/v1', '', 'gpt-image-1',
+      JSON.stringify(['gpt-image-1', 'dall-e-3', 'qwen-image', 'glm-image', 'doubao-seedream-4-0', 'flux-2-flex', 'wan2.7-image']), 0, 1, 1, 1, 15, 'https://aihubmix.com/']
+  ];
+
+  defaultAiImageProviders.forEach(([key, name, base, path, model, models, neg, n, img2img, enabled, sort, keyUrl]) => {
+    db.run(`INSERT OR IGNORE INTO ai_image_providers
+      (provider_key, name, api_base, api_path, default_model, models, supports_negative, supports_n, supports_img2img, enabled, sort_order, api_key_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [key, name, base, path, model, models, neg, n, img2img, enabled, sort, keyUrl || '']);
+    // 存量行补全官方获取链接（仅当为空，不覆盖管理员自定义）
+    db.run("UPDATE ai_image_providers SET api_key_url = ? WHERE provider_key = ? AND (api_key_url IS NULL OR api_key_url = '')",
+      [keyUrl || '', key]);
+  });
+
+  // aihubmix 能力补全迁移：升级为支持图生图与更全的模型列表（仅当仍是旧默认值 dall-e-3 时执行）
+  db.run(`UPDATE ai_image_providers SET supports_img2img = 1, default_model = 'gpt-image-1', models = ?
+    WHERE provider_key = 'aihubmix' AND default_model = 'dall-e-3'`,
+    [JSON.stringify(['gpt-image-1', 'dall-e-3', 'qwen-image', 'glm-image', 'doubao-seedream-4-0', 'flux-2-flex', 'wan2.7-image'])]);
+
+  // 豆包默认模型迁移：旧版 seedream-3.0 多数账号未开通，改为 seedream-4.0（仅当仍是旧默认值时执行）
+  db.run(`UPDATE ai_image_providers SET default_model = 'doubao-seedream-4-0-250828', models = ?
+    WHERE provider_key = 'doubao' AND default_model = 'doubao-seedream-3-0-t2i-250528'`,
+    [JSON.stringify(['doubao-seedream-4-0-250828', 'doubao-seedream-4-5-251128', 'doubao-seedream-5-0-260128'])]);
+
+  // 一次性迁移：存量库默认全部启用（此前版本仅启用 pollinations）。
+  // 用设置标记保证只执行一次，之后管理员在后台停用的服务商不会被重启覆盖。
+  const defaultEnabledRow = queryAll(db, "SELECT setting_value FROM settings WHERE setting_key = 'ai_image_providers_default_enabled'");
+  if (!defaultEnabledRow.length) {
+    db.run('UPDATE ai_image_providers SET enabled = 1');
+    db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_image_providers_default_enabled', '1')");
+    console.log('[db-seed] AI 生图服务商已默认全部启用');
+  }
+
+  // 默认 AI 生图设置：每日限额 + 自动换服务商容灾
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_image_daily_limit', '20')");
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_image_fallback', '1')");
+
+  // 提示词优化 LLM 默认配置：留空 Key 使用免费接口（Pollinations text，需 referer），配置 Key 走自建 OpenAI 兼容接口
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('prompt_enhance_api_base', 'https://text.pollinations.ai/openai')");
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('prompt_enhance_api_key', '')");
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('prompt_enhance_model', 'openai')");
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('prompt_enhance_referer', '')");
 
   // 迁移：为所有已存在的活跃用户添加默认权限
   try {

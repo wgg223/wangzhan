@@ -1,0 +1,128 @@
+<% var active = 'prompts' %>
+<%
+  var totalCategories = 0;
+  sections.forEach(function(s) { totalCategories += s.categories.length; });
+%>
+<div class="admin-page">
+  <div class="page-header">
+    <h1><%= prompt ? '编辑提示词' : '新建提示词' %></h1>
+    <div class="actions">
+      <a href="/admin/prompts" class="btn">← 返回列表</a>
+    </div>
+  </div>
+
+  <% if (totalCategories === 0) { %>
+  <div class="card" style="padding: 28px; text-align: center;">
+    <p style="font-size: 15px; margin: 0 0 8px;">⚠️ 暂无可用的分类</p>
+    <p style="color: var(--gray-600); font-size: 13px; margin: 0 0 18px;">提示词必须归属于某个分类。请先在「AI提示词」管理页的「分类」标签页创建分类（需先有板块）。</p>
+    <a href="/admin/prompts" class="btn btn-primary">去创建分类</a>
+  </div>
+  <% } else { %>
+
+  <div class="card">
+    <form class="admin-form" id="promptForm">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="id" value="<%= prompt ? prompt.id : '' %>">
+
+      <div class="form-group">
+        <label for="promptTitle">标题 *</label>
+        <input type="text" id="promptTitle" name="title" value="<%= prompt ? prompt.title : '' %>" placeholder="提示词标题，如：电商产品主图提示词" required>
+      </div>
+
+      <div class="form-group">
+        <label for="promptCategory">所属分类 *</label>
+        <select id="promptCategory" name="category_id" required>
+          <option value="">-- 请选择分类 --</option>
+          <% sections.forEach(function(s) { %>
+            <optgroup label="<%= s.icon ? s.icon + ' ' : '' %><%= s.name %>">
+              <% s.categories.forEach(function(c) { %>
+                <option value="<%= c.id %>" <%= prompt && prompt.category_id === c.id ? 'selected' : '' %>><%= c.name %></option>
+              <% }); %>
+            </optgroup>
+          <% }); %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="promptExcerpt">摘要（选填，留空自动从内容生成）</label>
+        <textarea id="promptExcerpt" name="excerpt" rows="2" placeholder="卡片上显示的简短描述"><%= prompt ? prompt.excerpt : '' %></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="promptContent">提示词内容 *（支持 Markdown 语法）</label>
+        <textarea id="promptContent" name="content" rows="14" placeholder="# 角色&#10;你是一名专业摄影师...&#10;&#10;## 要求&#10;- 光影自然&#10;- 保留细节" required><%= prompt ? prompt.content : '' %></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="promptSort">排序（数字越小越靠前）</label>
+          <input type="number" id="promptSort" name="sort_order" value="<%= prompt ? prompt.sort_order : 0 %>">
+        </div>
+        <div class="form-group">
+          <label for="promptActive">状态</label>
+          <select id="promptActive" name="is_active">
+            <option value="1" <%= !prompt || prompt.is_active === 1 ? 'selected' : '' %>>启用</option>
+            <option value="0" <%= prompt && prompt.is_active === 0 ? 'selected' : '' %>>停用</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="saveBtn">保存</button>
+        <a href="/admin/prompts" class="btn">取消</a>
+      </div>
+    </form>
+  </div>
+  <% } %>
+</div>
+
+<script>
+(function() {
+  var form = document.getElementById('promptForm');
+  if (!form) return;
+  var saveBtn = document.getElementById('saveBtn');
+  var CSRF = '<%= csrfToken %>';
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    var title = document.getElementById('promptTitle').value.trim();
+    var categoryId = document.getElementById('promptCategory').value;
+    var content = document.getElementById('promptContent').value.trim();
+
+    if (!title) { showToast('提示词标题不能为空', 'error'); return; }
+    if (!categoryId) { showToast('请选择所属分类', 'error'); return; }
+    if (!content) { showToast('提示词内容不能为空', 'error'); return; }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+
+    fetch('/admin/prompts/prompts/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': CSRF },
+      body: JSON.stringify({
+        id: form.querySelector('input[name="id"]').value,
+        title: title,
+        category_id: categoryId,
+        content: content,
+        excerpt: document.getElementById('promptExcerpt').value.trim(),
+        sort_order: parseInt(document.getElementById('promptSort').value) || 0,
+        is_active: document.getElementById('promptActive').value
+      })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.success) {
+        showToast('保存成功', 'success');
+        setTimeout(function() { location.href = '/admin/prompts'; }, 600);
+      } else {
+        showToast(data.error || '保存失败', 'error');
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存';
+      }
+    }).catch(function() {
+      showToast('网络错误，请重试', 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存';
+    });
+  });
+})();
+</script>

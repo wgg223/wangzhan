@@ -25,6 +25,8 @@
 - 站内信系统
 - 实时聊天系统（私信功能）
 - 社区动态（关注/粉丝/动态流/发布动态/内容聚合浏览）
+- AI 提示词库（板块/分类/提示词三级结构、思维导图、搜索高亮、一键复制、评论）
+- AI 生图（15 家服务商统一适配、图生图、风格预设、提示词优化、历史记录、分享到图片分享）
 - 用户个人主页
 - 权限申请系统
 - 搜索功能（文章搜索）
@@ -36,6 +38,8 @@
 - 文章管理（Quill 富文本编辑 + 附件上传）
 - 评论管理（审核/删除）
 - 图片分享管理（批量审核/删除/分类管理）
+- AI 提示词管理（板块/分类/提示词三级 CRUD + CSV 批量导入导出）
+- AI 生图管理（15 家服务商配置、密钥加密存储、每日限额、生成记录）
 - 小说管理（章节 CRUD）
 - 系统设置（基础/SMTP/协议/弹窗）
 - 操作日志（多维度筛选）
@@ -99,6 +103,8 @@ mi/
 │   │       ├── users.js             # 用户管理
 │   │       ├── permissions.js       # 权限管理
 │   │       ├── comments.js          # 评论管理
+│   │       ├── prompts.js           # AI 提示词管理（三级 CRUD + CSV 导入导出）
+│   │       ├── ai-image.js          # AI 生图管理（服务商/限额/记录）
 │   │       ├── media.js             # 媒体管理
 │   │       ├── novels.js            # 小说管理
 │   │       ├── projects.js          # 项目管理
@@ -119,7 +125,9 @@ mi/
 │   │       └── upload.js            # 文件上传配置
 │   ├── services/                    # 服务层
 │   │   ├── content-security.js      # 内容安全扫描
-│   │   └── two-factor-auth.js       # TOTP 双因素认证
+│   │   ├── two-factor-auth.js       # TOTP 双因素认证
+│   │   ├── prompt-enhance.js        # 提示词优化（LLM 增强 + 本地规则兜底）
+│   │   └── image-gen/               # AI 生图（15 家服务商统一适配器）
 │   └── utils/                       # 工具函数
 │       ├── error-handler.js         # 统一错误处理（safeLogActivity）
 │       ├── file-utils.js            # 文件读取
@@ -129,19 +137,20 @@ mi/
 │       ├── logger.js                # 日志工具
 │       ├── media-utils.js           # 媒体工具
 │       ├── project-utils.js         # 项目工具
+│       ├── csv.js                   # CSV 解析与导出工具
 │       └── settings.js              # 统一设置查询
 │
 ├── views/                           # EJS 模板
-│   ├── admin/                       # 管理后台模板
-│   ├── frontend/                    # 前端页面模板（含社区动态详情页）
+│   ├── admin/                       # 管理后台模板（含 prompts/prompt-editor/ai-image）
+│   ├── frontend/                    # 前端页面模板（含社区动态详情页、ai-prompts、ai-image）
 │   ├── auth/                        # 认证模板
 │   ├── image-share/                 # 图片分享模板
 │   ├── setup/                       # 安装向导模板
 │   └── maintenance.ejs              # 维护模式页面
 │
 ├── public/                          # 静态资源
-│   ├── css/                         # 样式文件（含 CSS 变量系统）
-│   ├── js/                          # 前端脚本
+│   ├── css/                         # 样式文件（含 CSS 变量系统、ai-prompts.css）
+│   ├── js/                          # 前端脚本（含 ai-prompts.js、ai-image.js）
 │   ├── rp-hub/                      # （已移除）
 │   ├── uploads/                     # 用户上传文件（含 dynamics/ 动态图片）
 │   └── assets/                      # 图片资源
@@ -194,6 +203,8 @@ npm run health           # 健康检查
 - 管理后台: `http://localhost:3000/admin`
 - 图片分享: `http://localhost:3000/image-share`
 - 诗词游戏: `http://localhost:3000/poem-game`
+- AI 提示词: `http://localhost:3000/ai-prompts`
+- AI 生图: `http://localhost:3000/ai-image`
 - 安装向导: `http://localhost:3000/setup`
 - 客户端 API: `http://localhost:3000/api/v1`
 
@@ -296,6 +307,31 @@ python deploy.py --check
 本项目采用 [LICENSE](./LICENSE) 文件。
 
 ## 版本历史
+
+### v5.6.0 (2026-08-29)
+
+**AI 提示词模块**
+- 前台新增独立深色玻璃拟态页面 `/ai-prompts`：板块→分类→提示词三级结构、思维导图总览、分类卡片、标题搜索高亮、一键复制、Markdown 弹窗查看
+- 提示词支持评论（审核制，新增 `prompt_comments` 表）
+- 后台新增 `/admin/prompts`：板块/分类/提示词图形化 CRUD、提示词编辑器、CSV 批量导入/导出
+- 新增权限：`prompts.view`（前台查看）、`prompts.manage`（后台管理）
+
+**AI 图片生成模块**
+- 前台新增 AI 生图页面 `/ai-image`：15 家主流 API 统一适配器架构（OpenAI DALL·E 3、Stability AI、硅基流动、智谱 CogView、通义万相、文心一格、Pollinations 免 Key、RunningHub、腾讯混元、阶跃星辰、MiniMax、Replicate、火山引擎豆包、fal.ai、AIHubMix）
+- 高级选项：seed 种子、图生图参考图（按服务商能力开关）、风格预设、提示词优化（LLM 增强，免费接口 + 本地规则兜底）
+- 生成图片本地保存，历史记录分页查看、下载、一键分享到图片分享（复用审核流程）
+- 失败自动换服务商重试（后台可开关）；每用户每日限额（默认 20 次，管理员不限）
+- 个人中心新增「AI生图密钥」：用户自填 API Key 优先于后台全局 Key（加密存储，不显示明文）
+- 后台新增 `/admin/ai-image`：服务商配置（Key 加密存储、保存后自动获取模型列表、能力开关）、每日限额与容灾设置、生成记录管理
+- 新增权限：`imagegen.use`（前台使用）、`imagegen.manage`（后台管理）
+- 新增表：`ai_image_providers` / `ai_image_records` / `ai_image_user_keys`
+
+**Bug 修复**
+- 修复后台拒绝权限申请时 SQL 参数顺序错误（reject_reason 误存申请 ID、更新条件误用原因文本）
+
+**其他**
+- csrfFetch 统一携带 `X-Requested-With` 标识，服务端据此区分 AJAX 与页面请求
+- 豆包默认模型迁移至 seedream-4.0，AIHubMix 服务商升级支持图生图
 
 ### v5.5.0 (2026-08-13)
 

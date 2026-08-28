@@ -97,6 +97,8 @@ function csrfFetch(url, options, timeoutMs) {
   options.headers = options.headers || {};
   options.headers['Content-Type'] = options.headers['Content-Type'] || 'application/json';
   options.headers['X-CSRF-Token'] = getCsrfToken();
+  // AJAX 标识：服务端依赖 X-Requested-With 区分 JSON 响应与页面重定向
+  options.headers['X-Requested-With'] = 'XMLHttpRequest';
 
   var controller = null;
   var timer = null;

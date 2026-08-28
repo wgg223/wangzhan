@@ -192,7 +192,7 @@ router.post('/permissions/reject', isAuthenticated, hasPermission('permissions.m
 
   // 更新申请状态
   db.run('UPDATE permission_applications SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, reject_reason = ? WHERE id = ?',
-    ['rejected', req.session.user.id, application_id, reason || '']);
+    ['rejected', req.session.user.id, reason || '', application_id]);
   saveDatabase();
 
   const targetUser = queryOne(db, 'SELECT username FROM users WHERE id = ?', [application.user_id]);

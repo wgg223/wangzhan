@@ -93,6 +93,12 @@ router.get('/account', isAuthenticated, (req, res) => {
     };
   });
 
+  // AI 生图服务商与用户自填 Key 状态
+  const { getUserProviderKeys } = require('../services/image-gen');
+  const aiImageProviders = queryAll(db,
+    'SELECT provider_key, name FROM ai_image_providers ORDER BY sort_order ASC, id ASC');
+  const aiUserKeys = getUserProviderKeys(db, userId);
+
   res.render('frontend/account', {
     user: req.session.user,
     settings,
@@ -101,6 +107,8 @@ router.get('/account', isAuthenticated, (req, res) => {
     comments,
     oauthBindings,
     providersWithBinding,
+    aiImageProviders,
+    aiUserKeys,
     success: req.query.success,
     error: req.query.error
   });

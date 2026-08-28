@@ -29,6 +29,8 @@ const maintenanceRouter = require('./maintenance');
 const siteStatsRouter = require('./site-stats');
 const attachmentsRouter = require('./attachments');
 const serverLogsRouter = require('./server-logs');
+const promptsRouter = require('./prompts');
+const aiImageRouter = require('./ai-image');
 
 // ---------- Admin 全局中间件 ----------
 router.use(isAuthenticated);
@@ -65,6 +67,8 @@ router.use('/settings/smtp', isAdmin, settingsSmtpRouter);
 router.use('/settings/agreement', isAdmin, settingsAgreementRouter);
 router.use('/settings/popup', isAdmin, settingsPopupRouter);
 router.use(articlesRouter);
+router.use(promptsRouter);
+router.use(aiImageRouter);
 router.use('/attachments', attachmentsRouter);
 router.use(usersRouter);
 router.use(permissionsRouter);

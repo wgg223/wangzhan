@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+  <meta name="color-scheme" content="dark">
+  <title>AI提示词 - <%= settings.site_name || '我的网站' %></title>
+  <link rel="stylesheet" href="/css/ai-prompts.css">
+</head>
+<body>
+  <div class="ap-app">
+    <aside class="ap-sidebar" id="apSidebar">
+      <div class="ap-brand">
+        <div class="ap-brand-mark">🤖</div>
+        <h1>AI提示词库</h1>
+        <p>PROMPT COLLECTION</p>
+        <a class="ap-back" href="/">← 返回主站</a>
+      </div>
+      <div class="ap-search-wrap">
+        <input type="text" id="apSearch" placeholder="搜索提示词标题…" autocomplete="off">
+        <span class="ap-shortcut" id="apSearchHint">支持标题搜索 · 点击复制即取用</span>
+      </div>
+      <p class="ap-nav-label">总览地图</p>
+      <nav class="ap-nav" id="apNav"></nav>
+      <div class="ap-stats" id="apStats"></div>
+      <div class="ap-sidebar-foot">
+        <p>离线可用 · 支持标题搜索</p>
+        <p>© <%= new Date().getFullYear() %> <%= settings.site_name || '' %></p>
+      </div>
+    </aside>
+
+    <div class="ap-main">
+      <header class="ap-topbar">
+        <button class="ap-menu-btn" id="apMenuBtn" aria-label="菜单">☰</button>
+        <div class="ap-breadcrumb" id="apBreadcrumb">
+          <strong>AI提示词</strong><span id="apBreadcrumbSub">总览</span>
+        </div>
+        <div class="ap-top-actions">
+          <a class="ap-btn" href="/">返回主站</a>
+          <button class="ap-btn ap-btn-primary" id="apCopyAll" style="display:none;">复制当前分类全部</button>
+        </div>
+      </header>
+
+      <div class="ap-content">
+        <section class="ap-hero" id="apHero">
+          <p class="ap-eyebrow">PROMPT COLLECTION</p>
+          <h2 class="ap-hero-title">AI<em>提示词</em>合集</h2>
+          <p class="ap-hero-sub">精选实用提示词，按板块与分类整理。点击任意复制按钮即可取用。</p>
+        </section>
+
+        <section class="ap-mindmap" id="apMindmap">
+          <span class="ap-map-kicker">MIND MAP</span>
+        </section>
+
+        <section class="ap-cards" id="apCards"></section>
+
+        <section class="ap-category-prompts" id="apCategoryPrompts" hidden></section>
+
+        <section class="ap-search-results" id="apSearchResults" hidden></section>
+      </div>
+    </div>
+  </div>
+
+  <div class="ap-modal-overlay" id="apModal">
+    <div class="ap-modal-backdrop" data-close-modal></div>
+    <div class="ap-modal">
+      <div class="ap-modal-head">
+        <div>
+          <p class="ap-modal-tag">FULL PROMPT</p>
+          <h2 id="apModalTitle"></h2>
+        </div>
+        <button class="ap-modal-close" data-close-modal aria-label="关闭">×</button>
+      </div>
+      <div class="ap-modal-scroll">
+        <div class="ap-modal-body markdown-body" id="apModalBody"></div>
+        <div class="ap-comments" id="apComments" hidden>
+          <div class="ap-comments-head">
+            <h3>评论 <span id="apCommentCount">0</span></h3>
+          </div>
+          <div id="apCommentList" class="ap-comment-list"></div>
+          <div class="ap-comment-form" id="apCommentForm" hidden>
+            <textarea id="apCommentInput" rows="2" maxlength="500" placeholder="写下你的评论…（提交后等待管理员审核）"></textarea>
+            <div class="ap-comment-form-foot">
+              <span class="ap-comment-char" id="apCommentChar">0/500</span>
+              <button class="ap-btn ap-btn-primary" id="apCommentSubmit">发表评论</button>
+            </div>
+          </div>
+          <div class="ap-comment-login" id="apCommentLogin" hidden>
+            登录后即可评论，<a href="/auth/frontend/login">去登录</a>
+          </div>
+        </div>
+      </div>
+      <div class="ap-modal-foot">
+        <span id="apModalHint">复制完整提示词</span>
+        <button class="ap-btn ap-btn-primary" id="apModalCopy">复制完整提示词</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" id="ai-prompts-data"><%- JSON.stringify({ tree: tree, stats: stats, user: user ? { id: user.id, username: user.username, role: user.role } : null }).replace(/</g, '\\u003c') %></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/ai-prompts.js"></script>
+</body>
+</html>

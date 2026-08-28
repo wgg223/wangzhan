@@ -1,0 +1,503 @@
+<% var active = 'prompts' %>
+<% var canManage = typeof canManage === 'undefined' ? true : canManage %>
+<style>
+  .prompt-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+  .prompt-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .prompt-stat {
+    flex: 1; min-width: 130px; padding: 16px 18px;
+    background: var(--bg-card); border: 1px solid var(--gray-100);
+    border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .prompt-stat strong { display: block; font-size: 26px; color: var(--primary); }
+  .prompt-stat span { display: block; margin-top: 6px; font-size: 12px; color: var(--gray-600); }
+  .prompt-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .prompt-tabs button {
+    padding: 8px 18px; font-size: 14px; cursor: pointer;
+    border: 1px solid var(--border-color); border-radius: 8px;
+    background: var(--bg-card); color: var(--gray-600);
+  }
+  .prompt-tabs button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .prompt-tab-panel { display: none; }
+  .prompt-tab-panel.active { display: block; }
+  .prompt-modal {
+    display: none; position: fixed; inset: 0; z-index: var(--z-modal);
+    background: rgba(0,0,0,0.45); align-items: center; justify-content: center;
+  }
+  .prompt-modal.show { display: flex; }
+  .prompt-modal-box {
+    width: min(480px, 92vw); max-height: 88vh; overflow: auto;
+    background: var(--bg-card); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  }
+  .prompt-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--border-color);
+  }
+  .prompt-modal-head h3 { margin: 0; font-size: 16px; }
+  .prompt-modal-close {
+    border: 0; background: none; font-size: 22px; line-height: 1;
+    cursor: pointer; color: var(--gray-600); padding: 0 4px;
+  }
+  .prompt-modal-body { padding: 18px 20px; }
+  .prompt-modal-foot {
+    display: flex; justify-content: flex-end; gap: 10px;
+    padding: 14px 20px; border-top: 1px solid var(--border-color);
+  }
+  .prompt-modal .form-group { margin-bottom: 14px; }
+  .prompt-modal .form-group label { display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px; color: var(--gray-600); }
+  .prompt-modal .form-group input, .prompt-modal .form-group select, .prompt-modal .form-group textarea {
+    width: 100%; padding: 9px 10px; box-sizing: border-box;
+    border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px;
+  }
+  .prompt-modal .form-row { display: flex; gap: 12px; }
+  .prompt-modal .form-row .form-group { flex: 1; }
+  .prompt-modal .modal-err { color: var(--danger); font-size: 13px; margin: 0 0 10px; display: none; }
+</style>
+
+<div class="admin-page">
+  <div class="page-header">
+    <h1>AI提示词管理</h1>
+    <div class="actions">
+      <% if (canManage) { %>
+      <a href="/admin/prompts/prompts/new" class="btn btn-primary">新建提示词</a>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="prompt-stats">
+    <div class="prompt-stat"><strong><%= sections.length %></strong><span>板块</span></div>
+    <div class="prompt-stat"><strong><%= categories.length %></strong><span>分类</span></div>
+    <div class="prompt-stat"><strong><%= prompts.length %></strong><span>提示词</span></div>
+  </div>
+
+  <div class="prompt-toolbar">
+    <button type="button" class="btn btn-small" onclick="exportPrompts()">📥 导出数据</button>
+    <button type="button" class="btn btn-small" onclick="downloadTemplate()">📋 下载导入模板</button>
+    <% if (canManage) { %>
+    <button type="button" class="btn btn-small btn-success" onclick="document.getElementById('importFile').click()">📤 导入CSV</button>
+    <input type="file" id="importFile" accept=".csv,text/csv" style="display:none;">
+    <% } %>
+    <span style="color: var(--gray-600); font-size: 12px; align-self: center;">支持 Excel/WPS 编辑 CSV 后导入，板块/分类不存在时会自动创建</span>
+  </div>
+
+  <div class="prompt-tabs">
+    <button type="button" class="active" data-tab="sections">板块</button>
+    <button type="button" data-tab="categories">分类</button>
+    <button type="button" data-tab="prompts">提示词</button>
+    <% if (canManage) { %>
+    <button type="button" data-tab="comments">评论<span style="margin-left: 4px; font-size: 11px; opacity: .8;"><%= typeof comments !== 'undefined' ? comments.filter(function(c) { return c.status === 'pending'; }).length : 0 %></span></button>
+    <% } %>
+  </div>
+
+  <!-- 板块 Tab -->
+  <div class="prompt-tab-panel active" id="tab-sections">
+    <div class="card">
+      <table class="admin-table">
+        <thead>
+          <tr><th>ID</th><th>名称</th><th>图标</th><th>描述</th><th>排序</th><th>状态</th><th>分类数</th><th>提示词数</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <% if (sections.length > 0) { %>
+            <% sections.forEach(function(s) { %>
+              <tr>
+                <td><%= s.id %></td>
+                <td><%= s.name %></td>
+                <td><%= s.icon || '-' %></td>
+                <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><%= s.description || '-' %></td>
+                <td><%= s.sort_order %></td>
+                <td><span class="status-badge status-<%= s.is_active === 1 ? 'published' : 'draft' %>"><%= s.is_active === 1 ? '启用' : '停用' %></span></td>
+                <td><%= s.category_count %></td>
+                <td><%= s.prompt_count %></td>
+                <td class="actions">
+                  <% if (canManage) { %>
+                  <button type="button" class="btn btn-small" onclick="openSectionModal(<%= JSON.stringify({ id: s.id, name: s.name, icon: s.icon || '', description: s.description || '', sort_order: s.sort_order, is_active: s.is_active }) %>)">编辑</button>
+                  <form action="/admin/prompts/sections/delete/<%= s.id %>" method="POST" class="inline-form" onsubmit="return confirm('确定要删除该板块吗？其下所有分类和提示词将一并删除！')">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-small btn-danger">删除</button>
+                  </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="9" class="empty-row">暂无板块<%= canManage ? '，点击右上角「新增板块」创建' : '' %></td></tr>
+          <% } %>
+        </tbody>
+      </table>
+      <div style="padding: 14px 16px; border-top: 1px solid var(--border-color);">
+        <% if (canManage) { %>
+        <button type="button" class="btn btn-success" onclick="openSectionModal(null)">+ 新增板块</button>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分类 Tab -->
+  <div class="prompt-tab-panel" id="tab-categories">
+    <div class="card">
+      <table class="admin-table">
+        <thead>
+          <tr><th>ID</th><th>名称</th><th>所属板块</th><th>描述</th><th>排序</th><th>状态</th><th>提示词数</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <% if (categories.length > 0) { %>
+            <% categories.forEach(function(c) { %>
+              <tr>
+                <td><%= c.id %></td>
+                <td><%= c.name %></td>
+                <td><%= c.section_name || '未分类' %></td>
+                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><%= c.description || '-' %></td>
+                <td><%= c.sort_order %></td>
+                <td><span class="status-badge status-<%= c.is_active === 1 ? 'published' : 'draft' %>"><%= c.is_active === 1 ? '启用' : '停用' %></span></td>
+                <td><%= c.prompt_count %></td>
+                <td class="actions">
+                  <% if (canManage) { %>
+                  <button type="button" class="btn btn-small" onclick="openCategoryModal(<%= JSON.stringify({ id: c.id, section_id: c.section_id, name: c.name, description: c.description || '', sort_order: c.sort_order, is_active: c.is_active }) %>)">编辑</button>
+                  <form action="/admin/prompts/categories/delete/<%= c.id %>" method="POST" class="inline-form" onsubmit="return confirm('确定要删除该分类吗？其下所有提示词将一并删除！')">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-small btn-danger">删除</button>
+                  </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="8" class="empty-row"><%= sections.length > 0 ? '暂无分类，点击下方「新增分类」创建' : '暂无分类，请先在「板块」标签页创建板块' %></td></tr>
+          <% } %>
+        </tbody>
+      </table>
+      <div style="padding: 14px 16px; border-top: 1px solid var(--border-color);">
+        <% if (canManage && sections.length > 0) { %>
+        <button type="button" class="btn btn-success" onclick="openCategoryModal(null)">+ 新增分类</button>
+        <% } else if (canManage) { %>
+        <span style="color: var(--gray-600); font-size: 13px;">请先在「板块」标签页创建板块，再新增分类</span>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提示词 Tab -->
+  <div class="prompt-tab-panel" id="tab-prompts">
+    <div class="card">
+      <table class="admin-table">
+        <thead>
+          <tr><th>ID</th><th>标题</th><th>所属分类</th><th>板块</th><th>排序</th><th>状态</th><th>更新时间</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <% if (prompts.length > 0) { %>
+            <% prompts.forEach(function(p) { %>
+              <tr>
+                <td><%= p.id %></td>
+                <td style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><%= p.title %></td>
+                <td><%= p.category_name || '-' %></td>
+                <td><%= p.section_name || '-' %></td>
+                <td><%= p.sort_order %></td>
+                <td><span class="status-badge status-<%= p.is_active === 1 ? 'published' : 'draft' %>"><%= p.is_active === 1 ? '启用' : '停用' %></span></td>
+                <td><%= new Date(p.updated_at || p.created_at).toLocaleDateString('zh-CN') %></td>
+                <td class="actions">
+                  <% if (canManage) { %>
+                  <a href="/admin/prompts/prompts/edit/<%= p.id %>" class="btn btn-small">编辑</a>
+                  <form action="/admin/prompts/prompts/delete/<%= p.id %>" method="POST" class="inline-form" onsubmit="return confirm('确定要删除该提示词吗？')">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-small btn-danger">删除</button>
+                  </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="8" class="empty-row">暂无提示词<%= canManage ? '，点击右上角「新建提示词」创建' : '' %></td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 评论 Tab -->
+  <% if (canManage && typeof comments !== 'undefined') { %>
+  <div class="prompt-tab-panel" id="tab-comments">
+    <div class="card">
+      <table class="admin-table">
+        <thead>
+          <tr><th>ID</th><th>评论内容</th><th>所属提示词</th><th>用户</th><th>时间</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <% if (comments.length > 0) { %>
+            <% comments.forEach(function(c) { %>
+              <tr>
+                <td><%= c.id %></td>
+                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<%= c.content %>"><%= c.content %></td>
+                <td style="max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><%= c.prompt_title || '已删除提示词' %></td>
+                <td><%= c.username || '已注销用户' %></td>
+                <td><%= new Date(c.created_at).toLocaleString('zh-CN') %></td>
+                <td><span class="status-badge status-<%= c.status === 'approved' ? 'published' : 'draft' %>"><%= c.status === 'approved' ? '已通过' : '待审核' %></span></td>
+                <td class="actions">
+                  <% if (c.status !== 'approved') { %>
+                  <button type="button" class="btn btn-small" onclick="approveComment(<%= c.id %>)">通过</button>
+                  <% } %>
+                  <button type="button" class="btn btn-small btn-danger" onclick="deleteCommentAdmin(<%= c.id %>)">删除</button>
+                </td>
+              </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="7" class="empty-row">暂无评论</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } %>
+</div>
+
+<!-- 板块弹窗 -->
+<div class="prompt-modal" id="sectionModal">
+  <div class="prompt-modal-box">
+    <div class="prompt-modal-head">
+      <h3 id="sectionModalTitle">新增板块</h3>
+      <button type="button" class="prompt-modal-close" onclick="closeSectionModal()">×</button>
+    </div>
+    <div class="prompt-modal-body">
+      <p class="modal-err" id="sectionErr"></p>
+      <input type="hidden" id="sectionId">
+      <div class="form-group">
+        <label>名称 *</label>
+        <input type="text" id="sectionName" placeholder="如：一键提示词">
+      </div>
+      <div class="form-group">
+        <label>图标（emoji）</label>
+        <input type="text" id="sectionIcon" placeholder="如：⚡">
+      </div>
+      <div class="form-group">
+        <label>描述</label>
+        <textarea id="sectionDesc" rows="2" placeholder="板块简介"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>排序</label>
+          <input type="number" id="sectionSort" value="0">
+        </div>
+        <div class="form-group">
+          <label>状态</label>
+          <select id="sectionActive">
+            <option value="1">启用</option>
+            <option value="0">停用</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="prompt-modal-foot">
+      <button type="button" class="btn" onclick="closeSectionModal()">取消</button>
+      <button type="button" class="btn btn-primary" onclick="saveSection()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 分类弹窗 -->
+<div class="prompt-modal" id="categoryModal">
+  <div class="prompt-modal-box">
+    <div class="prompt-modal-head">
+      <h3 id="categoryModalTitle">新增分类</h3>
+      <button type="button" class="prompt-modal-close" onclick="closeCategoryModal()">×</button>
+    </div>
+    <div class="prompt-modal-body">
+      <p class="modal-err" id="categoryErr"></p>
+      <input type="hidden" id="categoryId">
+      <div class="form-group">
+        <label>所属板块 *</label>
+        <select id="categorySection">
+          <% sections.forEach(function(s) { %>
+            <option value="<%= s.id %>"><%= s.name %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>名称 *</label>
+        <input type="text" id="categoryName" placeholder="如：人像摄影">
+      </div>
+      <div class="form-group">
+        <label>描述</label>
+        <textarea id="categoryDesc" rows="2" placeholder="分类简介"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>排序</label>
+          <input type="number" id="categorySort" value="0">
+        </div>
+        <div class="form-group">
+          <label>状态</label>
+          <select id="categoryActive">
+            <option value="1">启用</option>
+            <option value="0">停用</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="prompt-modal-foot">
+      <button type="button" class="btn" onclick="closeCategoryModal()">取消</button>
+      <button type="button" class="btn btn-primary" onclick="saveCategory()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var CSRF_TOKEN = '<%= csrfToken %>';
+
+// ============ 导入 / 导出 ============
+function exportPrompts() {
+  window.location.href = '/admin/prompts/export';
+}
+
+function downloadTemplate() {
+  window.location.href = '/admin/prompts/import-template';
+}
+
+var importFileEl = document.getElementById('importFile');
+if (importFileEl) {
+  importFileEl.addEventListener('change', function() {
+    var file = this.files[0];
+    this.value = '';
+    if (!file) return;
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    fetch('/admin/prompts/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': CSRF_TOKEN },
+      body: JSON.stringify({ csv: e.target.result })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.success) {
+        var msg = '导入成功：新增 ' + data.imported + ' 条提示词';
+        if (data.createdSections) msg += '，新建板块 ' + data.createdSections + ' 个';
+        if (data.createdCategories) msg += '，新建分类 ' + data.createdCategories + ' 个';
+        if (data.skipped) msg += '，跳过重复 ' + data.skipped + ' 条';
+        if (data.errors && data.errors.length) msg += '，失败 ' + data.errors.length + ' 行';
+        alert(msg + (data.errors && data.errors.length ? '\n\n' + data.errors.join('\n') : ''));
+        location.reload();
+      } else {
+        alert(data.error || '导入失败');
+      }
+    }).catch(function() {
+      alert('网络错误，请重试');
+    });
+  };
+  reader.onerror = function() { alert('文件读取失败'); };
+  reader.readAsText(file, 'utf-8');
+  });
+}
+
+// ============ 评论管理 ============
+function approveComment(id) {
+  fetch('/admin/prompts/comments/approve/' + id, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': CSRF_TOKEN }
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.error || '操作失败'); }
+  }).catch(function() { alert('网络错误，请重试'); });
+}
+
+function deleteCommentAdmin(id) {
+  if (!confirm('确定要删除这条评论吗？')) return;
+  fetch('/admin/prompts/comments/delete/' + id, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': CSRF_TOKEN }
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { alert(data.error || '操作失败'); }
+  }).catch(function() { alert('网络错误，请重试'); });
+}
+
+// ============ Tab 切换 ============
+document.querySelectorAll('.prompt-tabs button').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.prompt-tabs button').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.prompt-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ============ 板块弹窗 ============
+function openSectionModal(data) {
+  document.getElementById('sectionErr').style.display = 'none';
+  document.getElementById('sectionId').value = data ? data.id : '';
+  document.getElementById('sectionName').value = data ? data.name : '';
+  document.getElementById('sectionIcon').value = data ? data.icon : '';
+  document.getElementById('sectionDesc').value = data ? data.description : '';
+  document.getElementById('sectionSort').value = data ? data.sort_order : 0;
+  document.getElementById('sectionActive').value = data ? String(data.is_active) : '1';
+  document.getElementById('sectionModalTitle').textContent = data ? '编辑板块' : '新增板块';
+  document.getElementById('sectionModal').classList.add('show');
+}
+
+function closeSectionModal() {
+  document.getElementById('sectionModal').classList.remove('show');
+}
+
+function saveSection() {
+  var name = document.getElementById('sectionName').value.trim();
+  var errEl = document.getElementById('sectionErr');
+  errEl.style.display = 'none';
+  if (!name) { errEl.textContent = '板块名称不能为空'; errEl.style.display = 'block'; return; }
+
+  var payload = {
+    id: document.getElementById('sectionId').value,
+    name: name,
+    icon: document.getElementById('sectionIcon').value.trim(),
+    description: document.getElementById('sectionDesc').value.trim(),
+    sort_order: parseInt(document.getElementById('sectionSort').value) || 0,
+    is_active: document.getElementById('sectionActive').value
+  };
+
+  fetch('/admin/prompts/sections/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': CSRF_TOKEN },
+    body: JSON.stringify(payload)
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { errEl.textContent = data.error || '保存失败'; errEl.style.display = 'block'; }
+  }).catch(function() {
+    errEl.textContent = '网络错误，请重试'; errEl.style.display = 'block';
+  });
+}
+
+// ============ 分类弹窗 ============
+function openCategoryModal(data) {
+  document.getElementById('categoryErr').style.display = 'none';
+  document.getElementById('categoryId').value = data ? data.id : '';
+  var firstOption = document.getElementById('categorySection').options[0];
+  document.getElementById('categorySection').value = data ? String(data.section_id) : (firstOption ? firstOption.value : '');
+  document.getElementById('categoryName').value = data ? data.name : '';
+  document.getElementById('categoryDesc').value = data ? data.description : '';
+  document.getElementById('categorySort').value = data ? data.sort_order : 0;
+  document.getElementById('categoryActive').value = data ? String(data.is_active) : '1';
+  document.getElementById('categoryModalTitle').textContent = data ? '编辑分类' : '新增分类';
+  document.getElementById('categoryModal').classList.add('show');
+}
+
+function closeCategoryModal() {
+  document.getElementById('categoryModal').classList.remove('show');
+}
+
+function saveCategory() {
+  var name = document.getElementById('categoryName').value.trim();
+  var errEl = document.getElementById('categoryErr');
+  errEl.style.display = 'none';
+  if (!name) { errEl.textContent = '分类名称不能为空'; errEl.style.display = 'block'; return; }
+
+  var payload = {
+    id: document.getElementById('categoryId').value,
+    section_id: document.getElementById('categorySection').value,
+    name: name,
+    description: document.getElementById('categoryDesc').value.trim(),
+    sort_order: parseInt(document.getElementById('categorySort').value) || 0,
+    is_active: document.getElementById('categoryActive').value
+  };
+
+  fetch('/admin/prompts/categories/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': CSRF_TOKEN },
+    body: JSON.stringify(payload)
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { location.reload(); } else { errEl.textContent = data.error || '保存失败'; errEl.style.display = 'block'; }
+  }).catch(function() {
+    errEl.textContent = '网络错误，请重试'; errEl.style.display = 'block';
+  });
+}
+</script>

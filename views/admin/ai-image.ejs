@@ -1,0 +1,370 @@
+<% var active = 'ai-image' %>
+<style>
+  .aiimg-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+  .aiimg-stat {
+    flex: 1; min-width: 130px; padding: 16px 18px;
+    background: var(--bg-card); border: 1px solid var(--gray-100);
+    border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .aiimg-stat strong { display: block; font-size: 24px; color: var(--primary); }
+  .aiimg-stat span { display: block; margin-top: 6px; font-size: 12px; color: var(--gray-600); }
+  .aiimg-settings {
+    background: var(--bg-card); border: 1px solid var(--gray-100);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 20px;
+    display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-end;
+  }
+  .aiimg-settings .form-group { margin-bottom: 0; min-width: 180px; }
+  .aiimg-provider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .aiimg-provider-card {
+    background: var(--bg-card); border: 1px solid var(--gray-100);
+    border-radius: 12px; padding: 16px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .aiimg-provider-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .aiimg-provider-head h3 { margin: 0; font-size: 15px; color: var(--gray-800); }
+  .aiimg-provider-key { font-size: 11px; color: var(--gray-500); }
+  .aiimg-provider-form .form-group { margin-bottom: 10px; }
+  .aiimg-provider-form label { display: block; margin-bottom: 4px; font-weight: 500; font-size: 12px; color: var(--gray-600); }
+  .aiimg-provider-form input[type="text"], .aiimg-provider-form input[type="password"], .aiimg-provider-form input[type="number"], .aiimg-provider-form textarea {
+    width: 100%; padding: 7px 9px; box-sizing: border-box;
+    border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px;
+    background: var(--bg-secondary, #fff);
+  }
+  .aiimg-provider-form textarea { resize: vertical; font-family: monospace; font-size: 12px; }
+  .aiimg-check-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .aiimg-check-row label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--gray-600); cursor: pointer; }
+  .aiimg-provider-foot { display: flex; gap: 8px; margin-top: 12px; }
+  .aiimg-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gray-600); cursor: pointer; }
+  .aiimg-llm-row { display: flex; gap: 8px; }
+  .aiimg-records-toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .aiimg-table { width: 100%; border-collapse: collapse; }
+  .aiimg-table th, .aiimg-table td { padding: 9px 10px; border-bottom: 1px solid var(--border-color); font-size: 13px; text-align: left; }
+  .aiimg-table th { color: var(--gray-600); font-weight: 600; background: var(--bg-secondary, #f8fafc); }
+  .aiimg-table img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; }
+  .aiimg-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .aiimg-badge-ok { background: rgba(16,185,129,.12); color: #059669; }
+  .aiimg-badge-fail { background: rgba(239,68,68,.12); color: #dc2626; }
+  .aiimg-pager { display: flex; gap: 6px; margin-top: 12px; justify-content: center; }
+  .aiimg-pager button { padding: 4px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); cursor: pointer; font-size: 12px; }
+  .aiimg-pager button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .aiimg-fetch-hint { font-size: 11px; color: var(--gray-500); margin-top: 4px; }
+</style>
+
+<div class="admin-page">
+  <div class="page-header">
+    <h1>AI生图管理</h1>
+    <div class="actions">
+      <a href="/ai-image" target="_blank" rel="noopener" class="btn btn-small">👀 查看前台页面</a>
+    </div>
+  </div>
+
+  <div class="aiimg-stats">
+    <div class="aiimg-stat"><strong><%= providers.length %></strong><span>服务商总数</span></div>
+    <div class="aiimg-stat"><strong><%= providers.filter(function(p){ return p.enabled; }).length %></strong><span>已启用</span></div>
+    <div class="aiimg-stat"><strong><%= recentRows.length %></strong><span>最近生成记录</span></div>
+  </div>
+
+  <!-- 全局设置 -->
+  <div class="aiimg-settings" style="align-items:flex-start;">
+    <div class="form-group">
+      <label>每用户每日生成上限（1-500，管理员不限）</label>
+      <input type="number" id="aiimgDailyLimit" min="1" max="500" value="<%= dailyLimit %>" style="width:140px;padding:7px 9px;border:1px solid var(--border-color);border-radius:6px;">
+    </div>
+    <div class="form-group">
+      <label>自动换服务商重试（失败后按顺序尝试其他已启用服务商）</label>
+      <label class="aiimg-toggle"><input type="checkbox" id="aiimgFallback" <%= fallbackEnabled ? 'checked' : '' %>> 启用</label>
+    </div>
+    <div style="flex:1;min-width:260px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;">✨ 提示词优化 LLM（免费接口无需填 Key）</div>
+      <div class="aiimg-llm-row">
+        <input type="text" id="aiimgEnhBase" value="<%= enhanceBase %>" placeholder="API Base（OpenAI 兼容）" style="flex:2;padding:7px 9px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;">
+        <input type="text" id="aiimgEnhModel" value="<%= enhanceModel %>" placeholder="模型" style="flex:1;padding:7px 9px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;">
+      </div>
+      <div class="aiimg-llm-row" style="margin-top:8px;">
+        <input type="password" id="aiimgEnhKey" placeholder="<%= enhanceHasKey ? '•••••••• 已加密存储，留空不修改' : 'API Key（留空使用免费 Pollinations 接口）' %>" autocomplete="off" style="flex:2;padding:7px 9px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;">
+        <input type="text" id="aiimgEnhReferer" value="<%= enhanceReferer %>" placeholder="Referer（免费接口需要，如站点域名）" style="flex:2;padding:7px 9px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;">
+      </div>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:6px;">不填 API Key 时使用免费 Pollinations 文本接口（text.pollinations.ai/openai）；填写 Key 后走自建 OpenAI 兼容接口（如 DeepSeek/通义/中转站）。</div>
+    </div>
+    <button type="button" class="btn btn-primary" id="aiimgSettingsSave" style="align-self:flex-end;">保存设置</button>
+  </div>
+
+  <!-- 服务商配置 -->
+  <div class="aiimg-provider-grid">
+    <% providers.forEach(function(p) { %>
+    <div class="aiimg-provider-card" data-key="<%= p.provider_key %>">
+      <div class="aiimg-provider-head">
+        <h3><%= p.name %></h3>
+        <span class="aiimg-provider-key"><%= p.provider_key %></span>
+      </div>
+      <div class="aiimg-provider-form">
+        <div class="form-group">
+          <label>显示名称</label>
+          <input type="text" class="aiimg-f-name" value="<%= p.name %>">
+        </div>
+        <div class="form-group">
+          <label>API Key <%= p.has_key ? '（已配置，留空不修改）' : '（未配置）' %></label>
+          <input type="password" class="aiimg-f-key" placeholder="<%= p.has_key ? '•••••••• 已加密存储，留空不修改' : '请输入 API Key' %>" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>API Base URL</label>
+          <input type="text" class="aiimg-f-base" value="<%= p.api_base %>" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label>API Path / App ID（RunningHub endpoint、Replicate 模型路径、fal app_id 等）</label>
+          <input type="text" class="aiimg-f-path" value="<%= p.api_path %>" placeholder="可选">
+        </div>
+        <div class="form-group">
+          <label>官方 API Key 获取链接（前台展示"获取"跳转）</label>
+          <input type="text" class="aiimg-f-keyurl" value="<%= p.api_key_url %>" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label>默认模型</label>
+          <input type="text" class="aiimg-f-model" value="<%= p.default_model %>" placeholder="可选">
+        </div>
+        <div class="form-group">
+          <label>模型列表（JSON 数组，或逗号/换行分隔）</label>
+          <textarea class="aiimg-f-models" rows="2" placeholder='["model-a","model-b"]'><%= p.models.join('\n') %></textarea>
+        </div>
+        <div class="aiimg-check-row">
+          <label><input type="checkbox" class="aiimg-f-neg" <%= p.supports_negative ? 'checked' : '' %>> 负向提示词</label>
+          <label><input type="checkbox" class="aiimg-f-n" <%= p.supports_n ? 'checked' : '' %>> 一次多张</label>
+          <label><input type="checkbox" class="aiimg-f-img2img" <%= p.supports_img2img ? 'checked' : '' %>> 图生图</label>
+          <label class="aiimg-toggle"><input type="checkbox" class="aiimg-f-enabled" <%= p.enabled ? 'checked' : '' %>> 启用</label>
+          <label style="font-size:12px;color:var(--gray-600);display:flex;align-items:center;gap:4px;">排序
+            <input type="number" class="aiimg-f-sort" value="<%= p.sort_order %>" style="width:64px;padding:4px 6px;border:1px solid var(--border-color);border-radius:6px;">
+          </label>
+        </div>
+        <div class="aiimg-provider-foot">
+          <button type="button" class="btn btn-small btn-primary aiimg-provider-save">💾 保存</button>
+          <button type="button" class="btn btn-small aiimg-provider-fetch">🔄 获取模型</button>
+        </div>
+        <div class="aiimg-fetch-hint aiimg-fetch-msg"></div>
+      </div>
+    </div>
+    <% }) %>
+  </div>
+
+  <!-- 生成记录 -->
+  <div class="aiimg-records">
+    <h2 style="font-size:16px;margin:0 0 12px;">生成记录</h2>
+    <div class="aiimg-records-toolbar">
+      <select id="aiimgRecProvider" class="form-control" style="padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;">
+        <option value="">全部服务商</option>
+        <% providers.forEach(function(p) { %>
+        <option value="<%= p.provider_key %>"><%= p.name %></option>
+        <% }) %>
+      </select>
+      <select id="aiimgRecStatus" class="form-control" style="padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;">
+        <option value="">全部状态</option>
+        <option value="success">成功</option>
+        <option value="failed">失败</option>
+      </select>
+      <button type="button" class="btn btn-small" id="aiimgRecRefresh">刷新</button>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--gray-100);border-radius:12px;overflow-x:auto;padding:0 4px;">
+      <table class="aiimg-table">
+        <thead>
+          <tr>
+            <th>图片</th><th>提示词</th><th>服务商/模型</th><th>用户</th><th>状态</th><th>时间</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="aiimgRecBody"><tr><td colspan="7" style="text-align:center;color:var(--gray-500);">加载中...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="aiimg-pager" id="aiimgRecPager"></div>
+  </div>
+</div>
+
+<script>
+// 等 DOM 就绪再执行：utils.js（csrfFetch/showToast）由 admin layout 在页面底部同步加载，
+// 内联脚本必须先于 DOMContentLoaded 之前的同步脚本执行，故延迟到 DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+(function() {
+  var recPage = 1;
+
+  function parseModels(text) {
+    var trimmed = (text || '').trim();
+    if (!trimmed) return [];
+    try {
+      var parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    } catch (e) {}
+    return trimmed.split(/[,\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
+  }
+
+  // ============ 服务商保存（含自动获取模型） ============
+  document.querySelectorAll('.aiimg-provider-save').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var card = btn.closest('.aiimg-provider-card');
+      var key = card.getAttribute('data-key');
+      var msg = card.querySelector('.aiimg-fetch-msg');
+      btn.disabled = true;
+      btn.textContent = '保存中...';
+      csrfFetch('/admin/ai-image/providers/save', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: key, provider_key: key,
+          name: card.querySelector('.aiimg-f-name').value,
+          api_key: card.querySelector('.aiimg-f-key').value,
+          api_base: card.querySelector('.aiimg-f-base').value,
+          api_path: card.querySelector('.aiimg-f-path').value,
+          api_key_url: card.querySelector('.aiimg-f-keyurl').value,
+          default_model: card.querySelector('.aiimg-f-model').value,
+          models: JSON.stringify(parseModels(card.querySelector('.aiimg-f-models').value)),
+          supports_negative: card.querySelector('.aiimg-f-neg').checked ? '1' : '0',
+          supports_n: card.querySelector('.aiimg-f-n').checked ? '1' : '0',
+          supports_img2img: card.querySelector('.aiimg-f-img2img').checked ? '1' : '0',
+          enabled: card.querySelector('.aiimg-f-enabled').checked ? '1' : '0',
+          sort_order: card.querySelector('.aiimg-f-sort').value
+        })
+      }, 60000).then(function(json) {
+        btn.disabled = false;
+        btn.textContent = '💾 保存';
+        if (json.success) {
+          showToast(json.message + (json.modelsFetched ? '，已自动获取模型列表' : ''), 'success');
+          msg.textContent = json.fetchError ? '模型自动获取失败：' + json.fetchError : '';
+          card.querySelector('.aiimg-f-key').value = '';
+        } else {
+          showToast(json.error || '保存失败', 'error');
+        }
+      }).catch(function() {
+        btn.disabled = false;
+        btn.textContent = '💾 保存';
+        showToast('保存请求失败', 'error');
+      });
+    });
+  });
+
+  // ============ 手动获取模型 ============
+  document.querySelectorAll('.aiimg-provider-fetch').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var card = btn.closest('.aiimg-provider-card');
+      var key = card.getAttribute('data-key');
+      var msg = card.querySelector('.aiimg-fetch-msg');
+      btn.disabled = true;
+      msg.textContent = '获取中...';
+      csrfFetch('/admin/ai-image/providers/fetch-models', {
+        method: 'POST',
+        body: JSON.stringify({ provider_key: key })
+      }, 60000).then(function(json) {
+        btn.disabled = false;
+        if (json.success) {
+          card.querySelector('.aiimg-f-models').value = (json.models || []).join('\n');
+          if (!card.querySelector('.aiimg-f-model').value && json.models.length) {
+            card.querySelector('.aiimg-f-model').value = json.models[0];
+          }
+          msg.textContent = '已获取 ' + json.models.length + ' 个模型（记得点击保存）';
+          showToast('模型获取成功', 'success');
+        } else {
+          msg.textContent = json.error || '获取失败';
+          showToast(json.error || '获取失败', 'error');
+        }
+      }).catch(function() {
+        btn.disabled = false;
+        msg.textContent = '请求失败';
+      });
+    });
+  });
+
+  // ============ 全局设置 ============
+  document.getElementById('aiimgSettingsSave').addEventListener('click', function() {
+    csrfFetch('/admin/ai-image/settings/save', {
+      method: 'POST',
+      body: JSON.stringify({
+        ai_image_daily_limit: document.getElementById('aiimgDailyLimit').value,
+        ai_image_fallback: document.getElementById('aiimgFallback').checked ? '1' : '0',
+        prompt_enhance_api_base: document.getElementById('aiimgEnhBase').value,
+        prompt_enhance_model: document.getElementById('aiimgEnhModel').value,
+        prompt_enhance_api_key: document.getElementById('aiimgEnhKey').value,
+        prompt_enhance_referer: document.getElementById('aiimgEnhReferer').value
+      })
+    }, 20000).then(function(json) {
+      if (json.success) {
+        showToast(json.message, 'success');
+        document.getElementById('aiimgEnhKey').value = '';
+      } else {
+        showToast(json.error || '保存失败', 'error');
+      }
+    }).catch(function() {
+      showToast('保存请求失败', 'error');
+    });
+  });
+
+  // ============ 记录列表 ============
+  function loadRecords(page) {
+    recPage = page;
+    var provider = document.getElementById('aiimgRecProvider').value;
+    var status = document.getElementById('aiimgRecStatus').value;
+    var qs = 'page=' + page + '&pageSize=20';
+    if (provider) qs += '&provider=' + encodeURIComponent(provider);
+    if (status) qs += '&status=' + encodeURIComponent(status);
+    csrfFetch('/admin/ai-image/records?' + qs, { method: 'GET' }, 20000).then(function(json) {
+      if (!json.success) {
+        document.getElementById('aiimgRecBody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-500);">加载失败</td></tr>';
+        return;
+      }
+      var rows = json.data.records || [];
+      var html = '';
+      if (!rows.length) {
+        html = '<tr><td colspan="7" style="text-align:center;color:var(--gray-500);">暂无记录</td></tr>';
+      }
+      rows.forEach(function(r) {
+        var img = r.image_path
+          ? '<img src="' + r.image_path + '" alt="" loading="lazy">'
+          : '<div style="width:44px;height:44px;background:var(--bg-secondary,#f1f5f9);border-radius:6px;"></div>';
+        var badge = r.status === 'success'
+          ? '<span class="aiimg-badge aiimg-badge-ok">成功</span>'
+          : '<span class="aiimg-badge aiimg-badge-fail">失败</span>';
+        html += '<tr>' +
+          '<td>' + img + '</td>' +
+          '<td style="max-width:220px;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(r.prompt || '') + '">' + escapeHtml(r.prompt || '') + '</div>' +
+          (r.status === 'failed' && r.error ? '<div style="color:#dc2626;font-size:11px;margin-top:2px;" title="' + escapeHtml(r.error) + '">' + escapeHtml((r.error || '').slice(0, 40)) + '</div>' : '') + '</td>' +
+          '<td>' + escapeHtml(r.provider || '') + (r.model ? '<div style="font-size:11px;color:var(--gray-500);">' + escapeHtml(r.model) + '</div>' : '') + '</td>' +
+          '<td>' + escapeHtml(r.username || ('#' + r.user_id)) + '</td>' +
+          '<td>' + badge + '</td>' +
+          '<td style="font-size:12px;color:var(--gray-500);">' + escapeHtml(r.created_at || '') + '</td>' +
+          '<td><button type="button" class="btn btn-small btn-danger" data-id="' + r.id + '" data-path="' + escapeHtml(r.image_path || '') + '">删除</button></td>' +
+          '</tr>';
+      });
+      document.getElementById('aiimgRecBody').innerHTML = html;
+      document.querySelectorAll('#aiimgRecBody button[data-id]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var id = parseInt(btn.getAttribute('data-id'), 10);
+          if (!confirm('确定删除该生成记录' + (btn.getAttribute('data-path') ? '（含图片文件）' : '') + '？')) return;
+          csrfFetch('/admin/ai-image/records/delete', {
+            method: 'POST',
+            body: JSON.stringify({ id: id })
+          }, 20000).then(function(j) {
+            if (j.success) { showToast(j.message, 'success'); loadRecords(recPage); }
+            else showToast(j.error || '删除失败', 'error');
+          }).catch(function() { showToast('删除请求失败', 'error'); });
+        });
+      });
+      // 分页
+      var totalPages = Math.max(Math.ceil(json.data.total / json.data.pageSize), 1);
+      var pager = document.getElementById('aiimgRecPager');
+      if (totalPages > 1) {
+        var ph = '';
+        for (var i = 1; i <= totalPages; i++) {
+          ph += '<button type="button" class="' + (i === page ? 'active' : '') + '" data-page="' + i + '">' + i + '</button>';
+        }
+        pager.innerHTML = ph;
+        pager.querySelectorAll('button').forEach(function(b) {
+          b.addEventListener('click', function() { loadRecords(parseInt(b.getAttribute('data-page'), 10)); });
+        });
+      } else {
+        pager.innerHTML = '';
+      }
+    }).catch(function() {
+      document.getElementById('aiimgRecBody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-500);">加载失败</td></tr>';
+    });
+  }
+
+  document.getElementById('aiimgRecProvider').addEventListener('change', function() { loadRecords(1); });
+  document.getElementById('aiimgRecStatus').addEventListener('change', function() { loadRecords(1); });
+  document.getElementById('aiimgRecRefresh').addEventListener('click', function() { loadRecords(1); });
+
+  loadRecords(1);
+})();
+});
+</script>

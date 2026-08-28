@@ -45,6 +45,7 @@
           <a href="#security" class="nav-item" onclick="switchTab('security', this)">安全设置</a>
           <a href="#content" class="nav-item" onclick="switchTab('content', this)">我的内容</a>
           <a href="#oauth" class="nav-item" onclick="switchTab('oauth', this)">第三方账号</a>
+          <a href="#aiimg" class="nav-item" onclick="switchTab('aiimg', this)">AI生图密钥</a>
         </div>
       </div>
 
@@ -240,6 +241,31 @@
                 </div>
               <% }); %>
             </div>
+          </div>
+        </div>
+        <div class="tab-panel" id="tab-aiimg">
+          <div class="card">
+            <h3 class="card-title">AI生图 API 密钥</h3>
+            <p class="card-desc">填写你自己的生图服务商 API Key 后将优先使用（站长提供的全局 Key 自动兜底）。密钥加密存储，不会明文显示。</p>
+            <div class="aiimg-keys">
+              <% aiImageProviders.forEach(function(p) { %>
+                <% if (p.provider_key === 'pollinations') return; %>
+                <div class="aiimg-key-item" data-key="<%= p.provider_key %>">
+                  <div class="aiimg-key-info">
+                    <strong><%= p.name %></strong>
+                    <span class="aiimg-key-status" id="keyStatus-<%= p.provider_key %>">
+                      <% if (aiUserKeys.indexOf(p.provider_key) !== -1) { %>✓ 已配置我的 Key（优先使用）<% } else { %>未配置（使用全局 Key）<% } %>
+                    </span>
+                  </div>
+                  <div class="aiimg-key-action">
+                    <input type="password" class="form-input" id="keyInput-<%= p.provider_key %>" placeholder="输入你自己的 API Key（留空使用全局 Key）" autocomplete="off" style="flex:1;min-width:200px;">
+                    <button type="button" class="btn btn-small btn-primary" onclick="saveAiKey('<%= p.provider_key %>')">保存</button>
+                    <button type="button" class="btn btn-small" style="<%= aiUserKeys.indexOf(p.provider_key) === -1 ? 'display:none;' : '' %>" id="keyClear-<%= p.provider_key %>" onclick="clearAiKey('<%= p.provider_key %>')">清除</button>
+                  </div>
+                </div>
+              <% }); %>
+            </div>
+            <p class="card-desc" style="margin-top:12px;">需要生成图片？<a href="/ai-image" style="color:var(--primary);">前往 AI 生图页面</a></p>
           </div>
         </div>
       </div>
@@ -592,6 +618,43 @@
   color: var(--text-muted);
 }
 
+.aiimg-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.aiimg-key-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--gray-50);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.aiimg-key-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 200px;
+}
+
+.aiimg-key-status {
+  font-size: 12px;
+  color: #059669;
+}
+
+.aiimg-key-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 280px;
+}
+
 .tab-panel {
   display: none;
 }
@@ -815,6 +878,49 @@ function switchTab(tabId, el) {
 
   // 更新URL hash
   window.location.hash = tabId;
+}
+
+// ============ AI 生图密钥管理 ============
+function saveAiKey(providerKey) {
+  var input = document.getElementById('keyInput-' + providerKey);
+  var key = (input.value || '').trim();
+  if (!key) {
+    showToast('请输入 API Key', 'warning');
+    input.focus();
+    return;
+  }
+  csrfFetch('/ai-image/api/keys/save', {
+    method: 'POST',
+    body: JSON.stringify({ provider_key: providerKey, api_key: key })
+  }, 20000).then(function(json) {
+    if (json.success) {
+      showToast(json.message, 'success');
+      input.value = '';
+      document.getElementById('keyStatus-' + providerKey).textContent = '✓ 已配置我的 Key（优先使用）';
+      document.getElementById('keyClear-' + providerKey).style.display = '';
+    } else {
+      showToast(json.error || '保存失败', 'error');
+    }
+  }).catch(function() {
+    showToast('保存请求失败', 'error');
+  });
+}
+
+function clearAiKey(providerKey) {
+  csrfFetch('/ai-image/api/keys/delete', {
+    method: 'POST',
+    body: JSON.stringify({ provider_key: providerKey })
+  }, 20000).then(function(json) {
+    if (json.success) {
+      showToast(json.message, 'success');
+      document.getElementById('keyStatus-' + providerKey).textContent = '未配置（使用全局 Key）';
+      document.getElementById('keyClear-' + providerKey).style.display = 'none';
+    } else {
+      showToast(json.error || '清除失败', 'error');
+    }
+  }).catch(function() {
+    showToast('清除请求失败', 'error');
+  });
 }
 
 var cropper = null;
