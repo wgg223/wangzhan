@@ -7,7 +7,7 @@ const axios = require('axios');
 const fs = require('fs');
 const { downloadImage, sleep } = require('../utils');
 
-const MAX_POLLS = 60; // 60 * 3s = 180s
+const MAX_POLLS = 200; // 200 * 3s = 600s
 
 function dashSize(size) {
   return String(size || '1024x1024').replace(/x/i, '*');
@@ -41,9 +41,15 @@ module.exports = {
       err.code = 'EMPTY_RESPONSE';
       throw err;
     }
+    if (req.taskInfo) req.taskInfo.taskId = taskId;
 
     // 轮询任务状态
     for (let i = 0; i < MAX_POLLS; i++) {
+      if (req.cancelRef && req.cancelRef.cancelled) {
+        const err = new Error('任务已取消');
+        err.code = 'CANCELLED';
+        throw err;
+      }
       await sleep(3000);
       let pollResp;
       try {
@@ -110,7 +116,13 @@ module.exports = {
       err.code = 'EMPTY_RESPONSE';
       throw err;
     }
+    if (req.taskInfo) req.taskInfo.taskId = taskId;
     for (let i = 0; i < MAX_POLLS; i++) {
+      if (req.cancelRef && req.cancelRef.cancelled) {
+        const err = new Error('任务已取消');
+        err.code = 'CANCELLED';
+        throw err;
+      }
       await sleep(3000);
       let pollResp;
       try {

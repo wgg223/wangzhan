@@ -153,6 +153,7 @@ function normalizeError(err) {
     return '无法连接服务商，请检查网络或服务商配置';
   }
   if (err.code === 'TIMEOUT') return '生成超时，请稍后再试';
+  if (err.code === 'CANCELLED' || err.code === 'ERR_CANCELED' || err.name === 'CanceledError') return '任务已取消';
   if (err.code === 'BAD_CONFIG') return err.message;
   if (err.code === 'AUTH_FAILED') return err.message;
   if (err.code === 'PROVIDER_FAILED') return err.message;

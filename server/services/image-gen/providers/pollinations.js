@@ -35,7 +35,8 @@ module.exports = {
         const resp = await axios.get(url, {
           responseType: 'arraybuffer',
           timeout: 120000,
-          maxContentLength: 20 * 1024 * 1024
+          maxContentLength: 20 * 1024 * 1024,
+          signal: req.cancelRef && req.cancelRef.signal
         });
         buffer = Buffer.from(resp.data);
         break;

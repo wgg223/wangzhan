@@ -1,6 +1,6 @@
 {
   "name": "website-with-admin",
-  "version": "5.6.2",
+  "version": "5.7.0",
   "description": "网站前端和后台管理系统 ",
   "main": "server/app.js",
   "scripts": {

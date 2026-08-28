@@ -15,6 +15,10 @@
   var currentPage = 1;
   var totalPages = 1;
   var generating = false;
+  var currentTask = null;   // 当前异步生成任务 ID
+  var pollTimer = null;     // 状态轮询定时器
+  var waitShown = false;    // 60 秒继续等待弹窗是否已弹出
+  var taskStart = 0;        // 任务开始时间戳
 
   // ============ 平铺 API Key 行（保存/清除，模板内 onclick 调用） ============
   // 定义在 IIFE 最前：即使下方 providers 为空提前返回，模板 onclick 仍可用
@@ -121,6 +125,11 @@
     quota: document.getElementById('aiimgRemain'),
     pick: document.getElementById('aiimgPickPrompt'),
     enhance: document.getElementById('aiimgEnhancePrompt'),
+    cancelTask: document.getElementById('aiimgCancelTask'),
+    waitMask: document.getElementById('aiimgWaitMask'),
+    waitSec: document.getElementById('aiimgWaitSec'),
+    waitContinue: document.getElementById('aiimgWaitContinue'),
+    waitCancel: document.getElementById('aiimgWaitCancel'),
     modalMask: document.getElementById('aiimgModalMask'),
     modalClose: document.getElementById('aiimgModalClose'),
     promptSearch: document.getElementById('aiimgPromptSearch'),
@@ -280,33 +289,30 @@
   function setGenerating(on) {
     generating = on;
     els.generate.disabled = on;
-    els.generate.textContent = on ? '⏳ 生成中，请稍候（最长约 2 分钟）...' : '✨ 生成图片';
+    els.generate.textContent = on ? '⏳ 生成中（后台执行，最长约 10 分钟）...' : '✨ 生成图片';
     els.generateHint.style.display = on ? 'none' : els.generateHint.style.display;
+    if (els.cancelTask) {
+      els.cancelTask.style.display = on ? '' : 'none';
+      els.cancelTask.disabled = false;
+    }
   }
 
-  // ============ 生成进度条（模拟阶段进度 + 实时耗时） ============
+  // ============ 生成进度（真实耗时，最长约 10 分钟） ============
   var progressTimer = null;
 
   function startProgress() {
     if (!els.progress) return;
     els.progress.style.display = 'block';
-    els.progressFill.style.width = '0%';
-    var start = Date.now();
+    els.progressFill.style.width = '3%';
     progressTimer = setInterval(function() {
-      var sec = (Date.now() - start) / 1000;
-      var pct;
-      if (sec < 2) {
-        pct = sec / 2 * 12;
-        els.progressText.textContent = '⏳ 正在提交到服务商...';
-      } else {
-        pct = Math.min(90, 12 + (sec - 2) / 90 * 78);
-        els.progressText.textContent = sec < 10
-          ? '🎨 服务商生成中...'
-          : '⏱️ 仍在生成（通常 30-90 秒），请耐心等待...';
-      }
+      var sec = Math.round((Date.now() - taskStart) / 1000);
+      var pct = Math.min(95, 3 + sec / 600 * 92);
       els.progressFill.style.width = pct.toFixed(1) + '%';
-      els.progressMeta.textContent = '已用时 ' + Math.round(sec) + ' 秒';
-    }, 300);
+      els.progressText.textContent = sec < 10
+        ? '🎨 服务商生成中...'
+        : '⏱️ 服务商生成中（已等待 ' + sec + ' 秒，最长约 10 分钟）...';
+      if (els.progressMeta) els.progressMeta.textContent = '已用时 ' + sec + ' 秒';
+    }, 500);
   }
 
   function stopProgress(done) {
@@ -360,47 +366,120 @@
     }
     setGenerating(true);
     startProgress();
-
-    var controller = null;
-    var timer = null;
-    if (typeof AbortController !== 'undefined') {
-      controller = new AbortController();
-      timer = setTimeout(function() { controller.abort(); }, 150000);
-    }
+    waitShown = false;
+    taskStart = Date.now();
 
     fetch('/ai-image/api/generate', {
       method: 'POST',
       headers: { 'X-CSRF-Token': getCsrfToken() },
-      body: collectFormData(),
-      signal: controller ? controller.signal : undefined
+      body: collectFormData()
     }).then(function(resp) {
-      if (timer) clearTimeout(timer);
       return resp.json().catch(function() { return { error: '服务返回异常（HTTP ' + resp.status + '）' }; });
     }).then(function(json) {
-      if (timer) clearTimeout(timer);
-      setGenerating(false);
-      if (json.success) {
-        stopProgress(true);
-        renderResults(json.data);
-        if (json.data.fallbackUsed) {
-          els.generateHint.style.display = '';
-          els.generateHint.textContent = 'ℹ️ 首选服务商不可用，已自动切换到其他服务商生成（用时 ' + fmtElapsed(json.data.elapsedMs) + '）';
-        }
+      if (json.success && json.taskId) {
         refreshQuota();
-        loadHistory(1);
+        pollTask(json.taskId);
       } else {
+        setGenerating(false);
         stopProgress(false);
-        renderFailure(json.error || '生成失败', json.attempts, json.elapsedMs);
-        showToast(json.error || '生成失败', 'error');
+        var msg = json.error || '生成失败';
+        renderFailure(msg, json.attempts, json.elapsedMs);
+        showToast(msg, 'error');
       }
-    }).catch(function(err) {
-      if (timer) clearTimeout(timer);
+    }).catch(function() {
       setGenerating(false);
       stopProgress(false);
-      var msg = (err && err.name === 'AbortError') ? '生成超时（超过 150 秒），请稍后重试或更换服务商' : '网络错误，请检查连接后重试';
+      var msg = '网络错误，请检查连接后重试';
       renderFailure(msg, null, null);
       showToast(msg, 'error');
     });
+  }
+
+  // ============ 异步任务轮询（每 3 秒查状态；60 秒弹窗询问是否继续等待） ============
+  function pollTask(taskId) {
+    currentTask = taskId;
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(function() {
+      csrfFetch('/ai-image/api/status?task=' + encodeURIComponent(taskId), { method: 'GET' }, 15000).then(function(json) {
+        if (!json.success) {
+          finishTask(false, json.error || '状态查询失败', null);
+          return;
+        }
+        var d = json.data || {};
+        var sec = Math.round((Date.now() - taskStart) / 1000);
+        if (els.progressMeta) els.progressMeta.textContent = '已用时 ' + sec + ' 秒';
+        if (d.status === 'running') {
+          if (sec >= 60 && !waitShown) {
+            waitShown = true;
+            if (els.waitSec) els.waitSec.textContent = sec;
+            if (els.waitMask) els.waitMask.style.display = 'flex';
+          }
+          return;
+        }
+        if (d.status === 'success') {
+          finishTask(true, null, d.result);
+        } else if (d.status === 'cancelled') {
+          finishTask(false, '任务已取消', d.result, true);
+        } else {
+          finishTask(false, (d.result && d.result.error) || d.message || '生成失败', d.result);
+        }
+      }).catch(function() {
+        // 状态查询瞬时失败：继续轮询，不打断生成
+      });
+    }, 3000);
+  }
+
+  function finishTask(ok, error, result, isCancelled) {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    currentTask = null;
+    if (els.waitMask) els.waitMask.style.display = 'none';
+    setGenerating(false);
+    if (ok && result) {
+      stopProgress(true);
+      renderResults(result);
+      if (result.fallbackUsed) {
+        els.generateHint.style.display = '';
+        els.generateHint.textContent = 'ℹ️ 首选服务商不可用，已自动切换到其他服务商生成（用时 ' + fmtElapsed(result.elapsedMs) + '）';
+      }
+      loadHistory(1);
+    } else {
+      stopProgress(false);
+      renderFailure(error || '生成失败', result && result.attempts, result && result.elapsedMs);
+      showToast(error || '生成失败', isCancelled ? 'info' : 'error');
+    }
+  }
+
+  // 取消任务：调用服务端取消接口（尽力调用服务商取消接口，避免远程资源浪费）
+  function cancelCurrentTask() {
+    if (!currentTask) return;
+    if (els.waitMask) els.waitMask.style.display = 'none';
+    if (els.cancelTask) els.cancelTask.disabled = true;
+    csrfFetch('/ai-image/api/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ task: currentTask })
+    }, 15000).then(function(json) {
+      if (json.success) {
+        showToast('已发送取消请求，正在停止任务...', 'info');
+      } else {
+        if (els.cancelTask) els.cancelTask.disabled = false;
+        showToast(json.error || '取消失败', 'error');
+      }
+    }).catch(function() {
+      if (els.cancelTask) els.cancelTask.disabled = false;
+      showToast('取消请求失败，请重试', 'error');
+    });
+  }
+
+  if (els.cancelTask) {
+    els.cancelTask.addEventListener('click', cancelCurrentTask);
+  }
+  if (els.waitContinue) {
+    els.waitContinue.addEventListener('click', function() {
+      if (els.waitMask) els.waitMask.style.display = 'none';
+    });
+  }
+  if (els.waitCancel) {
+    els.waitCancel.addEventListener('click', cancelCurrentTask);
   }
 
   // 生成失败：结果区展示失败原因 + 尝试明细 + 提供"更换模型重试"

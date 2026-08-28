@@ -27,7 +27,8 @@ module.exports = {
     };
     const resp = await axios.post(`${baseUrl}/images/generations`, body, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 120000
+      timeout: 120000,
+      signal: req.cancelRef && req.cancelRef.signal
     });
     const images = [];
     for (const item of parseItems(resp.data)) {
@@ -52,7 +53,8 @@ module.exports = {
 
     const resp = await axios.post(`${baseUrl}/images/edits`, form, {
       headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
-      timeout: 120000
+      timeout: 120000,
+      signal: req.cancelRef && req.cancelRef.signal
     });
     const images = [];
     for (const item of parseItems(resp.data)) {

@@ -69,7 +69,8 @@ module.exports = {
       {
         params: { access_token: token },
         headers: { 'Content-Type': 'application/json' },
-        timeout: 120000
+        timeout: 120000,
+        signal: req.cancelRef && req.cancelRef.signal
       }
     );
     const items = (resp.data && resp.data.data) || [];

@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { downloadImage, sleep, parseSize } = require('../utils');
 
-const MAX_POLLS = 90; // 90 * 2s = 180s
+const MAX_POLLS = 300; // 300 * 2s = 600s
 
 function toDataUri(filePath) {
   const ext = path.extname(filePath).toLowerCase();
@@ -42,8 +42,14 @@ module.exports = {
       err.code = 'EMPTY_RESPONSE';
       throw err;
     }
+    if (req.taskInfo) req.taskInfo.predictionId = predictionId;
 
     for (let i = 0; i < MAX_POLLS; i++) {
+      if (req.cancelRef && req.cancelRef.cancelled) {
+        const err = new Error('任务已取消');
+        err.code = 'CANCELLED';
+        throw err;
+      }
       await sleep(2000);
       let pollResp;
       try {
@@ -102,7 +108,13 @@ module.exports = {
       err.code = 'EMPTY_RESPONSE';
       throw err;
     }
+    if (req.taskInfo) req.taskInfo.predictionId = predictionId;
     for (let i = 0; i < MAX_POLLS; i++) {
+      if (req.cancelRef && req.cancelRef.cancelled) {
+        const err = new Error('任务已取消');
+        err.code = 'CANCELLED';
+        throw err;
+      }
       await sleep(2000);
       let pollResp;
       try {
@@ -143,5 +155,15 @@ module.exports = {
   // Replicate 模型发现接口复杂，手动配置
   async fetchModels() {
     return null;
+  },
+
+  // 取消远程任务：POST /predictions/{id}/cancel
+  async cancel(cfg, taskInfo) {
+    const { apiKey, baseUrl } = cfg;
+    if (!taskInfo || !taskInfo.predictionId) return;
+    await axios.post(`${baseUrl}/predictions/${taskInfo.predictionId}/cancel`, null, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      timeout: 15000
+    });
   }
 };

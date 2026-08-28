@@ -13,7 +13,7 @@ const { sanitize } = require('../utils/html-sanitizer');
 const { marked } = require('marked');
 const sanitizeHtml = require('sanitize-html');
 const { createRateLimiter } = require('../middlewares/rate-limiter');
-const { generateImage, countDailyUsage, getUserProviderKeys, saveUserProviderKey, deleteUserProviderKey, verifyProviderKey } = require('../services/image-gen');
+const { countDailyUsage, getUserProviderKeys, saveUserProviderKey, deleteUserProviderKey, verifyProviderKey, startImageTask, getImageTask, cancelImageTask } = require('../services/image-gen');
 const { saveReferenceImage, normalizeError } = require('../services/image-gen/utils');
 const { enhancePrompt } = require('../services/prompt-enhance');
 const { validateMagicBytes } = require('../utils/file-validator');
@@ -1117,10 +1117,8 @@ router.post('/ai-image/api/enhance-prompt', isAuthenticated, hasFrontendPermissi
     }
   });
 
-// 生成图片
+// 生成图片（异步任务：立即返回 taskId，前端轮询状态，支持取消）
 router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('imagegen.use'), aiImageLimiter, (req, res) => {
-  // 上游生成最长可达 2 分钟，覆盖 server.timeout=30s 默认值
-  req.setTimeout(120000);
   refUpload.single('reference_image')(req, res, async (uploadErr) => {
     if (uploadErr) {
       const msg = uploadErr.code === 'LIMIT_FILE_SIZE'
@@ -1189,7 +1187,8 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
     }
 
     try {
-      const result = await generateImage(db, {
+      // 后台异步执行，立即返回任务 ID；结果通过 /ai-image/api/status 轮询获取
+      const taskId = startImageTask(db, {
         userId: user.id,
         providerKey,
         prompt,
@@ -1201,23 +1200,35 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
         referenceImagePath,
         referenceImageWebPath
       });
-      if (result.ok) {
-        return res.json({
-          success: true,
-          data: {
-            images: result.images,
-            provider: result.providerKey,
-            fallbackUsed: result.fallbackUsed,
-            elapsedMs: result.elapsedMs || 0,
-            attempts: result.attempts || []
-          }
-        });
-      }
-      return res.status(502).json({ error: result.error, attempts: result.attempts || [], elapsedMs: result.elapsedMs || 0 });
+      return res.json({ success: true, taskId });
     } catch (err) {
       return res.status(500).json({ error: '生成服务异常：' + (err.message || '未知错误') });
     }
   });
+});
+
+// 生成任务状态（轮询）
+router.get('/ai-image/api/status', isAuthenticated, hasFrontendPermission('imagegen.use'), (req, res) => {
+  const task = getImageTask(String(req.query.task || ''));
+  if (!task || task.userId !== req.session.user.id) {
+    return res.status(404).json({ success: false, error: '任务不存在或已过期' });
+  }
+  res.json({
+    success: true,
+    data: {
+      status: task.status,
+      message: task.message || '',
+      elapsedMs: Date.now() - task.createdAt,
+      result: task.result || null
+    }
+  });
+});
+
+// 取消生成任务（尽力调用服务商取消接口，避免远程资源浪费）
+router.post('/ai-image/api/cancel', isAuthenticated, hasFrontendPermission('imagegen.use'), (req, res) => {
+  const r = cancelImageTask(String((req.body && req.body.task) || ''), req.session.user.id);
+  if (!r.ok) return res.status(400).json({ success: false, error: r.error });
+  res.json({ success: true, message: r.message });
 });
 
 // 生成历史（分页，含失败记录）

@@ -37,7 +37,8 @@ module.exports = {
       headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
       timeout: 120000,
       maxContentLength: 20 * 1024 * 1024,
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      signal: req.cancelRef && req.cancelRef.signal
     });
 
     if (resp.status !== 200 || !resp.data || !resp.data.length) {
@@ -62,7 +63,8 @@ module.exports = {
       headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
       timeout: 120000,
       maxContentLength: 20 * 1024 * 1024,
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      signal: req.cancelRef && req.cancelRef.signal
     });
     return { images: [{ buffer: Buffer.from(resp.data), mime: resp.headers['content-type'] || 'image/png' }] };
   },

@@ -24,7 +24,8 @@ module.exports = {
     };
     const resp = await axios.post(`${baseUrl}/images/generations`, body, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 90000
+      timeout: 90000,
+      signal: req.cancelRef && req.cancelRef.signal
     });
     const images = [];
     for (const item of (resp.data && resp.data.data) || []) {

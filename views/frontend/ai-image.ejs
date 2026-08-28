@@ -134,7 +134,10 @@
       <div id="aiimgProgress" class="aiimg-progress" style="display:none;">
         <div class="aiimg-progress-status" id="aiimgProgressText">⏳ 正在提交到服务商...</div>
         <div class="aiimg-progress-track"><div class="aiimg-progress-fill" id="aiimgProgressFill"></div></div>
-        <div class="aiimg-progress-meta" id="aiimgProgressMeta"></div>
+        <div class="aiimg-progress-meta">
+          <span id="aiimgProgressMeta"></span>
+          <button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgCancelTask" style="display:none;">✕ 取消任务</button>
+        </div>
       </div>
       <div id="aiimgResults" class="aiimg-results">
         <div class="aiimg-empty">填写提示词后点击「生成图片」，结果将显示在这里</div>
@@ -186,6 +189,23 @@
     </div>
     <input type="text" id="aiimgPromptSearch" class="aiimg-input aiimg-modal-search" placeholder="搜索提示词标题...">
     <div class="aiimg-modal-list" id="aiimgPromptList"></div>
+  </div>
+</div>
+
+<!-- 生成等待确认弹窗（60 秒后弹出） -->
+<div class="aiimg-modal-mask" id="aiimgWaitMask" style="display:none;">
+  <div class="aiimg-modal" style="max-width:420px;">
+    <div class="aiimg-modal-head">
+      <span>⏳ 生成仍在进行</span>
+    </div>
+    <div style="padding:16px;color:var(--text-secondary);font-size:14px;line-height:1.8;">
+      已等待 <b id="aiimgWaitSec" style="color:var(--primary);">60</b> 秒。任务型服务商（RunningHub、fal、Replicate 等）可能需要 2-10 分钟。
+      <br>继续等待，还是取消任务？
+    </div>
+    <div style="display:flex;gap:10px;padding:0 16px 16px;">
+      <button type="button" class="aiimg-btn aiimg-btn-primary" style="flex:1;" id="aiimgWaitContinue">⏳ 继续等待</button>
+      <button type="button" class="aiimg-btn" style="flex:1;" id="aiimgWaitCancel">✕ 取消任务</button>
+    </div>
   </div>
 </div>
 

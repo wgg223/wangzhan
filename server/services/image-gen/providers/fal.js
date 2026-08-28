@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { downloadImage, sleep } = require('../utils');
 
-const MAX_POLLS = 60; // 60 * 3s = 180s
+const MAX_POLLS = 200; // 200 * 3s = 600s
 
 function toDataUri(filePath) {
   const ext = path.extname(filePath).toLowerCase();
@@ -44,8 +44,14 @@ module.exports = {
       err.code = 'EMPTY_RESPONSE';
       throw err;
     }
+    if (req.taskInfo) req.taskInfo.requestId = requestId;
 
     for (let i = 0; i < MAX_POLLS; i++) {
+      if (req.cancelRef && req.cancelRef.cancelled) {
+        const err = new Error('任务已取消');
+        err.code = 'CANCELLED';
+        throw err;
+      }
       await sleep(3000);
       let statusResp;
       try {
@@ -109,7 +115,13 @@ module.exports = {
       err.code = 'EMPTY_RESPONSE';
       throw err;
     }
+    if (req.taskInfo) req.taskInfo.requestId = requestId;
     for (let i = 0; i < MAX_POLLS; i++) {
+      if (req.cancelRef && req.cancelRef.cancelled) {
+        const err = new Error('任务已取消');
+        err.code = 'CANCELLED';
+        throw err;
+      }
       await sleep(3000);
       let statusResp;
       try {
@@ -155,5 +167,15 @@ module.exports = {
   // fal.ai 模型目录在其网站维护，手动配置
   async fetchModels() {
     return null;
+  },
+
+  // 取消远程任务：DELETE {base}/{app_id}/requests/{request_id}
+  async cancel(cfg, taskInfo) {
+    const { apiKey, baseUrl, apiPath } = cfg;
+    if (!taskInfo || !taskInfo.requestId || !apiPath) return;
+    await axios.delete(`${baseUrl}/${apiPath}/requests/${taskInfo.requestId}`, {
+      headers: { Authorization: `Key ${apiKey}` },
+      timeout: 15000
+    });
   }
 };

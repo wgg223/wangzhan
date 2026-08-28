@@ -6,6 +6,7 @@ const { queryOne, queryAll, saveDatabase } = require('../../config/database');
 const { decrypt } = require('../../config/crypto-secure');
 const { getSettings } = require('../../utils/settings');
 const { saveImageBuffer, normalizeError } = require('./utils');
+const crypto = require('crypto');
 
 // 加载全部适配器
 const providers = {};
@@ -15,6 +16,110 @@ const providers = {};
 ].forEach(name => {
   providers[name] = require(`./providers/${name}`);
 });
+
+// ============ 异步生成任务注册表（进程内存，单实例） ============
+// 生成请求立即返回 taskId，后台执行，前端轮询状态；支持取消（尽力调用服务商取消接口）
+const taskRegistry = new Map();
+const TASK_TTL_MS = 10 * 60 * 1000; // 终态任务保留 10 分钟后清理
+
+function createTaskId() {
+  return crypto.randomBytes(8).toString('hex');
+}
+
+function pruneTasks() {
+  const now = Date.now();
+  for (const [id, t] of taskRegistry) {
+    if (t.finishedAt && now - t.finishedAt > TASK_TTL_MS) taskRegistry.delete(id);
+  }
+}
+
+/**
+ * 启动异步生成任务
+ * @param {Object} db
+ * @param {Object} params 同 generateImage 的 params
+ * @returns {string} taskId
+ */
+function startImageTask(db, params) {
+  const task = {
+    id: createTaskId(),
+    userId: params.userId,
+    providerKey: params.providerKey,
+    status: 'running', // running | success | failed | cancelled
+    message: '任务已提交，等待服务商响应...',
+    createdAt: Date.now(),
+    finishedAt: null,
+    result: null,
+    cancel: null
+  };
+  taskRegistry.set(task.id, task);
+  executeImageTask(task, db, params);
+  return task.id;
+}
+
+/**
+ * 获取任务（含 userId，供路由校验归属）
+ * @param {string} taskId
+ */
+function getImageTask(taskId) {
+  return taskRegistry.get(taskId) || null;
+}
+
+/**
+ * 取消任务：置取消标志 + 尽力调用服务商取消接口（fal/Replicate 支持，RunningHub 无开放取消接口）
+ * @param {string} taskId
+ * @param {number} userId
+ */
+function cancelImageTask(taskId, userId) {
+  const task = taskRegistry.get(taskId);
+  if (!task) return { ok: false, error: '任务不存在' };
+  if (task.userId !== userId) return { ok: false, error: '无权操作该任务' };
+  if (task.status !== 'running' || typeof task.cancel !== 'function') {
+    return { ok: false, error: '任务已结束，无法取消' };
+  }
+  task.cancel(); // 同步置取消标志，异步调服务商取消接口
+  return { ok: true, message: '已发送取消请求，正在停止任务' };
+}
+
+async function executeImageTask(task, db, params) {
+  // 当前尝试信息：供取消时读取服务商任务 ID 以调用其取消接口
+  const controller = new AbortController();
+  const taskRef = { cancelled: false, current: null, signal: controller.signal };
+  task.cancel = async () => {
+    task.status = 'cancelled';
+    task.message = '正在取消任务...';
+    taskRef.cancelled = true;
+    controller.abort(); // 掐断所有在途 HTTP 请求（同步型服务商立即中断）
+    const cur = taskRef.current;
+    if (cur && cur.cfg && cur.taskInfo) {
+      const adapter = providers[cur.providerKey];
+      if (adapter && typeof adapter.cancel === 'function') {
+        try {
+          await adapter.cancel(cur.cfg, cur.taskInfo);
+          task.message = '已通知服务商取消远程任务';
+        } catch (e) {
+          task.message = '服务商取消接口调用失败，任务可能继续运行';
+        }
+      }
+    }
+  };
+  try {
+    const result = await generateImage(db, params, taskRef);
+    if (task.status === 'cancelled') {
+      task.message = '任务已取消';
+      return;
+    }
+    task.status = result.ok ? 'success' : 'failed';
+    task.message = result.ok ? '生成完成' : (result.error || '生成失败');
+    task.result = result;
+  } catch (err) {
+    task.status = 'failed';
+    task.message = err.message || '生成失败';
+    task.result = { ok: false, error: normalizeError(err) };
+  } finally {
+    task.finishedAt = Date.now();
+    pruneTasks();
+  }
+}
 
 /**
  * 获取服务商配置（解密 Key，供服务端使用，绝不外泄）
@@ -174,9 +279,10 @@ function persistFailure(db, params, provider, error) {
  * @param {Object} params
  *   { userId, providerKey, prompt, negativePrompt, size, n, seed, style,
  *     referenceImagePath (绝对路径|null), referenceImageWebPath }
+ * @param {Object} [taskRef] 任务引用：{ cancelled, current }，供异步任务取消
  * @returns {Promise<{ok: true, images: Array<{path, url}>} | {ok: false, error, providerKey}>}
  */
-async function generateImage(db, params) {
+async function generateImage(db, params, taskRef) {
   const settings = getSettings(db);
   const fallbackEnabled = settings.ai_image_fallback !== '0';
 
@@ -199,6 +305,7 @@ async function generateImage(db, params) {
   const startTime = Date.now();
 
   for (const providerKey of candidates) {
+    if (taskRef && taskRef.cancelled) break;
     if (!usableKeys.includes(providerKey)) continue;
     const adapterImpl = providers[providerKey];
     if (!adapterImpl) continue;
@@ -212,14 +319,19 @@ async function generateImage(db, params) {
     tried++;
     const attemptStart = Date.now();
     try {
+      // taskInfo 由适配器填充（服务商任务 ID），供取消时调用其取消接口
+      const taskInfo = {};
       const req = {
         prompt: params.prompt,
         negativePrompt: params.negativePrompt || '',
         size: params.size || '1024x1024',
         n: params.n || 1,
         seed: params.seed || undefined,
-        referenceImage: params.referenceImagePath || null
+        referenceImage: params.referenceImagePath || null,
+        cancelRef: taskRef || null,
+        taskInfo
       };
+      if (taskRef) taskRef.current = { providerKey, cfg, taskInfo };
       const model = cfg.default_model;
       const adapterCfg = { apiKey: cfg.api_key, baseUrl: cfg.api_base, model, apiPath: cfg.api_path };
       const result = useRef && adapterImpl.generateWithReference
@@ -245,6 +357,11 @@ async function generateImage(db, params) {
         attempts
       };
     } catch (err) {
+      if (taskRef && taskRef.cancelled) {
+        // 取消优先：记录为已取消，不再尝试其他服务商
+        persistFailure(db, { ...params, provider: providerKey, model: cfg.default_model }, providerKey, '任务已取消');
+        break;
+      }
       lastError = normalizeError(err);
       attempts.push({
         provider: providerKey,
@@ -349,5 +466,8 @@ module.exports = {
   countDailyUsage,
   generateImage,
   fetchProviderModels,
-  verifyProviderKey
+  verifyProviderKey,
+  startImageTask,
+  getImageTask,
+  cancelImageTask
 };

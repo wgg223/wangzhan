@@ -7,7 +7,7 @@
 const axios = require('axios');
 const { downloadImage, sleep } = require('../utils');
 
-const MAX_POLLS = 40; // 40 * 3s = 120s
+const MAX_POLLS = 200; // 200 * 3s = 600s
 
 // 从任务结果对象中提取图片 URL 列表（容错解析）
 function extractUrls(result) {
@@ -65,8 +65,14 @@ module.exports = {
       err.code = 'EMPTY_RESPONSE';
       throw err;
     }
+    if (req.taskInfo) req.taskInfo.taskId = taskId;
 
     for (let i = 0; i < MAX_POLLS; i++) {
+      if (req.cancelRef && req.cancelRef.cancelled) {
+        const err = new Error('任务已取消');
+        err.code = 'CANCELLED';
+        throw err;
+      }
       await sleep(3000);
       let queryResp;
       try {
@@ -107,4 +113,7 @@ module.exports = {
   async fetchModels() {
     return null;
   }
+
+  // 说明：RunningHub openapi v2 仅提供提交任务与查询结果接口，无官方取消接口，
+  // 取消任务只能停止轮询，远程任务会继续运行直至完成（平台限制，无法避免消耗）
 };
