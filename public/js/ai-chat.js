@@ -651,6 +651,8 @@
       showToast('今日对话次数已用完', 'error');
       return;
     }
+    // 同步置位：startStream 在微任务中才执行，若此时不置位，连点 Enter/发送按钮会重复发送同一内容
+    state.streaming = true;
 
     var convPromise;
     if (state.currentConv) {
@@ -676,8 +678,17 @@
       appendMessageEl(userMsg, false);
       scrollToBottom();
 
-      startStream('/ai-chat/api/send', { conversation_id: conv.id, content: content }, userMsg);
-    }).catch(function (err) { showToast(err.message, 'error'); });
+      // AI 回复占位气泡：流式增量写入此条，避免 AI 内容追加到用户消息里
+      var assistantMsg = { id: 'a' + Date.now(), role: 'assistant', content: '', status: 'streaming', branch_id: conv.current_branch_id || 0 };
+      state.messages.push(assistantMsg);
+      appendMessageEl(assistantMsg, true);
+      scrollToBottom();
+
+      startStream('/ai-chat/api/send', { conversation_id: conv.id, content: content }, assistantMsg);
+    }).catch(function (err) {
+      state.streaming = false;
+      showToast(err.message, 'error');
+    });
   }
 
   function regenerateMessage(m) {
@@ -739,7 +750,7 @@
         els.acSend.style.display = '';
         els.acStop.style.display = 'none';
         if (typingEl) typingEl.remove();
-        finalizeMessage(placeholderMsg);
+        finalizeMessage(placeholderMsg, lastEl);
       });
   }
 
@@ -756,10 +767,9 @@
     return dots;
   }
 
-  function finalizeMessage(m) {
-    // 重新渲染最后一条消息（落库后的状态/内容），并渲染 markdown
-    var lastEl = els.acMessages.lastElementChild;
-    if (lastEl && lastEl.dataset.id === String(m.id)) lastEl.remove();
+  function finalizeMessage(m, placeholderEl) {
+    // 移除流式占位气泡（m.id 已被服务端 id 覆盖，DOM 上的临时 id 对不上，需用元素引用判断）
+    if (placeholderEl && placeholderEl.parentNode) placeholderEl.remove();
     appendMessageEl(m, false);
     // 刷新会话列表（标题/计数可能变化）与配额，保持当前会话选中
     var convId = state.currentConv ? state.currentConv.id : null;
