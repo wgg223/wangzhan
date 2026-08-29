@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { queryOne, queryAll, generateUid, saveDatabase } = require('../config/database');
+const { queryOne, queryAll, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
 
 // OAuth 配置
@@ -90,6 +90,14 @@ function initDefaultProviders(db) {
 // 生成state参数防止CSRF
 function generateState() {
   return crypto.randomBytes(32).toString('hex');
+}
+
+// 解析回调地址：优先使用后台配置的 redirect_uri，未配置时按当前请求推导（auth-url 与 callback 必须一致）
+function resolveRedirectUri(req, provider, config) {
+  if (config && config.redirect_uri) {
+    return config.redirect_uri;
+  }
+  return `${req.protocol}://${req.get('host')}/oauth/callback/${provider}`;
 }
 
 // 获取OAuth授权URL
@@ -313,6 +321,10 @@ router.get('/callback/:provider', async (req, res) => {
   // 清除state
   delete req.session.oauthState;
 
+  // 取并清除绑定意图（/auth-url 时写入，login 为默认）
+  const intent = req.session.oauthIntent || 'login';
+  delete req.session.oauthIntent;
+
   const source = req.session.oauthSource || 'frontend';
   const redirectBase = source === 'image-share' ? '/image-share' : '/';
 
@@ -322,8 +334,8 @@ router.get('/callback/:provider', async (req, res) => {
     return res.redirect('/auth/' + source + '/login?error=该登录方式未启用');
   }
 
-  // 获取redirect_uri
-  const redirectUri = `${req.protocol}://${req.get('host')}/oauth/callback/${provider}`;
+  // 获取redirect_uri（与授权链接生成处保持一致）
+  const redirectUri = resolveRedirectUri(req, provider, config);
 
   // 获取access_token
   const tokenResult = await getAccessToken(provider, config, code, redirectUri);
@@ -335,6 +347,59 @@ router.get('/callback/:provider', async (req, res) => {
   const userInfo = await getUserInfo(provider, config, tokenResult.accessToken, tokenResult.openid);
   if (!userInfo || !userInfo.open_id) {
     return res.redirect('/auth/' + source + '/login?error=获取用户信息失败');
+  }
+
+  // ============ 绑定意图：将第三方账号绑定到当前登录用户 ============
+  if (intent === 'bind') {
+    const sessionUser = req.session.user;
+    if (!sessionUser) {
+      return res.redirect('/auth/' + source + '/login?error=请先登录后再绑定第三方账号');
+    }
+
+    const dbUser = queryOne(db, 'SELECT * FROM users WHERE id = ?', [sessionUser.id]);
+    if (!dbUser) {
+      return res.redirect('/account?error=' + encodeURIComponent('用户不存在，请重新登录'));
+    }
+
+    const existingBinding = queryOne(db, 'SELECT * FROM user_oauth_bindings WHERE provider = ? AND open_id = ?', [provider, userInfo.open_id]);
+
+    if (existingBinding) {
+      // 该第三方账号已被其他用户绑定：提示且不切换账号
+      if (existingBinding.user_id !== dbUser.id) {
+        return res.redirect('/account?error=' + encodeURIComponent('该' + (OAUTH_CONFIGS[provider]?.name || provider) + '账号已被其他用户绑定'));
+      }
+      // 已绑定当前用户：刷新 token 与资料
+      db.run('UPDATE user_oauth_bindings SET access_token = ?, nickname = ?, avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [tokenResult.accessToken, userInfo.nickname || '', userInfo.avatar || '', existingBinding.id]);
+      saveDatabase();
+      return res.redirect('/account?success=' + encodeURIComponent('已绑定 ' + (OAUTH_CONFIGS[provider]?.name || provider) + ' 账号'));
+    }
+
+    // 未绑定：写入绑定关系
+    db.run('INSERT INTO user_oauth_bindings (user_id, provider, open_id, access_token, nickname, avatar) VALUES (?, ?, ?, ?, ?, ?)',
+      [dbUser.id, provider, userInfo.open_id, tokenResult.accessToken, userInfo.nickname || '', userInfo.avatar || '']);
+    if (userInfo.avatar) {
+      db.run('UPDATE users SET avatar = ? WHERE id = ?', [userInfo.avatar, dbUser.id]);
+    }
+    if (!dbUser.nickname && userInfo.nickname) {
+      db.run('UPDATE users SET nickname = ? WHERE id = ?', [userInfo.nickname, dbUser.id]);
+    }
+    saveDatabase();
+
+    // 记录绑定日志
+    try {
+      logActivity(db, {
+        user_id: dbUser.id,
+        username: dbUser.username,
+        action: 'oauth_bind',
+        target_type: 'auth',
+        target_title: OAUTH_CONFIGS[provider]?.name || provider,
+        detail: `用户 ${dbUser.username} 绑定 ${OAUTH_CONFIGS[provider]?.name || provider} 账号`,
+        ip: req.ip
+      });
+    } catch (e) { /* 日志记录失败不影响绑定 */ }
+
+    return res.redirect('/account?success=' + encodeURIComponent('已绑定 ' + (OAUTH_CONFIGS[provider]?.name || provider) + ' 账号'));
   }
 
   // 查找已绑定的用户
@@ -418,7 +483,13 @@ router.get('/callback/:provider', async (req, res) => {
     }
   }
 
-  // 没有已绑定或相同邮箱的用户，存储OAuth信息到session，跳转注册流程
+  // 没有已绑定或相同邮箱的用户：已登录用户不应进入注册流程
+  if (req.session.user) {
+    const errorRedirect = source === 'image-share' ? '/image-share' : '/account';
+    return res.redirect(errorRedirect + '?error=' + encodeURIComponent('该第三方账号未绑定任何用户，请先退出登录后使用第三方账号登录'));
+  }
+
+  // 存储OAuth信息到session，跳转注册流程
   req.session.oauthPending = {
     provider: provider,
     providerName: OAUTH_CONFIGS[provider]?.name || provider,
@@ -454,7 +525,7 @@ function establishSession(req, res, user, redirectBase) {
 // 获取OAuth登录URL (AJAX接口)
 router.get('/auth-url/:provider', (req, res) => {
   const { provider } = req.params;
-  const { source } = req.query;
+  const { source, intent } = req.query;
   const db = req.db;
 
   if (!OAUTH_CONFIGS[provider]) {
@@ -470,9 +541,10 @@ router.get('/auth-url/:provider', (req, res) => {
   const state = generateState();
   req.session.oauthState = state;
   req.session.oauthSource = source || 'frontend';
+  req.session.oauthIntent = intent === 'bind' ? 'bind' : 'login';
 
-  // 获取redirect_uri
-  const redirectUri = `${req.protocol}://${req.get('host')}/oauth/callback/${provider}`;
+  // 获取redirect_uri（与授权链接生成处保持一致）
+  const redirectUri = resolveRedirectUri(req, provider, config);
 
   // 生成授权URL
   const authUrl = getAuthUrl(provider, config, state, redirectUri);
@@ -482,52 +554,6 @@ router.get('/auth-url/:provider', (req, res) => {
   }
 
   res.json({ url: authUrl });
-});
-
-// 解除OAuth绑定
-router.post('/unbind/:provider', (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ error: '请先登录' });
-  }
-
-  const { provider } = req.params;
-  const db = req.db;
-
-  // 检查是否是最后一个登录方式
-  const user = queryOne(db, 'SELECT * FROM users WHERE id = ?', [req.session.user.id]);
-  if (!user) {
-    return res.status(404).json({ error: '用户不存在' });
-  }
-
-  // 检查是否设置了密码
-  const hasPassword = user.password && user.password.length > 0;
-
-  // 检查绑定数量
-  const bindings = queryAll(db, 'SELECT * FROM user_oauth_bindings WHERE user_id = ?', [req.session.user.id]);
-
-  if (!hasPassword && bindings.length <= 1) {
-    return res.status(400).json({ error: '请先设置密码，否则解绑后将无法登录' });
-  }
-
-  db.run('DELETE FROM user_oauth_bindings WHERE user_id = ? AND provider = ?', [req.session.user.id, provider]);
-  saveDatabase();
-
-  // 记录日志
-  try {
-    logActivity(db, {
-      user_id: req.session.user.id,
-      username: req.session.user.username,
-      action: 'oauth_unbind',
-      target_type: 'auth',
-      target_title: OAUTH_CONFIGS[provider]?.name || provider,
-      detail: `用户 ${req.session.user.username} 解除 ${OAUTH_CONFIGS[provider]?.name || provider} 绑定`,
-      ip: req.ip
-    });
-  } catch (e) {
-    // 日志记录失败不影响解绑流程
-  }
-
-  res.json({ success: true });
 });
 
 module.exports = { router, getEnabledProviders, initDefaultProviders, OAUTH_CONFIGS };

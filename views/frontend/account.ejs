@@ -1062,7 +1062,7 @@ function deleteComment(id) {
 }
 
 function bindOAuth(provider) {
-  fetch('/oauth/auth-url/' + provider + '?source=frontend')
+  fetch('/oauth/auth-url/' + provider + '?source=frontend&intent=bind')
     .then(function(response) { return response.json(); })
     .then(function(data) {
       if (data.url) {
@@ -1081,7 +1081,10 @@ function unbindOAuth(provider, name) {
 
   fetch('/account/unbind/' + provider, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken()
+    }
   })
   .then(function(response) { return response.json(); })
   .then(function(data) {

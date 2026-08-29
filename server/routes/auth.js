@@ -120,14 +120,27 @@ function sendRegisterVerifyCode(db, email, code, username, callback) {
   }
 }
 
-// 辅助函数：获取站点名称
-function getSiteName(db, source) {
+// 辅助函数：获取站点元信息（名称/描述/备案号）
+function getSiteMeta(db, source) {
   if (source === 'image-share') {
     const config = getImageConfigs(db);
-    return config.site_name || '图片分享';
+    return {
+      siteName: config.site_name || '图片分享',
+      siteDescription: config.site_description || '',
+      icpNumber: config.icp_number || ''
+    };
   }
   const settings = getSettings(db);
-  return settings.site_name || '我的站点';
+  return {
+    siteName: settings.site_name || '我的站点',
+    siteDescription: settings.site_description || '',
+    icpNumber: settings.icp_number || ''
+  };
+}
+
+// 辅助函数：获取站点名称
+function getSiteName(db, source) {
+  return getSiteMeta(db, source).siteName;
 }
 
 // 辅助函数：根据模式获取标题和副标题
@@ -143,6 +156,25 @@ function getModeInfo(mode, source, step) {
     'force-change-password': { title: '需要修改密码', subtitle: '请设置一个新密码后继续使用' }
   };
   return info[mode] || info['login'];
+}
+
+// 校验登录后跳转地址：仅允许站内相对路径，非法回退默认页
+function getSafeReturnTo(returnTo, source) {
+  if (typeof returnTo === 'string' && returnTo.length > 0 && returnTo.length <= 500
+    && returnTo.startsWith('/') && !returnTo.startsWith('//')
+    && !returnTo.includes('\\') && !returnTo.includes('://')) {
+    return returnTo;
+  }
+  return source === 'image-share' ? '/image-share' : '/';
+}
+
+// 检查是否需要图形验证码（该 IP 一小时内登录失败达到阈值）
+function isCaptchaRequired(db, ip) {
+  const recentFails = queryOne(db,
+    "SELECT COUNT(*) as count FROM activity_logs WHERE ip = ? AND action = 'login_fail' AND created_at >= datetime('now', '-1 hour')",
+    [ip]
+  )?.count || 0;
+  return recentFails >= 3;
 }
 
 // 辅助函数：绑定OAuth到新注册用户
@@ -189,7 +221,7 @@ router.get('/:source/login', (req, res) => {
     return res.redirect('/');
   }
   const db = req.db;
-  const siteName = getSiteName(db, source);
+  const { siteName, siteDescription, icpNumber } = getSiteMeta(db, source);
   const modeInfo = getModeInfo('login', source);
 
   // 获取启用的第三方登录配置
@@ -202,12 +234,26 @@ router.get('/:source/login', (req, res) => {
   const privacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'privacy_policy'");
   const oauthPrivacy = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'oauth_privacy_policy'");
 
+  // 登录失败达到阈值时显示图形验证码
+  const captchaRequired = isCaptchaRequired(db, req.ip);
+  let captchaSvg = '';
+  if (captchaRequired) {
+    const captcha = generateCaptcha();
+    req.session.captchaText = captcha.text;
+    req.session.captchaExpires = Date.now() + 5 * 60 * 1000;
+    captchaSvg = captcha.data;
+  }
+
+  const returnTo = getSafeReturnTo(req.query.returnTo, source);
+
   res.render('auth/auth-page', { layout: false,
     source,
     mode: 'login',
     modeTitle: modeInfo.title,
     modeSubtitle: modeInfo.subtitle,
     siteName,
+    siteDescription,
+    icpNumber,
     error: req.query.error || null,
     success: req.query.success || null,
     user: req.session.user || null,
@@ -218,7 +264,10 @@ router.get('/:source/login', (req, res) => {
     privacyPolicy: privacy ? privacy.setting_value : '',
     oauthPrivacyPolicy: oauthPrivacy ? oauthPrivacy.setting_value : '',
     oauthProviders,
-    csrfToken: req.csrfToken ? req.csrfToken() : ''
+    captchaRequired,
+    captchaSvg,
+    returnTo,
+    csrfToken: req.session.doubleSubmitToken || ''
   });
 });
 
@@ -229,7 +278,7 @@ router.get('/:source/register', (req, res) => {
     return res.redirect('/');
   }
   const db = req.db;
-  const siteName = getSiteName(db, source);
+  const { siteName, siteDescription, icpNumber } = getSiteMeta(db, source);
   const modeInfo = getModeInfo('register', source);
 
   // 获取协议内容
@@ -273,6 +322,8 @@ router.get('/:source/register', (req, res) => {
     modeTitle: modeInfo.title,
     modeSubtitle: modeInfo.subtitle,
     siteName,
+    siteDescription,
+    icpNumber,
     error: null,
     success: null,
     user: req.session.user || null,
@@ -294,7 +345,7 @@ router.get('/:source/forgot-password', (req, res) => {
     return res.redirect('/');
   }
   const db = req.db;
-  const siteName = getSiteName(db, source);
+  const { siteName, siteDescription, icpNumber } = getSiteMeta(db, source);
   const modeInfo = getModeInfo('forgot-password', source, 'email');
 
   // 生成图形验证码
@@ -309,6 +360,8 @@ router.get('/:source/forgot-password', (req, res) => {
     modeTitle: modeInfo.title,
     modeSubtitle: modeInfo.subtitle,
     siteName,
+    siteDescription,
+    icpNumber,
     error: null,
     success: null,
     user: req.session.user || null,
@@ -327,7 +380,7 @@ router.get('/:source/change-password', (req, res) => {
     return res.redirect('/');
   }
   const db = req.db;
-  const siteName = getSiteName(db, source);
+  const { siteName, siteDescription, icpNumber } = getSiteMeta(db, source);
   const modeInfo = getModeInfo('change-password', source);
   res.render('auth/auth-page', { layout: false,
     source,
@@ -335,6 +388,8 @@ router.get('/:source/change-password', (req, res) => {
     modeTitle: modeInfo.title,
     modeSubtitle: modeInfo.subtitle,
     siteName,
+    siteDescription,
+    icpNumber,
     error: null,
     success: null,
     user: req.session.user || null,
@@ -356,13 +411,15 @@ router.get('/:source/change-username', (req, res) => {
     return res.redirect('/auth/' + source + '/login');
   }
   const db = req.db;
-  const siteName = getSiteName(db, source);
+  const { siteName, siteDescription, icpNumber } = getSiteMeta(db, source);
   res.render('auth/auth-page', { layout: false,
     source,
     mode: 'change-username',
     modeTitle: '修改用户名',
     modeSubtitle: '设置一个新的用户名',
     siteName,
+    siteDescription,
+    icpNumber,
     error: null,
     success: null,
     user: req.session.user,
@@ -384,7 +441,7 @@ router.get('/:source/force-change-password', (req, res) => {
     return res.redirect('/auth/' + source + '/login');
   }
   const db = req.db;
-  const siteName = getSiteName(db, source);
+  const { siteName, siteDescription, icpNumber } = getSiteMeta(db, source);
   const modeInfo = getModeInfo('force-change-password', source);
   res.render('auth/auth-page', { layout: false,
     source,
@@ -392,6 +449,8 @@ router.get('/:source/force-change-password', (req, res) => {
     modeTitle: modeInfo.title,
     modeSubtitle: modeInfo.subtitle,
     siteName,
+    siteDescription,
+    icpNumber,
     error: null,
     success: null,
     user: req.session.user,
@@ -413,9 +472,14 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   if (!['frontend', 'image-share'].includes(source)) {
     return res.redirect('/');
   }
-  const { username, password, agree_terms, agree_privacy } = req.body;
+  const { username, password, agree_terms, agree_privacy, remember, captcha, returnTo } = req.body;
   const db = req.db;
-  const siteName = getSiteName(db, source);
+  const { siteName, siteDescription, icpNumber } = getSiteMeta(db, source);
+
+  // AJAX 请求（带 X-Requested-With 或 Accept: application/json）返回 JSON，否则渲染 HTML
+  const isAjax = req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'));
+  const safeReturnTo = getSafeReturnTo(returnTo, source);
+  const captchaRequired = isCaptchaRequired(db, req.ip);
 
   // 获取启用的第三方登录配置
   const { getEnabledProviders, initDefaultProviders } = require('./oauth');
@@ -429,14 +493,28 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
   const userAgreement = agreement ? agreement.setting_value : '';
   const privacyPolicy = privacy ? privacy.setting_value : '';
 
-  function renderLogin(errorMsg) {
+  function renderLogin(errorMsg, opts) {
+    const options = opts || {};
     const modeInfo = getModeInfo('login', source);
-    res.render('auth/auth-page', { layout: false,
+
+    // 需要验证码时保证页面带有一个新的验证码（旧的已消费/过期）
+    let captchaSvgOut = options.captchaSvg || '';
+    if (captchaRequired && !captchaSvgOut) {
+      const freshCaptcha = generateCaptcha();
+      req.session.captchaText = freshCaptcha.text;
+      req.session.captchaExpires = Date.now() + 5 * 60 * 1000;
+      captchaSvgOut = freshCaptcha.data;
+    }
+
+    const payload = {
+      layout: false,
       source,
       mode: 'login',
       modeTitle: modeInfo.title,
       modeSubtitle: modeInfo.subtitle,
       siteName,
+      siteDescription,
+      icpNumber,
       error: errorMsg,
       success: null,
       user: null,
@@ -447,17 +525,52 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
       privacyPolicy,
       oauthProviders,
       oauthPrivacyPolicy: oauthPrivacy ? oauthPrivacy.setting_value : '',
-      csrfToken: req.csrfToken ? req.csrfToken() : ''
-    });
+      captchaRequired,
+      captchaSvg: captchaSvgOut,
+      returnTo: safeReturnTo,
+      csrfToken: req.session.doubleSubmitToken || ''
+    };
+
+    if (isAjax) {
+      // 业务校验失败返回 200 + ok:false（前端按 ok 分支处理），避免控制台 4xx 噪音；限流等中间件仍返回 429
+      return res.json({
+        ok: false,
+        error: errorMsg,
+        fieldErrors: options.fieldErrors || {},
+        captchaRequired
+      });
+    }
+    return res.render('auth/auth-page', payload);
+  }
+
+  // 需要验证码时先校验（置于凭据校验之前，防止绕过）
+  if (captchaRequired) {
+    const storedCaptcha = req.session.captchaText;
+    const captchaExpires = req.session.captchaExpires;
+    let captchaOk = false;
+    if (storedCaptcha && captchaExpires && Date.now() <= captchaExpires && verifyCaptcha(captcha, storedCaptcha)) {
+      captchaOk = true;
+    }
+    delete req.session.captchaText;
+    delete req.session.captchaExpires;
+    if (!captchaOk) {
+      return renderLogin('验证码错误，请重试');
+    }
   }
 
   // 登录需要同意用户协议和隐私政策
   if (agree_terms !== '1' || agree_privacy !== '1') {
-    return renderLogin('请阅读并同意用户协议和隐私政策');
+    const fieldErrors = {};
+    if (agree_terms !== '1') fieldErrors.agree_terms = '请阅读并同意《用户协议》';
+    if (agree_privacy !== '1') fieldErrors.agree_privacy = '请阅读并同意《隐私政策》';
+    return renderLogin('请阅读并同意用户协议和隐私政策', { fieldErrors });
   }
 
   if (!username || !password) {
-    return renderLogin('请输入用户名和密码');
+    const fieldErrors = {};
+    if (!username) fieldErrors.username = '请输入用户名';
+    if (!password) fieldErrors.password = '请输入密码';
+    return renderLogin('请输入用户名和密码', { fieldErrors });
   }
 
   const user = queryOne(db, 'SELECT * FROM users WHERE username = ?', [username]);
@@ -581,24 +694,27 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
     avatar: user.avatar || '/assets/images/default-avatar.png'
   };
 
+  // 记住登录：勾选后会话保持 30 天（不勾保持默认 24 小时）
+  if (remember === '1' || remember === 'on') {
+    req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+  }
+
   delete req.session.doubleSubmitToken;
 
   // 如果用户被标记为需要修改密码，重定向到修改密码页面
   if (user.must_change_password === 1) {
     db.run('UPDATE users SET must_change_password = 0 WHERE id = ?', [user.id]);
     saveDatabase();
-    return res.redirect('/auth/' + source + '/force-change-password');
+    const forceUrl = '/auth/' + source + '/force-change-password';
+    return isAjax ? res.json({ ok: true, redirect: forceUrl }) : res.redirect(forceUrl);
   }
 
-  // 根据来源重定向
-  if (source === 'image-share') {
-    return res.redirect('/image-share');
+  if (isAjax) {
+    return res.json({ ok: true, redirect: safeReturnTo });
   }
 
-  // 登录后统一跳转至前台首页，不再默认进入后台
-  // 用户仍可通过导航或直接访问 /admin 进入后台管理界面
-  // 后台访问权限由 canAccessAdmin 中间件控制，无权限选项自动隐藏
-  return res.redirect('/');
+  // 登录后跳转来源页（getSafeReturnTo 已保证仅站内路径，无 returnTo 时回退默认页）
+  return res.redirect(safeReturnTo);
 });
 
 // 处理注册

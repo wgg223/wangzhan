@@ -99,6 +99,12 @@ router.get('/account', isAuthenticated, (req, res) => {
     'SELECT provider_key, name FROM ai_image_providers ORDER BY sort_order ASC, id ASC');
   const aiUserKeys = getUserProviderKeys(db, userId);
 
+  // 生成/复用 CSRF 令牌（供解绑等 JSON POST 使用），layout 的 meta 标签自动读取
+  if (!req.session.doubleSubmitToken) {
+    req.session.doubleSubmitToken = crypto.randomBytes(32).toString('hex');
+  }
+  res.locals.csrfToken = req.session.doubleSubmitToken;
+
   res.render('frontend/account', {
     user: req.session.user,
     settings,
@@ -355,6 +361,12 @@ router.post('/account/avatar', isAuthenticated, avatarUpload.single('avatar'), (
 
 // 解除第三方绑定
 router.post('/account/unbind/:provider', isAuthenticated, (req, res) => {
+  // CSRF 校验（双提交 Cookie 模式）：请求头必须与会话令牌一致
+  const submittedToken = req.headers['x-csrf-token'];
+  if (!submittedToken || submittedToken !== req.session.doubleSubmitToken) {
+    return res.status(403).json({ success: false, error: '安全验证失败，请刷新页面后重试' });
+  }
+
   const db = req.db;
   const userId = req.session.user.id;
   const { provider } = req.params;

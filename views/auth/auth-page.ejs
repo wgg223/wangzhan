@@ -4,16 +4,40 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= modeTitle %> - <%= siteName %></title>
-  <meta name="csrf-token" content="<%= csrfToken %>">
+  <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+  <script>
+    // 暗色模式引导：与 main.js 使用同一 localStorage key，保证认证页与主站主题一致
+    (function() {
+      try {
+        if (localStorage.getItem('theme') === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/auth.css') : '/css/auth.css' %>">
 </head>
-<body class="auth-page <%= source %>-theme">
-  <div class="auth-container">
-    <div class="auth-header">
-      <h1><%= siteName %></h1>
-      <p><%= modeSubtitle %></p>
-    </div>
+<body class="auth-page <%= source %>-theme" data-mode="<%= mode %>">
+  <div class="auth-shell">
+    <!-- 品牌面板 -->
+    <aside class="auth-brand">
+      <div class="auth-brand-badge" aria-hidden="true"><span><%= siteName.charAt(0) %></span></div>
+      <h1 class="auth-brand-name"><%= siteName %></h1>
+      <% if (typeof siteDescription !== 'undefined' && siteDescription) { %>
+        <p class="auth-brand-desc"><%= siteDescription %></p>
+      <% } %>
+      <% if (typeof icpNumber !== 'undefined' && icpNumber) { %>
+        <p class="auth-brand-icp"><%= icpNumber %></p>
+      <% } %>
+    </aside>
+
+    <!-- 表单卡片 -->
+    <main class="auth-card">
+      <header class="auth-card-header">
+        <h2><%= modeTitle %></h2>
+        <p><%= modeSubtitle %></p>
+      </header>
     
     <% if (error) { %>
       <div class="auth-alert auth-alert-error">
@@ -28,27 +52,37 @@
       </div>
     <% } %>
 
+    <div class="auth-alert auth-alert-error" id="authErrorAlert" style="display: none;">
+      <i class="fas fa-exclamation-circle"></i>
+      <span id="authErrorText"></span>
+    </div>
+
     <!-- 登录表单 -->
     <% if (mode === 'login') { %>
-      <form action="/auth/<%= source %>/login" method="POST" class="auth-form" id="loginForm">
+      <form action="/auth/<%= source %>/login" method="POST" class="auth-form" id="loginForm" novalidate>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <div class="form-group">
+        <% if (typeof returnTo !== 'undefined' && returnTo) { %>
+          <input type="hidden" name="returnTo" value="<%= returnTo %>">
+        <% } %>
+        <div class="form-group" id="group-username">
           <label for="username">用户名</label>
-          <input type="text" id="username" name="username" class="auth-input" placeholder="请输入用户名" required value="<%= typeof username !== 'undefined' ? username : '' %>">
+          <input type="text" id="username" name="username" class="auth-input" placeholder="请输入用户名" required value="<%= typeof username !== 'undefined' ? username : '' %>" autocomplete="username">
+          <div class="field-error" id="err-username"></div>
         </div>
         
-        <div class="form-group">
+        <div class="form-group" id="group-password">
           <label for="password">密码</label>
           <div class="password-field">
-            <input type="password" id="password" name="password" class="auth-input" placeholder="请输入密码" required>
-            <button type="button" class="toggle-password" onclick="togglePassword('password')">
+            <input type="password" id="password" name="password" class="auth-input" placeholder="请输入密码" required autocomplete="current-password">
+            <button type="button" class="toggle-password" onclick="togglePassword('password')" aria-label="显示密码">
               <i class="fas fa-eye"></i>
             </button>
           </div>
+          <div class="field-error" id="err-password"></div>
         </div>
         
         <!-- 用户协议 -->
-        <div class="form-group agreement-group">
+        <div class="form-group agreement-group" id="group-agree">
           <label class="auth-checkbox-label">
             <input type="checkbox" id="loginAgreeTerms" name="agree_terms" value="1" required>
             <span>我已阅读并同意
@@ -61,13 +95,31 @@
               <a href="javascript:void(0)" onclick="showAuthModal('privacy')" style="color:#2563eb;text-decoration:underline;">《隐私政策》</a>
             </span>
           </label>
+          <div class="field-error" id="err-agree"></div>
         </div>
 
         <label class="remember-me">
-          <input type="checkbox" name="remember" id="remember"> 记住密码
+          <input type="checkbox" name="remember" id="remember" value="1"> 记住登录（30 天内免登录）
         </label>
+
+        <!-- 登录失败达到阈值后显示图形验证码 -->
+        <% if (typeof captchaRequired !== 'undefined' && captchaRequired) { %>
+        <div class="form-group captcha-group" id="loginCaptchaGroup">
+          <label for="loginCaptcha">图形验证码 <span class="required">*</span></label>
+          <div class="captcha-container">
+            <div class="captcha-image-wrapper" id="loginCaptchaWrapper" onclick="refreshCaptchaCommon('loginCaptchaWrapper')" title="点击刷新验证码">
+              <%- captchaSvg %>
+            </div>
+            <button type="button" class="captcha-refresh" onclick="refreshCaptchaCommon('loginCaptchaWrapper')" title="刷新验证码">
+              <i class="fas fa-sync-alt"></i>
+            </button>
+          </div>
+          <input type="text" id="loginCaptcha" name="captcha" class="auth-input" placeholder="请输入计算结果" required maxlength="10" autocomplete="off">
+          <div class="field-error" id="err-captcha"></div>
+        </div>
+        <% } %>
         
-        <button type="submit" class="auth-btn auth-btn-primary">
+        <button type="submit" class="auth-btn auth-btn-primary" id="loginSubmitBtn">
           <i class="fas fa-sign-in-alt"></i> 登录
         </button>
       </form>
@@ -457,6 +509,7 @@
         </button>
       </form>
     <% } %>
+    </main>
   </div>
 
   <!-- 用户协议弹窗 - 仅前端站点 -->
@@ -588,59 +641,154 @@
     }
 
     <% if (mode === 'login') { %>
-    // 记住密码功能
-    function saveCredentials(username, password) {
+    // 记住登录：仅保存用户名（密码不落盘，会话保持由服务端 cookie 控制）
+    function saveUsername(username) {
       try {
         localStorage.setItem('auth_remember_<%= source %>', JSON.stringify({
-          username: btoa(unescape(encodeURIComponent(username))),
-          password: btoa(unescape(encodeURIComponent(password)))
+          username: btoa(unescape(encodeURIComponent(username || '')))
         }));
       } catch(e) {}
     }
 
-    function loadCredentials() {
+    function loadUsername() {
       try {
         var data = localStorage.getItem('auth_remember_<%= source %>');
-        if (data) {
-          var parsed = JSON.parse(data);
-          return {
-            username: decodeURIComponent(escape(atob(parsed.username))),
-            password: decodeURIComponent(escape(atob(parsed.password)))
-          };
+        if (!data) return null;
+        var parsed = JSON.parse(data);
+        var username = '';
+        if (typeof parsed.username === 'string') {
+          username = decodeURIComponent(escape(atob(parsed.username)));
+          // 旧版格式含密码：迁移为仅用户名，立即清除密码
+          if (parsed.password !== undefined) saveUsername(username);
         }
+        return username || null;
       } catch(e) {}
       return null;
     }
 
-    function clearCredentials() {
+    function clearUsername() {
       localStorage.removeItem('auth_remember_<%= source %>');
     }
 
-    // 页面加载时自动填充
+    // 页面加载时自动填充用户名
     (function() {
-      var creds = loadCredentials();
-      if (creds) {
+      var savedUsername = loadUsername();
+      if (savedUsername) {
         var usernameInput = document.getElementById('username');
-        var passwordInput = document.getElementById('password');
-        var rememberCheck = document.getElementById('remember');
-        if (usernameInput && creds.username) usernameInput.value = creds.username;
-        if (passwordInput && creds.password) passwordInput.value = creds.password;
-        if (rememberCheck) rememberCheck.checked = true;
+        if (usernameInput) usernameInput.value = savedUsername;
       }
     })();
 
-    // 表单提交处理
+    // ============ AJAX 登录 ============
+    function showAuthError(message) {
+      var alert = document.getElementById('authErrorAlert');
+      var text = document.getElementById('authErrorText');
+      if (!alert || !text) return;
+      text.textContent = message || '';
+      alert.style.display = message ? 'flex' : 'none';
+    }
+
+    function clearFieldErrors() {
+      document.querySelectorAll('.auth-form .field-error').forEach(function(el) {
+        el.textContent = '';
+      });
+      document.querySelectorAll('.auth-form .has-error').forEach(function(el) {
+        el.classList.remove('has-error');
+      });
+    }
+
+    function applyFieldErrors(fieldErrors) {
+      var errorMap = {
+        username: 'err-username',
+        password: 'err-password',
+        captcha: 'err-captcha',
+        agree_terms: 'err-agree',
+        agree_privacy: 'err-agree'
+      };
+      Object.keys(fieldErrors).forEach(function(field) {
+        var msg = fieldErrors[field];
+        if (!msg) return;
+        var errorEl = document.getElementById(errorMap[field]);
+        if (errorEl) errorEl.textContent = msg;
+        var input = loginForm.querySelector('[name="' + field + '"]');
+        if (input) input.classList.add('has-error');
+      });
+    }
+
+    // 登录失败次数达标后动态插入验证码（复用 /auth/captcha 刷新）
+    function ensureLoginCaptcha() {
+      if (document.getElementById('loginCaptchaGroup')) {
+        refreshCaptchaCommon('loginCaptchaWrapper');
+        return;
+      }
+      var group = document.createElement('div');
+      group.className = 'form-group captcha-group';
+      group.id = 'loginCaptchaGroup';
+      group.innerHTML =
+        '<label for="loginCaptcha">图形验证码 <span class="required">*</span></label>' +
+        '<div class="captcha-container">' +
+          '<div class="captcha-image-wrapper" id="loginCaptchaWrapper" onclick="refreshCaptchaCommon(\'loginCaptchaWrapper\')" title="点击刷新验证码"></div>' +
+          '<button type="button" class="captcha-refresh" onclick="refreshCaptchaCommon(\'loginCaptchaWrapper\')" title="刷新验证码"><i class="fas fa-sync-alt"></i></button>' +
+        '</div>' +
+        '<input type="text" id="loginCaptcha" name="captcha" class="auth-input" placeholder="请输入计算结果" required maxlength="10" autocomplete="off">' +
+        '<div class="field-error" id="err-captcha"></div>';
+      var submitBtn = document.getElementById('loginSubmitBtn');
+      loginForm.insertBefore(group, submitBtn);
+      refreshCaptchaCommon('loginCaptchaWrapper');
+    }
+
     var loginForm = document.getElementById('loginForm');
     if (loginForm) {
       loginForm.addEventListener('submit', function(e) {
         var rememberCheck = document.getElementById('remember');
         var usernameInput = document.getElementById('username');
-        var passwordInput = document.getElementById('password');
         if (rememberCheck && rememberCheck.checked) {
-          saveCredentials(usernameInput.value, passwordInput.value);
+          saveUsername(usernameInput ? usernameInput.value : '');
         } else {
-          clearCredentials();
+          clearUsername();
         }
+
+        e.preventDefault();
+        var btn = document.getElementById('loginSubmitBtn');
+        if (btn) {
+          btn.disabled = true;
+          btn.classList.add('is-loading');
+        }
+
+        fetch(loginForm.action, {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+          },
+          // FormData 会让 fetch 自动发送 multipart/form-data，服务端未解析该类型
+          // 转成 URLSearchParams 以 urlencoded 提交，与原生表单保持一致
+          body: new URLSearchParams(new FormData(loginForm))
+        })
+        .then(function(response) {
+          return response.json().catch(function() {
+            return { ok: false, error: '网络错误，请稍后重试' };
+          });
+        })
+        .then(function(data) {
+          clearFieldErrors();
+          if (data.ok && data.redirect) {
+            window.location.href = data.redirect;
+            return;
+          }
+          if (data.fieldErrors) applyFieldErrors(data.fieldErrors);
+          showAuthError(data.error || '登录失败，请重试');
+          if (data.captchaRequired) ensureLoginCaptcha();
+        })
+        .catch(function() {
+          showAuthError('请求失败，请重试');
+        })
+        .then(function() {
+          if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+          }
+        });
       });
     }
     <% } %>
@@ -701,6 +849,23 @@
         btnEl.style.opacity = '0.5';
         btnEl.style.cursor = 'not-allowed';
         btnEl.innerHTML = '请阅读协议 (<span id="' + type + 'Countdown">5</span>s)';
+      }
+    }
+
+    // 滚动到弹窗内容底部时启用「我已阅读并同意」按钮（与倒计时双保险）
+    function onModalScroll(type) {
+      var body = document.getElementById(type + 'Body');
+      var btnEl = document.getElementById(type + 'AgreeBtn');
+      if (!body || !btnEl || !btnEl.disabled) return;
+      if (body.scrollHeight - body.scrollTop - body.clientHeight <= 4) {
+        btnEl.disabled = false;
+        btnEl.style.opacity = '1';
+        btnEl.style.cursor = 'pointer';
+        btnEl.textContent = '我已阅读并同意';
+        if (modalTimers[type]) {
+          clearInterval(modalTimers[type]);
+          modalTimers[type] = null;
+        }
       }
     }
 
@@ -892,7 +1057,7 @@
         btn.style.opacity = '0.6';
       }
       
-      fetch('/oauth/auth-url/' + provider + '?source=' + encodeURIComponent(source))
+      fetch('/oauth/auth-url/' + provider + '?source=' + encodeURIComponent(source) + '&intent=login')
         .then(function(response) { return response.json(); })
         .then(function(data) {
           if (data.url) {
