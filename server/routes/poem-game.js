@@ -2,7 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { hasFrontendPermission } = require('../middlewares/auth');
+const { createRateLimiter } = require('../middlewares/rate-limiter');
 const { getSettings } = require('../utils/settings');
+
+// 排行榜提交限流：每 IP 1 分钟 30 次，防止刷榜
+const scoreSubmitLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => req.ip,
+  message: '提交过于频繁，请稍后再试'
+});
 
 // 古诗词游戏页面
 router.get('/', hasFrontendPermission('poem-game.access'), (req, res) => {
@@ -49,16 +58,26 @@ router.get('/api/poem-leaderboard', (req, res) => {
 });
 
 // 提交分数到排行榜
-router.post('/api/poem-leaderboard', (req, res) => {
+router.post('/api/poem-leaderboard', scoreSubmitLimiter, (req, res) => {
   const db = req.db;
   const {
     game_mode, difficulty, category,
     score, combo_max, correct_count, total_count, duration
   } = req.body;
 
+  // 记录提交参数到日志（防刷审计）
+  console.log('[poem-game] 排行榜提交参数:', JSON.stringify(req.body), 'IP:', req.ip);
+
   if (!game_mode || !difficulty || score === undefined) {
     return res.status(400).json({ success: false, error: '缺少必要参数' });
   }
+
+  // 服务端校验分数：必须为有限数字且在 0-10000 范围内，取整
+  const scoreNum = Number(score);
+  if (!Number.isFinite(scoreNum) || scoreNum < 0 || scoreNum > 10000) {
+    return res.status(400).json({ success: false, error: '分数无效（需为 0-10000 之间的数字）' });
+  }
+  const finalScore = Math.round(scoreNum);
 
   const username = req.session.user ? req.session.user.username : (req.body.username || '匿名用户');
   const userId = req.session.user ? req.session.user.id : null;
@@ -66,7 +85,7 @@ router.post('/api/poem-leaderboard', (req, res) => {
   db.run(
     `INSERT INTO poem_leaderboard (user_id, username, game_mode, difficulty, category, score, combo_max, correct_count, total_count, duration)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [userId, username, game_mode, difficulty || 'easy', category || '全部', score || 0, combo_max || 0, correct_count || 0, total_count || 0, duration || 0]
+    [userId, username, game_mode, difficulty || 'easy', category || '全部', finalScore, combo_max || 0, correct_count || 0, total_count || 0, duration || 0]
   );
 
   saveDatabase();
@@ -80,7 +99,7 @@ router.post('/api/poem-leaderboard', (req, res) => {
   res.json({
     success: true,
     message: '分数已记录到排行榜',
-    bestScore: bestScore ? bestScore.best : score
+    bestScore: bestScore ? bestScore.best : finalScore
   });
 });
 

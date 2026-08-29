@@ -9,6 +9,31 @@ const { PROJECT_DEFINITIONS, DEPENDENT_TABLES } = require('../config/constants')
 const fsSafe = require('./fs-safe');
 const logger = require('./logger');
 
+// 表名白名单：只允许对实际存在的业务表做拼接查询/删除，防止表名注入
+const TABLE_WHITELIST = new Set([
+  'app_setup', 'users', 'pages', 'articles', 'article_drafts', 'tags', 'content_tags',
+  'content_versions', 'media', 'settings', 'permissions', 'user_permissions',
+  'permission_applications', 'comments', 'novels', 'novel_chapters', 'media_comments',
+  'activity_logs', 'poem_leaderboard', 'image_categories', 'images', 'image_logs',
+  'image_configs', 'image_comments', 'image_favorites', 'image_tags', 'image_tag_relations',
+  'image_shares', 'internal_messages', 'user_follows', 'notifications', 'content_likes',
+  'community_posts', 'community_post_comments', 'conversations', 'private_messages',
+  'user_message_settings', 'projects', 'ai_conversations', 'ai_messages', 'ai_world_book',
+  'ai_memories', 'ai_branches', 'ai_chat_providers', 'oauth_providers', 'user_oauth_bindings',
+  'ai_roles', 'ai_quota', 'ai_models', 'ai_settings', 'ai_knowledge_docs', 'ai_knowledge_chunks',
+  'prompt_sections', 'prompt_categories', 'prompts', 'prompt_comments', 'article_attachments',
+  'api_tokens', 'api_access_logs', 'ai_image_providers', 'ai_image_records', 'ai_image_user_keys'
+]);
+
+/**
+ * 校验表名是否在白名单内
+ * @param {string} t - 表名
+ * @returns {boolean}
+ */
+function isAllowedTable(t) {
+  return TABLE_WHITELIST.has(t);
+}
+
 /**
  * 获取项目信息（优先从数据库读取，后备使用硬编码定义）
  * @param {Object} db - 数据库实例
@@ -78,6 +103,9 @@ function getProjectStats(db, tables) {
   let totalRecords = 0;
   tables.forEach(table => {
     try {
+      if (!isAllowedTable(table)) {
+        throw new Error('非法表名: ' + table);
+      }
       const count = queryOne(db, `SELECT COUNT(*) as count FROM ${table}`);
       stats[table] = count ? count.count : 0;
       totalRecords += stats[table];
@@ -268,5 +296,7 @@ module.exports = {
   isValidGithubUrl,
   parseGithubUrl,
   deployFromGithub,
-  getDeployStatus
+  getDeployStatus,
+  TABLE_WHITELIST,
+  isAllowedTable
 };

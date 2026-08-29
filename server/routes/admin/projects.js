@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
-const { getProjectInfo, getProjectStats, cleanProjectFiles, deployFromGithub, getDeployStatus, isValidGithubUrl, getAllProjectDefinitions } = require('../../utils/project-utils');
+const { getProjectInfo, getProjectStats, cleanProjectFiles, deployFromGithub, getDeployStatus, isValidGithubUrl, getAllProjectDefinitions, isAllowedTable } = require('../../utils/project-utils');
 const { DEPENDENT_TABLES } = require('../../config/constants');
 const { renderError } = require('../../utils/response');
 
@@ -251,6 +251,7 @@ router.post('/projects/api/:id/reset', isAuthenticated, isSuperAdmin, async (req
 
   dependentTables.forEach(table => {
     try {
+      if (!isAllowedTable(table)) throw new Error('非法表名: ' + table);
       const count = queryOne(db, 'SELECT COUNT(*) as count FROM ' + table);
       db.run('DELETE FROM ' + table);
       deletedRecords[table] = count ? count.count : 0;
@@ -261,6 +262,7 @@ router.post('/projects/api/:id/reset', isAuthenticated, isSuperAdmin, async (req
 
   mainTables.forEach(table => {
     try {
+      if (!isAllowedTable(table)) throw new Error('非法表名: ' + table);
       const count = queryOne(db, 'SELECT COUNT(*) as count FROM ' + table);
       db.run('DELETE FROM ' + table);
       deletedRecords[table] = count ? count.count : 0;

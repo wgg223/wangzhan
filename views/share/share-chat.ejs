@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= state === 'ok' ? (title || 'AI 对话分享') : '内容不可用' %></title>
+  <meta name="robots" content="noindex, nofollow">
+  <% if (state === 'ok') { %>
+    <meta property="og:title" content="<%= title || 'AI 对话分享' %>">
+    <meta property="og:description" content="一段与 AI 的对话分享，共 <%= messages.length %> 条消息">
+    <meta property="og:type" content="website">
+  <% } %>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f5f7fa; color: #333; min-height: 100vh; }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 20px 16px 40px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.06); overflow: hidden; margin-bottom: 16px; }
+    .head { padding: 16px 18px; border-bottom: 1px solid #eee; }
+    .head h1 { font-size: 17px; word-break: break-all; }
+    .head .meta { font-size: 12px; color: #999; margin-top: 6px; }
+    .head .meta span { margin-right: 14px; }
+    .msg { display: flex; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #f3f4f6; }
+    .msg:last-child { border-bottom: none; }
+    .avatar { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #fff; background: linear-gradient(135deg, #6366f1, #4f46e5); }
+    .msg.user .avatar { background: #3b82f6; }
+    .msg-body { flex: 1; min-width: 0; }
+    .msg-name { font-size: 12px; color: #999; margin-bottom: 3px; }
+    .msg-content { font-size: 14px; line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
+    .tip { font-size: 12px; color: #aaa; text-align: center; margin-top: 10px; }
+    .footer { text-align: center; color: #aaa; font-size: 12px; padding: 12px 0; }
+    .empty { padding: 40px 20px; text-align: center; color: #999; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <% if (state === 'ok') { %>
+      <div class="card">
+        <div class="head">
+          <h1><%= title %></h1>
+          <div class="meta">
+            <span>👤 <%= ownerName %></span>
+            <span>👁 <%= share.view_count %> 次查看</span>
+            <span>🎭 <%= roleName %></span>
+          </div>
+        </div>
+        <% if (messages.length) { %>
+          <% messages.forEach(function(m) { %>
+          <div class="msg <%= m.role === 'user' ? 'user' : '' %>">
+            <div class="avatar"><%= m.role === 'user' ? '🧑' : '🤖' %></div>
+            <div class="msg-body">
+              <div class="msg-name"><%= m.role === 'user' ? '我' : roleName %><% if (m.status === 'stopped') { %>（已停止）<% } %></div>
+              <div class="msg-content"><%= m.content || '' %></div>
+            </div>
+          </div>
+          <% }) %>
+        <% } else { %>
+          <div class="empty">这段对话还没有消息</div>
+        <% } %>
+      </div>
+      <div class="tip">分享自 <%= baseUrl %></div>
+    <% } else { %>
+      <div class="card">
+        <div style="padding:60px 20px;text-align:center;">
+          <div style="font-size:46px;color:#ccc;margin-bottom:14px;">🔒</div>
+          <h2 style="font-size:18px;color:#666;margin-bottom:8px;">内容已下架或链接失效</h2>
+          <p style="font-size:13px;color:#999;">该分享链接不存在、已被停用，或内容已删除</p>
+        </div>
+      </div>
+    <% } %>
+    <div class="footer">AI 对话分享</div>
+  </div>
+</body>
+</html>

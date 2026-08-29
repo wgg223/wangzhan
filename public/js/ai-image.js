@@ -12,6 +12,7 @@
   var stylePresets = data.stylePresets || {};
   var canPickPrompt = !!data.canPickPrompt;
   var canShare = !!data.canShare;
+  var canShareLink = !!data.canShareLink;
   var currentPage = 1;
   var totalPages = 1;
   var generating = false;
@@ -133,7 +134,11 @@
     modalMask: document.getElementById('aiimgModalMask'),
     modalClose: document.getElementById('aiimgModalClose'),
     promptSearch: document.getElementById('aiimgPromptSearch'),
-    promptList: document.getElementById('aiimgPromptList')
+    promptList: document.getElementById('aiimgPromptList'),
+    shareMask: document.getElementById('aiimgShareMask'),
+    shareClose: document.getElementById('aiimgShareClose'),
+    shareUrl: document.getElementById('aiimgShareUrl'),
+    shareCopy: document.getElementById('aiimgShareCopy')
   };
 
   if (!providers.length) {
@@ -557,6 +562,7 @@
         '<div class="aiimg-result-actions">' +
         '<a class="aiimg-btn aiimg-btn-sm" href="' + escapeHtml(img.url) + '" download target="_blank" rel="noopener">⬇️ 下载</a>' +
         (canShare ? '<button type="button" class="aiimg-btn aiimg-btn-sm aiimg-share" data-url="' + escapeHtml(img.url) + '">📤 分享</button>' : '') +
+        (canShareLink ? '<button type="button" class="aiimg-btn aiimg-btn-sm aiimg-share-link" data-url="' + escapeHtml(img.url) + '">🔗 分享链接</button>' : '') +
         '</div></div>';
     });
     html += '</div>';
@@ -566,6 +572,52 @@
         shareImage(btn.getAttribute('data-url'));
       });
     });
+    els.results.querySelectorAll('.aiimg-share-link').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        shareLinkByImage(btn.getAttribute('data-url'));
+      });
+    });
+  }
+
+  // ============ 分享链接（免登录查看，下载需登录） ============
+  function shareLinkByImage(imageUrl) {
+    findRecordByImage(imageUrl, function(rec) {
+      if (!rec) {
+        showToast('未找到对应生成记录', 'warning');
+        return;
+      }
+      createShareLink(rec.id);
+    });
+  }
+
+  function createShareLink(recordId) {
+    csrfFetch('/share/api/create', {
+      method: 'POST',
+      body: JSON.stringify({ source_type: 'ai_image', source_id: recordId })
+    }, 20000).then(function(json) {
+      if (json.success) {
+        showShareLinkModal(json.url);
+        loadHistory(currentPage);
+      } else {
+        showToast(json.error || '创建分享链接失败', 'error');
+      }
+    }).catch(function() {
+      showToast('创建分享链接失败，请稍后重试', 'error');
+    });
+  }
+
+  function showShareLinkModal(shareUrl) {
+    if (!els.shareMask || !els.shareUrl) return;
+    var fullUrl = location.origin + shareUrl;
+    els.shareUrl.value = fullUrl;
+    els.shareMask.style.display = 'flex';
+    els.shareUrl.focus();
+    els.shareUrl.select();
+    if (els.shareCopy) {
+      els.shareCopy.onclick = function() {
+        copyToClipboard(fullUrl, '分享链接已复制');
+      };
+    }
   }
 
   // ============ 分享到图片分享 ============
@@ -638,6 +690,7 @@
           actions = '<div class="aiimg-history-actions">' +
             '<a class="aiimg-btn aiimg-btn-sm" href="' + escapeHtml(r.image_path) + '" download target="_blank" rel="noopener">下载</a>' +
             (r.shared || !canShare ? '' : '<button type="button" class="aiimg-btn aiimg-btn-sm aiimg-history-share" data-id="' + r.id + '">分享</button>') +
+            (canShareLink ? '<button type="button" class="aiimg-btn aiimg-btn-sm aiimg-history-sharelink" data-id="' + r.id + '">🔗 分享链接</button>' : '') +
             '</div>';
         }
         html += '<div class="aiimg-history-item">' + thumb +
@@ -665,6 +718,11 @@
           }).catch(function() {
             showToast('分享请求失败', 'error');
           });
+        });
+      });
+      els.history.querySelectorAll('.aiimg-history-sharelink').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          createShareLink(parseInt(btn.getAttribute('data-id'), 10));
         });
       });
       // 分页
@@ -838,6 +896,17 @@
       if (e.target === els.modalMask) closeModal();
     });
   }
+  // 分享链接弹窗关闭
+  if (els.shareMask) {
+    els.shareMask.addEventListener('click', function(e) {
+      if (e.target === els.shareMask) els.shareMask.style.display = 'none';
+    });
+  }
+  if (els.shareClose) {
+    els.shareClose.addEventListener('click', function() {
+      els.shareMask.style.display = 'none';
+    });
+  }
   if (els.promptSearch) {
     els.promptSearch.addEventListener('input', function() {
       promptFilter = els.promptSearch.value;
@@ -847,6 +916,7 @@
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       closeModal();
+      if (els.shareMask) els.shareMask.style.display = 'none';
     }
   });
 

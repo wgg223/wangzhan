@@ -605,7 +605,7 @@ router.get('/api/community/posts/:id', (req, res) => {
       `SELECT p.*, u.username, u.nickname, u.avatar, u.uid as user_uid
        FROM community_posts p
        JOIN users u ON p.user_id = u.id
-       WHERE p.id = ?`,
+       WHERE p.id = ? AND p.status != 'deleted'`,
       [postId]
     );
 

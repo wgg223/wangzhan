@@ -1,5 +1,6 @@
-const { queryOne, getDb } = require('../config/database');
+const { queryOne, queryAll, getDb } = require('../config/database');
 const { findTokenRecord, touchToken } = require('../config/tokens');
+const { logActivity } = require('../config/activity');
 
 /**
  * API Token 鉴权中间件（给原生 App 使用）
@@ -27,7 +28,7 @@ function apiAuth(req, res, next) {
 
     const user = queryOne(
       db,
-      'SELECT id, uid, username, nickname, avatar, role, status, email, bio, image_no_review FROM users WHERE id = ?',
+      'SELECT id, uid, username, nickname, avatar, role, status, email, bio, image_no_review, token_version FROM users WHERE id = ?',
       [record.user_id]
     );
     if (!user) {
@@ -35,6 +36,11 @@ function apiAuth(req, res, next) {
     }
     if (user.status !== 'active') {
       return res.status(403).json({ error: '账号已被禁用' });
+    }
+
+    // token 版本校验：改密/强制下线后版本递增，旧 token 一律失效
+    if ((record.token_version || 0) !== (user.token_version || 0)) {
+      return res.status(401).json({ error: '登录已失效，请重新登录' });
     }
 
     touchToken(db, token);
@@ -61,4 +67,137 @@ function apiRequireAdmin(req, res, next) {
   return res.status(403).json({ error: '需要管理员权限' });
 }
 
-module.exports = { apiAuth, apiRequireAdmin };
+/**
+ * API 细粒度权限校验：super_admin 拥有所有权限；
+ * 其他用户需在 user_permissions 表中被授予对应 perm_key。
+ * 与 web 版 hasPermission 对齐，但返回 JSON 403 而非重定向。
+ * 支持精确匹配与通配符匹配（articles.* 覆盖 articles.xxx）。
+ */
+function apiRequirePermission(permKey) {
+  return (req, res, next) => {
+    const user = req.apiUser;
+    if (!user) {
+      return res.status(401).json({ error: '未登录' });
+    }
+    // super_admin 拥有所有权限
+    if (user.role === 'super_admin') {
+      return next();
+    }
+    const db = getDb();
+    if (!db) {
+      return res.status(503).json({ error: '数据库暂时不可用' });
+    }
+    const userPerms = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [user.id]);
+    const keys = (userPerms || []).map((p) => p.perm_key);
+    // 精确匹配
+    if (keys.includes(permKey)) {
+      return next();
+    }
+    // 通配符匹配：articles.* 覆盖 articles.xxx
+    const parts = permKey.split('.');
+    if (keys.includes(parts[0] + '.*')) {
+      return next();
+    }
+    return res.status(403).json({ error: '权限不足：需要 ' + permKey });
+  };
+}
+
+/**
+ * API 超级管理员校验（返回 JSON 403）
+ */
+function apiRequireSuperAdmin(req, res, next) {
+  const user = req.apiUser;
+  if (user && user.role === 'super_admin') {
+    return next();
+  }
+  return res.status(403).json({ error: '需要超级管理员权限' });
+}
+
+/**
+ * API 管理端审计中间件：在 apiAuth 之后挂载，
+ * 对所有非 GET 请求记录操作日志（修复 API 管理操作审计全盲问题）。
+ * 已显式调用 logActivity 的路由会产生一条额外的概览记录，不影响审计完整性。
+ */
+function apiAdminAudit(req, res, next) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  const user = req.apiUser;
+  if (!user) {
+    return next();
+  }
+
+  const reqPath = req.path;
+  let targetType = 'system';
+  let action = req.method.toLowerCase();
+
+  if (reqPath.includes('/users')) {
+    targetType = 'user';
+    if (reqPath.includes('/reset-password')) action = 'reset_password';
+    else if (reqPath.includes('/permissions')) action = 'update_permissions';
+    else if (req.method === 'POST') action = 'create';
+    else if (req.method === 'DELETE') action = 'delete';
+    else if (req.method === 'PUT') action = 'update';
+  } else if (reqPath.includes('/articles')) {
+    targetType = 'article';
+    if (req.method === 'DELETE') action = 'delete';
+    else if (req.method === 'PUT') action = 'update_status';
+  } else if (reqPath.includes('/comments')) {
+    targetType = 'comment';
+    if (req.method === 'DELETE') action = 'delete';
+  } else if (reqPath.includes('/categories')) {
+    targetType = 'image_category';
+    if (req.method === 'DELETE') action = 'delete';
+    else if (req.method === 'POST') action = 'create';
+  } else if (reqPath.includes('/images')) {
+    targetType = 'image';
+    if (req.method === 'DELETE') action = 'delete';
+    else if (req.method === 'PUT') action = 'update_status';
+  } else if (reqPath.includes('/novels')) {
+    targetType = 'novel';
+    if (req.method === 'DELETE') action = 'delete';
+  } else if (reqPath.includes('/media')) {
+    targetType = 'media';
+    if (req.method === 'DELETE') action = 'delete';
+  } else if (reqPath.includes('/settings')) {
+    targetType = 'setting';
+    if (req.method === 'PUT') action = 'update';
+  } else if (reqPath.includes('/backups')) {
+    targetType = 'backup';
+    if (req.method === 'POST') action = 'create';
+    else if (req.method === 'DELETE') action = 'delete';
+  } else if (reqPath.includes('/logs')) {
+    targetType = 'audit_log';
+    if (req.method === 'DELETE') action = 'delete';
+  } else if (reqPath.includes('/maintenance')) {
+    targetType = 'maintenance';
+    if (req.method === 'POST') action = 'toggle';
+  }
+
+  const idMatch = reqPath.match(/\/(\d+)/);
+  const targetId = idMatch ? idMatch[1] : '';
+
+  try {
+    const db = getDb();
+    if (db) {
+      logActivity(db, {
+        user_id: user.id,
+        username: user.username,
+        action,
+        target_type: targetType,
+        target_id: targetId,
+        target_title: '',
+        detail: 'API ' + req.method + ' ' + reqPath,
+        ip: req.ip,
+        route: reqPath,
+        method: req.method
+      });
+    }
+  } catch (e) {
+    console.error('[apiAdminAudit] 日志记录失败:', e.message);
+  }
+
+  next();
+}
+
+module.exports = { apiAuth, apiRequireAdmin, apiRequirePermission, apiRequireSuperAdmin, apiAdminAudit };

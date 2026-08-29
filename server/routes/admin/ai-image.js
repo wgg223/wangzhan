@@ -261,6 +261,7 @@ router.post('/ai-image/records/delete', isAuthenticated, hasPermission('imagegen
     } catch (e) { /* 文件删除失败不阻断记录删除 */ }
   }
   db.run('DELETE FROM ai_image_records WHERE id = ?', [id]);
+  db.run("DELETE FROM image_shares WHERE source_type = 'ai_image' AND source_id = ?", [id]);
   saveDatabase();
 
   logActivity(db, {

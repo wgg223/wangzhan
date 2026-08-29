@@ -83,7 +83,11 @@ function sendMail(db, options) {
         auth: {
           user: smtpConfig.user,
           pass: smtpConfig.pass
-        }
+        },
+        // 连接/读写超时，防止 SMTP 卡死时请求无限挂起
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000
       });
 
       const mailOptions = {

@@ -49,8 +49,9 @@ function maintenanceMiddleware(req, res, next) {
 
   const path = req.path;
 
-  // Allow admin routes, health check, setup, static assets, and API calls
+  // Allow admin routes, health check, setup, static assets, API calls, and XHR
   if (path.startsWith('/admin') ||
+      path.startsWith('/api/') ||
       path.startsWith('/auth') ||
       path.startsWith('/health') ||
       path.startsWith('/setup') ||

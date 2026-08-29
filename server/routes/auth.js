@@ -64,7 +64,7 @@ const { saveDatabase, queryOne, queryAll, generateUid } = require('../config/dat
 const { logActivity } = require('../config/activity');
 const { createNotification } = require('./community');
 const logger = require('../utils/logger');
-const { ROLE_HIERARCHY } = require('../middlewares/auth');
+const { ROLE_HIERARCHY, validatePassword } = require('../middlewares/auth');
 const { getSettings, getImageConfigs } = require('../utils/settings');
 const { grantDefaultPermissions } = require('../config/db-helpers');
 
@@ -528,6 +528,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
       captchaRequired,
       captchaSvg: captchaSvgOut,
       returnTo: safeReturnTo,
+      totpRequired: options.totpRequired || false,
       csrfToken: req.session.doubleSubmitToken || ''
     };
 
@@ -537,7 +538,8 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
         ok: false,
         error: errorMsg,
         fieldErrors: options.fieldErrors || {},
-        captchaRequired
+        captchaRequired,
+        totpRequired: options.totpRequired || false
       });
     }
     return res.render('auth/auth-page', payload);
@@ -651,11 +653,27 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
     return renderLogin('用户名或密码错误');
   }
 
-  // SHA-256 密码自动升级为 bcrypt
+  // 双因素认证（TOTP）：开启两步验证后必须通过
+  if (user.totp_enabled === 1) {
+    const totpCode = req.body.totp_code;
+    const challenge = req.session.totpChallenge;
+    const challengeValid = challenge && challenge.userId === user.id && challenge.expires > Date.now();
+    if (!challengeValid) {
+      // 密码已验证，建立短时会话挑战，要求输入 TOTP
+      req.session.totpChallenge = { userId: user.id, expires: Date.now() + 5 * 60 * 1000 };
+      return renderLogin('请输入两步验证码', { totpRequired: true });
+    }
+    if (!totpCode || !verifyTOTP(totpCode, user.totp_secret)) {
+      return renderLogin('两步验证码错误，请重试', { totpRequired: true, fieldErrors: { totp_code: '两步验证码错误' } });
+    }
+    delete req.session.totpChallenge;
+  }
+
+  // SHA-256 密码自动升级为 bcrypt，并要求用户设置新密码（弱哈希不再作为长期凭据）
   if (needsShaUpgrade) {
     try {
       const newHash = bcrypt.hashSync(password, 10);
-      db.run('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id]);
+      db.run('UPDATE users SET password = ?, must_change_password = 1, token_version = token_version + 1 WHERE id = ?', [newHash, user.id]);
       saveDatabase();
       logActivity(db, {
         user_id: user.id,
@@ -663,7 +681,7 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
         action: 'password_sha',
         target_type: 'password',
         target_title: '密码升级',
-        detail: `用户 ${user.username} 的 SHA-256 密码已自动升级为 bcrypt`,
+        detail: `用户 ${user.username} 的 SHA-256 密码已自动升级为 bcrypt（已要求重设密码）`,
         ip: req.ip
       });
     } catch (upgradeErr) {
@@ -684,37 +702,43 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
     });
   } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
 
-  req.session.user = {
-    id: user.id,
-    uid: user.uid || '',
-    username: user.username,
-    email: user.email,
-    nickname: user.nickname || user.username,
-    role: user.role,
-    avatar: user.avatar || '/assets/images/default-avatar.png'
-  };
+  // 重建 session 防会话固定（与 OAuth 登录路径保持一致）
+  req.session.regenerate((regErr) => {
+    if (regErr) {
+      console.error('[auth] session.regenerate 失败:', regErr.message);
+      return renderLogin('登录失败，请重试');
+    }
 
-  // 记住登录：勾选后会话保持 30 天（不勾保持默认 24 小时）
-  if (remember === '1' || remember === 'on') {
-    req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-  }
+    req.session.user = {
+      id: user.id,
+      uid: user.uid || '',
+      username: user.username,
+      email: user.email,
+      nickname: user.nickname || user.username,
+      role: user.role,
+      avatar: user.avatar || '/assets/images/default-avatar.png'
+    };
 
-  delete req.session.doubleSubmitToken;
+    // 记住登录：勾选后会话保持 30 天（不勾保持默认 24 小时）
+    if (remember === '1' || remember === 'on') {
+      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+    }
 
-  // 如果用户被标记为需要修改密码，重定向到修改密码页面
-  if (user.must_change_password === 1) {
-    db.run('UPDATE users SET must_change_password = 0 WHERE id = ?', [user.id]);
-    saveDatabase();
-    const forceUrl = '/auth/' + source + '/force-change-password';
-    return isAjax ? res.json({ ok: true, redirect: forceUrl }) : res.redirect(forceUrl);
-  }
+    // 如果用户被标记为需要修改密码，重定向到修改密码页面
+    if (user.must_change_password === 1) {
+      db.run('UPDATE users SET must_change_password = 0 WHERE id = ?', [user.id]);
+      saveDatabase();
+      const forceUrl = '/auth/' + source + '/force-change-password';
+      return isAjax ? res.json({ ok: true, redirect: forceUrl }) : res.redirect(forceUrl);
+    }
 
-  if (isAjax) {
-    return res.json({ ok: true, redirect: safeReturnTo });
-  }
+    if (isAjax) {
+      return res.json({ ok: true, redirect: safeReturnTo });
+    }
 
-  // 登录后跳转来源页（getSafeReturnTo 已保证仅站内路径，无 returnTo 时回退默认页）
-  return res.redirect(safeReturnTo);
+    // 登录后跳转来源页（getSafeReturnTo 已保证仅站内路径，无 returnTo 时回退默认页）
+    return res.redirect(safeReturnTo);
+  });
 });
 
 // 处理注册
@@ -909,8 +933,11 @@ router.post('/:source/register', registerLimiter, (req, res) => {
     return renderRegister('两次输入的密码不一致', 'info');
   }
 
-  if (!oauthPending && password.length < 8) {
-    return renderRegister('密码长度不能少于8位', 'info');
+  if (!oauthPending) {
+    const pwdCheck = validatePassword(password);
+    if (!pwdCheck.ok) {
+      return renderRegister(pwdCheck.reason, 'info');
+    }
   }
 
   if (username.length < 3 || username.length > 20) {
@@ -1280,7 +1307,7 @@ router.post('/:source/forgot-password/send-code', sendCodeLimiter, (req, res) =>
 
   const user = queryOne(db, 'SELECT id, username FROM users WHERE email = ?', [email]);
   if (!user) {
-    // 记录忘记密码失败日志 - 邮箱未注册
+    // 记录日志但不向用户泄露邮箱是否注册（防枚举）
     try {
       logActivity(db, {
         user_id: 0,
@@ -1288,11 +1315,11 @@ router.post('/:source/forgot-password/send-code', sendCodeLimiter, (req, res) =>
         action: 'forgot_send_code',
         target_type: 'password',
         target_title: '忘记密码',
-        detail: `忘记密码发送验证码失败 - 邮箱 ${email} 未注册`,
+        detail: `忘记密码发送验证码请求 - 邮箱 ${email} 未注册（已隐藏）`,
         ip: req.ip
       });
     } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
-    return renderForgotPassword('email', '该邮箱未注册', null);
+    return renderForgotPassword('verify', null, '验证码已发送到您的邮箱，请查收');
   }
 
   const code = generateCode();
@@ -1367,22 +1394,8 @@ router.post('/:source/forgot-password/reset', resetPasswordLimiter, (req, res) =
 
   const user = queryOne(db, 'SELECT * FROM users WHERE email = ?', [email]);
   if (!user) {
-    const modeInfo = getModeInfo('forgot-password', source, 'email');
-    return res.render('auth/auth-page', { layout: false,
-      source,
-      mode: 'forgot-password',
-      step: 'email',
-      modeTitle: modeInfo.title,
-      modeSubtitle: modeInfo.subtitle,
-      siteName,
-      error: '邮箱不存在',
-      success: null,
-      user: req.session.user || null,
-      username: '',
-      email: email || '',
-      userAgreement: '',
-      privacyPolicy: ''
-    });
+    // 不泄露邮箱是否注册：与验证码错误提示一致（防枚举）
+    return renderVerify('验证码错误', null);
   }
 
   if (user.reset_token !== code) {
@@ -1420,7 +1433,7 @@ router.post('/:source/forgot-password/reset', resetPasswordLimiter, (req, res) =
   }
 
   const hashedPassword = bcrypt.hashSync(new_password, 10);
-  db.run('UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+  db.run('UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL, token_version = token_version + 1 WHERE id = ?',
     [hashedPassword, user.id]);
   saveDatabase();
 
@@ -1522,7 +1535,7 @@ router.post('/:source/change-password', changePasswordLimiter, (req, res) => {
   }
 
   const hashedPassword = bcrypt.hashSync(new_password, 10);
-  db.run('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, targetUser.id]);
+  db.run('UPDATE users SET password = ?, token_version = token_version + 1 WHERE id = ?', [hashedPassword, targetUser.id]);
   saveDatabase();
 
   // 记录修改密码成功日志
@@ -1694,7 +1707,7 @@ router.post('/:source/force-change-password', changePasswordLimiter, (req, res) 
   }
 
   const hashedPassword = bcrypt.hashSync(new_password, 10);
-  db.run('UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?',
+  db.run('UPDATE users SET password = ?, must_change_password = 0, token_version = token_version + 1 WHERE id = ?',
     [hashedPassword, req.session.user.id]);
   saveDatabase();
 
@@ -1749,7 +1762,7 @@ router.post('/admin-reset-password/:userId', resetPasswordLimiter, (req, res) =>
   const newPassword = crypto.randomBytes(4).toString('hex');
   const hashedPassword = bcrypt.hashSync(newPassword, 10);
 
-  db.run('UPDATE users SET password = ?, must_change_password = 1, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+  db.run('UPDATE users SET password = ?, must_change_password = 1, reset_token = NULL, reset_token_expires = NULL, token_version = token_version + 1 WHERE id = ?',
     [hashedPassword, userId]);
   saveDatabase();
 

@@ -5,6 +5,8 @@ const { queryOne, getDb, generateUid } = require('../../config/database');
 const { issueToken, revokeToken } = require('../../config/tokens');
 const { apiAuth } = require('../../middlewares/api-auth');
 const { generateCaptcha } = require('../../config/captcha');
+const { loginLimiter } = require('../../middlewares/rate-limiter');
+const { verifyTOTP } = require('../../services/two-factor-auth');
 
 const router = express.Router();
 
@@ -13,10 +15,17 @@ const captchaStore = new Map();
 const CAPTCHA_TTL = 5 * 60 * 1000;
 const MAX_CAPTCHA_STORE = 10000;
 
+// 2FA 登录挑战（密码已验证、待 TOTP 二次确认，5分钟过期）
+const totpChallengeStore = new Map();
+const TOTP_CHALLENGE_TTL = 5 * 60 * 1000;
+
 setInterval(() => {
   const now = Date.now();
   for (const [id, record] of captchaStore.entries()) {
     if (record.expires < now) captchaStore.delete(id);
+  }
+  for (const [id, record] of totpChallengeStore.entries()) {
+    if (record.expires < now) totpChallengeStore.delete(id);
   }
 }, 10 * 60 * 1000);
 
@@ -107,12 +116,33 @@ router.post('/register', (req, res) => {
 });
 
 // ============ 登录 ============
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const db = getDb();
   const username = (req.body.username || '').trim();
   const password = req.body.password || '';
   const captchaId = (req.body.captcha_id || '').toString();
   const captchaInput = (req.body.captcha || '').toString();
+  const challengeId = (req.body.totp_challenge || '').toString();
+  const totpCode = (req.body.totp_code || '').toString();
+
+  // 2FA 第二步：凭挑战直接换 token（密码与验证码已在第一步通过）
+  if (challengeId) {
+    const challenge = totpChallengeStore.get(challengeId);
+    if (!challenge || challenge.expires < Date.now()) {
+      if (challengeId) totpChallengeStore.delete(challengeId);
+      return res.status(400).json({ error: '两步验证会话已过期，请重新登录' });
+    }
+    const u = queryOne(db, 'SELECT * FROM users WHERE id = ?', [challenge.userId]);
+    if (!u || u.status !== 'active') {
+      return res.status(401).json({ error: '账号不可用' });
+    }
+    if (!totpCode || !verifyTOTP(totpCode, u.totp_secret)) {
+      return res.status(400).json({ error: '两步验证码错误' });
+    }
+    totpChallengeStore.delete(challengeId);
+    const token = issueToken(db, u.id);
+    return res.json({ token, user: sanitizeUser(u) });
+  }
 
   if (!username || !password) {
     return res.status(400).json({ error: '请输入用户名和密码' });
@@ -131,25 +161,40 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: '用户名或密码错误' });
   }
 
-  // 兼容 SHA-256 旧密码（登录后自动升级为 bcrypt）
+  // 密码校验（bcrypt，兼容 SHA-256 旧密码并自动升级）
+  let loginOk = false;
+  let needsShaUpgrade = false;
   if (bcrypt.compareSync(password, user.password)) {
-    const token = issueToken(db, user.id);
-    return res.json({ token, user: sanitizeUser(user) });
-  }
-
-  const isSha256 = user.password && user.password.length === 64 && /^[a-f0-9]{64}$/.test(user.password);
-  if (isSha256) {
-    const crypto = require('crypto');
+    loginOk = true;
+  } else if (user.password && user.password.length === 64 && /^[a-f0-9]{64}$/.test(user.password)) {
     const shaHash = crypto.createHash('sha256').update(password).digest('hex');
     if (shaHash === user.password) {
-      const newHash = bcrypt.hashSync(password, 10);
-      db.run('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id]);
-      const token = issueToken(db, user.id);
-      return res.json({ token, user: sanitizeUser(user) });
+      loginOk = true;
+      needsShaUpgrade = true;
     }
   }
+  if (!loginOk) {
+    return res.status(400).json({ error: '用户名或密码错误' });
+  }
 
-  return res.status(400).json({ error: '用户名或密码错误' });
+  if (needsShaUpgrade) {
+    db.run('UPDATE users SET password = ?, must_change_password = 1, token_version = token_version + 1 WHERE id = ?',
+      [bcrypt.hashSync(password, 10), user.id]);
+  }
+
+  // 2FA：开启两步验证后签发挑战，客户端携 totp_challenge + totp_code 二次提交
+  if (user.totp_enabled === 1) {
+    const newChallengeId = crypto.randomBytes(8).toString('hex');
+    if (totpChallengeStore.size >= MAX_CAPTCHA_STORE) {
+      const oldest = totpChallengeStore.keys().next().value;
+      totpChallengeStore.delete(oldest);
+    }
+    totpChallengeStore.set(newChallengeId, { userId: user.id, expires: Date.now() + TOTP_CHALLENGE_TTL });
+    return res.json({ requires_totp: true, totp_challenge: newChallengeId });
+  }
+
+  const token = issueToken(db, user.id);
+  return res.json({ token, user: sanitizeUser(user) });
 });
 
 // ============ 当前用户 ============
@@ -209,7 +254,7 @@ router.put('/password', apiAuth, (req, res) => {
   }
 
   const hashed = bcrypt.hashSync(newPassword, 10);
-  db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, req.apiUser.id]);
+  db.run('UPDATE users SET password = ?, token_version = token_version + 1 WHERE id = ?', [hashed, req.apiUser.id]);
   res.json({ success: true, message: '密码已修改' });
 });
 

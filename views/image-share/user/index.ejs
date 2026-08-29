@@ -29,6 +29,9 @@
           </div>
           <div style="margin-top: 8px;">
             <a href="/image-share/user/edit?id=<%= img.id %>" class="btn btn-warning btn-sm"><i class="fas fa-edit"></i> 编辑</a>
+            <% if (canShareLink) { %>
+              <button type="button" class="btn btn-success btn-sm" onclick="openShare(<%= img.id %>)"><i class="fas fa-share-alt"></i> 分享</button>
+            <% } %>
             <form action="/image-share/user/delete" method="POST" style="display: inline;" onsubmit="return confirm('确定要删除这张图片吗？')">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
               <input type="hidden" name="id" value="<%= img.id %>">
@@ -45,6 +48,85 @@
     <p>您还没有上传过图片</p>
     <a href="/image-share/user/upload" class="btn btn-primary" style="margin-top: 15px;">去上传</a>
   </div>
+<% } %>
+
+<% if (canShareLink) { %>
+<!-- 分享链接弹窗 -->
+<div id="shareModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:1000; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:white; border-radius:10px; padding:20px; max-width:460px; width:100%;">
+    <h3 style="margin-bottom:10px;"><i class="fas fa-share-alt" style="color:#10b981;"></i> 分享链接</h3>
+    <p style="font-size:13px; color:#666; margin-bottom:12px; line-height:1.7;">将链接发送到 QQ / 微信等平台，对方无需登录即可查看图片；下载图片需登录。</p>
+    <div style="display:flex; gap:8px;">
+      <input type="text" id="shareUrlInput" readonly style="flex:1; padding:8px 10px; border:1px solid #ddd; border-radius:6px; font-size:14px;">
+      <button type="button" class="btn btn-primary" onclick="copyShareUrl()" style="white-space:nowrap;">复制</button>
+    </div>
+    <div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">
+      <button type="button" class="btn btn-sm" style="background:#eee; color:#333;" onclick="closeShareModal()">关闭</button>
+      <button type="button" class="btn btn-danger btn-sm" id="btnToggleShare" style="display:none;" onclick="toggleShare()">停用链接</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var shareToken = null;
+var shareEnabled = true;
+
+function openShare(imgId) {
+  var modal = document.getElementById('shareModal');
+  fetch('/share/api/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+    body: JSON.stringify({ source_type: 'image', source_id: imgId })
+  }).then(function(r) { return r.json(); }).then(function(json) {
+    if (json.success) {
+      shareToken = json.token;
+      shareEnabled = true;
+      document.getElementById('shareUrlInput').value = location.origin + json.url;
+      document.getElementById('btnToggleShare').style.display = 'inline-block';
+      document.getElementById('btnToggleShare').textContent = '停用链接';
+      modal.style.display = 'flex';
+    } else {
+      alert(json.error || '创建分享链接失败');
+    }
+  }).catch(function() {
+    alert('创建分享链接失败，请稍后重试');
+  });
+}
+
+function copyShareUrl() {
+  var input = document.getElementById('shareUrlInput');
+  input.select();
+  try {
+    document.execCommand('copy');
+    alert('已复制分享链接');
+  } catch (e) {
+    alert('复制失败，请手动复制');
+  }
+}
+
+function toggleShare() {
+  fetch('/share/api/' + (shareEnabled ? 'disable' : 'enable'), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+    body: JSON.stringify({ token: shareToken })
+  }).then(function(r) { return r.json(); }).then(function(json) {
+    if (json.success) {
+      shareEnabled = !shareEnabled;
+      var btn = document.getElementById('btnToggleShare');
+      btn.textContent = shareEnabled ? '停用链接' : '启用链接';
+      btn.className = shareEnabled ? 'btn btn-danger btn-sm' : 'btn btn-success btn-sm';
+    } else {
+      alert(json.error || '操作失败');
+    }
+  }).catch(function() {
+    alert('操作失败，请稍后重试');
+  });
+}
+
+function closeShareModal() {
+  document.getElementById('shareModal').style.display = 'none';
+}
+</script>
 <% } %>
 
 <%- include('../footer') %>

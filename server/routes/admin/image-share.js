@@ -115,6 +115,10 @@ router.post('/image-share/review', isAuthenticated, hasPermission('image-share.m
   const statusText = action === 'approve' ? '通过' : '驳回';
 
   db.run('UPDATE images SET status = ? WHERE id = ?', [newStatus, parseInt(id)]);
+  // 驳回时联动停用分享链接（分享页将显示已下架）
+  if (action === 'reject') {
+    db.run("UPDATE image_shares SET status = 0 WHERE source_type = 'image' AND source_id = ?", [parseInt(id)]);
+  }
   addImageLog(db, req.session.user.id, '审核图片 #' + id + '：' + statusText);
   saveDatabase();
 
@@ -138,6 +142,7 @@ router.post('/image-share/delete', isAuthenticated, hasPermission('image-share.m
   fsSafe.safeUnlinkSync(filePath);
 
   db.run('DELETE FROM images WHERE id = ?', [parseInt(id)]);
+  db.run("DELETE FROM image_shares WHERE source_type = 'image' AND source_id = ?", [parseInt(id)]);
   addImageLog(db, req.session.user.id, '删除图片 #' + id + '：' + image.title);
   saveDatabase();
 
@@ -496,6 +501,7 @@ router.post('/image-share/batch-delete', isAuthenticated, hasPermission('image-s
 
   // Delete from database
   db.run(`DELETE FROM images WHERE id IN (${placeholders})`, intIds);
+  db.run(`DELETE FROM image_shares WHERE source_type = 'image' AND source_id IN (${placeholders})`, intIds);
 
   // Delete related comments
   db.run(`DELETE FROM image_comments WHERE image_id IN (${placeholders})`, intIds);
@@ -529,6 +535,11 @@ router.post('/image-share/batch-review', isAuthenticated, hasPermission('image-s
 
   const placeholders = intIds.map(() => '?').join(',');
   db.run(`UPDATE images SET status = ? WHERE id IN (${placeholders})`, [newStatus, ...intIds]);
+
+  // 驳回时联动停用分享链接（分享页将显示已下架）
+  if (action === 'reject') {
+    db.run(`UPDATE image_shares SET status = 0 WHERE source_type = 'image' AND source_id IN (${placeholders})`, intIds);
+  }
 
   addImageLog(db, req.session.user.id, `批量${statusText} ${intIds.length} 张图片`);
   saveDatabase();
@@ -567,10 +578,13 @@ router.post('/image-share/batch-delete-categories', isAuthenticated, hasPermissi
   // Delete images in categories
   db.run(`DELETE FROM images WHERE cate_id IN (${placeholders})`, intIds);
 
-  // Delete comments for those images
+  // Delete share links of those images
   const imageIds = images.map(i => i.id);
   if (imageIds.length > 0) {
     const imgPlaceholders = imageIds.map(() => '?').join(',');
+    db.run(`DELETE FROM image_shares WHERE source_type = 'image' AND source_id IN (${imgPlaceholders})`, imageIds);
+
+    // Delete comments for those images
     db.run(`DELETE FROM image_comments WHERE image_id IN (${imgPlaceholders})`, imageIds);
   }
 

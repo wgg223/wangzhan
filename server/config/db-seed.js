@@ -71,7 +71,7 @@ function insertDefaultDataIfNeeded(db) {
     ['privacy_popup_enabled', '1'],
     ['cdn_enabled', '0'],
     ['cdn_provider', 'custom'],
-    ['cdn_base_url', 'https://dalaowang233.top'],
+    ['cdn_base_url', process.env.CDN_BASE_URL || ''],
     ['cdn_version', '1.0.0'],
     ['agreement_version', '1.0']
   ];
@@ -121,11 +121,15 @@ function insertDefaultDataIfNeeded(db) {
     ['comments.manage', '评论管理', '评论的查看、审核、编辑和删除'],
     // 图片分享管理
     ['image-share.manage', '图片分享管理', '图片的查看、上传、编辑、删除、审核、分类及用户管理'],
+    ['image-share.share', '创建分享链接', '为图片或AI生图图片生成分享链接（查看无需登录，下载需登录）'],
     // AI提示词管理
     ['prompts.manage', 'AI提示词管理', '提示词板块、分类、提示词的创建、编辑和删除'],
     // AI生图
     ['imagegen.use', 'AI生图使用', '访问AI图片生成页并生成图片'],
     ['imagegen.manage', 'AI生图管理', '后台配置AI生图服务商、密钥与每日限额，管理生成记录'],
+    // AI聊天
+    ['aichat.use', 'AI聊天使用', '访问AI聊天页并发送对话'],
+    ['aichat.manage', 'AI聊天管理', '后台配置AI聊天模型、角色、知识库与配额'],
     // 系统管理
     ['settings.manage', '系统设置', '网站基础设置、SMTP、协议、弹窗、CDN等配置'],
     ['data.manage', '数据管理', '数据备份、恢复、导入和导出'],
@@ -251,7 +255,11 @@ function insertDefaultDataIfNeeded(db) {
       JSON.stringify([]), '🤖'],
     ['ai-image', 'AI生图', '生成记录、用户自填 Key（服务商配置不随重置清除）',
       JSON.stringify(['ai_image_records', 'ai_image_user_keys']),
-      JSON.stringify(['uploads/ai-images']), '🎨']
+      JSON.stringify(['uploads/ai-images']), '🎨'],
+    ['ai_chat', 'AI聊天', '对话、消息、角色、配额、模型、世界书、记忆、分支',
+      JSON.stringify(['ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings',
+        'ai_world_book', 'ai_memories', 'ai_branches']),
+      JSON.stringify([]), '🤖']
   ];
 
   defaultProjects.forEach(([id, name, desc, tables, dirs, icon]) => {
@@ -309,6 +317,55 @@ function insertDefaultDataIfNeeded(db) {
   db.run(`UPDATE ai_image_providers SET supports_img2img = 1, default_model = 'gpt-image-1', models = ?
     WHERE provider_key = 'aihubmix' AND default_model = 'dall-e-3'`,
     [JSON.stringify(['gpt-image-1', 'dall-e-3', 'qwen-image', 'glm-image', 'doubao-seedream-4-0', 'flux-2-flex', 'wan2.7-image'])]);
+
+  // 默认 AI 聊天官方角色（INSERT OR IGNORE 幂等；user_id 为 NULL = 官方角色，仅后台可管理）
+  const defaultAiRoles = [
+    ['通用助手', 'default', 1, '你是一个乐于助人的全能 AI 助手。请用简洁、准确的中文回答用户的问题。对于不确定的内容，如实说明，不要编造。'],
+    ['角色扮演', 'rp', 2, '你是一个专业的角色扮演（RP）助手。请完全沉浸在用户设定的角色与剧情中，用第一人称扮演角色，使用符合角色身份的语气、性格与行为方式。不要跳出角色，不要解释你在扮演，直接以角色身份回应。适当推动剧情发展，主动给出有张力的回应。'],
+    ['小说写手', 'writing', 3, '你是一个小说写作助手。请根据用户的要求创作或续写小说内容：注意人物性格的一致性、情节的连贯性与细节描写；环境、动作、心理描写要生动具体；对话要符合人物身份。默认使用中文创作。'],
+    ['情感树洞', 'emotional', 4, '你是一个温暖耐心的倾听者。请先共情、理解用户的情绪，再温和地给出建议。不要评判用户，不要说教，多用开放式提问引导用户表达。回答保持温柔、简短、有温度。'],
+    ['翻译助手', 'translate', 5, '你是一个专业翻译助手。请将用户提供的内容翻译为目标语言（未指定时中英互译）。译文要准确、自然、符合目标语言的表达习惯。只需输出译文，不要添加解释。'],
+    ['编程助手', 'coding', 6, '你是一个编程专家。请用清晰、可运行的方式解答编程问题：先给出结论或代码，再简要解释关键点。代码遵循常见最佳实践，注意边界条件与错误处理。回答保持精炼。']
+  ];
+  defaultAiRoles.forEach(([name, category, sort, prompt]) => {
+    db.run(`INSERT OR IGNORE INTO ai_roles (name, category, system_prompt, is_official, user_id, sort_order)
+      VALUES (?, ?, ?, 1, NULL, ?)`, [name, category, prompt, sort]);
+  });
+
+  // 内置 AI 聊天模型提供商（OpenAI 兼容；前台选提供商自动带出端点/默认模型，填 Key 即用）
+  // 数组结构：[provider_key, name, api_base, default_model, models(JSON), api_key_url, sort_order]
+  const defaultAiChatProviders = [
+    ['deepseek', 'DeepSeek', 'https://api.deepseek.com/v1', 'deepseek-chat',
+      JSON.stringify(['deepseek-chat', 'deepseek-reasoner']), 'https://platform.deepseek.com/api_keys', 1],
+    ['openai', 'OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini',
+      JSON.stringify(['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini']), 'https://platform.openai.com/api-keys', 2],
+    ['siliconflow', '硅基流动', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V3',
+      JSON.stringify(['deepseek-ai/DeepSeek-V3', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen2.5-72B-Instruct']), 'https://cloud.siliconflow.cn/account/ak', 3],
+    ['zhipu', '智谱 GLM', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4-flash',
+      JSON.stringify(['glm-4-flash', 'glm-4-plus', 'glm-4-air']), 'https://open.bigmodel.cn/usercenter/apikeys', 4],
+    ['moonshot', 'Kimi（月之暗面）', 'https://api.moonshot.cn/v1', 'moonshot-v1-8k',
+      JSON.stringify(['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']), 'https://platform.moonshot.cn/console/api-keys', 5],
+    ['dashscope', '通义千问', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus',
+      JSON.stringify(['qwen-plus', 'qwen-turbo', 'qwen-max']), 'https://bailian.console.aliyun.com/#/api-key', 6],
+    ['hunyuan', '腾讯混元', 'https://api.hunyuan.cloud.tencent.com/v1', 'hunyuan-turbo',
+      JSON.stringify(['hunyuan-turbo', 'hunyuan-standard']), 'https://console.cloud.tencent.com/cam/capi', 7],
+    ['stepfun', '阶跃星辰', 'https://api.stepfun.com/v1', 'step-2-16k',
+      JSON.stringify(['step-2-16k', 'step-1-8k']), 'https://platform.stepfun.com/interface', 8],
+    ['minimax', 'MiniMax', 'https://api.minimaxi.com/v1', 'abab6.5s-chat',
+      JSON.stringify(['abab6.5s-chat', 'abab6.5-chat']), 'https://platform.minimaxi.com/user-center/basic-information/interface-key', 9],
+    ['doubao', '火山豆包', 'https://ark.cn-beijing.volces.com/api/v3', 'doubao-seed-1-6-250615',
+      JSON.stringify([]), 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey', 10],
+    ['aihubmix', 'AIHubMix（聚合）', 'https://aihubmix.com/v1', 'deepseek-chat',
+      JSON.stringify([]), 'https://aihubmix.com/', 11],
+    ['openrouter', 'OpenRouter（聚合）', 'https://openrouter.ai/api/v1', 'openrouter/auto',
+      JSON.stringify([]), 'https://openrouter.ai/keys', 12],
+    ['pollinations', 'Pollinations.ai（免费）', 'https://text.pollinations.ai/openai', 'openai',
+      JSON.stringify([]), '', 13]
+  ];
+  defaultAiChatProviders.forEach(([key, name, base, model, models, keyUrl, sort]) => {
+    db.run(`INSERT OR IGNORE INTO ai_chat_providers (provider_key, name, api_base, default_model, models, api_key_url, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`, [key, name, base, model, models, keyUrl, sort]);
+  });
 
   // 豆包默认模型迁移：旧版 seedream-3.0 多数账号未开通，改为 seedream-4.0（仅当仍是旧默认值时执行）
   db.run(`UPDATE ai_image_providers SET default_model = 'doubao-seedream-4-0-250828', models = ?

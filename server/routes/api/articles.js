@@ -68,7 +68,7 @@ router.get('/articles/:id', (req, res) => {
   }
 
   const attachments = queryAll(db,
-    'SELECT id, original_name AS filename, file_size AS filesize, file_path AS filepath, download_count FROM article_attachments WHERE article_id = ? ORDER BY id ASC',
+    'SELECT id, original_name AS filename, file_size AS filesize, download_count FROM article_attachments WHERE article_id = ? ORDER BY id ASC',
     [id]
   );
 

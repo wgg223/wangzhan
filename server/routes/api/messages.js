@@ -127,6 +127,11 @@ router.patch('/conversations/:id/read', apiAuth, (req, res) => {
   const db = getDb();
   const conversationId = parseInt(req.params.id);
   const userId = req.apiUser.id;
+
+  // 越权防护：仅会话成员可标记已读
+  const conv = queryOne(db, 'SELECT id FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)', [conversationId, userId, userId]);
+  if (!conv) return res.status(403).json({ error: '无权操作此会话' });
+
   db.run(
     'UPDATE private_messages SET is_read = 1 WHERE conversation_id = ? AND sender_id != ? AND is_read = 0',
     [conversationId, userId]

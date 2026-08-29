@@ -45,6 +45,10 @@ router.get('/novels/:id/chapters/:chapterId', (req, res) => {
   const novelId = parseInt(req.params.id);
   const chapterId = parseInt(req.params.chapterId);
 
+  // 安全：校验父级小说已发布，防止通过章节 ID 枚举读取未发布小说内容
+  const novel = queryOne(db, "SELECT id FROM novels WHERE id = ? AND status = 'published'", [novelId]);
+  if (!novel) return res.status(404).json({ error: '小说不存在' });
+
   const chapter = queryOne(db,
     'SELECT * FROM novel_chapters WHERE id = ? AND novel_id = ?',
     [chapterId, novelId]

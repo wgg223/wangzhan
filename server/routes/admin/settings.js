@@ -186,10 +186,24 @@ router.post('/upload-logo', isAuthenticated, isSuperAdmin, upload.single('logo')
 const fs = require('fs');
 const path = require('path');
 
+// 敏感配置项黑名单：导出时剔除、恢复时禁止覆盖
+const SENSITIVE_SETTING_KEYS = [
+  'smtp_pass', 'smtp_user', 'ai_api_key', 'ai_chat_api_key',
+  'session_secret', 'data_encryption_key', 'jwt_secret'
+];
+function isSensitiveSettingKey(key) {
+  if (!key) return true;
+  if (SENSITIVE_SETTING_KEYS.includes(key)) return true;
+  // 通配：任何以 _pass / _secret / _key / _token 结尾的 key
+  return /_(pass|secret|key|token)$/i.test(key);
+}
+
 router.get('/settings/backup', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   try {
-    const settings = queryAll(db, 'SELECT * FROM settings');
+    const allSettings = queryAll(db, 'SELECT * FROM settings');
+    // 安全：导出时剔除敏感字段（smtp_pass 等），防止备份文件泄露凭据
+    const settings = allSettings.filter(s => !isSensitiveSettingKey(s.setting_key));
     const backupDir = require('../../config/app-root').backupDir;
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
@@ -275,10 +289,16 @@ router.post('/settings/backup/restore', isAuthenticated, isSuperAdmin, (req, res
     }
 
     let restored = 0;
+    let skipped = 0;
     db.run('BEGIN TRANSACTION');
     try {
       data.settings.forEach(function(setting) {
         if (setting.setting_key && setting.setting_value !== undefined) {
+          // 安全：禁止从备份恢复敏感配置项（smtp_pass 等），防止恶意备份注入凭据
+          if (isSensitiveSettingKey(setting.setting_key)) {
+            skipped++;
+            return;
+          }
           db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?',
             [setting.setting_value, setting.setting_key]);
           restored++;
@@ -298,17 +318,17 @@ router.post('/settings/backup/restore', isAuthenticated, isSuperAdmin, (req, res
       username: req.session.user.username,
       action: 'restore',
       target_type: 'settings',
-      detail: '从备份恢复配置: ' + filename + ' (恢复 ' + restored + ' 项)',
+      detail: '从备份恢复配置: ' + filename + ' (恢复 ' + restored + ' 项, 跳过敏感项 ' + skipped + ')',
       ip: req.ip
     });
 
-    res.json({ success: true, message: '配置恢复成功', restored: restored });
+    res.json({ success: true, message: '配置恢复成功', restored: restored, skipped: skipped });
   } catch (err) {
     res.status(500).json({ error: '恢复失败: ' + err.message });
   }
 });
 
-router.delete('/settings/backup/:filename', isAuthenticated, hasPermission('data.manage'), (req, res) => {
+router.delete('/settings/backup/:filename', isAuthenticated, isSuperAdmin, (req, res) => {
   const backupDir = require('../../config/app-root').backupDir;
   const filename = req.params.filename;
   const filepath = path.join(backupDir, filename);
@@ -334,19 +354,34 @@ router.delete('/settings/backup/:filename', isAuthenticated, hasPermission('data
 router.get('/settings/oauth', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
   const db = req.db;
   const { initDefaultProviders } = require('../../routes/oauth');
+  const { decrypt } = require('../../config/crypto-secure');
   try { initDefaultProviders(db); } catch (e) { /* 忽略 */ }
 
   const providers = queryAll(db, 'SELECT * FROM oauth_providers ORDER BY sort_order ASC');
 
+  // 安全：client_secret 解密后掩码回显，不在页面源码中暴露明文
+  const MASKED = '__MASKED_OAUTH_SECRET__';
+  const maskedProviders = providers.map(p => {
+    let secret = p.client_secret || '';
+    if (secret && secret.startsWith('ENC:')) {
+      try { secret = decrypt(secret); } catch (e) { secret = ''; }
+    }
+    return {
+      ...p,
+      client_secret: secret ? MASKED : ''
+    };
+  });
+
   res.render('admin/settings-oauth', {
     user: req.session.user,
-    providers,
+    providers: maskedProviders,
     success: req.query.success === '1'
   });
 });
 
 router.post('/settings/oauth', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
   const db = req.db;
+  const { encrypt } = require('../../config/crypto-secure');
   const { provider_id, client_id, client_secret, redirect_uri, is_enabled } = req.body;
 
   // 处理多个provider的更新
@@ -356,6 +391,8 @@ router.post('/settings/oauth', isAuthenticated, hasPermission('settings.manage')
   const redirectUris = Array.isArray(redirect_uri) ? redirect_uri : [redirect_uri];
   const enabledStates = Array.isArray(is_enabled) ? is_enabled : [is_enabled];
 
+  const MASKED = '__MASKED_OAUTH_SECRET__';
+
   for (let i = 0; i < providerIds.length; i++) {
     const id = providerIds[i];
     const cid = clientIds[i] || '';
@@ -363,8 +400,16 @@ router.post('/settings/oauth', isAuthenticated, hasPermission('settings.manage')
     const ruri = redirectUris[i] || '';
     const enabled = enabledStates.includes(id) ? 1 : 0;
 
-    db.run('UPDATE oauth_providers SET client_id = ?, client_secret = ?, redirect_uri = ?, is_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [cid, csecret, ruri, enabled, id]);
+    // 掩码占位符：用户未修改该 secret，保留数据库原值（不覆盖）
+    if (csecret === MASKED) {
+      db.run('UPDATE oauth_providers SET client_id = ?, redirect_uri = ?, is_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [cid, ruri, enabled, id]);
+    } else {
+      // 新值或空值：加密后存储（空串直接存空串，不加密）
+      const storedSecret = csecret ? encrypt(csecret) : '';
+      db.run('UPDATE oauth_providers SET client_id = ?, client_secret = ?, redirect_uri = ?, is_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [cid, storedSecret, ruri, enabled, id]);
+    }
   }
 
   saveDatabase();

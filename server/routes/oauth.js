@@ -56,13 +56,22 @@ const OAUTH_CONFIGS = {
 // 获取启用的第三方登录配置
 function getEnabledProviders(db) {
   try {
+    const { decrypt } = require('../config/crypto-secure');
     const providers = queryAll(db, 'SELECT * FROM oauth_providers WHERE is_enabled = 1 ORDER BY sort_order ASC');
-    return providers.map(p => ({
-      ...p,
-      ...OAUTH_CONFIGS[p.provider],
-      provider: p.provider,
-      display_name: p.display_name || OAUTH_CONFIGS[p.provider]?.name || p.provider
-    }));
+    return providers.map(p => {
+      // 解密 client_secret（加密存储以 ENC: 前缀标识）
+      let secret = p.client_secret || '';
+      if (secret && secret.startsWith('ENC:')) {
+        try { secret = decrypt(secret); } catch (e) { secret = ''; }
+      }
+      return {
+        ...p,
+        client_secret: secret,
+        ...OAUTH_CONFIGS[p.provider],
+        provider: p.provider,
+        display_name: p.display_name || OAUTH_CONFIGS[p.provider]?.name || p.provider
+      };
+    });
   } catch (e) {
     return [];
   }
@@ -288,7 +297,8 @@ async function getUserInfo(provider, config, accessToken, openid) {
           open_id: data.id,
           nickname: data.name,
           avatar: data.picture,
-          email: data.email
+          email: data.email,
+          verified_email: data.verified_email
         };
       }
 
@@ -332,6 +342,16 @@ router.get('/callback/:provider', async (req, res) => {
   const config = queryOne(db, 'SELECT * FROM oauth_providers WHERE provider = ? AND is_enabled = 1', [provider]);
   if (!config) {
     return res.redirect('/auth/' + source + '/login?error=该登录方式未启用');
+  }
+
+  // 解密 client_secret（加密存储以 ENC: 前缀标识）
+  if (config.client_secret && config.client_secret.startsWith('ENC:')) {
+    try {
+      const { decrypt } = require('../config/crypto-secure');
+      config.client_secret = decrypt(config.client_secret);
+    } catch (e) {
+      config.client_secret = '';
+    }
   }
 
   // 获取redirect_uri（与授权链接生成处保持一致）
@@ -449,7 +469,8 @@ router.get('/callback/:provider', async (req, res) => {
   }
 
   // 未绑定，检查是否有相同邮箱的用户（仅限邮箱已验证的提供商，防止账号接管）
-  if (userInfo.email && (provider === 'github' || provider === 'google')) {
+  // Google 需额外校验 verified_email=true（未验证邮箱可能被攻击者注册同名地址）
+  if (userInfo.email && (provider === 'github' || (provider === 'google' && userInfo.verified_email === true))) {
     const existingUser = queryOne(db, 'SELECT * FROM users WHERE email = ?', [userInfo.email]);
 
     if (existingUser && existingUser.status === 'active') {

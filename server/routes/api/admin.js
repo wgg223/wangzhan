@@ -4,13 +4,13 @@ const fs = require('fs');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { queryOne, queryAll, getDb, saveDatabase, getDbPath, generateUid } = require('../../config/database');
-const { apiAuth, apiRequireAdmin } = require('../../middlewares/api-auth');
-const { ROLE_WHITELIST, canOperateUser, ensureAtLeastOneActiveSuperAdmin } = require('../../middlewares/auth');
+const { apiAuth, apiRequireAdmin, apiRequirePermission, apiRequireSuperAdmin, apiAdminAudit } = require('../../middlewares/api-auth');
+const { ROLE_WHITELIST, canOperateUser, ensureAtLeastOneActiveSuperAdmin, validatePassword } = require('../../middlewares/auth');
 const { grantDefaultPermissions } = require('../../config/db-helpers');
 const { logActivity } = require('../../config/activity');
 
 const router = express.Router();
-router.use(apiAuth, apiRequireAdmin);
+router.use(apiAuth, apiRequireAdmin, apiAdminAudit);
 
 const projectRoot = path.join(__dirname, '../../..');
 
@@ -49,7 +49,7 @@ function formatSize(bytes) {
 }
 
 // ============ 用户管理 ============
-router.get('/users', (req, res) => {
+router.get('/users', apiRequirePermission('users.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
   const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 10)));
@@ -81,7 +81,7 @@ router.get('/users', (req, res) => {
   res.json({ users: rows || [], total, page });
 });
 
-router.put('/users/:id', (req, res) => {
+router.put('/users/:id', apiRequirePermission('users.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   const user = queryOne(db, 'SELECT * FROM users WHERE id = ?', [id]);
@@ -140,8 +140,9 @@ router.post('/users', (req, res) => {
   if (username.length < 3) {
     return res.status(400).json({ error: '用户名至少3个字符' });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: '密码至少8位' });
+  const pwdCheck = validatePassword(password);
+  if (!pwdCheck.ok) {
+    return res.status(400).json({ error: pwdCheck.reason });
   }
 
   const existingUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
@@ -228,7 +229,7 @@ router.post('/users/:id/reset-password', (req, res) => {
   res.json({ success: true, message: '密码已重置', new_password: newPassword });
 });
 
-router.delete('/users/:id', (req, res) => {
+router.delete('/users/:id', apiRequirePermission('users.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   const user = queryOne(db, 'SELECT * FROM users WHERE id = ?', [id]);
@@ -249,7 +250,7 @@ router.delete('/users/:id', (req, res) => {
 });
 
 // ============ 文章管理 ============
-router.get('/articles', (req, res) => {
+router.get('/articles', apiRequirePermission('articles.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
   const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 10)));
@@ -272,7 +273,7 @@ router.get('/articles', (req, res) => {
   res.json({ articles: rows || [], total, page });
 });
 
-router.put('/articles/:id', (req, res) => {
+router.put('/articles/:id', apiRequirePermission('articles.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   const status = (req.body.status || '').trim();
@@ -284,7 +285,7 @@ router.put('/articles/:id', (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/articles/:id', (req, res) => {
+router.delete('/articles/:id', apiRequirePermission('articles.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   db.run('DELETE FROM articles WHERE id = ?', [id]);
@@ -293,7 +294,7 @@ router.delete('/articles/:id', (req, res) => {
 });
 
 // ============ 评论管理 ============
-router.get('/comments', (req, res) => {
+router.get('/comments', apiRequirePermission('comments.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
   const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 10)));
@@ -311,7 +312,7 @@ router.get('/comments', (req, res) => {
   res.json({ comments: rows || [], total, page });
 });
 
-router.delete('/comments/:id', (req, res) => {
+router.delete('/comments/:id', apiRequirePermission('comments.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   db.run('DELETE FROM comments WHERE id = ?', [id]);
@@ -320,7 +321,7 @@ router.delete('/comments/:id', (req, res) => {
 });
 
 // ============ 图片管理 ============
-router.get('/images', (req, res) => {
+router.get('/images', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
   const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 10)));
@@ -345,7 +346,7 @@ router.get('/images', (req, res) => {
   res.json({ images: rows || [], total, page });
 });
 
-router.put('/images/:id', (req, res) => {
+router.put('/images/:id', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   const status = toInt(req.body.status, -1);
@@ -357,7 +358,7 @@ router.put('/images/:id', (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/images/:id', (req, res) => {
+router.delete('/images/:id', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   const img = queryOne(db, 'SELECT * FROM images WHERE id = ?', [id]);
@@ -373,13 +374,13 @@ router.delete('/images/:id', (req, res) => {
 });
 
 // ============ 图片分类 ============
-router.get('/categories', (req, res) => {
+router.get('/categories', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const rows = queryAll(db, 'SELECT * FROM image_categories ORDER BY sort ASC, id ASC');
   res.json({ categories: rows || [] });
 });
 
-router.post('/categories', (req, res) => {
+router.post('/categories', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const name = (req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: '分类名称不能为空' });
@@ -389,7 +390,7 @@ router.post('/categories', (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/categories/:id', (req, res) => {
+router.delete('/categories/:id', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   db.run('DELETE FROM image_categories WHERE id = ?', [id]);
@@ -399,7 +400,7 @@ router.delete('/categories/:id', (req, res) => {
 });
 
 // ============ 小说管理 ============
-router.get('/novels', (req, res) => {
+router.get('/novels', apiRequirePermission('novels.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
   const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 10)));
@@ -412,7 +413,7 @@ router.get('/novels', (req, res) => {
   res.json({ novels: rows || [], total, page });
 });
 
-router.delete('/novels/:id', (req, res) => {
+router.delete('/novels/:id', apiRequirePermission('novels.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   db.run('DELETE FROM novels WHERE id = ?', [id]);
@@ -421,7 +422,7 @@ router.delete('/novels/:id', (req, res) => {
 });
 
 // ============ 设置 ============
-router.get('/settings', (req, res) => {
+router.get('/settings', apiRequirePermission('settings.manage'), (req, res) => {
   const db = getDb();
   const rows = queryAll(db, 'SELECT setting_key, setting_value FROM settings ORDER BY setting_key ASC');
   const settings = {};
@@ -431,7 +432,7 @@ router.get('/settings', (req, res) => {
   res.json({ settings });
 });
 
-router.put('/settings', (req, res) => {
+router.put('/settings', apiRequirePermission('settings.manage'), (req, res) => {
   const db = getDb();
   const values = req.body.settings;
   if (!values || typeof values !== 'object') {

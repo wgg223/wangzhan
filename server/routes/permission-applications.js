@@ -62,6 +62,7 @@ function getPermCategory(permKey) {
     'messages.manage': 'community',
     'comments.manage': 'community',
     'image-share.manage': 'image',
+    'image-share.share': 'image',
     'users.manage': 'system',
     'permissions.manage': 'system',
     'settings.manage': 'system',

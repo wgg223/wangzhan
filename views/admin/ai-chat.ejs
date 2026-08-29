@@ -1,0 +1,425 @@
+<div class="page-header">
+  <h1>🤖 AI聊天管理</h1>
+  <p class="text-muted">模型 / 角色 / 设置 / 知识库 / 配额统计</p>
+</div>
+
+<style>
+  .ai-chat-tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .ai-chat-tabs button { padding: 8px 16px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--gray-600); border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .ai-chat-tabs button.active { background: linear-gradient(135deg, var(--primary, #667eea), var(--primary-dark, #764ba2)); color: #fff; border-color: transparent; }
+  .ai-chat-panel { display: none; }
+  .ai-chat-panel.active { display: block; }
+  .ai-chat-hint { font-size: 12px; color: var(--gray-500); margin: 6px 0 14px; line-height: 1.7; }
+  .ai-chat-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; max-width: 760px; margin-bottom: 16px; }
+  .ai-chat-form .full { grid-column: 1 / -1; }
+  .ai-chat-form label { display: block; font-size: 12px; color: var(--gray-600); }
+  .ai-chat-form input, .ai-chat-form select, .ai-chat-form textarea { width: 100%; margin-top: 5px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 7px; font-size: 13px; background: var(--bg-card); color: inherit; }
+  .ai-chat-form textarea { resize: vertical; min-height: 90px; }
+  .ai-chat-actions { display: flex; gap: 8px; align-items: center; }
+  .ai-chat-msg { font-size: 12px; color: var(--success, #10b981); margin-left: 8px; }
+  .ai-chat-msg.err { color: var(--danger, #ef4444); }
+  .ai-chat-role-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--bg-card); }
+  .ai-chat-role-card h3 { font-size: 14px; margin-bottom: 4px; }
+  .ai-chat-role-card p { font-size: 12px; color: var(--gray-600); white-space: pre-wrap; line-height: 1.6; }
+  .ai-chat-role-card .ai-chat-actions { margin-top: 8px; }
+  .ai-chat-model-row { border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; background: var(--bg-card); }
+  .ai-chat-model-row .info { flex: 1; }
+  .ai-chat-model-row .info strong { font-size: 13px; }
+  .ai-chat-model-row .info span { font-size: 12px; color: var(--gray-500); margin-left: 8px; }
+  .badge-key { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(16, 185, 129, .12); color: var(--success, #10b981); }
+  .badge-nokey { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(239, 68, 68, .1); color: var(--danger, #ef4444); }
+  .badge-default { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(102, 126, 234, .15); color: var(--primary, #667eea); }
+</style>
+
+<div class="ai-chat-tabs">
+  <button type="button" class="active" data-tab="models">模型</button>
+  <button type="button" data-tab="roles">角色</button>
+  <button type="button" data-tab="settings">设置</button>
+  <button type="button" data-tab="knowledge">知识库</button>
+  <button type="button" data-tab="quota">配额统计</button>
+</div>
+
+<!-- ============ 模型 ============ -->
+<div class="ai-chat-panel active" id="tab-models">
+  <div class="ai-chat-hint">全局模型对所有用户可用（免 Key 的模型无需填写 API Key；用户也可自填自己的模型）。默认模型将作为前台未指定时的首选。</div>
+  <div id="modelList">
+    <% models.forEach(m => { %>
+    <div class="ai-chat-model-row" data-model-id="<%= m.id %>">
+      <div class="info">
+        <strong><%= m.name %></strong>
+        <span><%= m.model_key %></span>
+        <span><%= m.provider %></span>
+        <% if (m.is_default) { %><span class="badge-default">默认</span><% } %>
+        <span style="margin-left:8px;"><%= m.has_key ? '<span class="badge-key">已配置 Key</span>' : '<span class="badge-nokey">未配置 Key</span>' %></span>
+      </div>
+      <div class="ai-chat-actions">
+        <button type="button" class="btn btn-sm" onclick="editModel(<%= m.id %>)">编辑</button>
+        <button type="button" class="btn btn-sm" onclick="testModel(<%= m.id %>)">测试</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="deleteModel(<%= m.id %>)">删除</button>
+      </div>
+    </div>
+    <% }) %>
+    <% if (!models.length) { %><p class="text-muted" style="font-size:13px;">暂无全局模型</p><% } %>
+  </div>
+  <div class="ai-chat-hint" style="margin-top:14px;">未配置任何模型时，前台自动使用免费 Pollinations 接口（不稳定，建议尽快配置）。</div>
+  <button type="button" class="btn btn-primary" onclick="editModel(0)">＋ 新增模型</button>
+</div>
+
+<!-- 模型编辑表单（隐藏） -->
+<div id="modelFormWrap" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--border-color); border-radius:10px; background: var(--bg-card);">
+  <h3 style="margin-bottom:12px; font-size:15px;" id="modelFormTitle">新增模型</h3>
+  <div class="ai-chat-form" id="modelForm">
+    <input type="hidden" id="m_id">
+    <label>名称<input id="m_name" placeholder="如：DeepSeek V3"></label>
+    <label>模型标识 model_key<input id="m_model_key" placeholder="如：deepseek-chat"></label>
+    <label>服务商（OpenAI 兼容）<input id="m_provider" placeholder="如：deepseek / openai / siliconflow"></label>
+    <label>API 端点（留空用默认）<input id="m_api_endpoint" placeholder="如：https://api.deepseek.com/v1"></label>
+    <label>API Key（留空不修改，新增可不填）<input id="m_api_key" type="password" placeholder="Bearer 密钥"></label>
+    <label>max_tokens<input id="m_max_tokens" type="number" value="4096" min="256" max="32768"></label>
+    <label>temperature<input id="m_temperature" type="number" value="0.7" step="0.1" min="0" max="2"></label>
+    <label class="full" style="display:flex; align-items:center; gap:8px; font-size:13px;">
+      <input type="checkbox" id="m_is_default" style="width:auto; margin:0;"> 设为默认模型
+      <input type="checkbox" id="m_enabled" style="width:auto; margin:0 0 0 14px;" checked> 启用
+    </label>
+  </div>
+  <div class="ai-chat-actions">
+    <button type="button" class="btn btn-primary" onclick="saveModel()">保存</button>
+    <button type="button" class="btn" onclick="cancelModelForm()">取消</button>
+    <span class="ai-chat-msg" id="modelFormMsg"></span>
+  </div>
+</div>
+
+<!-- ============ 角色 ============ -->
+<div class="ai-chat-panel" id="tab-roles">
+  <div class="ai-chat-hint">官方角色对全部用户可见，可在前台一键选用。</div>
+  <div id="roleList">
+    <% roles.forEach(r => { %>
+    <div class="ai-chat-role-card" data-role-id="<%= r.id %>">
+      <h3>🎭 <%= r.name %> <span style="font-size:12px; color:var(--gray-500);">#<%= r.category %></span></h3>
+      <p><%= r.description || r.system_prompt.slice(0, 120) %></p>
+      <div class="ai-chat-actions">
+        <button type="button" class="btn btn-sm" onclick="editRole(<%= r.id %>)">编辑</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="deleteRole(<%= r.id %>)">删除</button>
+      </div>
+    </div>
+    <% }) %>
+    <% if (!roles.length) { %><p class="text-muted" style="font-size:13px;">暂无官方角色</p><% } %>
+  </div>
+  <button type="button" class="btn btn-primary" onclick="editRole(0)" style="margin-top:8px;">＋ 新增角色</button>
+</div>
+
+<!-- 角色编辑表单（隐藏） -->
+<div id="roleFormWrap" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--border-color); border-radius:10px; background: var(--bg-card);">
+  <h3 style="margin-bottom:12px; font-size:15px;" id="roleFormTitle">新增角色</h3>
+  <div class="ai-chat-form" id="roleForm">
+    <input type="hidden" id="r_id">
+    <label>角色名称<input id="r_name" placeholder="如：冷面侦探"></label>
+    <label>分类（自定义标签）<input id="r_category" placeholder="如：rp / writing / default"></label>
+    <label class="full">简介<input id="r_description" placeholder="一句话介绍，显示在角色卡片上"></label>
+    <label class="full">角色设定（system prompt）<textarea id="r_system_prompt" placeholder="角色身份、性格、说话方式、规则…"></textarea></label>
+  </div>
+  <div class="ai-chat-actions">
+    <button type="button" class="btn btn-primary" onclick="saveRole()">保存</button>
+    <button type="button" class="btn" onclick="cancelRoleForm()">取消</button>
+    <span class="ai-chat-msg" id="roleFormMsg"></span>
+  </div>
+</div>
+
+<!-- ============ 设置 ============ -->
+<div class="ai-chat-panel" id="tab-settings">
+  <div class="ai-chat-form" style="max-width:760px;">
+    <label>功能开关<select id="s_ai_enabled"><option value="1" <%= aiSettings.ai_enabled !== '0' ? 'selected' : '' %>>启用</option><option value="0" <%= aiSettings.ai_enabled === '0' ? 'selected' : '' %>>停用</option></select></label>
+    <label>默认模型（model_key，留空自动选择）<input id="s_ai_default_model" value="<%= aiSettings.ai_default_model || '' %>" placeholder="如：deepseek-chat"></label>
+    <label>允许用户自填模型/Key<select id="s_ai_allow_user_models"><option value="1" <%= aiSettings.ai_allow_user_models !== '0' ? 'selected' : '' %>>允许</option><option value="0" <%= aiSettings.ai_allow_user_models === '0' ? 'selected' : '' %>>禁止</option></select></label>
+    <label>流式输出<select id="s_ai_stream_enabled"><option value="1" <%= aiSettings.ai_stream_enabled !== '0' ? 'selected' : '' %>>启用</option><option value="0" <%= aiSettings.ai_stream_enabled === '0' ? 'selected' : '' %>>关闭（JSON 一次性返回）</option></select></label>
+    <label>默认每日限额<input id="s_ai_default_daily_limit" type="number" min="0" value="<%= aiSettings.ai_default_daily_limit || 50 %>"></label>
+    <label>默认总量限额<input id="s_ai_default_total_limit" type="number" min="0" value="<%= aiSettings.ai_default_total_limit || 1000 %>"></label>
+    <label>摘要记忆（默认开启）<select id="s_ai_memory_enabled"><option value="1" <%= aiSettings.ai_memory_enabled !== '0' ? 'selected' : '' %>>开启</option><option value="0" <%= aiSettings.ai_memory_enabled === '0' ? 'selected' : '' %>>关闭</option></select></label>
+    <label>记忆模式<select id="s_ai_memory_mode">
+      <option value="summary" <%= aiSettings.ai_memory_mode !== 'vector' && aiSettings.ai_memory_mode !== 'both' && aiSettings.ai_memory_mode !== 'off' ? 'selected' : '' %>>摘要记忆</option>
+      <option value="vector" <%= aiSettings.ai_memory_mode === 'vector' ? 'selected' : '' %>>向量记忆</option>
+      <option value="both" <%= aiSettings.ai_memory_mode === 'both' ? 'selected' : '' %>>摘要 + 向量</option>
+      <option value="off" <%= aiSettings.ai_memory_mode === 'off' ? 'selected' : '' %>>关闭</option>
+    </select></label>
+    <label>摘要间隔（条）<input id="s_ai_memory_interval" type="number" min="2" value="<%= aiSettings.ai_memory_interval || 10 %>"></label>
+    <label>RAG 知识库问答<select id="s_ai_rag_enabled"><option value="1" <%= aiSettings.ai_rag_enabled === '1' ? 'selected' : '' %>>启用</option><option value="0" <%= aiSettings.ai_rag_enabled !== '1' ? 'selected' : '' %>>关闭</option></select></label>
+    <label>RAG 最大召回条数<input id="s_ai_rag_max_results" type="number" min="1" max="20" value="<%= aiSettings.ai_rag_max_results || 5 %>"></label>
+    <label>RAG 最低相似度<input id="s_ai_rag_min_score" type="number" step="0.05" min="0" max="1" value="<%= aiSettings.ai_rag_min_score || 0.3 %>"></label>
+    <label class="full">嵌入 API 端点（OpenAI 兼容 /embeddings）<input id="s_ai_embedding_api_base" placeholder="如：https://api.openai.com/v1" value="<%= aiSettings.ai_embedding_api_base || '' %>"></label>
+    <label class="full">嵌入模型<input id="s_ai_embedding_model" placeholder="如：text-embedding-3-small" value="<%= aiSettings.ai_embedding_model || '' %>"></label>
+    <label class="full">嵌入 API Key（留空不修改）<input id="s_ai_embedding_api_key" type="password" placeholder="<%= (aiSettings.ai_embedding_api_key && aiSettings.ai_embedding_api_key.indexOf('ENC:') === 0) ? '已配置（留空保持不变）' : 'Bearer 密钥' %>"></label>
+  </div>
+  <div class="ai-chat-actions">
+    <button type="button" class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+    <span class="ai-chat-msg" id="settingsMsg"></span>
+  </div>
+</div>
+
+<!-- ============ 知识库 ============ -->
+<div class="ai-chat-panel" id="tab-knowledge">
+  <div class="ai-chat-hint">上传 .txt / .md 文档（≤2MB），自动分块并嵌入（需配置嵌入模型；未配置则只存文本不嵌入，问答不会命中）。</div>
+  <form id="kbForm" style="display:flex; gap:10px; align-items:flex-end; max-width:640px; margin-bottom:16px;">
+    <label style="flex:1; font-size:12px; color:var(--gray-600);">文档标题<input name="title" id="kbTitle" placeholder="留空用文件名" style="width:100%; margin-top:5px; padding:8px 10px; border:1px solid var(--border-color); border-radius:7px; font-size:13px; background:var(--bg-card);"></label>
+    <label style="flex:1; font-size:12px; color:var(--gray-600);">文件<input type="file" name="file" id="kbFile" accept=".txt,.md" required style="width:100%; margin-top:5px; padding:6px; border:1px solid var(--border-color); border-radius:7px; font-size:13px; background:var(--bg-card);"></label>
+    <button type="submit" class="btn btn-primary">上传</button>
+  </form>
+  <table class="admin-table" style="max-width:900px;">
+    <thead><tr><th>ID</th><th>标题</th><th>分块</th><th>创建时间</th><th>操作</th></tr></thead>
+    <tbody>
+      <% docs.forEach(d => { %>
+      <tr data-kb-id="<%= d.id %>">
+        <td><%= d.id %></td>
+        <td style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><%= d.title %></td>
+        <td><%= d.chunk_count %></td>
+        <td><%= d.created_at %></td>
+        <td>
+          <button type="button" class="btn btn-sm" onclick="reembedDoc(<%= d.id %>)">重新嵌入</button>
+          <button type="button" class="btn btn-sm btn-danger" onclick="deleteDoc(<%= d.id %>)">删除</button>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (!docs.length) { %><tr><td colspan="5" class="text-muted">暂无知识库文档</td></tr><% } %>
+    </tbody>
+  </table>
+  <span class="ai-chat-msg" id="kbMsg"></span>
+</div>
+
+<!-- ============ 配额统计 ============ -->
+<div class="ai-chat-panel" id="tab-quota">
+  <div class="ai-chat-hint">管理员 / super_admin 不受配额限制。今日剩余 = daily_limit − daily_used（跨天自动重置）。</div>
+  <div id="quotaWrap"></div>
+</div>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.ai-chat-tabs button');
+  tabs.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      tabs.forEach(function (b) { b.classList.remove('active'); });
+      document.querySelectorAll('.ai-chat-panel').forEach(function (p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.getAttribute('data-tab')).classList.add('active');
+      if (btn.getAttribute('data-tab') === 'quota') loadQuota();
+    });
+  });
+
+  // ============ 模型 ============
+  window.editModel = function (id) {
+    var wrap = document.getElementById('modelFormWrap');
+    wrap.style.display = 'block';
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('modelFormMsg').textContent = '';
+    if (!id) {
+      document.getElementById('modelFormTitle').textContent = '新增模型';
+      ['m_id', 'm_name', 'm_model_key', 'm_provider', 'm_api_endpoint', 'm_api_key'].forEach(function (f) { document.getElementById(f).value = ''; });
+      document.getElementById('m_max_tokens').value = 4096;
+      document.getElementById('m_temperature').value = 0.7;
+      document.getElementById('m_is_default').checked = false;
+      document.getElementById('m_enabled').checked = true;
+      return;
+    }
+    var row = document.querySelector('.ai-chat-model-row[data-model-id="' + id + '"]');
+    if (!row) return;
+    document.getElementById('modelFormTitle').textContent = '编辑模型 #' + id;
+    document.getElementById('m_id').value = id;
+    var strong = row.querySelector('strong').textContent;
+    var spans = row.querySelectorAll('.info span');
+    document.getElementById('m_name').value = strong;
+    document.getElementById('m_model_key').value = spans[0] ? spans[0].textContent : '';
+    document.getElementById('m_provider').value = spans[1] ? spans[1].textContent : '';
+    document.getElementById('m_api_endpoint').value = '';
+    document.getElementById('m_api_key').value = '';
+    document.getElementById('m_max_tokens').value = 4096;
+    document.getElementById('m_temperature').value = 0.7;
+    document.getElementById('m_is_default').checked = !!row.querySelector('.badge-default');
+    document.getElementById('m_enabled').checked = true;
+  };
+
+  window.cancelModelForm = function () { document.getElementById('modelFormWrap').style.display = 'none'; };
+
+  window.saveModel = function () {
+    var msg = document.getElementById('modelFormMsg');
+    msg.textContent = '';
+    csrfFetch('/admin/ai-chat/models/save', {
+      method: 'POST',
+      body: new FormData(document.getElementById('modelForm'))
+    }, 30000).then(function (json) {
+      if (json.success) { msg.textContent = '保存成功'; setTimeout(function () { location.reload(); }, 600); }
+      else { msg.textContent = json.error || '保存失败'; msg.className = 'ai-chat-msg err'; }
+    }).catch(function () { msg.textContent = '保存失败，请重试'; msg.className = 'ai-chat-msg err'; });
+  };
+
+  window.testModel = function (id) {
+    var btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '测试中…';
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/models/test', { method: 'POST', body: fd }, 35000)
+      .then(function (json) { alert(json.success ? ('连接成功：' + (json.data.reply || '')) : (json.error || '测试失败')); })
+      .catch(function (err) { alert(err.message || '测试失败'); })
+      .then(function () { btn.disabled = false; btn.textContent = '测试'; });
+  };
+
+  window.deleteModel = function (id) {
+    if (!window.confirm('确定删除该模型？')) return;
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/models/delete', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) { var row = document.querySelector('.ai-chat-model-row[data-model-id="' + id + '"]'); if (row) row.remove(); }
+        else alert(json.error || '删除失败');
+      })
+      .catch(function (err) { alert(err.message || '删除失败'); });
+  };
+
+  // ============ 角色 ============
+  window.editRole = function (id) {
+    var wrap = document.getElementById('roleFormWrap');
+    wrap.style.display = 'block';
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('roleFormMsg').textContent = '';
+    if (!id) {
+      document.getElementById('roleFormTitle').textContent = '新增角色';
+      document.getElementById('r_id').value = '';
+      document.getElementById('r_name').value = '';
+      document.getElementById('r_category').value = '';
+      document.getElementById('r_description').value = '';
+      document.getElementById('r_system_prompt').value = '';
+      return;
+    }
+    var card = document.querySelector('.ai-chat-role-card[data-role-id="' + id + '"]');
+    if (!card) return;
+    document.getElementById('roleFormTitle').textContent = '编辑角色 #' + id;
+    document.getElementById('r_id').value = id;
+    var h3 = card.querySelector('h3').textContent;
+    document.getElementById('r_name').value = h3.replace(/^🎭\s*/, '').replace(/\s*#.*$/, '');
+    var m = h3.match(/#(\S+)/);
+    document.getElementById('r_category').value = m ? m[1] : '';
+    var p = card.querySelector('p').textContent;
+    document.getElementById('r_system_prompt').value = p;
+    document.getElementById('r_description').value = p;
+  };
+
+  window.cancelRoleForm = function () { document.getElementById('roleFormWrap').style.display = 'none'; };
+
+  window.saveRole = function () {
+    var msg = document.getElementById('roleFormMsg');
+    msg.textContent = '';
+    csrfFetch('/admin/ai-chat/roles/save', { method: 'POST', body: new FormData(document.getElementById('roleForm')) }, 20000)
+      .then(function (json) {
+        if (json.success) { msg.textContent = '保存成功'; setTimeout(function () { location.reload(); }, 600); }
+        else { msg.textContent = json.error || '保存失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function () { msg.textContent = '保存失败，请重试'; msg.className = 'ai-chat-msg err'; });
+  };
+
+  window.deleteRole = function (id) {
+    if (!window.confirm('确定删除该角色？')) return;
+    csrfFetch('/admin/ai-chat/roles/delete', { method: 'POST', body: new FormData() }, 20000)
+      .then(function (json) {
+        if (json.success) { var card = document.querySelector('.ai-chat-role-card[data-role-id="' + id + '"]'); if (card) card.remove(); }
+        else alert(json.error || '删除失败');
+      })
+      .catch(function (err) { alert(err.message || '删除失败'); });
+  };
+
+  // ============ 设置 ============
+  window.saveSettings = function () {
+    var msg = document.getElementById('settingsMsg');
+    msg.textContent = '';
+    var form = new FormData();
+    ['s_ai_enabled', 's_ai_default_model', 's_ai_allow_user_models', 's_ai_stream_enabled',
+      's_ai_default_daily_limit', 's_ai_default_total_limit', 's_ai_memory_enabled', 's_ai_memory_mode',
+      's_ai_memory_interval', 's_ai_rag_enabled', 's_ai_rag_max_results', 's_ai_rag_min_score',
+      's_ai_embedding_api_base', 's_ai_embedding_model', 's_ai_embedding_api_key'].forEach(function (id) {
+      form.append(id, document.getElementById(id).value);
+    });
+    csrfFetch('/admin/ai-chat/settings/save', { method: 'POST', body: form }, 20000)
+      .then(function (json) {
+        if (json.success) { msg.textContent = '保存成功'; msg.className = 'ai-chat-msg'; }
+        else { msg.textContent = json.error || '保存失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function () { msg.textContent = '保存失败，请重试'; msg.className = 'ai-chat-msg err'; });
+  };
+
+  // ============ 知识库 ============
+  document.getElementById('kbForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var msg = document.getElementById('kbMsg');
+    msg.textContent = '上传中…';
+    msg.className = 'ai-chat-msg';
+    var fd = new FormData(this);
+    csrfFetch('/admin/ai-chat/knowledge/upload', { method: 'POST', body: fd }, 120000)
+      .then(function (json) {
+        if (json.success) {
+          msg.textContent = '上传成功（' + json.data.chunkCount + ' 分块，' + (json.data.embedded ? '已嵌入' : '未嵌入——请配置嵌入模型后重新嵌入') + '）';
+          setTimeout(function () { location.reload(); }, 800);
+        } else { msg.textContent = json.error || '上传失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function (err) { msg.textContent = err.message || '上传失败'; msg.className = 'ai-chat-msg err'; });
+  });
+
+  window.reembedDoc = function (id) {
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/knowledge/reembed', { method: 'POST', body: fd }, 120000)
+      .then(function (json) {
+        alert(json.success ? ('重新嵌入成功（' + json.data.chunkCount + ' 分块）') : (json.error || '失败'));
+        if (json.success) location.reload();
+      })
+      .catch(function (err) { alert(err.message || '失败'); });
+  };
+
+  window.deleteDoc = function (id) {
+    if (!window.confirm('确定删除该文档？')) return;
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/knowledge/delete', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) { var row = document.querySelector('tr[data-kb-id="' + id + '"]'); if (row) row.remove(); }
+        else alert(json.error || '删除失败');
+      })
+      .catch(function (err) { alert(err.message || '删除失败'); });
+  };
+
+  // ============ 配额统计 ============
+  function loadQuota() {
+    var wrap = document.getElementById('quotaWrap');
+    wrap.innerHTML = '<p class="text-muted">加载中…</p>';
+    fetch('/admin/ai-chat/quota', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (json) {
+        if (!json.success) { wrap.innerHTML = '<p class="text-muted">' + (json.error || '加载失败') + '</p>'; return; }
+        var rows = json.data || [];
+        if (!rows.length) { wrap.innerHTML = '<p class="text-muted">暂无配额记录（用户首次使用 AI 聊天时自动创建）</p>'; return; }
+        var html = '<table class="admin-table" style="max-width:900px;"><thead><tr><th>用户</th><th>角色</th><th>今日已用</th><th>每日限额</th><th>累计已用</th><th>总量限额</th><th>操作</th></tr></thead><tbody>';
+        rows.forEach(function (r) {
+          html += '<tr data-quota-user="' + r.user_id + '">' +
+            '<td>' + (r.nickname || r.username || ('#' + r.user_id)) + '</td>' +
+            '<td>' + (r.role || 'user') + '</td>' +
+            '<td>' + r.daily_used + '</td>' +
+            '<td><input type="number" min="0" value="' + r.daily_limit + '" style="width:80px; padding:4px 6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-card);" data-field="daily_limit"></td>' +
+            '<td>' + r.total_used + '</td>' +
+            '<td><input type="number" min="0" value="' + r.total_limit + '" style="width:80px; padding:4px 6px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-card);" data-field="total_limit"></td>' +
+            '<td><button type="button" class="btn btn-sm" onclick="updateQuota(' + r.user_id + ')">保存</button></td></tr>';
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+      })
+      .catch(function () { wrap.innerHTML = '<p class="text-muted">加载失败</p>'; });
+  }
+
+  window.updateQuota = function (userId) {
+    var tr = document.querySelector('tr[data-quota-user="' + userId + '"]');
+    if (!tr) return;
+    var fd = new FormData();
+    fd.append('user_id', userId);
+    fd.append('daily_limit', tr.querySelector('[data-field="daily_limit"]').value);
+    fd.append('total_limit', tr.querySelector('[data-field="total_limit"]').value);
+    csrfFetch('/admin/ai-chat/quota/update', { method: 'POST', body: fd }, 20000)
+      .then(function (json) { alert(json.success ? '已保存' : (json.error || '保存失败')); })
+      .catch(function (err) { alert(err.message || '保存失败'); });
+  };
+})();
+</script>

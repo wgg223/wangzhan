@@ -35,6 +35,13 @@ const SKIP_GET_PATHS = [
   '/chat/api/messages',
 ];
 
+// 高危 GET 路径白名单：即使是 GET /api/ 请求也必须记录（备份下载、配置导出、敏感数据读取）
+const HIGH_RISK_GET_PATTERNS = [
+  '/backup/download', '/backup/restore', '/settings/backup',
+  '/reset', '/export', '/download', '/logs',
+  '/admin/backup', '/admin/settings/backup', '/admin/reset'
+];
+
 /**
  * 判断路径是否需要跳过记录
  */
@@ -47,6 +54,11 @@ function shouldSkip(path, method) {
   // GET 请求的跳过列表
   if (method === 'GET' && SKIP_GET_PATHS.some(p => path.startsWith(p))) {
     return true;
+  }
+
+  // 高危 GET 操作不跳过（备份下载、配置导出等）
+  if (method === 'GET' && HIGH_RISK_GET_PATTERNS.some(p => path.includes(p))) {
+    return false;
   }
 
   // XHR/API 请求的 GET 方法跳过（避免记录大量轮询）
@@ -129,12 +141,10 @@ function extractTargetTitle(path) {
 
 /**
  * 获取客户端IP地址
+ * 仅使用 req.ip（由 trust proxy 配置决定是否取 X-Forwarded-For），
+ * 不直接读取请求头，防止 X-Forwarded-For 伪造污染日志与安全统计
  */
 function getClientIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
-  }
   return req.ip || req.connection?.remoteAddress || '';
 }
 

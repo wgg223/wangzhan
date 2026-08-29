@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne, closeAndDeleteDatabase } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
-const { getProjectStats, cleanProjectFiles, getAllProjectDefinitions } = require('../../utils/project-utils');
+const { getProjectStats, cleanProjectFiles, getAllProjectDefinitions, isAllowedTable } = require('../../utils/project-utils');
 const { DEPENDENT_TABLES, ALL_TABLES } = require('../../config/constants');
 const fsSafe = require('../../utils/fs-safe');
 
@@ -253,13 +253,19 @@ router.post('/reset/execute', isAuthenticated, isSuperAdmin, async (req, res) =>
 
   const dependentTables = [...DEPENDENT_TABLES];
   dependentTables.forEach(table => {
-    try { db.run('DELETE FROM ' + table); } catch (e) { /* 表可能不存在 */ }
+    try {
+      if (!isAllowedTable(table)) throw new Error('非法表名: ' + table);
+      db.run('DELETE FROM ' + table);
+    } catch (e) { /* 表可能不存在 */ }
   });
 
   // 删除其余业务表
   const otherTables = [...resetTables].filter(t => !DEPENDENT_TABLES.includes(t));
   otherTables.forEach(table => {
-    try { db.run('DELETE FROM ' + table); } catch (e) { /* 表可能不存在 */ }
+    try {
+      if (!isAllowedTable(table)) throw new Error('非法表名: ' + table);
+      db.run('DELETE FROM ' + table);
+    } catch (e) { /* 表可能不存在 */ }
   });
 
   // 删除普通用户（保留超级管理员）

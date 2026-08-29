@@ -41,7 +41,8 @@ const PROJECT_DEFINITIONS = {
     id: 'ai_chat',
     name: 'AI 聊天',
     description: 'AI 对话、角色预设、模型配置',
-    tables: ['ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings'],
+    tables: ['ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings',
+      'ai_world_book', 'ai_memories', 'ai_branches', 'ai_chat_providers'],
     file_dirs: [],
     icon: '🤖'
   },
@@ -96,6 +97,7 @@ const ALL_TABLES = [
   'content_likes',
   // AI 聊天
   'ai_conversations', 'ai_messages', 'ai_roles', 'ai_quota', 'ai_models', 'ai_settings',
+  'ai_world_book', 'ai_memories', 'ai_branches', 'ai_chat_providers',
   // AI 知识库
   'ai_knowledge_docs', 'ai_knowledge_chunks',
   // AI 提示词库

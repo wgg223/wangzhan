@@ -114,7 +114,10 @@ async function initDatabase() {
       try {
         return this.prepare(sql).run(params || []);
       } catch (err) {
-        console.error('SQL执行错误:', err.message, 'SQL:', sql);
+        // duplicate column name 是存量库 ALTER TABLE 迁移的正常噪音，静默处理
+        if (!err.message || !err.message.includes('duplicate column name')) {
+          console.error('SQL执行错误:', err.message, 'SQL:', sql);
+        }
         throw err;
       }
     };

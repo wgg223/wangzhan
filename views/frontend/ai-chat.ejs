@@ -1,0 +1,255 @@
+<link rel="stylesheet" href="/css/ai-chat.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+
+<div class="ac-app" id="acApp">
+  <!-- 左侧会话栏 -->
+  <aside class="ac-sidebar" id="acSidebar">
+    <div class="ac-brand">
+      <div class="ac-brand-mark">🤖</div>
+      <h1>AI聊天</h1>
+      <a class="ac-back" href="/">← 返回首页</a>
+    </div>
+    <button class="ac-btn ac-btn-primary ac-new-chat" id="acNewChat">＋ 新对话</button>
+    <div class="ac-conv-search">
+      <input type="text" id="acConvSearch" placeholder="搜索会话…" autocomplete="off">
+    </div>
+    <div class="ac-conv-list" id="acConvList"></div>
+    <div class="ac-sidebar-foot">
+      <span class="ac-quota-badge" id="acQuotaBadge"></span>
+      <p>会话数据仅自己可见</p>
+    </div>
+  </aside>
+
+  <!-- 主聊天区 -->
+  <main class="ac-main">
+    <header class="ac-topbar">
+      <button class="ac-menu-btn" id="acMenuBtn" aria-label="菜单">☰</button>
+      <div class="ac-conv-title" id="acConvTitle">新对话</div>
+      <div class="ac-toolbar">
+        <button class="ac-tool" id="acShareBtn" title="生成分享链接（免登录查看）" style="display:none;">🔗 <span>分享</span></button>
+        <button class="ac-tool" id="acRoleBtn" title="角色预设">🎭 <span id="acRoleLabel">角色</span></button>
+        <button class="ac-tool" id="acWorldBtn" title="世界书">📖 <span>世界书</span></button>
+        <button class="ac-tool" id="acMemoryBtn" title="记忆设置">🧠 <span>记忆</span></button>
+        <button class="ac-tool" id="acBranchBtn" title="剧情分支">🌿 <span>分支</span></button>
+      </div>
+    </header>
+
+    <!-- 我的 API 模型（独立卡片，直接平铺，与 AI 生图 Key 填写一致） -->
+    <div class="ac-models-card" id="acModelsCard">
+      <div class="ac-models-head">
+        <span class="ac-models-title">🔑 我的 API 模型</span>
+        <span class="ac-models-hint">自填优先 · Key 加密存储</span>
+        <button type="button" class="ac-models-toggle" id="acModelsToggle">收起 ▴</button>
+      </div>
+      <div class="ac-models-body" id="acModelsBody">
+        <div id="acMyModels"></div>
+        <div class="ac-model-add-row" id="acModelAddRow" hidden>
+          <span class="ac-model-add-name" title="选择内置提供商或自定义">提供商</span>
+          <select class="ac-model-input" id="acmProvider">
+            <option value="">自定义</option>
+          </select>
+          <input type="text" class="ac-model-input" id="acmKey" placeholder="模型标识 model_key" maxlength="100" autocomplete="off">
+          <input type="text" class="ac-model-input ac-model-input-wide" id="acmEndpoint" placeholder="API 端点（如 https://api.deepseek.com/v1）" maxlength="300" autocomplete="off">
+          <input type="password" class="ac-model-input ac-model-input-wide" id="acmApiKey" placeholder="API Key（加密存储）" maxlength="300" autocomplete="off">
+          <label class="ac-model-default"><input type="checkbox" id="acmDefault"> 默认</label>
+          <button type="button" class="ac-btn ac-btn-primary ac-btn-sm" id="acmSave">保存</button>
+          <button type="button" class="ac-btn ac-btn-sm" id="acmCancel">取消</button>
+          <div class="ac-model-add-get" id="acmGetWrap" hidden>🔗 <a id="acmGetLink" href="#" target="_blank" rel="noopener">前往获取 API Key</a></div>
+        </div>
+        <button type="button" class="ac-btn ac-btn-sm" id="acModelAddBtn">＋ 添加模型</button>
+        <div class="ac-global-models" id="acGlobalModels"></div>
+      </div>
+    </div>
+
+    <div class="ac-messages" id="acMessages">
+      <div class="ac-empty" id="acEmpty">
+        <div class="ac-empty-icon">🤖</div>
+        <h2>开始一段新对话</h2>
+        <p>选择角色预设，或直接输入消息。支持流式输出、世界书、记忆与剧情分支。</p>
+        <div class="ac-empty-hint" id="acEmptyHint"></div>
+      </div>
+    </div>
+
+    <footer class="ac-input-bar">
+      <textarea id="acInput" rows="3" placeholder="输入消息，Enter 发送，Shift+Enter 换行" maxlength="8000"></textarea>
+      <div class="ac-input-foot">
+        <span class="ac-input-tip">Enter 发送 · Shift+Enter 换行</span>
+        <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acPickPrompt" style="display:none;">📚 从提示词库选择</button>
+        <button type="button" class="ac-btn ac-btn-primary" id="acSend">发送</button>
+        <button type="button" class="ac-btn ac-btn-danger" id="acStop" style="display:none;">停止</button>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<!-- 角色选择弹窗 -->
+<div class="ac-modal-overlay" id="acRoleModal" hidden>
+  <div class="ac-modal">
+    <div class="ac-modal-head">
+      <h2>选择角色</h2>
+      <button class="ac-modal-close" data-ac-close="acRoleModal">×</button>
+    </div>
+    <div class="ac-modal-body ac-role-grid" id="acRoleList"></div>
+    <div class="ac-modal-foot">
+      <span class="ac-modal-hint">官方角色由管理员维护，你也可以创建自己的角色</span>
+      <button class="ac-btn ac-btn-sm" id="acRoleCreate">＋ 创建角色</button>
+    </div>
+  </div>
+</div>
+
+<!-- 创建角色弹窗 -->
+<div class="ac-modal-overlay" id="acRoleCreateModal" hidden>
+  <div class="ac-modal">
+    <div class="ac-modal-head">
+      <h2>创建角色</h2>
+      <button class="ac-modal-close" data-ac-close="acRoleCreateModal">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <label class="ac-field">角色名称<input id="acNewRoleName" maxlength="50" placeholder="如：冷面侦探"></label>
+      <label class="ac-field">角色设定（system prompt）<textarea id="acNewRolePrompt" rows="6" maxlength="4000" placeholder="描述角色的性格、身份、说话方式…"></textarea></label>
+    </div>
+    <div class="ac-modal-foot">
+      <button class="ac-btn ac-btn-sm" data-ac-close="acRoleCreateModal">取消</button>
+      <button class="ac-btn ac-btn-primary ac-btn-sm" id="acRoleSave">保存角色</button>
+    </div>
+  </div>
+</div>
+
+<!-- 世界书弹窗 -->
+<div class="ac-modal-overlay" id="acWorldModal" hidden>
+  <div class="ac-modal ac-modal-lg">
+    <div class="ac-modal-head">
+      <h2>世界书（World Book）</h2>
+      <button class="ac-modal-close" data-ac-close="acWorldModal">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <p class="ac-modal-hint">设定条目按「触发词」注入对话上下文。触发词为空则常驻注入。</p>
+      <div id="acWorldList" class="ac-world-list"></div>
+    </div>
+    <div class="ac-modal-foot">
+      <button class="ac-btn ac-btn-primary" id="acWorldAdd">＋ 添加条目</button>
+    </div>
+  </div>
+</div>
+
+<!-- 世界书条目编辑弹窗 -->
+<div class="ac-modal-overlay" id="acWorldEditModal" hidden>
+  <div class="ac-modal ac-modal-lg">
+    <div class="ac-modal-head">
+      <h2 id="acWorldEditTitle">世界书条目</h2>
+      <button class="ac-modal-close" data-ac-close="acWorldEditModal">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <div class="ac-field-row">
+        <label class="ac-field">触发词<input id="acWorldKey" maxlength="100" placeholder="留空 = 常驻注入"></label>
+        <label class="ac-field">位置
+          <select id="acWorldPos">
+            <option value="system_top">系统提示前</option>
+            <option value="before_char">角色设定前</option>
+            <option value="after_char">角色设定后</option>
+            <option value="user_top">附加到用户消息</option>
+            <option value="assistant_top">AI 回复前</option>
+          </select>
+        </label>
+      </div>
+      <label class="ac-field">内容<textarea id="acWorldContent" rows="8" maxlength="20000" placeholder="条目内容（可含设定、背景、人物介绍…）"></textarea></label>
+    </div>
+    <div class="ac-modal-foot">
+      <button class="ac-btn ac-btn-danger ac-btn-sm" id="acWorldDelete" style="display:none;">删除</button>
+      <span style="flex:1"></span>
+      <button class="ac-btn ac-btn-sm" data-ac-close="acWorldEditModal">取消</button>
+      <button class="ac-btn ac-btn-primary ac-btn-sm" id="acWorldSave">保存条目</button>
+    </div>
+  </div>
+</div>
+
+<!-- 记忆设置弹窗 -->
+<div class="ac-modal-overlay" id="acMemoryModal" hidden>
+  <div class="ac-modal">
+    <div class="ac-modal-head">
+      <h2>记忆设置</h2>
+      <button class="ac-modal-close" data-ac-close="acMemoryModal">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <label class="ac-field ac-check"><input type="checkbox" id="acMemoryEnabled"> 启用长期记忆</label>
+      <label class="ac-field">记忆模式
+        <select id="acMemoryMode">
+          <option value="summary">摘要记忆</option>
+          <option value="vector">向量记忆</option>
+          <option value="both">摘要 + 向量</option>
+          <option value="off">关闭</option>
+        </select>
+      </label>
+      <p class="ac-modal-hint">摘要记忆：定期用模型总结对话要点；向量记忆：语义召回相关片段（需后台配置嵌入模型）。</p>
+    </div>
+    <div class="ac-modal-foot">
+      <button class="ac-btn ac-btn-sm" id="acMemoryRefresh">立即总结</button>
+      <span style="flex:1"></span>
+      <button class="ac-btn ac-btn-sm" data-ac-close="acMemoryModal">取消</button>
+      <button class="ac-btn ac-btn-primary ac-btn-sm" id="acMemorySave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 分支弹窗 -->
+<div class="ac-modal-overlay" id="acBranchModal" hidden>
+  <div class="ac-modal">
+    <div class="ac-modal-head">
+      <h2>剧情分支</h2>
+      <button class="ac-modal-close" data-ac-close="acBranchModal">×</button>
+    </div>
+    <div class="ac-modal-body" id="acBranchList"></div>
+    <div class="ac-modal-foot">
+      <span class="ac-modal-hint">在任意 AI 消息上点「分叉」可从此处创建新分支</span>
+    </div>
+  </div>
+</div>
+
+<!-- 分享链接弹窗 -->
+<div class="ac-modal-overlay" id="acShareModal" hidden>
+  <div class="ac-modal">
+    <div class="ac-modal-head">
+      <h2>🔗 分享会话</h2>
+      <button class="ac-modal-close" data-ac-close="acShareModal">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <p class="ac-modal-hint">将链接发送到 QQ / 微信等平台，对方无需登录即可查看这段对话（主分支）。可随时停用链接。</p>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <input type="text" id="acShareUrl" class="ac-model-input" readonly style="flex:1;">
+        <button type="button" class="ac-btn ac-btn-primary ac-btn-sm" id="acShareCopy">复制</button>
+      </div>
+    </div>
+    <div class="ac-modal-foot">
+      <button type="button" class="ac-btn ac-btn-danger ac-btn-sm" id="acShareToggle" style="display:none;">停用链接</button>
+      <span style="flex:1"></span>
+      <button class="ac-btn ac-btn-sm" data-ac-close="acShareModal">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 提示词库选择弹窗 -->
+<div class="ac-modal-overlay" id="acPromptModal" hidden>
+  <div class="ac-modal ac-modal-lg">
+    <div class="ac-modal-head">
+      <h2>从提示词库选择</h2>
+      <button class="ac-modal-close" data-ac-close="acPromptModal">×</button>
+    </div>
+    <div class="ac-modal-body" style="display:flex;flex-direction:column;max-height:60vh;">
+      <input type="text" class="ac-model-input" id="acPromptSearch" placeholder="搜索提示词标题…" autocomplete="off">
+      <div style="padding:6px 0;font-size:12px;color:var(--text-muted);" id="acPromptCount"></div>
+      <div id="acPromptList" style="overflow-y:auto;flex:1;"></div>
+      <button type="button" class="ac-btn ac-btn-sm" id="acPromptMore" style="display:none;margin-top:8px;">⬇ 加载更多</button>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="ai-chat-data"><%- JSON.stringify({
+  csrfToken: csrfToken,
+  user: { id: user.id, username: user.username, role: user.role },
+  siteName: settings.site_name || '',
+  canPickPrompt: !!canPickPrompt,
+  canShareLink: !!canShareLink,
+  prompts: canPickPrompt ? prompts.map(function(p) { return { id: p.id, title: p.title, excerpt: p.excerpt || '' }; }) : []
+}).replace(/</g, '\\u003c') %></script>
+<script src="/js/ai-chat.js" defer></script>

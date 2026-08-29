@@ -161,6 +161,14 @@ router.post('/users/role/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   }
 
   db.run('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
+  // admin 角色权限由 user_permissions 表控制：晋升时授予全部权限（后续可单独撤销）
+  if (role === 'admin') {
+    const allPerms = queryAll(db, 'SELECT perm_key FROM permissions');
+    allPerms.forEach(p => {
+      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+        [req.params.id, p.perm_key, req.session.user.id]);
+    });
+  }
   saveDatabase();
   if (targetUser) {
     logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'user_role', target_id: parseInt(req.params.id), target_title: targetUser.username, detail: '修改用户角色：' + targetUser.username + ' -> ' + role, ip: req.ip });
@@ -213,7 +221,7 @@ const csvUpload = multer({
   }
 });
 
-router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single('csv_file'), (req, res) => {
+router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single('csv_file'), async (req, res) => {
   const db = req.db;
   if (!req.file) {
     return res.status(400).json({ error: '请上传 CSV 文件' });
@@ -286,6 +294,11 @@ router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single
       }
 
       results.success++;
+
+      // 分批处理：每处理 20 行让出事件循环，避免阻塞其他请求
+      if (i % 20 === 0) {
+        await new Promise(resolve => { setImmediate(resolve); });
+      }
     }
 
     saveDatabase();

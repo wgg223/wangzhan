@@ -124,6 +124,7 @@
         "Toastify": "readonly",
         "Quill": "readonly",
         "marked": "readonly",
+        "DOMPurify": "readonly",
         "hljs": "readonly",
         "io": "readonly",
         "moment": "readonly",

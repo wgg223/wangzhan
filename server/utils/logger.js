@@ -6,11 +6,10 @@ const isProd = (process.env.NODE_ENV === 'production');
 const LOG_DIR = path.join(__dirname, '../../logs');
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 单文件 5MB，超出后轮转为 .1
 
-function ensureLogDir() {
-  if (!fs.existsSync(LOG_DIR)) {
-    try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch (e) { /* 忽略 */ }
-  }
-}
+// 模块加载时只检查/创建一次日志目录，避免每次写日志同步 stat
+try {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+} catch (e) { /* 忽略 */ }
 
 function logFilePath() {
   const d = new Date();
@@ -18,17 +17,26 @@ function logFilePath() {
   return path.join(LOG_DIR, `runtime-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.log`);
 }
 
+function appendToFile(file, line) {
+  fs.appendFile(file, line, 'utf8', (err) => {
+    if (err) console.error('[logger] 日志写入失败:', err.message);
+  });
+}
+
 function writeToFile(level, msg) {
-  try {
-    ensureLogDir();
-    const file = logFilePath();
-    try {
-      if (fs.existsSync(file) && fs.statSync(file).size > MAX_FILE_SIZE) {
-        fs.renameSync(file, file + '.1');
-      }
-    } catch (e) { /* 轮转失败不阻塞 */ }
-    fs.appendFile(file, `[${new Date().toISOString()}] [${level}] ${msg}\n`, 'utf8', () => {});
-  } catch (e) { /* 日志写入失败不影响主流程 */ }
+  const file = logFilePath();
+  const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`;
+  // 异步检查大小，超出则轮转（全程无同步 IO）
+  fs.stat(file, (statErr, stat) => {
+    if (!statErr && stat.size > MAX_FILE_SIZE) {
+      fs.rename(file, file + '.1', (renameErr) => {
+        if (renameErr) console.error('[logger] 日志轮转失败:', renameErr.message);
+        appendToFile(file, line);
+      });
+    } else {
+      appendToFile(file, line);
+    }
+  });
 }
 
 function formatArgs(args) {

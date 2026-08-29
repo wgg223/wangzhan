@@ -22,6 +22,10 @@ const providers = {};
 const taskRegistry = new Map();
 const TASK_TTL_MS = 10 * 60 * 1000; // 终态任务保留 10 分钟后清理
 
+// ============ 全局并发信号量：最多同时 4 个生成任务 ============
+const MAX_CONCURRENT_TASKS = 4;
+let activeTaskCount = 0;
+
 function createTaskId() {
   return crypto.randomBytes(8).toString('hex');
 }
@@ -40,6 +44,12 @@ function pruneTasks() {
  * @returns {string} taskId
  */
 function startImageTask(db, params) {
+  // 并发上限检查：超过 4 个同时生成时直接拒绝，返回友好错误
+  if (activeTaskCount >= MAX_CONCURRENT_TASKS) {
+    throw new Error('生成服务繁忙，请稍后重试');
+  }
+  activeTaskCount++;
+
   const task = {
     id: createTaskId(),
     userId: params.userId,
@@ -52,7 +62,10 @@ function startImageTask(db, params) {
     cancel: null
   };
   taskRegistry.set(task.id, task);
-  executeImageTask(task, db, params);
+  executeImageTask(task, db, params).finally(() => {
+    // 任务结束（无论成败）释放并发名额
+    activeTaskCount = Math.max(0, activeTaskCount - 1);
+  });
   return task.id;
 }
 

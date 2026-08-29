@@ -142,7 +142,7 @@ router.get('/users/:id', (req, res) => {
   const db = getDb();
   const id = parseInt(req.params.id);
   const user = queryOne(db,
-    'SELECT id, uid, username, nickname, avatar, bio, role, created_at FROM users WHERE id = ? AND status = ?',
+    'SELECT id, uid, username, nickname, avatar, bio, created_at FROM users WHERE id = ? AND status = ?',
     [id, 'active']);
   if (!user) return res.status(404).json({ error: '用户不存在' });
 

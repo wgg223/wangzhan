@@ -104,6 +104,11 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.m
     return res.status(400).json({ error: '参数不完整' });
   }
 
+  // 撤销权限与 grant/approve 对齐，仅限超级管理员（修复权限矩阵不对称）
+  if (req.session.user.role !== 'super_admin') {
+    return res.status(403).json({ error: '仅超级管理员可撤销权限' });
+  }
+
   // perm_key 必须真实存在于 permissions 表
   const permExists = queryOne(db, 'SELECT id FROM permissions WHERE perm_key = ?', [perm_key]);
   if (!permExists) {

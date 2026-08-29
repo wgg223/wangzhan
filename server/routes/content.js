@@ -190,6 +190,40 @@ router.get('/api/tags', (req, res) => {
 });
 
 /**
+ * 校验当前用户能否管理指定内容的标签（添加/删除）
+ * - article: 作者本人 / admin / super_admin / articles.manage
+ * - page: admin / super_admin / pages.manage
+ * - image: 上传者本人 / admin / super_admin / image-share.manage
+ * @returns {{ok: boolean, reason?: string}}
+ */
+function canManageContentTags(db, user, targetType, targetId) {
+  if (!user) return { ok: false, reason: '未登录' };
+  if (user.role === 'super_admin') return { ok: true };
+  if (user.role === 'admin') return { ok: true };
+
+  if (targetType === 'article') {
+    const perm = queryOne(db, 'SELECT 1 FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user.id, 'articles.manage']);
+    if (perm) return { ok: true };
+    const article = queryOne(db, 'SELECT author_id FROM articles WHERE id = ?', [targetId]);
+    if (!article) return { ok: false, reason: '内容不存在' };
+    if (article.author_id === user.id) return { ok: true };
+    return { ok: false, reason: '无权管理此内容的标签' };
+  } else if (targetType === 'page') {
+    const perm = queryOne(db, 'SELECT 1 FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user.id, 'pages.manage']);
+    if (perm) return { ok: true };
+    return { ok: false, reason: '无权管理此页面的标签' };
+  } else if (targetType === 'image') {
+    const perm = queryOne(db, 'SELECT 1 FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user.id, 'image-share.manage']);
+    if (perm) return { ok: true };
+    const image = queryOne(db, 'SELECT user_id FROM images WHERE id = ?', [targetId]);
+    if (!image) return { ok: false, reason: '内容不存在' };
+    if (image.user_id === user.id) return { ok: true };
+    return { ok: false, reason: '无权管理此图片的标签' };
+  }
+  return { ok: false, reason: '不支持的内容类型' };
+}
+
+/**
  * 为内容添加标签
  */
 router.post('/api/content/:type/:id/tags', isAuthenticated, (req, res) => {
@@ -201,6 +235,13 @@ router.post('/api/content/:type/:id/tags', isAuthenticated, (req, res) => {
   const validTypes = ['article', 'page', 'image'];
   if (!validTypes.includes(targetType)) {
     return res.status(400).json({ success: false, error: '不支持的内容类型' });
+  }
+
+  // 越权防护：校验当前用户能否管理此内容的标签
+  const tagCheck = canManageContentTags(db, req.session.user, targetType, targetId);
+  if (!tagCheck.ok) {
+    const statusCode = tagCheck.reason === '内容不存在' ? 404 : 403;
+    return res.status(statusCode).json({ success: false, error: tagCheck.reason });
   }
 
   try {
@@ -278,6 +319,13 @@ router.delete('/api/content/:type/:id/tags/:tagId', isAuthenticated, (req, res) 
   const targetId = parseInt(req.params.id);
   const tagId = parseInt(req.params.tagId);
 
+  // 越权防护：校验当前用户能否管理此内容的标签
+  const tagCheck = canManageContentTags(db, req.session.user, targetType, targetId);
+  if (!tagCheck.ok) {
+    const statusCode = tagCheck.reason === '内容不存在' ? 404 : 403;
+    return res.status(statusCode).json({ success: false, error: tagCheck.reason });
+  }
+
   try {
     db.run(
       'DELETE FROM content_tags WHERE target_type = ? AND target_id = ? AND tag_id = ?',
@@ -344,6 +392,35 @@ router.get('/api/tags/:slug/contents', (req, res) => {
 // ==================== 内容版本管理 ====================
 
 /**
+ * 校验当前用户能否访问指定内容的版本历史
+ * - article: 作者本人 / admin / super_admin / 有 articles.manage 权限
+ * - page: admin / super_admin / 有 pages.manage 权限
+ * @returns {{ok: boolean, reason?: string}}
+ */
+function canAccessContentVersions(db, user, targetType, targetId) {
+  if (!user) return { ok: false, reason: '未登录' };
+  if (user.role === 'super_admin') return { ok: true };
+
+  if (targetType === 'article') {
+    if (user.role === 'admin') return { ok: true };
+    // 检查 articles.manage 权限
+    const perm = queryOne(db, 'SELECT 1 FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user.id, 'articles.manage']);
+    if (perm) return { ok: true };
+    // 检查是否为作者本人
+    const article = queryOne(db, 'SELECT author_id FROM articles WHERE id = ?', [targetId]);
+    if (!article) return { ok: false, reason: '文章不存在' };
+    if (article.author_id === user.id) return { ok: true };
+    return { ok: false, reason: '无权访问此文章的版本历史' };
+  } else if (targetType === 'page') {
+    if (user.role === 'admin') return { ok: true };
+    const perm = queryOne(db, 'SELECT 1 FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user.id, 'pages.manage']);
+    if (perm) return { ok: true };
+    return { ok: false, reason: '无权访问此页面的版本历史' };
+  }
+  return { ok: false, reason: '不支持的内容类型' };
+}
+
+/**
  * 保存内容版本
  */
 router.post('/api/content/:type/:id/versions', isAuthenticated, (req, res) => {
@@ -356,6 +433,13 @@ router.post('/api/content/:type/:id/versions', isAuthenticated, (req, res) => {
   const validTypes = ['article', 'page'];
   if (!validTypes.includes(targetType)) {
     return res.status(400).json({ success: false, error: '不支持的内容类型' });
+  }
+
+  // 越权防护：校验当前用户能否操作此内容的版本
+  const accessCheck = canAccessContentVersions(db, req.session.user, targetType, targetId);
+  if (!accessCheck.ok) {
+    const statusCode = accessCheck.reason === '文章不存在' || accessCheck.reason === '页面不存在' ? 404 : 403;
+    return res.status(statusCode).json({ success: false, error: accessCheck.reason });
   }
 
   try {
@@ -395,13 +479,20 @@ router.post('/api/content/:type/:id/versions', isAuthenticated, (req, res) => {
 /**
  * 获取内容版本列表
  */
-router.get('/api/content/:type/:id/versions', (req, res) => {
+router.get('/api/content/:type/:id/versions', isAuthenticated, (req, res) => {
   const db = getDb();
   const targetType = req.params.type;
   const targetId = parseInt(req.params.id);
   const page = parseInt(req.query.page) || 1;
   const limit = Math.min(parseInt(req.query.limit) || 20, 50);
   const offset = (page - 1) * limit;
+
+  // 越权防护：校验当前用户能否访问此内容的版本历史
+  const accessCheck = canAccessContentVersions(db, req.session.user, targetType, targetId);
+  if (!accessCheck.ok) {
+    const statusCode = accessCheck.reason === '文章不存在' || accessCheck.reason === '页面不存在' ? 404 : 403;
+    return res.status(statusCode).json({ success: false, error: accessCheck.reason });
+  }
 
   try {
     const total = queryOne(db,
@@ -434,11 +525,18 @@ router.get('/api/content/:type/:id/versions', (req, res) => {
 /**
  * 获取单个版本详情
  */
-router.get('/api/content/:type/:id/versions/:versionId', (req, res) => {
+router.get('/api/content/:type/:id/versions/:versionId', isAuthenticated, (req, res) => {
   const db = getDb();
   const targetType = req.params.type;
   const targetId = parseInt(req.params.id);
   const versionId = parseInt(req.params.versionId);
+
+  // 越权防护：校验当前用户能否访问此内容的版本历史
+  const accessCheck = canAccessContentVersions(db, req.session.user, targetType, targetId);
+  if (!accessCheck.ok) {
+    const statusCode = accessCheck.reason === '文章不存在' || accessCheck.reason === '页面不存在' ? 404 : 403;
+    return res.status(statusCode).json({ success: false, error: accessCheck.reason });
+  }
 
   const version = queryOne(db,
     `SELECT v.*, u.username as editor_name

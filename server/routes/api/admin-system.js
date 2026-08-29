@@ -3,10 +3,11 @@ const path = require('path');
 const fs = require('fs');
 const AdmZip = require('adm-zip');
 const { queryOne, queryAll, getDb, saveDatabase, getDbPath } = require('../../config/database');
-const { apiAuth, apiRequireAdmin } = require('../../middlewares/api-auth');
+const { apiAuth, apiRequireAdmin, apiRequirePermission, apiRequireSuperAdmin, apiAdminAudit } = require('../../middlewares/api-auth');
+const { canOperateUser } = require('../../middlewares/auth');
 
 const router = express.Router();
-router.use(apiAuth, apiRequireAdmin);
+router.use(apiAuth, apiRequireAdmin, apiAdminAudit);
 
 const projectRoot = path.join(__dirname, '../../..');
 const backupDir = path.join(projectRoot, 'backups');
@@ -23,7 +24,7 @@ function formatSize(bytes) {
 }
 
 // ============ 操作日志 ============
-router.get('/logs', (req, res) => {
+router.get('/logs', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
   const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 20)));
@@ -37,7 +38,7 @@ router.get('/logs', (req, res) => {
   res.json({ logs: rows || [], total, page });
 });
 
-router.delete('/logs', (req, res) => {
+router.delete('/logs', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const days = Math.min(3650, Math.max(1, toInt(req.query.days, 7)));
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -47,7 +48,7 @@ router.delete('/logs', (req, res) => {
 });
 
 // ============ 权限管理 ============
-router.get('/users/:id/permissions', (req, res) => {
+router.get('/users/:id/permissions', apiRequirePermission('permissions.manage'), (req, res) => {
   const db = getDb();
   const userId = toInt(req.params.id);
   const allPerms = queryAll(db, 'SELECT perm_key, perm_name, description FROM permissions ORDER BY id ASC');
@@ -63,22 +64,23 @@ router.get('/users/:id/permissions', (req, res) => {
   res.json({ permissions });
 });
 
-router.put('/users/:id/permissions', (req, res) => {
+router.put('/users/:id/permissions', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const userId = toInt(req.params.id);
   const permKeys = Array.isArray(req.body.perm_keys) ? req.body.perm_keys.map((k) => String(k).slice(0, 64)) : [];
 
-  const targetUser = queryOne(db, 'SELECT id, role FROM users WHERE id = ?', [userId]);
+  const targetUser = queryOne(db, 'SELECT id, role, username FROM users WHERE id = ?', [userId]);
   if (!targetUser) {
     return res.status(404).json({ error: '用户不存在' });
+  }
+  // 统一操作校验：不能操作自己、非超管不能动超管、同级/高级不可动
+  const opCheck = canOperateUser(req.apiUser, targetUser);
+  if (!opCheck.ok) {
+    return res.status(403).json({ error: opCheck.reason });
   }
   // 超级管理员的 user_permissions 统一禁止修改（超管权限不依赖该表）
   if (targetUser.role === 'super_admin') {
     return res.status(403).json({ error: '无权修改超级管理员的权限' });
-  }
-  // 不能操作自己
-  if (targetUser.id === req.apiUser.id) {
-    return res.status(400).json({ error: '不能操作自己的账号' });
   }
 
   // perm_key 必须真实存在于 permissions 表
@@ -90,18 +92,6 @@ router.put('/users/:id/permissions', (req, res) => {
     return res.status(400).json({ error: '非法的权限项：' + unknownKey });
   }
 
-  // 普通 admin 仅允许"纯撤销"：请求集必须 ⊆ 当前已拥有集（不可授予）
-  if (req.apiUser.role !== 'super_admin') {
-    const currentKeys = new Set(
-      (queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [userId]) || [])
-        .map((p) => p.perm_key)
-    );
-    const granting = permKeys.find((k) => !currentKeys.has(k));
-    if (granting) {
-      return res.status(403).json({ error: '仅超级管理员可授予权限' });
-    }
-  }
-
   db.run('DELETE FROM user_permissions WHERE user_id = ?', [userId]);
   for (const key of permKeys) {
     db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)', [userId, key, req.apiUser.id]);
@@ -111,7 +101,7 @@ router.put('/users/:id/permissions', (req, res) => {
 });
 
 // ============ 媒体管理 ============
-router.get('/media', (req, res) => {
+router.get('/media', apiRequirePermission('media.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
   const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 20)));
@@ -126,7 +116,7 @@ router.get('/media', (req, res) => {
   res.json({ media: rows || [], total, page });
 });
 
-router.delete('/media/:id', (req, res) => {
+router.delete('/media/:id', apiRequirePermission('media.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   const m = queryOne(db, 'SELECT * FROM media WHERE id = ?', [id]);
@@ -166,11 +156,11 @@ function getBackupList() {
   return backups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-router.get('/backups', (req, res) => {
+router.get('/backups', apiRequirePermission('data.manage'), (req, res) => {
   res.json({ backups: getBackupList() });
 });
 
-router.post('/backups', (req, res) => {
+router.post('/backups', apiRequirePermission('data.manage'), (req, res) => {
   const type = (req.body.type || 'database').toString();
   try {
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
@@ -195,7 +185,7 @@ router.post('/backups', (req, res) => {
   }
 });
 
-router.delete('/backups/:name', (req, res) => {
+router.delete('/backups/:name', apiRequirePermission('data.manage'), (req, res) => {
   const name = path.basename(req.params.name); // 防路径穿越
   const filePath = path.join(backupDir, name);
   if (!name.endsWith('.zip')) return res.status(400).json({ error: '无效的备份名' });
@@ -260,7 +250,7 @@ function formatDuration(seconds) {
 }
 
 // ============ 维护模式 ============
-router.post('/maintenance/toggle', (req, res) => {
+router.post('/maintenance/toggle', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const enabled = req.body.enabled === true;
   const title = (req.body.title || '系统维护中').toString().slice(0, 100);

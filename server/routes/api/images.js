@@ -49,8 +49,8 @@ const imageUpload = multer({
 function buildVisibilityFilter(user) {
   if (user) {
     return {
-      clause: '(i.visibility IS NULL OR i.visibility = \'\' OR i.visibility = \'public\' OR i.user_id = ? OR (i.visibility = \'selected\' AND (\',\' || i.allowed_user_ids || \',\' LIKE \'%,\' || ? || \',%\')))',
-      params: [user.id, user.id]
+      clause: '(i.visibility IS NULL OR i.visibility = \'\' OR i.visibility = \'public\' OR i.user_id = ? OR (i.visibility = \'selected\' AND EXISTS (SELECT 1 FROM json_each(i.allowed_user_ids) WHERE json_each.value = ? OR CAST(json_each.value AS TEXT) = ?)))',
+      params: [user.id, user.id, String(user.id)]
     };
   }
   return {
@@ -174,6 +174,11 @@ router.post('/images/:id/favorite', apiAuth, (req, res) => {
   const db = getDb();
   const imageId = parseInt(req.params.id);
   const userId = req.apiUser.id;
+
+  // 安全：校验图片存在且已发布（status=1），防止对隐藏/不存在图片操作
+  const image = queryOne(db, 'SELECT id FROM images WHERE id = ? AND status = 1', [imageId]);
+  if (!image) return res.status(404).json({ error: '图片不存在' });
+
   const existing = queryOne(db, 'SELECT id FROM image_favorites WHERE user_id = ? AND image_id = ?', [userId, imageId]);
   if (existing) {
     db.run('DELETE FROM image_favorites WHERE id = ?', [existing.id]);
@@ -189,6 +194,11 @@ router.post('/images/:id/like', apiAuth, (req, res) => {
   const db = getDb();
   const imageId = parseInt(req.params.id);
   const userId = req.apiUser.id;
+
+  // 安全：校验图片存在且已发布（status=1）
+  const image = queryOne(db, 'SELECT id FROM images WHERE id = ? AND status = 1', [imageId]);
+  if (!image) return res.status(404).json({ error: '图片不存在' });
+
   const existing = queryOne(db,
     "SELECT id FROM content_likes WHERE user_id = ? AND target_type = 'image' AND target_id = ?", [userId, imageId]);
   if (existing) {

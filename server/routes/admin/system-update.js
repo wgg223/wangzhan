@@ -129,6 +129,41 @@ function unzipCrossPlatform(zipPath, destDir) {
   });
 }
 
+/**
+ * 扫描解压目录，检测 zip-slip 路径穿越（用于系统 unzip 回退分支的事后校验）。
+ * 递归遍历所有文件/目录，若相对路径包含 .. 或解析后超出 rootDir，则记录为违规。
+ * @returns {string[]} 违规路径列表（空数组表示安全）
+ */
+function scanForZipSlip(rootDir) {
+  const violations = [];
+  const rootResolved = path.resolve(rootDir);
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (e) { return; }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      const relPath = path.relative(rootResolved, fullPath);
+      // 路径穿越检测：相对路径含 .. 或解析后超出 root
+      if (relPath.includes('..') || path.isAbsolute(relPath)) {
+        violations.push(relPath);
+        continue;
+      }
+      const resolved = path.resolve(rootResolved, relPath);
+      if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) {
+        violations.push(relPath);
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      }
+    }
+  }
+  walk(rootDir);
+  return violations;
+}
+
 // 下载文件并上报进度（0-55 区间映射下载阶段）
 function downloadWithProgress(url, zipPath) {
   return new Promise((resolve, reject) => {
@@ -381,6 +416,12 @@ async function runUpdateTask(projectRoot, db, actor) {
       try {
         await unzipCrossPlatform(zipPath, tempDir);
         console.log('[system-update] 系统unzip解压完成');
+        // 系统 unzip 回退分支：解压后扫描全部文件，校验无路径穿越（zip-slip）
+        const slipFiles = scanForZipSlip(tempDir);
+        if (slipFiles.length > 0) {
+          await removeDir(tempDir);
+          throw new Error('更新包包含非法路径(zip-slip): ' + slipFiles.slice(0, 3).join(', '));
+        }
       } catch (unzipError) {
         throw new Error('所有解压方法都失败: ' + zipError.message);
       }
@@ -401,6 +442,26 @@ async function runUpdateTask(projectRoot, db, actor) {
       sourceDir = path.join(tempDir, extractedDir);
     } else {
       sourceDir = tempDir;
+    }
+
+    // 4.1 更新包完整性校验：验证关键文件存在且版本号匹配（GitHub zipball 无 checksum，此为基础防篡改）
+    const pkgJsonPath = path.join(sourceDir, 'package.json');
+    if (!fs.existsSync(pkgJsonPath)) {
+      throw new Error('更新包缺少 package.json，可能已损坏或被篡改');
+    }
+    try {
+      const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+      if (!pkgJson.version || !/^\d+\.\d+\.\d+/.test(pkgJson.version)) {
+        throw new Error('更新包 package.json 版本号无效: ' + (pkgJson.version || 'undefined'));
+      }
+      if (pkgJson.version !== version) {
+        throw new Error(`更新包版本不匹配：期望 v${version}，实际 v${pkgJson.version}`);
+      }
+    } catch (parseErr) {
+      throw new Error('更新包 package.json 解析失败: ' + parseErr.message);
+    }
+    if (!fs.existsSync(path.join(sourceDir, 'server'))) {
+      throw new Error('更新包缺少 server/ 目录，可能已损坏或被篡改');
     }
 
     // 5. 备份当前项目
@@ -485,7 +546,7 @@ async function runUpdateTask(projectRoot, db, actor) {
       setTask({ progress: 85, message: '正在安装依赖 (npm install)...' });
       console.log('[system-update] 开始执行 npm install...');
       await new Promise((resolve, reject) => {
-        exec('npm install --production', { cwd: projectRoot, timeout: 180000 }, (error, stdout, stderr) => {
+        exec('npm install --production --ignore-scripts', { cwd: projectRoot, timeout: 180000 }, (error, stdout, stderr) => {
           if (error) {
             console.error('[system-update] npm install 失败:', error.message);
             reject(new Error('npm install 失败: ' + error.message));

@@ -36,7 +36,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
-/scripts
+scripts/*.py
+scripts/.file_checksums.json
 
 # Python
 *.pyc
@@ -113,3 +114,9 @@ android/
 # Deploy
 deploy/
 deploy_logs/
+
+# PM2 会话密钥
+.session_secret
+
+# 开发环境加密密钥
+.dev_encryption_key

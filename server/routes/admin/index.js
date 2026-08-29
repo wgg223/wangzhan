@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated, canAccessAdmin, isAdmin, isSuperAdmin } = require('../../middlewares/auth');
+const { isAuthenticated, canAccessAdmin, isAdmin, isSuperAdmin, hasPermission } = require('../../middlewares/auth');
+const { doubleSubmitCookie } = require('../../middlewares/security');
 
 // 导入子路由模块
 const dashboardRouter = require('./dashboard');
@@ -31,10 +32,13 @@ const attachmentsRouter = require('./attachments');
 const serverLogsRouter = require('./server-logs');
 const promptsRouter = require('./prompts');
 const aiImageRouter = require('./ai-image');
+const aiChatRouter = require('./ai-chat');
 
 // ---------- Admin 全局中间件 ----------
 router.use(isAuthenticated);
 router.use(canAccessAdmin);
+// CSRF 双提交 Cookie 防护：所有 admin 写操作需携带 _csrf 或 X-CSRF-Token
+router.use(doubleSubmitCookie);
 
 // 注入侧边栏当前路径标识
 router.use((req, res, next) => {
@@ -61,14 +65,15 @@ router.use(dashboardRouter);
 router.use(activityLogsRouter);
 router.use(settingsRouter);
 router.use(pagesRouter);
-// ---------- 设置模块子路由（仅管理员可访问） ----------
-router.use('/settings/basic', isAdmin, settingsBasicRouter);
-router.use('/settings/smtp', isAdmin, settingsSmtpRouter);
-router.use('/settings/agreement', isAdmin, settingsAgreementRouter);
-router.use('/settings/popup', isAdmin, settingsPopupRouter);
+// ---------- 设置模块子路由（需 settings.manage 权限，与主 settings.js 对齐） ----------
+router.use('/settings/basic', hasPermission('settings.manage'), settingsBasicRouter);
+router.use('/settings/smtp', hasPermission('settings.manage'), settingsSmtpRouter);
+router.use('/settings/agreement', hasPermission('settings.manage'), settingsAgreementRouter);
+router.use('/settings/popup', hasPermission('settings.manage'), settingsPopupRouter);
 router.use(articlesRouter);
 router.use(promptsRouter);
 router.use(aiImageRouter);
+router.use(aiChatRouter);
 router.use('/attachments', attachmentsRouter);
 router.use(usersRouter);
 router.use(permissionsRouter);

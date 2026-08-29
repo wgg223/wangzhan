@@ -17,7 +17,7 @@ const MAX_FILE_SIZE = 200 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = [
   '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-  '.txt', '.csv', '.json', '.xml', '.yaml', '.yml',
+  '.txt', '.csv', '.json', '.yaml', '.yml',
   '.mp3', '.wav', '.flac', '.aac', '.ogg',
   '.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv',
   '.psd', '.ai', '.sketch',
@@ -81,6 +81,11 @@ function formatSize(bytes) {
   return formatBytes(bytes);
 }
 
+// 文件名净化：防止换行/控制字符注入 Content-Disposition 响应头
+function safeDownloadName(name) {
+  return String(name || 'attachment').replace(/[\r\n\0]/g, '').slice(0, 255);
+}
+
 // POST /admin/attachments/upload/init - Initialize resumable upload
 router.post('/upload/init', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const { fileName, fileSize, totalChunks } = req.body;
@@ -89,8 +94,22 @@ router.post('/upload/init', isAuthenticated, hasPermission('articles.manage'), (
     return res.status(400).json({ error: '缺少必要参数' });
   }
 
-  if (fileSize > MAX_FILE_SIZE) {
-    return res.status(400).json({ error: '文件大小不能超过 200MB' });
+  const size = parseInt(fileSize, 10);
+  const chunkCount = parseInt(totalChunks, 10);
+  if (!Number.isFinite(size) || size <= 0 || size > MAX_FILE_SIZE) {
+    return res.status(400).json({ error: '文件大小非法（最大 200MB）' });
+  }
+  if (!Number.isFinite(chunkCount) || chunkCount <= 0 || chunkCount > 500) {
+    return res.status(400).json({ error: '分片数量非法（1-500）' });
+  }
+
+  // 每用户并发上传会话上限，防内存/磁盘耗尽
+  let userSessions = 0;
+  for (const s of uploadSessions.values()) {
+    if (s.userId === req.session.user.id) userSessions++;
+  }
+  if (userSessions >= 5) {
+    return res.status(429).json({ error: '并发上传会话过多，请稍后再试' });
   }
 
   if (!validateExtension(fileName)) {
@@ -103,14 +122,14 @@ router.post('/upload/init', isAuthenticated, hasPermission('articles.manage'), (
 
   uploadSessions.set(uploadId, {
     fileName,
-    fileSize,
-    totalChunks: parseInt(totalChunks, 10),
+    fileSize: size,
+    totalChunks: chunkCount,
     receivedChunks: new Set(),
     createdAt: Date.now(),
     userId: req.session.user.id
   });
 
-  res.json({ uploadId, totalChunks: parseInt(totalChunks, 10) });
+  res.json({ uploadId, totalChunks: chunkCount });
 });
 
 // POST /admin/attachments/upload/chunk - Upload a single chunk
@@ -131,9 +150,25 @@ router.post('/upload/chunk', isAuthenticated, hasPermission('articles.manage'), 
     return res.status(403).json({ error: '无权操作此上传会话' });
   }
 
+  // 分片索引越界校验
+  if (chunkIndex < 0 || chunkIndex >= session.totalChunks) {
+    return res.status(400).json({ error: '分片索引非法' });
+  }
+
+  // 分片大小上限（名义 2MB + 余量），超出立即终止防止内存耗尽
+  const MAX_CHUNK_BYTES = 3 * 1024 * 1024;
   const chunks = [];
+  let receivedBytes = 0;
 
   req.on('data', (chunk) => {
+    receivedBytes += chunk.length;
+    if (receivedBytes > MAX_CHUNK_BYTES) {
+      if (!res.headersSent) {
+        res.status(413).json({ error: '分片大小超出限制' });
+      }
+      req.destroy();
+      return;
+    }
     chunks.push(chunk);
   });
 
@@ -153,7 +188,9 @@ router.post('/upload/chunk', isAuthenticated, hasPermission('articles.manage'), 
   });
 
   req.on('error', () => {
-    res.status(500).json({ error: '分片上传失败' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: '分片上传失败' });
+    }
   });
 });
 
@@ -384,6 +421,22 @@ router.get('/download/:id', isAuthenticated, (req, res) => {
     return res.status(404).json({ error: '附件不存在' });
   }
 
+  // IDOR 防护：仅上传者本人、关联文章作者、或有 articles.manage 权限的用户可下载
+  const userId = req.session.user.id;
+  const userRole = req.session.user.role;
+  let canDownload = att.uploaded_by === userId || userRole === 'admin' || userRole === 'super_admin';
+  if (!canDownload && att.article_id) {
+    const article = queryOne(db, 'SELECT author_id FROM articles WHERE id = ?', [att.article_id]);
+    if (article && article.author_id === userId) canDownload = true;
+  }
+  if (!canDownload) {
+    const perm = queryOne(db, 'SELECT 1 FROM user_permissions WHERE user_id = ? AND perm_key = ?', [userId, 'articles.manage']);
+    if (perm) canDownload = true;
+  }
+  if (!canDownload) {
+    return res.status(403).json({ error: '无权下载此附件' });
+  }
+
   const filePath = safeResolveAttachment(att.file_path);
   if (!filePath || !fs.existsSync(filePath)) {
     return res.status(404).json({ error: '文件不存在' });
@@ -394,7 +447,7 @@ router.get('/download/:id', isAuthenticated, (req, res) => {
     saveDatabase();
   } catch (e) { /* ignore */ }
 
-  res.download(filePath, att.original_name);
+  res.download(filePath, safeDownloadName(att.original_name));
 });
 
 // POST /admin/attachments/update-article - Update article_id for orphan attachments

@@ -97,6 +97,30 @@ async function performScheduledBackup(db, type, notifyEmail) {
     // Calculate size
     const backupSize = getDirSize(backupPath);
 
+    // 清理 30 天前创建的旧备份目录（保留策略）
+    try {
+      const now = Date.now();
+      const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+      if (fs.existsSync(backupDir)) {
+        const entries = fs.readdirSync(backupDir);
+        for (const entry of entries) {
+          const entryPath = path.join(backupDir, entry);
+          try {
+            const stat = fs.statSync(entryPath);
+            if (stat.isDirectory() && now - stat.mtimeMs > thirtyDays) {
+              fs.rmSync(entryPath, { recursive: true, force: true });
+              console.log('[scheduled-backup] 清理过期备份目录:', entry);
+            }
+          } catch (e) {
+            // 单个目录清理失败不影响整体
+            console.error('[scheduled-backup] 清理备份目录失败:', entry, e.message);
+          }
+        }
+      }
+    } catch (cleanupErr) {
+      console.error('[scheduled-backup] 清理过期备份失败:', cleanupErr.message);
+    }
+
     // Log activity
     try {
       logActivity(db, {
@@ -273,8 +297,8 @@ router.post('/maintenance/update', isAuthenticated, isSuperAdmin, (req, res) => 
   }
 });
 
-// GET - Get current maintenance status
-router.get('/maintenance/status', (req, res) => {
+// GET - Get current maintenance status（需登录，防止匿名探测维护模式配置）
+router.get('/maintenance/status', isAuthenticated, (req, res) => {
   try {
     const db = getDb();
     if (!db) {

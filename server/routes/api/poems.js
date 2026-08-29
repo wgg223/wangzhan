@@ -91,6 +91,17 @@ router.post('/poem-leaderboard', apiAuth, (req, res) => {
   const totalCount = Math.max(0, parseInt(req.body.total_count) || 0);
   const duration = Math.max(0, parseInt(req.body.duration) || 0);
 
+  // 服务端防作弊：分数合理性校验（防止客户端直接提交任意高分）
+  if (totalCount <= 0) return res.status(400).json({ error: '题目数无效' });
+  if (correctCount > totalCount) return res.status(400).json({ error: '正确数不能超过题目总数' });
+  if (comboMax > correctCount) return res.status(400).json({ error: '最大连击不能超过正确数' });
+  if (duration < 1) return res.status(400).json({ error: '游戏时长无效' });
+  // 单题最高 100 分，总分上限 = 题目数 × 100
+  const maxPossibleScore = totalCount * 100;
+  if (score > maxPossibleScore) {
+    return res.status(400).json({ error: '分数超过合理上限' });
+  }
+
   db.run(
     'INSERT INTO poem_leaderboard (user_id, username, game_mode, difficulty, category, score, combo_max, correct_count, total_count, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [user.id, user.nickname || user.username, gameMode, difficulty, category, score, comboMax, correctCount, totalCount, duration]

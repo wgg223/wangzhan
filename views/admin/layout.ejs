@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
   <title>后台管理 - 网站管理系统</title>
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/admin.css') : '/css/admin.css' %>">
   <!-- Quill rich text editor CSS + JS - 使用本地版本，备用 CDN -->
@@ -77,7 +78,7 @@
           </ul>
         </div>
         <% } %>
-        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'pages.manage') || hasPerm(userPermissions, 'articles.manage') || hasPerm(userPermissions, 'novels.manage') || hasPerm(userPermissions, 'comments.manage') || hasPerm(userPermissions, 'prompts.view') || hasPerm(userPermissions, 'prompts.manage') || hasPerm(userPermissions, 'imagegen.manage'))) { %>
+        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'pages.manage') || hasPerm(userPermissions, 'articles.manage') || hasPerm(userPermissions, 'novels.manage') || hasPerm(userPermissions, 'comments.manage') || hasPerm(userPermissions, 'prompts.view') || hasPerm(userPermissions, 'prompts.manage') || hasPerm(userPermissions, 'imagegen.manage') || hasPerm(userPermissions, 'aichat.manage'))) { %>
         <div class="nav-group">
           <p class="nav-group-title">内容管理</p>
           <ul>
@@ -92,6 +93,9 @@
             <% } %>
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'imagegen.manage')) { %>
             <li><a href="/admin/ai-image" class="<%= isActive('/admin/ai-image') ? 'active' : '' %>">🎨 AI生图</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'aichat.manage')) { %>
+            <li><a href="/admin/ai-chat" class="<%= isActive('/admin/ai-chat') ? 'active' : '' %>">🤖 AI聊天</a></li>
             <% } %>
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'novels.manage')) { %>
             <li><a href="/admin/novels" class="<%= isActive('/admin/novels') ? 'active' : '' %>">📚 小说管理</a></li>

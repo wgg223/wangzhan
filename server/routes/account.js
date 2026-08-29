@@ -168,7 +168,7 @@ router.post('/account/password', isAuthenticated, (req, res) => {
   }
 
   const hashedPassword = bcrypt.hashSync(new_password, 10);
-  db.run('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, userId]);
+  db.run('UPDATE users SET password = ?, token_version = token_version + 1 WHERE id = ?', [hashedPassword, userId]);
   saveDatabase();
 
   res.redirect('/account?success=密码修改成功');

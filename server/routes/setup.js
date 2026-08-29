@@ -243,8 +243,8 @@ function validateForm({ username, password, confirm_password, email, db_mode }) 
     return '用户名只能包含中文、英文、数字和下划线';
   }
 
-  if (password.length < 6) {
-    return '密码长度不能少于6位';
+  if (password.length < 8) {
+    return '密码长度不能少于8位';
   }
 
   if (password !== confirm_password) {

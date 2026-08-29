@@ -60,7 +60,19 @@
             <button class="btn btn-follow <%= isFollowing ? 'following' : '' %>" data-user-id="<%= profileUser.id %>">
               <%= isFollowing ? '已关注' : '关注' %>
             </button>
-            <button class="btn btn-message" onclick="openChatWithUser(<%= profileUser.id %>, '<%= profileUser.nickname || profileUser.username %>', '<%= profileUser.avatar || "/assets/images/default-avatar.png" %>')">发私信</button>
+            <button class="btn btn-message" data-chat-user-id="<%= profileUser.id %>"
+                    data-chat-nickname="<%= profileUser.nickname || profileUser.username %>"
+                    data-chat-avatar="<%= profileUser.avatar || '/assets/images/default-avatar.png' %>">发私信</button>
+            <script>
+              (function () {
+                var btn = document.querySelector('[data-chat-user-id="<%= profileUser.id %>"]');
+                if (btn && typeof openChatWithUser === 'function') {
+                  btn.addEventListener('click', function () {
+                    openChatWithUser(Number(btn.dataset.chatUserId), btn.dataset.chatNickname, btn.dataset.chatAvatar);
+                  });
+                }
+              })();
+            </script>
           </div>
         <% } %>
       </div>

@@ -26,7 +26,9 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
-app.set('trust proxy', 1);
+// 信任代理层数：Nginx/CDN 回源设为 1，直接暴露设为 0（防 X-Forwarded-For 伪造绕过限流/验证码）
+// 安全默认：不设 TRUST_PROXY 时为 0（不信任任何代理），需在反代后部署时显式配置
+app.set('trust proxy', process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY, 10) : 0);
 
 app.use((req, res, next) => {
   monitor.recordRequest();
@@ -36,14 +38,72 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 
 app.use(express.json({
-  limit: '50mb',
+  limit: '5mb',
   strict: true
 }));
 app.use(express.urlencoded({
   extended: true,
-  limit: '50mb',
+  limit: '5mb',
   parameterLimit: 1000
 }));
+
+app.use(session({
+  secret: process.env.SESSION_SECRET || (() => {
+    console.error('[安全] 未设置 SESSION_SECRET 环境变量，使用随机密钥（重启后所有会话失效）');
+    return require('crypto').randomBytes(32).toString('hex');
+  })(),
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  name: 'connect.sid',
+  cookie: {
+    secure: 'auto',
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 24 * 60 * 60 * 1000
+  }
+}));
+
+// CSP Nonce 中间件：每个请求生成随机 nonce，供模板内联脚本/样式使用
+// 迁移完成后，CSP 中的 'unsafe-inline' 将替换为 'nonce-<%= nonce %>'
+app.use((req, res, next) => {
+  const crypto = require('crypto');
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
+// 安全响应头（必须位于 express.static 之前，确保静态资源/上传文件也携带 nosniff/CSP 等头）
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  res.setHeader('X-Download-Options', 'noopen');
+
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net static.cloudflareinsights.com",
+    "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data: cdnjs.cloudflare.com",
+    "connect-src 'self' https:",
+    "frame-src 'self' https:",
+    "frame-ancestors 'self'",
+    "form-action 'self'",
+    "base-uri 'self'"
+  ].join('; '));
+
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
+  next();
+});
+
+// 上传目录保护（拦截 /uploads/images、/uploads/ai-images 未授权直链，必须位于 express.static 之前）
+const { protectUploads } = require('./middlewares/upload-protect');
+app.use(protectUploads);
 
 app.use(express.static(path.join(__dirname, '../public'), {
   maxAge: '30d',
@@ -69,51 +129,6 @@ if (process.pkg) {
   const { publicDir } = require('./config/app-root');
   app.use(express.static(publicDir));
 }
-
-app.use(session({
-  secret: process.env.SESSION_SECRET || (() => {
-    console.error('[安全] 未设置 SESSION_SECRET 环境变量，使用随机密钥（重启后所有会话失效）');
-    return require('crypto').randomBytes(32).toString('hex');
-  })(),
-  resave: false,
-  saveUninitialized: false,
-  rolling: true,
-  name: 'connect.sid',
-  cookie: {
-    secure: 'auto',
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 24 * 60 * 60 * 1000
-  }
-}));
-
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
-  res.setHeader('X-Download-Options', 'noopen');
-
-  res.setHeader('Content-Security-Policy', [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net static.cloudflareinsights.com",
-    "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net",
-    "img-src 'self' data: blob: https:",
-    "font-src 'self' data: cdnjs.cloudflare.com",
-    "connect-src 'self' https:",
-    "frame-src 'self' https:",
-    "frame-ancestors 'self'",
-    "form-action 'self'",
-    "base-uri 'self'"
-  ].join('; '));
-
-  if (process.env.NODE_ENV === 'production') {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-  }
-  next();
-});
 
 app.use(expressLayouts);
 app.set('view engine', 'ejs');
@@ -157,6 +172,8 @@ app.use((req, res, next) => {
   // 使用 res.locals.layout 替代 app.set('layout') 避免并发竞态条件
   if (req.path.startsWith('/admin')) {
     res.locals.layout = 'admin/layout';
+  } else if (req.path.startsWith('/share')) {
+    res.locals.layout = false;
   } else if (req.path.startsWith('/novels/') && req.path.includes('/chapter/')) {
     res.locals.layout = false;
   } else if (req.path.startsWith('/poem-game')) {
@@ -213,6 +230,7 @@ const communityRoutes = require('./routes/community');
 const contentRoutes = require('./routes/content');
 const permissionApplicationsRoutes = require('./routes/permission-applications');
 const privateMessageRoutes = require('./routes/private-message');
+const shareRoutes = require('./routes/share');
 const apiRoutes = require('./routes/api/index');
 const { apiAccessLogger } = require('./middlewares/api-access-logger');
 app.use('/setup', setupRoutes);
@@ -228,6 +246,7 @@ app.use(maintenanceMiddleware);
 
 app.use('/poem-game', globalLimiter, poemGameRoutes);
 app.use('/image-share', globalLimiter, imageShareRoutes);
+app.use('/share', globalLimiter, shareRoutes);
 app.use('/', globalLimiter, frontendRoutes);
 app.use('/', globalLimiter, communityRoutes);
 app.use('/', globalLimiter, privateMessageRoutes);
@@ -279,7 +298,7 @@ app.use((err, req, res, next) => {
   }
 
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(413).json({ error: '文件大小超出限制（最大50MB）' });
+    return res.status(413).json({ error: '文件大小超出该上传的限制' });
   }
   if (err.code === 'LIMIT_FILE_COUNT') {
     return res.status(413).json({ error: '文件数量超出限制（最多20个）' });
@@ -296,16 +315,20 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: err.message });
   }
 
+  // 非 API 路由：尊重中间件设置的 err.status（403/404 等），其余统一 500
+  const status = err.status || 500;
   try {
-    res.status(500).render('frontend/error', {
-      message: '服务器内部错误',
-      error: process.env.NODE_ENV === 'production' ? '请稍后再试' : '发生错误，请查看服务器日志',
+    res.status(status).render('frontend/error', {
+      message: status === 404 ? '页面未找到' : '服务器内部错误',
+      error: process.env.NODE_ENV === 'production'
+        ? (status === 404 ? '您请求的页面不存在' : '请稍后再试')
+        : '发生错误，请查看服务器日志',
       user: req.session ? req.session.user : null,
       settings: res.locals ? (res.locals.settings || {}) : {}
     });
   } catch (renderErr) {
-    console.error('[500] 错误模板渲染失败:', renderErr.message);
-    res.status(500).send('<h1>500 - 服务器内部错误</h1>');
+    console.error('[' + status + '] 错误模板渲染失败:', renderErr.message);
+    res.status(status).send(status === 404 ? '<h1>404 - 页面未找到</h1>' : '<h1>500 - 服务器内部错误</h1>');
   }
 });
 

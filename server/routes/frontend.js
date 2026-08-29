@@ -670,7 +670,9 @@ router.get('/attachments/download/:id', (req, res) => {
     saveDatabase();
   } catch (e) { /* ignore */ }
 
-  res.download(filePath, att.original_name);
+  // 文件名净化：防止换行/控制字符注入 Content-Disposition 响应头
+  const safeName = String(att.original_name || 'attachment').replace(/[\r\n\0]/g, '').slice(0, 255);
+  res.download(filePath, safeName);
 });
 
 // ============ 社区主页 ============
@@ -720,7 +722,9 @@ router.get('/community', (req, res) => {
       u.id as user_id, u.uid as user_uid, u.username, u.nickname, u.avatar
     FROM images i
     JOIN users u ON i.user_id = u.id
-    WHERE i.status = 1`;
+    WHERE i.status = 1${user ? '' : `
+      AND (i.visibility IS NULL OR i.visibility = '' OR i.visibility = 'public')
+      AND i.cate_id IN (SELECT id FROM image_categories WHERE is_guest = 1 AND status = 1)`}`;
 
   const postQuery = `
     SELECT 'dynamic' as type, p.id, substr(p.content, 1, 200) as content, NULL as cover_image, p.created_at,
@@ -977,6 +981,8 @@ router.get('/ai-image', isAuthenticated, hasFrontendPermission('imagegen.use'), 
     userPerms.indexOf('prompts.*') !== -1;
   const canShare = user.role === 'super_admin' || user.role === 'admin' ||
     userPerms.indexOf('image-share.access') !== -1 || userPerms.indexOf('image-share.*') !== -1;
+  const canShareLink = user.role === 'super_admin' || user.role === 'admin' ||
+    userPerms.indexOf('image-share.share') !== -1 || userPerms.indexOf('image-share.*') !== -1;
 
   // 提示词库数据（picker 用；复用 ai_prompts_ 前缀缓存，后台改动自动失效）
   let prompts = [];
@@ -995,6 +1001,7 @@ router.get('/ai-image', isAuthenticated, hasFrontendPermission('imagegen.use'), 
     unlimited,
     canPickPrompt,
     canShare,
+    canShareLink,
     userKeys,
     prompts
   });
@@ -1293,5 +1300,449 @@ router.post('/ai-image/api/share', isAuthenticated, hasFrontendPermission('image
 
     res.json({ success: true, message: status === 1 ? '已分享到图片分享' : '已提交分享，等待管理员审核' });
   });
+
+// ============ AI 聊天模块 ============
+const crypto = require('crypto');
+const aiChatService = require('../services/ai-chat');
+const { checkQuota } = require('../services/ai-chat/quota');
+const { refreshSummary } = require('../services/ai-chat/memory');
+const { resolveModel } = require('../services/ai-chat/provider');
+
+// AI 聊天接口限流
+const aiChatSendLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 6, keyGenerator: r => `aichat:send:${r.session.user.id}`, message: '发送过于频繁，请稍后再试' });
+const aiChatOpLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30, keyGenerator: r => `aichat:op:${r.session.user.id}`, message: '操作过于频繁，请稍后再试' });
+const aiChatRoleLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 10, keyGenerator: r => `aichat:role:${r.session.user.id}`, message: '操作过于频繁，请稍后再试' });
+const aiChatModelLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 10, keyGenerator: r => `aichat:model:${r.session.user.id}`, message: '操作过于频繁，请稍后再试' });
+
+// CSRF 校验（本模块约定：POST 头 X-CSRF-Token === session.doubleSubmitToken）
+function csrfCheck(req, res, next) {
+  const token = req.headers['x-csrf-token'];
+  if (!token || token !== req.session.doubleSubmitToken) {
+    return res.status(403).json({ error: 'CSRF 校验失败，请刷新页面重试' });
+  }
+  next();
+}
+
+const WORLD_BOOK_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top'];
+
+// AI 聊天页面（常规站点布局，背景与主站一致）
+router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  if (!req.session.doubleSubmitToken) {
+    req.session.doubleSubmitToken = crypto.randomBytes(32).toString('hex');
+  }
+  const settings = getSettings(db);
+  const user = req.session.user;
+  const userPerms = res.locals.userPermissions || [];
+
+  // 提示词库选择（复用 ai_prompts_ 前缀缓存；与 AI 生图一致）
+  const canPickPrompt = user.role === 'super_admin' || user.role === 'admin' ||
+    userPerms.indexOf('prompts.view') !== -1 || userPerms.indexOf('prompts.manage') !== -1 ||
+    userPerms.indexOf('prompts.*') !== -1;
+  let prompts = [];
+  if (canPickPrompt) {
+    prompts = cachedQuery('ai_prompts_prompts', db,
+      'SELECT id, category_id, title, excerpt FROM prompts WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
+  }
+
+  // 分享会话链接（与 AI 生图分享链接同权限）
+  const canShareLink = user.role === 'super_admin' || user.role === 'admin' ||
+    userPerms.indexOf('image-share.share') !== -1 || userPerms.indexOf('image-share.*') !== -1;
+
+  res.render('frontend/ai-chat', {
+    user,
+    settings,
+    csrfToken: req.session.doubleSubmitToken,
+    canPickPrompt,
+    canShareLink,
+    prompts
+  });
+});
+
+// 首屏数据
+router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const settings = getSettings(db);
+  const conversations = queryAll(db, `SELECT id, title, model, role_id, system_prompt, message_count,
+      memory_enabled, memory_mode, current_branch_id, updated_at
+    FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC, id DESC`, [user.id]);
+  const roles = queryAll(db, `SELECT id, name, avatar, description, category, is_official, user_id
+    FROM ai_roles WHERE is_official = 1 OR user_id = ? ORDER BY is_official DESC, sort_order ASC, id ASC`, [user.id]);
+  const models = queryAll(db, `SELECT id, name, model_key, provider, api_endpoint, api_key, is_default, max_tokens, temperature
+    FROM ai_models WHERE user_id = ? ORDER BY is_default DESC, id ASC`, [user.id]);
+  models.forEach(m => { m.has_key = Boolean(m.api_key && m.api_key.indexOf('ENC:') === 0); delete m.api_key; });
+  const globalModels = queryAll(db, `SELECT id, name, model_key, provider, is_default
+    FROM ai_models WHERE user_id IS NULL AND is_enabled = 1 ORDER BY is_default DESC, sort_order ASC, id ASC`);
+  const providers = queryAll(db, `SELECT provider_key, name, api_base, default_model, models, api_key_url
+    FROM ai_chat_providers ORDER BY sort_order ASC, id ASC`);
+  providers.forEach(p => {
+    try { p.models = JSON.parse(p.models || '[]'); } catch (e) { p.models = []; }
+    p.requires_key = p.provider_key !== 'pollinations';
+  });
+  const quota = checkQuota(db, user);
+  res.json({
+    success: true,
+    data: {
+      aiEnabled: String(settings.ai_enabled ?? '1') !== '0',
+      streamEnabled: String(settings.ai_stream_enabled ?? '1') !== '0',
+      defaultModel: settings.ai_default_model || '',
+      allowUserModels: String(settings.ai_allow_user_models ?? '1') !== '0',
+      memoryDefaults: {
+        enabled: String(settings.ai_memory_enabled ?? '1') !== '0',
+        mode: settings.ai_memory_mode || 'summary',
+        interval: parseInt(settings.ai_memory_interval, 10) || 10
+      },
+      conversations, roles, models, globalModels, providers,
+      quota: quota.quota, quotaOk: quota.ok, quotaUnlimited: quota.unlimited
+    }
+  });
+});
+
+// 新建会话
+router.post('/ai-chat/api/conversations', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const conv = aiChatService.createConversation(req.db, req.session.user, req.body);
+  res.json({ success: true, data: conv });
+});
+
+// 重命名会话
+router.post('/ai-chat/api/conversations/rename', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const conv = aiChatService.getOwnConversation(req.db, req.session.user, parseInt(req.body.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  aiChatService.renameConversation(req.db, conv, req.body.title);
+  res.json({ success: true });
+});
+
+// 切换会话角色
+router.post('/ai-chat/api/conversations/role', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const roleId = parseInt(req.body.role_id, 10) || null;
+  if (roleId) {
+    const role = queryOne(db, 'SELECT id FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [roleId, req.session.user.id]);
+    if (!role) return res.status(404).json({ error: '角色不存在' });
+  }
+  db.run('UPDATE ai_conversations SET role_id = ? WHERE id = ?', [roleId, conv.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 切换会话模型
+router.post('/ai-chat/api/conversations/model', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const model = String(req.body.model || '').trim().slice(0, 100);
+  db.run('UPDATE ai_conversations SET model = ? WHERE id = ?', [model, conv.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 删除会话
+router.post('/ai-chat/api/conversations/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const conv = aiChatService.getOwnConversation(req.db, req.session.user, parseInt(req.body.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  aiChatService.deleteConversation(req.db, conv);
+  res.json({ success: true });
+});
+
+// 会话消息列表（当前分支 + 分支列表 + 世界书 + 摘要记忆）
+router.get('/ai-chat/api/conversations/:id/messages', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const conv = aiChatService.getOwnConversation(db, user, parseInt(req.params.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const branchId = conv.current_branch_id || 0;
+  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, model, status, error, is_pinned, created_at FROM ai_messages WHERE conversation_id = ? AND branch_id = ? ORDER BY id ASC', [conv.id, branchId]);
+  const branches = queryAll(db, 'SELECT id, name, parent_message_id, created_at FROM ai_branches WHERE conversation_id = ? ORDER BY id ASC', [conv.id]);
+  const worldBook = queryAll(db, 'SELECT id, key, content, position, enabled, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
+  const summaries = queryAll(db, "SELECT id, content, created_at FROM ai_memories WHERE conversation_id = ? AND type = 'summary' ORDER BY id ASC", [conv.id]);
+  res.json({ success: true, data: { conversation: conv, messages, branches, worldBook, summaries } });
+});
+
+// 流式响应公共封装（SSE + 心跳 + 客户端断开中止）
+function streamCompletionResponse(req, res, runFn) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const abortController = new AbortController();
+  const heartbeat = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) { /* ignore */ } }, 15000);
+  res.on('close', () => {
+    clearInterval(heartbeat);
+    abortController.abort();
+  });
+
+  const sendEvent = (event, data) => {
+    try { res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch (e) { /* ignore */ }
+  };
+
+  Promise.resolve().then(() => runFn(abortController.signal, sendEvent))
+    .catch(err => {
+      sendEvent('error', { message: err.message || '生成失败', messageId: err.messageId });
+      sendEvent('done', { error: true });
+    })
+    .finally(() => {
+      clearInterval(heartbeat);
+      try { res.end(); } catch (e) { /* ignore */ }
+    });
+}
+
+// 发送消息（SSE 流式）
+router.post('/ai-chat/api/send', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatSendLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const convId = parseInt(req.body.conversation_id, 10);
+  if (!convId) return res.status(400).json({ error: '参数错误' });
+  const conv = aiChatService.getOwnConversation(db, user, convId);
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+
+  const streamEnabled = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  streamCompletionResponse(req, res, async (signal, sendEvent) => {
+    const result = await aiChatService.sendMessage(db, user, conv, String(req.body.content || ''), {
+      stream: streamEnabled,
+      signal,
+      onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined
+    });
+    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, quota: result.quota });
+    sendEvent('done', { aborted: !!result.aborted });
+  });
+});
+
+// 重新生成（SSE 流式）
+router.post('/ai-chat/api/messages/regenerate', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatSendLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const targetId = parseInt(req.body.message_id, 10);
+  const convId = parseInt(req.body.conversation_id, 10);
+  if (!targetId || !convId) return res.status(400).json({ error: '参数错误' });
+  const conv = aiChatService.getOwnConversation(db, user, convId);
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+
+  const streamEnabled = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  streamCompletionResponse(req, res, async (signal, sendEvent) => {
+    const result = await aiChatService.regenerateMessage(db, user, conv, targetId, {
+      stream: streamEnabled,
+      signal,
+      onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined
+    });
+    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, quota: result.quota });
+    sendEvent('done', { aborted: !!result.aborted });
+  });
+});
+
+// 编辑消息
+router.post('/ai-chat/api/messages/edit', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const { msg, conv } = aiChatService.getOwnMessage(req.db, req.session.user, parseInt(req.body.message_id, 10)) || {};
+  if (!msg || msg.role !== 'user') return res.status(404).json({ error: '消息不存在' });
+  aiChatService.editMessage(req.db, conv, msg, req.body.content);
+  res.json({ success: true });
+});
+
+// 删除消息（及后续同分支消息）
+router.post('/ai-chat/api/messages/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const { msg, conv } = aiChatService.getOwnMessage(req.db, req.session.user, parseInt(req.body.message_id, 10)) || {};
+  if (!msg) return res.status(404).json({ error: '消息不存在' });
+  aiChatService.deleteMessage(req.db, conv, msg);
+  res.json({ success: true });
+});
+
+// 分叉（在此消息之后创建新分支）
+router.post('/ai-chat/api/messages/fork', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const { msg, conv } = aiChatService.getOwnMessage(req.db, req.session.user, parseInt(req.body.message_id, 10)) || {};
+  if (!msg) return res.status(404).json({ error: '消息不存在' });
+  const branch = aiChatService.forkConversation(req.db, conv, msg);
+  res.json({ success: true, data: branch });
+});
+
+// 切换分支
+router.post('/ai-chat/api/branches/switch', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const conv = aiChatService.getOwnConversation(req.db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  if (!aiChatService.switchBranch(req.db, conv, parseInt(req.body.branch_id, 10) || 0)) {
+    return res.status(404).json({ error: '分支不存在' });
+  }
+  res.json({ success: true });
+});
+
+// 删除分支
+router.post('/ai-chat/api/branches/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const conv = aiChatService.getOwnConversation(req.db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  if (!aiChatService.deleteBranch(req.db, conv, parseInt(req.body.branch_id, 10) || 0)) {
+    return res.status(404).json({ error: '分支不存在' });
+  }
+  res.json({ success: true });
+});
+
+// 世界书列表
+router.get('/ai-chat/api/world-book', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.query.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const list = queryAll(db, 'SELECT id, key, content, position, enabled, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
+  res.json({ success: true, data: list });
+});
+
+// 世界书保存（新建/更新）
+router.post('/ai-chat/api/world-book', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+
+  const id = parseInt(req.body.id, 10) || 0;
+  const key = String(req.body.key || '').trim().slice(0, 100);
+  const content = String(req.body.content || '').trim().slice(0, 20000);
+  const position = WORLD_BOOK_POSITIONS.indexOf(req.body.position) !== -1 ? req.body.position : 'before_char';
+  const sortOrder = parseInt(req.body.sort_order, 10) || 0;
+  const enabled = req.body.enabled === false || req.body.enabled === 0 ? 0 : 1;
+  if (!content) return res.status(400).json({ error: '内容不能为空' });
+
+  if (id) {
+    const row = queryOne(db, 'SELECT id FROM ai_world_book WHERE id = ? AND conversation_id = ?', [id, conv.id]);
+    if (!row) return res.status(404).json({ error: '条目不存在' });
+    db.run('UPDATE ai_world_book SET key = ?, content = ?, position = ?, sort_order = ?, enabled = ? WHERE id = ?',
+      [key, content, position, sortOrder, enabled, id]);
+  } else {
+    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled) VALUES (?, ?, ?, ?, ?, ?)',
+      [conv.id, key, content, position, sortOrder, enabled]);
+  }
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 世界书删除
+router.post('/ai-chat/api/world-book/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const row = queryOne(db, 'SELECT id FROM ai_world_book WHERE id = ? AND conversation_id = ?', [parseInt(req.body.id, 10), conv.id]);
+  if (!row) return res.status(404).json({ error: '条目不存在' });
+  db.run('DELETE FROM ai_world_book WHERE id = ?', [row.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 记忆设置
+router.post('/ai-chat/api/memory/settings', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const enabled = req.body.memory_enabled === true || req.body.memory_enabled === 1 ? 1 : 0;
+  const mode = ['summary', 'vector', 'both', 'off'].indexOf(req.body.memory_mode) !== -1 ? req.body.memory_mode : 'summary';
+  db.run('UPDATE ai_conversations SET memory_enabled = ?, memory_mode = ? WHERE id = ?', [enabled, mode, conv.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 手动刷新记忆（强制摘要最近消息）
+router.post('/ai-chat/api/memory/refresh', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, async (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  try {
+    const summary = await refreshSummary(db, conv, resolveModel(db, req.session.user.id), 20);
+    res.json({ success: true, data: { summary } });
+  } catch (err) {
+    res.status(500).json({ error: err.message || '摘要生成失败' });
+  }
+});
+
+// 创建用户角色
+router.post('/ai-chat/api/roles', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatRoleLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const name = String(req.body.name || '').trim().slice(0, 50);
+  const systemPrompt = String(req.body.system_prompt || '').trim().slice(0, 4000);
+  if (!name) return res.status(400).json({ error: '角色名称不能为空' });
+  if (!systemPrompt) return res.status(400).json({ error: '角色设定不能为空' });
+  db.run('INSERT INTO ai_roles (name, description, system_prompt, category, is_official, user_id, sort_order) VALUES (?, ?, ?, ?, 0, ?, 0)',
+    [name, String(req.body.description || '').slice(0, 200), systemPrompt, String(req.body.category || 'default').slice(0, 50), user.id]);
+  const role = queryOne(db, 'SELECT * FROM ai_roles WHERE id = last_insert_rowid()');
+  saveDatabase();
+  res.json({ success: true, data: role });
+});
+
+// 删除用户自建角色（官方角色不可删）
+router.post('/ai-chat/api/roles/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatRoleLimiter, (req, res) => {
+  const db = req.db;
+  const role = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ?', [parseInt(req.body.id, 10)]);
+  if (!role || role.user_id !== req.session.user.id) return res.status(404).json({ error: '角色不存在' });
+  db.run('DELETE FROM ai_roles WHERE id = ?', [role.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 保存用户自建模型（id 存在则更新，否则新建；仅本人；我的模型优先于站长全局模型）
+router.post('/ai-chat/api/models', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatModelLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const id = parseInt(req.body.id, 10) || 0;
+  const name = String(req.body.name || '').trim().slice(0, 100);
+  const modelKey = String(req.body.model_key || '').trim().slice(0, 100);
+  const provider = String(req.body.provider || 'openai').trim().slice(0, 50);
+  const apiEndpoint = String(req.body.api_endpoint || '').trim().slice(0, 300);
+  const apiKey = String(req.body.api_key || '').trim();
+  const maxTokens = Math.min(Math.max(parseInt(req.body.max_tokens, 10) || 4096, 256), 32768);
+  const temperature = Math.min(Math.max(parseFloat(req.body.temperature) || 0.7, 0), 2);
+  const isDefault = req.body.is_default === true || req.body.is_default === 1 || req.body.is_default === '1' ? 1 : 0;
+  if (!name || !modelKey) return res.status(400).json({ error: '名称和模型标识不能为空' });
+  if (apiKey.length > 300) return res.status(400).json({ error: 'API Key 超出长度限制' });
+  if (apiKey.indexOf('ENC:') === 0) return res.status(400).json({ error: 'API Key 格式不正确' });
+
+  const { encrypt } = require('../config/crypto-secure');
+  const encKey = apiKey ? encrypt(apiKey) : '';
+
+  if (id) {
+    const row = queryOne(db, 'SELECT id FROM ai_models WHERE id = ? AND user_id = ?', [id, user.id]);
+    if (!row) return res.status(404).json({ error: '模型不存在' });
+    db.run('UPDATE ai_models SET name = ?, model_key = ?, provider = ?, api_endpoint = ?, max_tokens = ?, temperature = ?, is_default = ? WHERE id = ?',
+      [name, modelKey, provider, apiEndpoint, maxTokens, temperature, isDefault, id]);
+    if (encKey) db.run('UPDATE ai_models SET api_key = ? WHERE id = ?', [encKey, id]);
+  } else {
+    db.run('INSERT INTO ai_models (name, model_key, provider, api_endpoint, api_key, is_enabled, is_default, user_id) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+      [name, modelKey, provider, apiEndpoint, encKey, isDefault, user.id]);
+  }
+  // 设为默认时，同用户其他模型取消默认
+  if (isDefault) {
+    db.run('UPDATE ai_models SET is_default = 0 WHERE user_id = ? AND model_key != ?', [user.id, modelKey]);
+  }
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 删除用户自建模型
+router.post('/ai-chat/api/models/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatModelLimiter, (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT id FROM ai_models WHERE id = ? AND user_id = ?', [parseInt(req.body.id, 10), req.session.user.id]);
+  if (!row) return res.status(404).json({ error: '模型不存在' });
+  db.run('DELETE FROM ai_models WHERE id = ?', [row.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 测试用户自建模型连通性（短文本非流式）
+router.post('/ai-chat/api/models/test', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatModelLimiter, async (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT * FROM ai_models WHERE id = ? AND user_id = ?', [parseInt(req.body.id, 10), req.session.user.id]);
+  if (!row) return res.status(404).json({ error: '模型不存在' });
+  const { callChatCompletion } = require('../services/ai-chat/provider');
+  const { decrypt } = require('../config/crypto-secure');
+  try {
+    const { content } = await callChatCompletion({
+      name: row.name, provider: row.provider, model_key: row.model_key,
+      api_endpoint: row.api_endpoint, api_key: decrypt(row.api_key || '') || null,
+      max_tokens: Math.min(parseInt(row.max_tokens, 10) || 4096, 256),
+      temperature: 0.3
+    }, [{ role: 'user', content: '你好，请回复"连接成功"四个字' }], { stream: false, timeout: 30000 });
+    res.json({ success: true, data: { reply: String(content || '').slice(0, 200) } });
+  } catch (err) {
+    const { normalizeError } = require('../services/ai-chat/utils');
+    res.status(400).json({ error: normalizeError(err) });
+  }
+});
 
 module.exports = router;

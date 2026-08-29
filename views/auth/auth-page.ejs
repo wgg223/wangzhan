@@ -114,8 +114,17 @@
               <i class="fas fa-sync-alt"></i>
             </button>
           </div>
-          <input type="text" id="loginCaptcha" name="captcha" class="auth-input" placeholder="请输入计算结果" required maxlength="10" autocomplete="off">
+          <input type="text" id="loginCaptcha" name="captcha" class="auth-input" placeholder="请输入验证码" required maxlength="10" autocomplete="off">
           <div class="field-error" id="err-captcha"></div>
+        </div>
+        <% } %>
+
+        <!-- 开启两步验证（TOTP）后显示 -->
+        <% if (typeof totpRequired !== 'undefined' && totpRequired) { %>
+        <div class="form-group" id="loginTotpGroup">
+          <label for="loginTotp">两步验证码 <span class="required">*</span></label>
+          <input type="text" id="loginTotp" name="totp_code" class="auth-input" placeholder="请输入身份验证器中的 6 位数字" required maxlength="6" autocomplete="one-time-code" inputmode="numeric">
+          <div class="field-error" id="err-totp_code"></div>
         </div>
         <% } %>
         
@@ -240,7 +249,7 @@
             </button>
           </div>
           <input type="text" id="registerCaptcha" name="captcha" class="auth-input" 
-                 placeholder="请输入计算结果" required maxlength="10" autocomplete="off">
+                 placeholder="请输入验证码" required maxlength="10" autocomplete="off">
         </div>
 
         <!-- 用户协议 -->
@@ -329,7 +338,7 @@
             </button>
           </div>
           <input type="text" id="forgotCaptcha" name="captcha" class="auth-input" 
-                 placeholder="请输入计算结果" required maxlength="10" autocomplete="off">
+                 placeholder="请输入验证码" required maxlength="10" autocomplete="off">
         </div>
 
         <button type="submit" class="auth-btn auth-btn-primary">
@@ -730,11 +739,25 @@
           '<div class="captcha-image-wrapper" id="loginCaptchaWrapper" onclick="refreshCaptchaCommon(\'loginCaptchaWrapper\')" title="点击刷新验证码"></div>' +
           '<button type="button" class="captcha-refresh" onclick="refreshCaptchaCommon(\'loginCaptchaWrapper\')" title="刷新验证码"><i class="fas fa-sync-alt"></i></button>' +
         '</div>' +
-        '<input type="text" id="loginCaptcha" name="captcha" class="auth-input" placeholder="请输入计算结果" required maxlength="10" autocomplete="off">' +
+        '<input type="text" id="loginCaptcha" name="captcha" class="auth-input" placeholder="请输入验证码" required maxlength="10" autocomplete="off">' +
         '<div class="field-error" id="err-captcha"></div>';
       var submitBtn = document.getElementById('loginSubmitBtn');
       loginForm.insertBefore(group, submitBtn);
       refreshCaptchaCommon('loginCaptchaWrapper');
+    }
+
+    // 开启两步验证后动态插入 TOTP 输入框（AJAX 登录二次提交）
+    function ensureLoginTotp() {
+      if (document.getElementById('loginTotpGroup')) return;
+      var group = document.createElement('div');
+      group.className = 'form-group';
+      group.id = 'loginTotpGroup';
+      group.innerHTML =
+        '<label for="loginTotp">两步验证码 <span class="required">*</span></label>' +
+        '<input type="text" id="loginTotp" name="totp_code" class="auth-input" placeholder="请输入身份验证器中的 6 位数字" required maxlength="6" autocomplete="one-time-code" inputmode="numeric">' +
+        '<div class="field-error" id="err-totp_code"></div>';
+      var submitBtn = document.getElementById('loginSubmitBtn');
+      loginForm.insertBefore(group, submitBtn);
     }
 
     var loginForm = document.getElementById('loginForm');
@@ -779,6 +802,7 @@
           if (data.fieldErrors) applyFieldErrors(data.fieldErrors);
           showAuthError(data.error || '登录失败，请重试');
           if (data.captchaRequired) ensureLoginCaptcha();
+          if (data.totpRequired) ensureLoginTotp();
         })
         .catch(function() {
           showAuthError('请求失败，请重试');

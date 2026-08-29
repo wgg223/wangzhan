@@ -6,27 +6,11 @@ const svgCaptcha = require('svg-captcha');
 
 /**
  * 生成 SVG 图形验证码
+ * 使用字符型验证码（数学式验证码可被脚本自动解析，已弃用）
  * @returns {{ svg: string, text: string }} 包含 SVG 内容和验证码文本
  */
 function generateCaptcha() {
-  const captcha = svgCaptcha.createMathExpr({
-    mathMin: 1,
-    mathMax: 20,
-    mathOperator: '+',
-    width: 120,
-    height: 40,
-    fontSize: 36,
-    color: true,
-    noise: 2,
-    background: '#f0f4f8'
-  });
-
-  // 如果生成的表达式有问题，回退到普通字符验证码
-  if (!captcha.text || captcha.text.length === 0) {
-    return generateTextCaptcha();
-  }
-
-  return captcha;
+  return generateTextCaptcha();
 }
 
 /**

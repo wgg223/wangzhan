@@ -87,7 +87,7 @@
             <% if (img.status !== 2) { %>
               <button onclick="reviewImage(<%= img.id %>, 'reject')" style="padding: 5px 12px; font-size: 12px; background: var(--warning); color: var(--text-primary); border: none; border-radius: 4px; cursor: pointer;">驳回</button>
             <% } %>
-            <button onclick="openVisibilityModal(this)" data-image-id="<%= img.id %>" data-visibility="<%= img.visibility || 'public' %>" data-allowed-users='<%- JSON.stringify(img.allowed_user_ids || '[]') %>' style="padding: 5px 12px; font-size: 12px; background: var(--info); color: white; border: none; border-radius: 4px; cursor: pointer;">可见性</button>
+            <button onclick="openVisibilityModal(this)" data-image-id="<%= img.id %>" data-visibility="<%= img.visibility || 'public' %>" data-allowed-users="<%= JSON.stringify(img.allowed_user_ids || '[]') %>" style="padding: 5px 12px; font-size: 12px; background: var(--info); color: white; border: none; border-radius: 4px; cursor: pointer;">可见性</button>
             <button onclick="deleteImage(<%= img.id %>)" style="padding: 5px 12px; font-size: 12px; background: var(--danger); color: white; border: none; border-radius: 4px; cursor: pointer;">删除</button>
           </td>
         </tr>

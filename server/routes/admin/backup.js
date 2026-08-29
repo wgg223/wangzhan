@@ -3,14 +3,24 @@ const router = express.Router();
 const { logActivity } = require('../../config/activity');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcryptjs');
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
 const { dbUpload } = require('./upload');
-const { closeDatabase, getDbPath } = require('../../config/database');
+const { closeDatabase, getDbPath, queryOne, getDb } = require('../../config/database');
 const { formatBytes } = require('../../utils/format');
 const { getDirSize, copyDir, removeDir } = require('../../utils/fs-helpers');
 
 const projectRoot = require('../../config/app-root').projectRoot;
 const backupDir = path.join(projectRoot, 'backups');
+
+// 路径包含校验：rel 必须解析在 root 内，禁止 .. 与绝对路径
+function safeJoin(root, rel) {
+  if (!rel || typeof rel !== 'string' || rel.includes('..') || path.isAbsolute(rel)) return null;
+  const rootResolved = path.resolve(root);
+  const resolved = path.resolve(root, rel);
+  if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) return null;
+  return resolved;
+}
 
 // Ensure backup directory exists
 if (!fs.existsSync(backupDir)) {
@@ -43,7 +53,13 @@ router.post('/backup/create', isAuthenticated, isSuperAdmin, async (req, res) =>
     const { type = 'full', name } = req.body;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const backupName = name || `backup-${type}-${timestamp}`;
-    const backupPath = path.join(backupDir, backupName);
+    if (typeof backupName !== 'string' || backupName.includes('/') || backupName.includes('\\') || backupName.includes('..')) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
+    const backupPath = safeJoin(backupDir, backupName);
+    if (!backupPath) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
 
     fs.mkdirSync(backupPath, { recursive: true });
 
@@ -62,7 +78,8 @@ router.post('/backup/create', isAuthenticated, isSuperAdmin, async (req, res) =>
     }
 
     if (type === 'full' || type === 'config') {
-      const configFiles = ['package.json', 'ecosystem.config.js', '.env'];
+      // 安全加固：排除 .env（含 SESSION_SECRET/DATA_ENCRYPTION_KEY，备份外泄=会话伪造+解密全部密文）
+      const configFiles = ['package.json', 'ecosystem.config.js'];
       for (const file of configFiles) {
         const src = path.join(projectRoot, file);
         if (fs.existsSync(src)) {
@@ -122,13 +139,26 @@ router.post('/backup/create', isAuthenticated, isSuperAdmin, async (req, res) =>
 // POST - Restore backup
 router.post('/backup/restore', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
-    const { backupName, components } = req.body;
+    const { backupName, components, password } = req.body;
+
+    // 密码二次确认（高危操作，与 reset.js 的 bcrypt 重验对齐）
+    if (!password) {
+      return res.status(400).json({ success: false, error: '需要当前管理员密码二次确认' });
+    }
+    const db = getDb();
+    const adminRecord = queryOne(db, 'SELECT password FROM users WHERE id = ?', [req.session.user.id]);
+    if (!adminRecord || !bcrypt.compareSync(password, adminRecord.password)) {
+      return res.status(403).json({ success: false, error: '密码验证失败，无法执行还原' });
+    }
 
     if (!backupName) {
       return res.status(400).json({ success: false, error: '缺少备份名称' });
     }
 
-    const backupPath = path.join(backupDir, backupName);
+    const backupPath = safeJoin(backupDir, backupName);
+    if (!backupPath) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
     if (!fs.existsSync(backupPath)) {
       return res.status(404).json({ success: false, error: '备份不存在' });
     }
@@ -143,8 +173,12 @@ router.post('/backup/restore', isAuthenticated, isSuperAdmin, async (req, res) =
     const restoreList = components || meta.items || [];
 
     for (const item of restoreList) {
-      const srcPath = path.join(backupPath, item);
-      const destPath = path.join(projectRoot, item);
+      // 源/目标路径都必须解析在各自根目录内，防止 ../ 逃逸
+      const srcPath = safeJoin(backupPath, item);
+      const destPath = safeJoin(projectRoot, item);
+      if (!srcPath || !destPath) {
+        return res.status(400).json({ success: false, error: '恢复列表包含非法路径: ' + item });
+      }
 
       if (!fs.existsSync(srcPath)) continue;
 
@@ -197,6 +231,17 @@ router.post('/backup/upload-restore', isAuthenticated, isSuperAdmin, (req, res) 
 
     if (!req.file) {
       return res.status(400).json({ success: false, error: '请选择数据库文件' });
+    }
+
+    // 密码二次确认（高危操作，与 reset.js 的 bcrypt 重验对齐）
+    const uploadPassword = req.body.password;
+    if (!uploadPassword) {
+      return res.status(400).json({ success: false, error: '需要当前管理员密码二次确认' });
+    }
+    const uploadDb = getDb();
+    const uploadAdminRecord = queryOne(uploadDb, 'SELECT password FROM users WHERE id = ?', [req.session.user.id]);
+    if (!uploadAdminRecord || !bcrypt.compareSync(uploadPassword, uploadAdminRecord.password)) {
+      return res.status(403).json({ success: false, error: '密码验证失败，无法执行还原' });
     }
 
     try {

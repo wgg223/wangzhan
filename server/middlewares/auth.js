@@ -108,13 +108,6 @@ function hasPermission(permKey) {
       return next();
     }
 
-    // admin 角色拥有所有后台权限
-    if (req.session.user.role === 'admin') {
-      const allPerms = queryAll(db, 'SELECT perm_key FROM permissions');
-      res.locals.userPermissions = allPerms.map(p => p.perm_key);
-      return next();
-    }
-
     // 获取用户所有权限
     const userPerms = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [req.session.user.id]);
     const userPermKeys = userPerms.map(p => p.perm_key);
@@ -165,8 +158,7 @@ function hasPermission(permKey) {
 
 // 检查用户是否可以访问后台
 // 规则：super_admin 拥有完整权限；
-//       admin 拥有所有后台权限；
-//       普通用户只拥有被授予的权限功能
+//       admin 与普通用户一样由 user_permissions 表决定可访问的功能
 function canAccessAdmin(req, res, next) {
   if (!req.session || !req.session.user) {
     return res.redirect('/auth/frontend/login');
@@ -177,14 +169,14 @@ function canAccessAdmin(req, res, next) {
     return res.status(500).send('数据库未初始化');
   }
 
-  // super_admin 和 admin 拥有完整后台访问权限
-  if (req.session.user.role === 'super_admin' || req.session.user.role === 'admin') {
+  // super_admin 拥有完整后台访问权限；admin 与普通用户一样由 user_permissions 控制
+  if (req.session.user.role === 'super_admin') {
     const allPerms = queryAll(db, 'SELECT perm_key FROM permissions');
     res.locals.userPermissions = allPerms.map(p => p.perm_key);
     return next();
   }
 
-  // 普通用户：功能可见性由 user_permissions 控制
+  // 普通用户（含 admin）：功能可见性由 user_permissions 控制
   const userPerms = queryAll(db,
     'SELECT perm_key FROM user_permissions WHERE user_id = ?',
     [req.session.user.id]
@@ -265,7 +257,7 @@ function getUserPermissions(userId) {
 }
 
 // 检查用户是否拥有前端页面访问权限
-// super_admin 和 admin 拥有所有前端权限；普通用户需要被授予对应权限
+// super_admin 拥有所有前端权限；admin 与普通用户一样需要被授予对应权限
 function hasFrontendPermission(permKey) {
   return (req, res, next) => {
     if (!req.session || !req.session.user) {
@@ -288,14 +280,7 @@ function hasFrontendPermission(permKey) {
       return next();
     }
 
-    // admin 拥有所有前端权限
-    if (req.session.user.role === 'admin') {
-      const allPerms = queryAll(db, 'SELECT perm_key FROM permissions');
-      res.locals.userPermissions = allPerms.map(p => p.perm_key);
-      return next();
-    }
-
-    // 普通用户：检查 user_permissions 表
+    // 普通用户（含 admin）：检查 user_permissions 表
     const userPerms = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [req.session.user.id]);
     const userPermKeys = userPerms.map(p => p.perm_key);
     res.locals.userPermissions = userPermKeys;
@@ -331,9 +316,43 @@ function hasFrontendPermission(permKey) {
   };
 }
 
+/**
+ * 密码强度校验（弱口令策略加固）
+ * 规则：长度≥10、包含大写/小写/数字/特殊字符中至少3类、排除常见弱口令
+ * @returns {{ok: boolean, reason?: string}}
+ */
+function validatePassword(password) {
+  if (!password || typeof password !== 'string') {
+    return { ok: false, reason: '密码不能为空' };
+  }
+  if (password.length < 10) {
+    return { ok: false, reason: '密码长度不能少于10位' };
+  }
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasDigit = /[0-9]/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);
+  const classCount = [hasUpper, hasLower, hasDigit, hasSpecial].filter(Boolean).length;
+  if (classCount < 3) {
+    return { ok: false, reason: '密码需包含大写字母、小写字母、数字、特殊字符中至少3类' };
+  }
+  // 常见弱口令黑名单（Top 20）
+  const weakPasswords = [
+    '1234567890', 'password123', 'admin12345', 'qwerty1234', 'abc1234567',
+    '1111111111', '0000000000', '1231231231', 'iloveyou123', 'monkey1234',
+    'dragon1234', 'master1234', 'welcome123', 'shadow1234', 'sunshine12',
+    'princess12', 'football12', 'charlie123', 'whatever12', 'trustno123'
+  ];
+  if (weakPasswords.includes(password.toLowerCase())) {
+    return { ok: false, reason: '密码过于常见，请使用更复杂的密码' };
+  }
+  return { ok: true };
+}
+
 module.exports = {
   isAuthenticated, isSuperAdmin, isAdmin, hasPermission, canAccessAdmin,
   getUserPermissions, canEditArticle, ROLE_HIERARCHY, ROLE_WHITELIST,
   canOperateUser, ensureAtLeastOneActiveSuperAdmin,
-  isAdminRole, canManageArticle, canManageMedia, hasFrontendPermission
+  isAdminRole, canManageArticle, canManageMedia, hasFrontendPermission,
+  validatePassword
 };

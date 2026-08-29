@@ -3,7 +3,7 @@
 
 server {
     listen 80;
-    server_name dalaowang233.top;
+    server_name example.com;
     
     # 强制HTTPS重定向
     return 301 https://$server_name$request_uri;
@@ -11,7 +11,7 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name dalaowang233.top;
+    server_name example.com;
     
     # SSL证书配置（需要替换为实际证书路径）
     ssl_certificate /path/to/your/certificate.crt;
@@ -62,6 +62,8 @@ server {
     
     # Node.js应用代理
     location / {
+        client_max_body_size 210m;
+        proxy_request_buffering off;
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -86,10 +88,10 @@ server {
     }
 }
 
-# CDN专用server块（用于配置cdn.dalaowang233.top）
+# CDN专用server块（用于配置cdn.example.com）
 server {
     listen 80;
-    server_name cdn.dalaowang233.top;
+    server_name cdn.example.com;
     
     # 重定向到HTTPS
     return 301 https://$server_name$request_uri;
@@ -97,7 +99,7 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name cdn.dalaowang233.top;
+    server_name cdn.example.com;
     
     # SSL证书配置
     ssl_certificate /path/to/your/cdn/certificate.crt;
@@ -105,8 +107,8 @@ server {
     
     # 回源到原站
     location / {
-        proxy_pass https://dalaowang233.top;
-        proxy_set_header Host dalaowang233.top;
+        proxy_pass https://example.com;
+        proxy_set_header Host example.com;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

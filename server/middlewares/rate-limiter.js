@@ -1,18 +1,17 @@
 const rateLimits = new Map();
 const MAX_ENTRIES = 100000;
-const REQUEST_TIMEOUT = 60 * 60 * 1000;
 
 setInterval(() => {
   const now = Date.now();
   let deletedCount = 0;
 
   for (const [key, entry] of rateLimits) {
-    if (now - entry.resetTime > REQUEST_TIMEOUT) {
+    if (now - entry.resetTime > entry.windowMs) {
       rateLimits.delete(key);
       deletedCount++;
     }
 
-    if (deletedCount > 100) {
+    if (deletedCount > 5000) {
       break;
     }
   }
@@ -87,8 +86,9 @@ const globalLimiter = createRateLimiter({
 
 const loginLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 100,
-  keyGenerator: (req) => `login:${req.ip}:${req.body?.username || 'unknown'}`,
+  max: 20,
+  // 安全加固：key 仅用 IP，不含用户名（防止逐用户名轮换爆破）
+  keyGenerator: (req) => 'login:' + req.ip,
   message: '登录尝试次数过多，请稍后再试'
 });
 

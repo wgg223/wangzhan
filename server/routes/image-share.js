@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
-const { isAuthenticated, hasFrontendPermission, hasPermission } = require('../middlewares/auth');
+const { isAuthenticated, hasFrontendPermission, hasPermission, getUserPermissions } = require('../middlewares/auth');
 const { validateMagicBytes } = require('../utils/file-validator');
 const { getImageConfigs, saveImageShareConfigs } = require('../utils/settings');
 const { addImageLog } = require('../utils/image-utils');
@@ -82,10 +82,10 @@ function addLog(db, adminId, content) {
 // user 可能为 null（未登录）
 function buildVisibilityFilter(user) {
   if (user) {
-    // 已登录用户：公开 OR 自己的图片 OR 被选中的用户
+    // 已登录用户：公开 OR 自己的图片 OR 被选中的用户（allowed_user_ids 为 JSON 数组，用 json_each 匹配）
     return {
-      clause: '(i.visibility IS NULL OR i.visibility = \'\' OR i.visibility = \'public\' OR i.user_id = ? OR (i.visibility = \'selected\' AND (\',\' || i.allowed_user_ids || \',\' LIKE \'%,\' || ? || \',%\')))',
-      params: [user.id, user.id]
+      clause: '(i.visibility IS NULL OR i.visibility = \'\' OR i.visibility = \'public\' OR i.user_id = ? OR (i.visibility = \'selected\' AND EXISTS (SELECT 1 FROM json_each(i.allowed_user_ids) WHERE CAST(value AS TEXT) = ?)))',
+      params: [user.id, String(user.id)]
     };
   } else {
     // 未登录：仅公开
@@ -199,7 +199,7 @@ router.get('/image', (req, res) => {
   }
 
   const image = queryOne(db, `
-    SELECT i.*, u.nickname, c.name as cate_name 
+    SELECT i.*, u.nickname, c.name as cate_name, c.is_guest as cate_is_guest
     FROM images i 
     LEFT JOIN users u ON i.user_id = u.id 
     LEFT JOIN image_categories c ON i.cate_id = c.id 
@@ -219,7 +219,7 @@ router.get('/image', (req, res) => {
     var canView = false;
     var vis = image.visibility || 'public';
     if (vis === 'public' || vis === '' || vis === null) {
-      canView = true;
+      canView = user ? true : image.cate_is_guest === 1;
     } else if (user) {
       if (isAdminRole(user) || user.id === image.user_id) {
         canView = true;
@@ -253,12 +253,18 @@ router.get('/image', (req, res) => {
     pendingCommentCount = pendingRes ? pendingRes.count : 0;
   }
 
+  // 分享链接：是否有权限创建（创建接口幂等，已有链接直接复用）
+  const userPerms = user ? getUserPermissions(user.id) : [];
+  const canShareLink = !!user && (isAdminRole(user) || user.id === image.user_id) &&
+    (isAdminRole(user) || userPerms.indexOf('image-share.share') !== -1 || userPerms.indexOf('image-share.*') !== -1);
+
   res.render('image-share/image-detail', {
     user: user,
     config: config,
     image: image,
     comments: comments,
-    pendingCommentCount: pendingCommentCount
+    pendingCommentCount: pendingCommentCount,
+    canShareLink: canShareLink
   });
 });
 
@@ -313,17 +319,23 @@ router.get('/user', isAuthenticated, (req, res) => {
   const config = getImageConfigs(db);
 
   const myImages = queryAll(db, `
-    SELECT i.*, c.name as cate_name 
+    SELECT i.*, c.name as cate_name, s.share_token, s.status as share_status
     FROM images i 
     LEFT JOIN image_categories c ON i.cate_id = c.id 
+    LEFT JOIN image_shares s ON s.source_type = 'image' AND s.source_id = i.id
     WHERE i.user_id = ?
     ORDER BY i.created_at DESC
   `, [user.id]);
 
+  const userPerms = getUserPermissions(user.id);
+  const canShareLink = isAdminRole(user) ||
+    userPerms.indexOf('image-share.share') !== -1 || userPerms.indexOf('image-share.*') !== -1;
+
   res.render('image-share/user/index', {
     user: user,
     config: config,
-    myImages: myImages
+    myImages: myImages,
+    canShareLink: canShareLink
   });
 });
 
@@ -696,15 +708,17 @@ router.post('/user/delete', isAuthenticated, (req, res) => {
   }
 
   db.run('DELETE FROM images WHERE id = ?', [imageId]);
+  db.run("DELETE FROM image_shares WHERE source_type = 'image' AND source_id = ?", [imageId]);
   saveDatabase();
 
   res.redirect('/image-share/user');
 });
 
-// ============ 功能3：图片下载 ============
+// ============ 功能3：图片下载（需登录，且校验审核状态与可见性） ============
 
-router.get('/download', (req, res) => {
+router.get('/download', isAuthenticated, (req, res) => {
   const db = req.db;
+  const user = req.session.user;
   const imageId = parseInt(req.query.id);
   if (!imageId) {
     return res.redirect('/image-share');
@@ -712,21 +726,43 @@ router.get('/download', (req, res) => {
 
   const image = queryOne(db, 'SELECT * FROM images WHERE id = ?', [imageId]);
   if (!image) {
-    return res.render('image-share/message', { user: req.session.user, config: getImageConfigs(db), message: '图片不存在', type: 'error' });
+    return res.render('image-share/message', { user, config: getImageConfigs(db), message: '图片不存在', type: 'error' });
+  }
+
+  // 审核状态校验：未通过审核的图片仅作者/管理员可下载
+  if (image.status !== 1 && (!isAdminRole(user) && user.id !== image.user_id)) {
+    return res.render('image-share/message', { user, config: getImageConfigs(db), message: '图片未通过审核或不存在', type: 'error' });
+  }
+
+  // 可见性校验（与详情页一致）
+  if (image.status === 1) {
+    var canView = false;
+    var vis = image.visibility || 'public';
+    if (vis === 'public' || vis === '' || vis === null) {
+      canView = true;
+    } else if (isAdminRole(user) || user.id === image.user_id) {
+      canView = true;
+    } else if (vis === 'selected') {
+      try {
+        var allowedIds = JSON.parse(image.allowed_user_ids || '[]');
+        if (allowedIds.indexOf(user.id) !== -1) canView = true;
+      } catch (e) { /* ignore */ }
+    }
+    if (!canView) {
+      return res.render('image-share/message', { user, config: getImageConfigs(db), message: '您无权下载此图片', type: 'error' });
+    }
   }
 
   // 增加下载次数
   db.run('UPDATE images SET download_count = download_count + 1 WHERE id = ?', [imageId]);
   saveDatabase();
 
-  // 重定向到图片URL让浏览器下载
   const filePath = path.join(__dirname, '../../public', image.url);
   if (fs.existsSync(filePath)) {
-    const fileName = image.title + path.extname(image.url);
+    const fileName = (String(image.title || 'image').replace(/[\r\n\0]/g, '').slice(0, 200)) + path.extname(image.url);
     res.download(filePath, fileName);
   } else {
-    // 如果文件不存在，直接重定向到图片URL
-    res.redirect(image.url);
+    res.render('image-share/message', { user, config: getImageConfigs(db), message: '图片文件不存在', type: 'error' });
   }
 });
 
@@ -1097,6 +1133,9 @@ router.post('/api/admin/images/batch-review', isAuthenticated, (req, res) => {
   if (!image_ids || !Array.isArray(image_ids) || image_ids.length === 0) {
     return res.status(400).json({ success: false, error: '请选择要操作的图片' });
   }
+  if (image_ids.length > 500) {
+    return res.status(400).json({ success: false, error: '单次批量操作最多500条' });
+  }
   if (status === undefined || ![0, 1].includes(parseInt(status))) {
     return res.status(400).json({ success: false, error: '无效的审核状态' });
   }
@@ -1135,6 +1174,9 @@ router.post('/api/admin/images/batch-move-category', isAuthenticated, (req, res)
 
   if (!image_ids || !Array.isArray(image_ids) || image_ids.length === 0) {
     return res.status(400).json({ success: false, error: '请选择要操作的图片' });
+  }
+  if (image_ids.length > 500) {
+    return res.status(400).json({ success: false, error: '单次批量操作最多500条' });
   }
   if (!cate_id) {
     return res.status(400).json({ success: false, error: '请选择目标分类' });
@@ -1179,6 +1221,9 @@ router.post('/api/admin/images/batch-delete', isAuthenticated, (req, res) => {
   if (!image_ids || !Array.isArray(image_ids) || image_ids.length === 0) {
     return res.status(400).json({ success: false, error: '请选择要删除的图片' });
   }
+  if (image_ids.length > 500) {
+    return res.status(400).json({ success: false, error: '单次批量删除最多500条' });
+  }
 
   const user = queryOne(db, 'SELECT role FROM users WHERE id = ?', [userId]);
   if (!user || !isAdminRole(user)) {
@@ -1197,6 +1242,10 @@ router.post('/api/admin/images/batch-delete', isAuthenticated, (req, res) => {
     // 删除数据库记录（外键级联删除关联数据）
     db.run(
       'DELETE FROM images WHERE id IN (' + ids.map(() => '?').join(',') + ')',
+      ids
+    );
+    db.run(
+      "DELETE FROM image_shares WHERE source_type = 'image' AND source_id IN (" + ids.map(() => '?').join(',') + ')',
       ids
     );
 

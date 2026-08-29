@@ -33,6 +33,8 @@ function createIndexes(db) {
 
     db.run('CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_logs(user_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_logs(created_at DESC)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_activity_ip_action ON activity_logs(ip, action, created_at)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_activity_user_action ON activity_logs(username, action, created_at)');
 
     db.run('CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(setting_key)');
 
@@ -42,6 +44,11 @@ function createIndexes(db) {
     db.run('CREATE INDEX IF NOT EXISTS idx_images_created ON images(created_at)');
     db.run('CREATE INDEX IF NOT EXISTS idx_image_categories_status ON image_categories(status)');
     db.run('CREATE INDEX IF NOT EXISTS idx_image_logs_admin ON image_logs(admin_id)');
+
+    // 上传保护中间件按 url 反查记录
+    db.run('CREATE INDEX IF NOT EXISTS idx_images_url ON images(url)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_aiimg_records_path ON ai_image_records(image_path)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_novels_cover ON novels(cover_image)');
 
     db.run('CREATE INDEX IF NOT EXISTS idx_image_comments_image ON image_comments(image_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_image_comments_status ON image_comments(status)');
@@ -53,6 +60,12 @@ function createIndexes(db) {
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_roles_user ON ai_roles(user_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_models_user ON ai_models(user_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_models_default ON ai_models(is_default, is_enabled)');
+
+    // AI 聊天：世界书 / 记忆 / 分支 / 消息分支索引
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_world_book_conv ON ai_world_book(conversation_id, enabled)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_memories_conv ON ai_memories(conversation_id, type)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_branches_conv ON ai_branches(conversation_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_messages_branch ON ai_messages(conversation_id, branch_id, id)');
 
     // OAuth相关索引
     db.run('CREATE INDEX IF NOT EXISTS idx_oauth_providers_enabled ON oauth_providers(is_enabled)');

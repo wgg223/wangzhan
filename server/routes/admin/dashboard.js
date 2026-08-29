@@ -6,6 +6,7 @@ const activityModule = require('../../config/activity');
 const { getRecentActivities, getActivityStats, getActiveUsers } = activityModule;
 const actionLabels = activityModule.actionLabels;
 const targetLabels = activityModule.targetLabels;
+const { queryCache } = require('../../config/cache');
 const logger = require('../../utils/logger');
 
 // 后台首页（仅超级管理员）
@@ -20,24 +21,33 @@ router.get('/', isAuthenticated, isSuperAdmin, (req, res) => {
   } else {
     articleCount = queryOne(db, 'SELECT COUNT(*) as count FROM articles WHERE author_id = ?', [userId])?.count || 0;
   }
-  const userCount = queryOne(db, 'SELECT COUNT(*) as count FROM users')?.count || 0;
-  const pageCount = queryOne(db, 'SELECT COUNT(*) as count FROM pages')?.count || 0;
-  const articleCommentPending = queryOne(db, "SELECT COUNT(*) as count FROM comments WHERE status = 'pending'")?.count || 0;
-  const mediaCommentPending = queryOne(db, "SELECT COUNT(*) as count FROM media_comments WHERE status = 'pending'")?.count || 0;
-  const commentCount = articleCommentPending + mediaCommentPending;
-  const novelCount = queryOne(db, 'SELECT COUNT(*) as count FROM novels')?.count || 0;
+  // ===== 统计数据缓存（queryCache，15 秒 TTL；数据变更无需主动失效）=====
+  // 说明：articleCount 依赖当前管理员身份，单独实时计算；其余全局统计统一缓存
+  const {
+    userCount, pageCount, commentCount, novelCount,
+    mediaCount, imageCount, imageCategoryCount, poemGameCount, novelChapterCount
+  } = queryCache.getOrSet('dashboard_stats', () => {
+    const userCount = queryOne(db, 'SELECT COUNT(*) as count FROM users')?.count || 0;
+    const pageCount = queryOne(db, 'SELECT COUNT(*) as count FROM pages')?.count || 0;
+    const articleCommentPending = queryOne(db, "SELECT COUNT(*) as count FROM comments WHERE status = 'pending'")?.count || 0;
+    const mediaCommentPending = queryOne(db, "SELECT COUNT(*) as count FROM media_comments WHERE status = 'pending'")?.count || 0;
+    const commentCount = articleCommentPending + mediaCommentPending;
+    const novelCount = queryOne(db, 'SELECT COUNT(*) as count FROM novels')?.count || 0;
 
-  // 扩展统计数据
-  let mediaCount = 0;
-  let imageCount = 0;
-  let imageCategoryCount = 0;
-  let poemGameCount = 0;
-  let novelChapterCount = 0;
-  try { mediaCount = queryOne(db, 'SELECT COUNT(*) as count FROM media')?.count || 0; } catch (e) { /* ignore */ }
-  try { imageCount = queryOne(db, 'SELECT COUNT(*) as count FROM images')?.count || 0; } catch (e) { /* ignore */ }
-  try { imageCategoryCount = queryOne(db, 'SELECT COUNT(*) as count FROM image_categories')?.count || 0; } catch (e) { /* ignore */ }
-  try { poemGameCount = queryOne(db, 'SELECT COUNT(*) as count FROM poem_leaderboard')?.count || 0; } catch (e) { /* ignore */ }
-  try { novelChapterCount = queryOne(db, 'SELECT COUNT(*) as count FROM novel_chapters')?.count || 0; } catch (e) { /* ignore */ }
+    // 扩展统计数据
+    let mediaCount = 0;
+    let imageCount = 0;
+    let imageCategoryCount = 0;
+    let poemGameCount = 0;
+    let novelChapterCount = 0;
+    try { mediaCount = queryOne(db, 'SELECT COUNT(*) as count FROM media')?.count || 0; } catch (e) { /* ignore */ }
+    try { imageCount = queryOne(db, 'SELECT COUNT(*) as count FROM images')?.count || 0; } catch (e) { /* ignore */ }
+    try { imageCategoryCount = queryOne(db, 'SELECT COUNT(*) as count FROM image_categories')?.count || 0; } catch (e) { /* ignore */ }
+    try { poemGameCount = queryOne(db, 'SELECT COUNT(*) as count FROM poem_leaderboard')?.count || 0; } catch (e) { /* ignore */ }
+    try { novelChapterCount = queryOne(db, 'SELECT COUNT(*) as count FROM novel_chapters')?.count || 0; } catch (e) { /* ignore */ }
+
+    return { userCount, pageCount, commentCount, novelCount, mediaCount, imageCount, imageCategoryCount, poemGameCount, novelChapterCount };
+  }, 15);
 
   // 系统运行状态
   const processUptime = process.uptime();

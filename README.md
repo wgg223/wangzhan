@@ -7,10 +7,11 @@
 - **后端**: Node.js, Express.js
 - **模板引擎**: EJS + express-ejs-layouts
 - **数据库**: SQLite（优先 better-sqlite3，回退 sql.js WASM）
-- **客户端 API**: `/api/v1` JSON 接口层（Token 鉴权，供原生客户端使用）
+- **客户端 API**: `/api/v1` JSON 接口层（Token 鉴权 + 细粒度权限，供原生客户端使用）
 - **前端**: 原生 JavaScript, CSS, Quill 富文本编辑器
 - **进程管理**: PM2
-- **安全**: bcryptjs, AES-256-GCM 加密, SVG 验证码, TOTP 双因素认证
+- **安全**: bcryptjs, AES-256-GCM 加密, SVG 验证码, TOTP 双因素认证, CSRF 双提交 Cookie 防护, 密码强度策略, 操作审计
+- **AI 能力**: AI 生图（15 家服务商）、AI 聊天（OpenAI 兼容多模型 + RAG 知识库）、AI 提示词优化
 
 ## 主要功能
 
@@ -27,6 +28,8 @@
 - 社区动态（关注/粉丝/动态流/发布动态/内容聚合浏览）
 - AI 提示词库（板块/分类/提示词三级结构、思维导图、搜索高亮、一键复制、评论）
 - AI 生图（15 家服务商统一适配、图生图、风格预设、提示词优化、异步生成与任务取消、历史记录、分享到图片分享）
+- AI 聊天（多模型切换、角色扮演、知识库 RAG、长对话记忆与自动摘要、流式输出、会话/消息编辑与重新生成、对话分支、世界书、个人配额）
+- 内容分享链接（图片 / AI 生图 / AI 聊天会话一键生成，无需登录即可查看）
 - 用户个人主页
 - 权限申请系统
 - 搜索功能（文章搜索）
@@ -40,6 +43,7 @@
 - 图片分享管理（批量审核/删除/分类管理）
 - AI 提示词管理（板块/分类/提示词三级 CRUD + CSV 批量导入导出）
 - AI 生图管理（15 家服务商配置、密钥加密存储、每日限额、生成记录）
+- AI 聊天管理（模型/角色/知识库/世界书/配额配置，服务商密钥加密存储）
 - 小说管理（章节 CRUD）
 - 系统设置（基础/SMTP/协议/弹窗）
 - 操作日志（多维度筛选）
@@ -82,10 +86,12 @@ mi/
 │   │   └── monitor.js               # 系统资源监控
 │   ├── middlewares/                  # 中间件
 │   │   ├── activity-logger.js       # 全局操作日志
+│   │   ├── api-auth.js              # API Token 鉴权 + 细粒度权限 + 管理端审计
 │   │   ├── auth.js                  # 认证授权
 │   │   ├── maintenance.js           # 维护模式中间件
 │   │   ├── rate-limiter.js          # 内存限流器
-│   │   └── security.js              # 安全中间件
+│   │   ├── security.js              # 安全中间件（CSRF 双提交 Cookie / Origin 校验 / Nonce）
+│   │   └── upload-protect.js        # 上传目录访问保护
 │   ├── routes/                      # 路由
 │   │   ├── auth.js                  # 认证路由
 │   │   ├── community.js             # 社区互动 API（关注/通知/点赞/动态 CRUD）
@@ -94,6 +100,7 @@ mi/
 │   │   ├── image-share.js           # 图片分享路由
 │   │   ├── poem-game.js             # 诗词游戏路由
 │   │   ├── setup.js                 # 安装向导路由
+│   │   ├── share.js                 # 内容分享链接路由（图片/AI生图/AI聊天）
 │   │   └── admin/                   # 管理后台路由
 │   │       ├── index.js             # 管理路由入口
 │   │       ├── dashboard.js         # 仪表盘
@@ -105,6 +112,7 @@ mi/
 │   │       ├── comments.js          # 评论管理
 │   │       ├── prompts.js           # AI 提示词管理（三级 CRUD + CSV 导入导出）
 │   │       ├── ai-image.js          # AI 生图管理（服务商/限额/记录）
+│   │       ├── ai-chat.js           # AI 聊天管理（模型/角色/知识库/配额）
 │   │       ├── media.js             # 媒体管理
 │   │       ├── novels.js            # 小说管理
 │   │       ├── projects.js          # 项目管理
@@ -123,10 +131,21 @@ mi/
 │   │       ├── reset.js             # 重置功能
 │   │       ├── system-update.js     # 系统更新（跨平台）
 │   │       └── upload.js            # 文件上传配置
+│   │   └── api/                     # 客户端 API（/api/v1，Token 鉴权）
+│   │       ├── auth.js              # 注册/登录/改密
+│   │       ├── admin.js             # 管理接口（仪表盘/用户/文章/评论/图片/设置）
+│   │       ├── admin-system.js      # 系统管理接口（日志/权限/媒体/备份/维护）
+│   │       ├── articles.js          # 文章接口
+│   │       ├── images.js            # 图片分享接口
+│   │       ├── novels.js            # 小说接口
+│   │       ├── community.js         # 社区接口
+│   │       ├── messages.js          # 私信接口
+│   │       └── poems.js             # 诗词游戏接口
 │   ├── services/                    # 服务层
 │   │   ├── content-security.js      # 内容安全扫描
 │   │   ├── two-factor-auth.js       # TOTP 双因素认证
 │   │   ├── prompt-enhance.js        # 提示词优化（LLM 增强 + 本地规则兜底）
+│   │   ├── ai-chat/                 # AI 聊天服务（provider/记忆/知识库 RAG/配额/上下文）
 │   │   └── image-gen/               # AI 生图（15 家服务商统一适配器）
 │   └── utils/                       # 工具函数
 │       ├── error-handler.js         # 统一错误处理（safeLogActivity）
@@ -141,11 +160,12 @@ mi/
 │       └── settings.js              # 统一设置查询
 │
 ├── views/                           # EJS 模板
-│   ├── admin/                       # 管理后台模板（含 prompts/prompt-editor/ai-image）
-│   ├── frontend/                    # 前端页面模板（含社区动态详情页、ai-prompts、ai-image）
+│   ├── admin/                       # 管理后台模板（含 prompts/prompt-editor/ai-image/ai-chat）
+│   ├── frontend/                    # 前端页面模板（含社区动态详情页、ai-prompts、ai-image、ai-chat）
 │   ├── auth/                        # 认证模板
 │   ├── image-share/                 # 图片分享模板
 │   ├── setup/                       # 安装向导模板
+│   ├── share/                       # 分享链接模板
 │   └── maintenance.ejs              # 维护模式页面
 │
 ├── public/                          # 静态资源
@@ -185,6 +205,8 @@ npm run dev
 # 访问 http://localhost:3000/setup 完成安装向导
 ```
 
+> 注意：生产环境必须使用 `npm run pm2`（PM2 会自动设置 NODE_ENV=production 并持久化会话密钥），直接 `npm start` 仅用于开发。
+
 ### 启动命令
 
 ```bash
@@ -205,6 +227,7 @@ npm run health           # 健康检查
 - 诗词游戏: `http://localhost:3000/poem-game`
 - AI 提示词: `http://localhost:3000/ai-prompts`
 - AI 生图: `http://localhost:3000/ai-image`
+- AI 聊天: `http://localhost:3000/ai-chat`
 - 安装向导: `http://localhost:3000/setup`
 - 客户端 API: `http://localhost:3000/api/v1`
 
@@ -269,17 +292,28 @@ npm run lint:fix          # ESLint 自动修复
 npm run lint:server       # 仅检查 server/
 npm run lint:frontend     # 仅检查 public/js/
 npm run security:audit    # npm 依赖安全审计
-npm run security:scan     # 安全扫描
-npm run security:full     # 安全审计 + 扫描
+npm run security:check    # 安全配置验证
 ```
+
+## 安全设计
+
+- **认证与会话**: bcrypt(cost 10) 密码哈希（兼容旧 SHA-256 自动升级）、HTTP-only + SameSite=Lax 会话 Cookie、SESSION_SECRET 持久化、登录失败图形验证码（同一 IP 失败 3 次触发）、登录限流、TOTP 双因素认证（可选）
+- **权限体系**: 三级角色（user/admin/super_admin）+ `user_permissions` 细粒度权限（支持通配符 `articles.*` 与层级 `*.edit.all`）；后台路由按 `hasPermission` 逐接口校验；API 管理端与网页端共用同一套权限；`canOperateUser` 统一防越权（不能操作自己/同级/更高级，超管互操作除外）；禁用/删除/降级超管前自动防管理端锁死
+- **CSRF 防护**: 后台全路由双提交 Cookie 校验（`X-CSRF-Token`/`_csrf`）+ 关键操作 Nonce，admin 所有写操作强制校验
+- **上传安全**: 上传目录访问保护（未授权图片直链拦截、附件/分片禁止静态直链走鉴权下载）、文件类型/大小/路径白名单校验、分片上传防路径穿越
+- **敏感数据加密**: SMTP 密码、AI 服务商密钥、OAuth client_secret 等 AES-256-GCM 加密存储（密钥来自 `DATA_ENCRYPTION_KEY`/`SESSION_SECRET`），页面回显掩码
+- **高危操作二次确认**: 数据重置（选择性/全局/恢复出厂）、备份还原、上传还原均要求重新输入管理员密码
+- **审计日志**: 全局操作日志中间件 + API 管理端独立审计中间件，记录用户/动作/对象/IP/路由；备份下载、配置导出等高危操作可追溯
+- **接口防护**: `/api/v1` Token 鉴权（SHA-256 哈希存储、30 天 TTL、改密失效）、内容版本/标签接口归属校验、附件下载归属校验、`trust proxy` 显式配置防 X-Forwarded-For 伪造
+- **系统更新**: 仅允许 GitHub 固定仓库来源，更新包完整性校验（版本匹配 + 关键文件存在），安装前自动备份可回滚
 
 ## 关键架构说明
 
 - **数据库双驱动**: 优先 `better-sqlite3`（原生），回退 `sql.js`（WASM）
 - **SESSION_SECRET 持久化**: 首次启动生成密钥存入 `.session_secret`
 - **布局自动切换**: 根据路径自动选择 layout
-- **全局安全中间件**: 除特定路径外所有请求经过安全校验
-- **活动日志**: 全局记录用户行为
+- **后台安全中间件**: `/admin` 全路由 CSRF 双提交 Cookie 校验（写操作强制携带 `X-CSRF-Token`/`_csrf`），关键操作叠加 Nonce
+- **活动日志**: 全局记录用户行为 + API 管理端独立审计
 - **维护模式**: 中间件层面实现，前端显示维护页面
 - **客户端 Token 鉴权**: `/api/v1` 接口使用 Token（SHA-256 哈希存 `api_tokens` 表），登录后注入 `req.session.user`，与网页端共用同一套权限体系
 - **跨平台部署**: deploy.py 支持 Windows 和 Linux
@@ -307,6 +341,33 @@ python deploy.py --check
 本项目采用 [LICENSE](./LICENSE) 文件。
 
 ## 版本历史
+
+### v5.9.0 (2026-08-30)
+
+**AI 聊天模块（全新）**
+- 前台 AI 聊天页：多模型切换（OpenAI 兼容服务商）、角色扮演（系统提示词预设）、流式输出、会话管理（新建/重命名/删除）
+- 对话增强：消息编辑与重新生成、对话分支（fork/切换/删除）、世界书（长上下文设定）、长对话自动摘要与记忆、RAG 知识库问答
+- 个人配额：每日使用限额、用量统计；后台可配置模型、角色、知识库、世界书与限额
+- 分享：AI 聊天会话可生成分享链接，他人无需登录即可查看
+
+**内容分享链接**
+- 图片、AI 生图、AI 聊天会话一键生成分享链接（token 制），链接有效性与源内容状态联动，支持停用/删除
+
+**权限与安全专项加固（审计驱动）**
+- **CSRF 防护落地**：后台全路由启用双提交 Cookie 校验（`security.js` 由死代码变为实际挂载），admin 所有写操作强制校验 `X-CSRF-Token`/`_csrf`，关键操作（数据重置等）叠加 Nonce
+- **API 细粒度权限**：`/api/v1/admin/*` 从"角色粗粒度"改为逐接口 `apiRequirePermission` 校验（与网页端 user_permissions 对齐），日志删除/权限修改/维护模式切换收紧为仅超级管理员
+- **API 管理端审计**：新增 `apiAdminAudit` 中间件，修复 API 管理操作零日志的审计盲区；管理员删除审计日志需超级管理员权限
+- **内容版本接口鉴权**：文章/页面版本历史列表、详情、保存、回滚全部增加登录与归属校验（作者本人/管理员/对应权限），修复匿名可枚举历史全文漏洞
+- **附件下载越权修复**：`/admin/attachments/download/:id` 增加归属校验（上传者/管理员/文章作者/`articles.manage` 权限）
+- **OAuth 密钥加密**：client_secret 改为 AES-256-GCM 加密存储，页面掩码回显；Google 登录绑定增加 `verified_email` 校验，防止未验证邮箱账号接管
+- **备份安全**：完整备份不再包含 `.env`（避免会话密钥/数据加密密钥外泄）；备份还原、上传还原增加管理员密码二次确认；配置备份导出剔除敏感字段
+- **弱口令策略**：新增 `validatePassword`（长度≥10 + 至少 3 类字符 + Top20 弱口令黑名单），应用于创建账号、批量导入与 API 建号
+- **登录限流收紧**：登录尝试阈值由 100 次/分钟下调至 20 次/分钟
+- **设置子路由权限对齐**：基础设置/SMTP/协议/弹窗由角色级 `isAdmin` 改为 `hasPermission('settings.manage')`
+- **其他**：用户主页 API 不再返回角色字段；图片分享批量操作去重；内容标签增删增加归属校验；上传目录访问保护中间件（未授权图片直链拦截、附件禁静态直链）
+
+**依赖升级**
+- adm-zip 0.5 → 0.6、nodemailer 8 → 9
 
 ### v5.8.0 (2026-08-29)
 
