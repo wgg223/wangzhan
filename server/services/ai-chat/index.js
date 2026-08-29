@@ -117,7 +117,7 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
     throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });
   }
 
-  const modelInfo = resolveModel(db, user.id);
+  const modelInfo = resolveModel(db, user.id, conv.model);
   const quotaCheck = checkQuota(db, user);
   if (!quotaCheck.ok) {
     throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
@@ -223,7 +223,7 @@ async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
     [conv.id, branchId, target.id]);
   if (!prevUser) throw Object.assign(new Error('找不到对应的用户消息'), { status: 400 });
 
-  const modelInfo = resolveModel(db, user.id);
+  const modelInfo = resolveModel(db, user.id, conv.model);
   const messages = buildContext(db, conv, prevUser.content, {
     excludeMsgId: prevUser.id,
     embCfg: null,

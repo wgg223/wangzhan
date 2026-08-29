@@ -1434,6 +1434,14 @@ router.post('/ai-chat/api/conversations/model', isAuthenticated, hasFrontendPerm
   const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const model = String(req.body.model || '').trim().slice(0, 100);
+  if (model) {
+    const settings = getSettings(db);
+    const allowUserModels = String(settings.ai_allow_user_models ?? '1') !== '0';
+    const scope = allowUserModels ? '(user_id = ? OR user_id IS NULL)' : 'user_id IS NULL';
+    const exists = queryOne(db, `SELECT id FROM ai_models WHERE is_enabled = 1 AND model_key = ? AND ${scope}`,
+      allowUserModels ? [model, req.session.user.id] : [model]);
+    if (!exists) return res.status(400).json({ error: '模型不存在或未启用' });
+  }
   db.run('UPDATE ai_conversations SET model = ? WHERE id = ?', [model, conv.id]);
   saveDatabase();
   res.json({ success: true });

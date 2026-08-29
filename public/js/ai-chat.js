@@ -34,6 +34,7 @@
   var els = {};
   ['acConvList', 'acConvSearch', 'acNewChat', 'acQuotaBadge', 'acConvTitle', 'acMessages', 'acEmpty',
     'acInput', 'acSend', 'acStop', 'acRoleBtn', 'acRoleLabel', 'acWorldBtn', 'acMemoryBtn', 'acBranchBtn',
+    'acModelBtn', 'acModelLabel', 'acModelModal', 'acModelList',
     'acRoleModal', 'acRoleList', 'acRoleCreate', 'acRoleCreateModal', 'acNewRoleName', 'acNewRolePrompt', 'acRoleSave',
     'acWorldModal', 'acWorldList', 'acWorldAdd', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
     'acWorldContent', 'acWorldSave', 'acWorldDelete', 'acMemoryModal', 'acMemoryEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
@@ -466,6 +467,7 @@
             state.messages = [];
             renderMessages();
             els.acConvTitle.textContent = '新对话';
+            updateModelLabel();
           }
           renderConversations();
         }).catch(function (err) { showToast(err.message, 'error'); });
@@ -495,6 +497,7 @@
     renderConversations();
     els.acConvTitle.textContent = conv.title || '新对话';
     updateRoleLabel();
+    updateModelLabel();
     updateShareBtn();
     closeAllModals();
     fetch('/ai-chat/api/conversations/' + conv.id + '/messages', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
@@ -517,6 +520,88 @@
     }
     els.acRoleLabel.textContent = role ? role.name : '角色';
     els.acRoleBtn.classList.toggle('active', !!role);
+  }
+
+  // ============ 会话模型选择 ============
+
+  function updateModelLabel() {
+    var key = state.currentConv ? (state.currentConv.model || '') : '';
+    var name = '';
+    if (key) {
+      var m = state.models.filter(function (x) { return x.model_key === key; })[0] ||
+        state.globalModels.filter(function (x) { return x.model_key === key; })[0];
+      name = m ? m.name : key;
+    }
+    els.acModelLabel.textContent = name || '自动';
+    els.acModelBtn.classList.toggle('active', !!name);
+  }
+
+  function openModelModal() {
+    if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+    renderModelList();
+    showModal('acModelModal');
+  }
+
+  function renderModelList() {
+    var wrap = els.acModelList;
+    wrap.innerHTML = '';
+    var cur = state.currentConv.model || '';
+
+    var auto = document.createElement('div');
+    auto.className = 'ac-model-pick-item' + (cur ? '' : ' active');
+    auto.innerHTML = '<div class="ac-model-pick-info"><div class="ac-model-pick-name">自动选择<small>我的模型 → 全局模型 → 默认/免费兜底</small></div></div><span class="ac-model-pick-tag">推荐</span>';
+    auto.addEventListener('click', function () { pickModel(''); });
+    wrap.appendChild(auto);
+
+    var items = [];
+    state.models.forEach(function (m) { items.push({ m: m, scope: '我的' }); });
+    state.globalModels.forEach(function (m) { items.push({ m: m, scope: '全局' }); });
+    if (!items.length) {
+      wrap.appendChild(emptyModelHint());
+      return;
+    }
+    items.forEach(function (it) {
+      var m = it.m;
+      var usable = it.scope !== '我的' || !!m.has_key;
+      var item = document.createElement('div');
+      item.className = 'ac-model-pick-item' + (cur === m.model_key ? ' active' : '') + (usable ? '' : ' disabled');
+      var info = document.createElement('div');
+      info.className = 'ac-model-pick-info';
+      var name = document.createElement('div');
+      name.className = 'ac-model-pick-name';
+      name.textContent = m.name;
+      var sub = document.createElement('small');
+      sub.textContent = m.model_key + (m.is_default ? ' · 默认' : '');
+      name.appendChild(sub);
+      info.appendChild(name);
+      item.appendChild(info);
+      var tag = document.createElement('span');
+      tag.className = 'ac-model-pick-tag';
+      tag.textContent = usable ? it.scope : '未配置 Key';
+      item.appendChild(tag);
+      if (usable) {
+        item.addEventListener('click', function () { pickModel(m.model_key); });
+      }
+      wrap.appendChild(item);
+    });
+  }
+
+  function emptyModelHint() {
+    var p = document.createElement('p');
+    p.style.cssText = 'font-size:13px;color:var(--text-muted);padding:14px 0;';
+    p.textContent = '当前没有可用模型，可在上方「我的 API 模型」卡片添加，或等待站长配置全局模型。';
+    return p;
+  }
+
+  function pickModel(modelKey) {
+    api('/ai-chat/api/conversations/model', { id: state.currentConv.id, model: modelKey })
+      .then(function () {
+        state.currentConv.model = modelKey;
+        updateModelLabel();
+        hideModal('acModelModal');
+        showToast(modelKey ? '模型已切换' : '已切换为自动选择', 'success');
+      })
+      .catch(function (err) { showToast(err.message, 'error'); });
   }
 
   // ============ 消息渲染 ============
@@ -665,6 +750,7 @@
           state.currentConv = conv;
           renderConversations();
           els.acConvTitle.textContent = conv.title || '新对话';
+          updateModelLabel();
           return conv;
         });
     }
@@ -778,6 +864,7 @@
         if (convId) {
           state.currentConv = state.conversations.filter(function (c) { return c.id === convId; })[0] || state.currentConv;
           renderConversations();
+          updateModelLabel();
         }
       })
       .catch(function () { /* ignore */ });
@@ -916,6 +1003,7 @@
         els.acConvTitle.textContent = conv.title || '新对话';
         renderMessages();
         updateRoleLabel();
+        updateModelLabel();
       })
       .catch(function (err) { showToast(err.message, 'error'); });
   }
@@ -1111,7 +1199,7 @@
 
   function closeAllModals() {
     ['acRoleModal', 'acRoleCreateModal', 'acWorldModal', 'acWorldEditModal', 'acMemoryModal', 'acBranchModal',
-      'acShareModal', 'acPromptModal']
+      'acShareModal', 'acPromptModal', 'acModelModal']
       .forEach(hideModal);
   }
 
@@ -1128,6 +1216,7 @@
       els.acConvTitle.textContent = '新对话';
       renderMessages();
       updateRoleLabel();
+      updateModelLabel();
       els.acInput.focus();
     }).catch(function (err) { showToast(err.message, 'error'); });
   });
@@ -1147,6 +1236,7 @@
   });
 
   els.acRoleBtn.addEventListener('click', openRoleModal);
+  els.acModelBtn.addEventListener('click', openModelModal);
   els.acRoleCreate.addEventListener('click', function () { showModal('acRoleCreateModal'); });
   els.acRoleSave.addEventListener('click', createRole);
 

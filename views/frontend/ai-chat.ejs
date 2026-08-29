@@ -28,6 +28,7 @@
       <div class="ac-conv-title" id="acConvTitle">新对话</div>
       <div class="ac-toolbar">
         <button class="ac-tool" id="acShareBtn" title="生成分享链接（免登录查看）" style="display:none;">🔗 <span>分享</span></button>
+        <button class="ac-tool" id="acModelBtn" title="切换模型">⚙️ <span id="acModelLabel">自动</span></button>
         <button class="ac-tool" id="acRoleBtn" title="角色预设">🎭 <span id="acRoleLabel">角色</span></button>
         <button class="ac-tool" id="acWorldBtn" title="世界书">📖 <span>世界书</span></button>
         <button class="ac-tool" id="acMemoryBtn" title="记忆设置">🧠 <span>记忆</span></button>
@@ -81,6 +82,20 @@
       </div>
     </footer>
   </main>
+</div>
+
+<!-- 模型选择弹窗 -->
+<div class="ac-modal-overlay" id="acModelModal" hidden>
+  <div class="ac-modal">
+    <div class="ac-modal-head">
+      <h2>选择模型</h2>
+      <button class="ac-modal-close" data-ac-close="acModelModal">×</button>
+    </div>
+    <div class="ac-modal-body" id="acModelList"></div>
+    <div class="ac-modal-foot">
+      <span class="ac-modal-hint">每个会话独立记录所选模型；「自动」按 我的模型 → 全局模型 → 默认/免费兜底 的优先级选择</span>
+    </div>
+  </div>
 </div>
 
 <!-- 角色选择弹窗 -->

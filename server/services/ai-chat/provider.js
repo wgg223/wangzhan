@@ -15,9 +15,10 @@ const POLLINATIONS_ENDPOINT = 'https://text.pollinations.ai/openai';
  * 解析当前用户可用的模型配置
  * @param {Object} db
  * @param {number} userId
+ * @param {string} [convModel] 会话指定模型 model_key（空则按默认优先级）
  * @returns {Object|null} { id, name, provider, model_key, api_endpoint, api_key, max_tokens, temperature }
  */
-function resolveModel(db, userId) {
+function resolveModel(db, userId, convModel) {
   const settings = getSettings(db);
   const allowUserModels = String(settings.ai_allow_user_models || '1') !== '0';
 
@@ -27,6 +28,14 @@ function resolveModel(db, userId) {
       ORDER BY is_default DESC, sort_order ASC, id ASC`, [userId]);
   } else {
     rows = queryAll(db, 'SELECT * FROM ai_models WHERE is_enabled = 1 AND user_id IS NULL ORDER BY is_default DESC, sort_order ASC, id ASC');
+  }
+
+  // 会话指定模型：按 model_key 匹配，用户自建优先于全局
+  const convModelKey = String(convModel || '').trim();
+  if (convModelKey) {
+    const userRow = rows.find(r => String(r.user_id) === String(userId) && r.model_key === convModelKey);
+    const globalRow = userRow ? null : rows.find(r => (r.user_id === null || r.user_id === undefined) && r.model_key === convModelKey);
+    if (userRow || globalRow) return modelInfoFromRow(userRow || globalRow);
   }
 
   const defaultModelKey = String(settings.ai_default_model || '').trim();
@@ -39,18 +48,7 @@ function resolveModel(db, userId) {
   }
   if (!row) row = rows[0] || null;
 
-  if (row) {
-    return {
-      id: row.id,
-      name: row.name || row.model_key,
-      provider: row.provider || 'openai',
-      model_key: row.model_key,
-      api_endpoint: row.api_endpoint || '',
-      api_key: decrypt(row.api_key || '') || null,
-      max_tokens: parseInt(row.max_tokens, 10) || 4096,
-      temperature: parseFloat(row.temperature) || 0.7
-    };
-  }
+  if (row) return modelInfoFromRow(row);
 
   // 3. settings.ai_default_model（无对应行时，作为 pollinations 免费兜底模型名）
   // 4. 完全无配置 → Pollinations 免费接口
@@ -63,6 +61,19 @@ function resolveModel(db, userId) {
     api_key: null,
     max_tokens: 4096,
     temperature: 0.7
+  };
+}
+
+function modelInfoFromRow(row) {
+  return {
+    id: row.id,
+    name: row.name || row.model_key,
+    provider: row.provider || 'openai',
+    model_key: row.model_key,
+    api_endpoint: row.api_endpoint || '',
+    api_key: decrypt(row.api_key || '') || null,
+    max_tokens: parseInt(row.max_tokens, 10) || 4096,
+    temperature: parseFloat(row.temperature) || 0.7
   };
 }
 
