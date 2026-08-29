@@ -4,6 +4,43 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+  <script>
+  // 全局 CSRF 拦截器：自动为所有非 GET fetch 请求注入 CSRF-Token 头
+  (function() {
+    var _origFetch = window.fetch;
+    window.fetch = function(url, opts) {
+      opts = opts || {};
+      var method = (opts.method || 'GET').toUpperCase();
+      if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+        opts.headers = opts.headers || {};
+        // 兼容 Headers 对象和普通对象
+        var hasCsrf = false;
+        if (opts.headers instanceof Headers) {
+          hasCsrf = opts.headers.has('CSRF-Token') || opts.headers.has('X-CSRF-Token');
+        } else {
+          var keys = Object.keys(opts.headers);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].toLowerCase() === 'csrf-token' || keys[i].toLowerCase() === 'x-csrf-token') {
+              hasCsrf = true; break;
+            }
+          }
+        }
+        if (!hasCsrf) {
+          var meta = document.querySelector('meta[name="csrf-token"]');
+          var token = meta ? meta.getAttribute('content') : '';
+          if (token) {
+            if (opts.headers instanceof Headers) {
+              opts.headers.set('CSRF-Token', token);
+            } else {
+              opts.headers['CSRF-Token'] = token;
+            }
+          }
+        }
+      }
+      return _origFetch.call(this, url, opts);
+    };
+  })();
+  </script>
   <title>后台管理 - 网站管理系统</title>
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/admin.css') : '/css/admin.css' %>">
   <!-- Quill rich text editor CSS + JS - 使用本地版本，备用 CDN -->

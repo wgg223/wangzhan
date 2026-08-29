@@ -52,7 +52,9 @@ function doubleSubmitCookie(req, res, next) {
   }
 
   // 验证 CSRF token
+  // 兼容多种前端约定：X-CSRF-Token / CSRF-Token / X-XSRF-Token / body._csrf
   const submittedToken = req.headers['x-csrf-token']
+    || req.headers['csrf-token']
     || req.headers['x-xsrf-token']
     || req.body?._csrf;
 
