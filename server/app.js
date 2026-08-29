@@ -30,6 +30,19 @@ if (process.env.NODE_ENV === 'production') {
 // 安全默认：不设 TRUST_PROXY 时为 0（不信任任何代理），需在反代后部署时显式配置
 app.set('trust proxy', process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY, 10) : 0);
 
+// 统一站点 BaseURL：优先 SITE_URL 环境变量（反代后 req.protocol 可能为 http，导致回调/分享地址错误）
+// 未配置时回退到 req.protocol + host（直连部署场景）
+app.use((req, res, next) => {
+  let baseUrl = process.env.SITE_URL || '';
+  if (!baseUrl) {
+    baseUrl = `${req.protocol}://${req.get('host')}`;
+  }
+  baseUrl = baseUrl.replace(/\/+$/, ''); // 去除末尾斜杠
+  req.siteBaseUrl = baseUrl;
+  res.locals.siteBaseUrl = baseUrl;
+  next();
+});
+
 app.use((req, res, next) => {
   monitor.recordRequest();
   next();

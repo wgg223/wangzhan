@@ -45,7 +45,7 @@
             <label>回调地址 (Redirect URI)</label>
             <input type="text" name="redirect_uri" value="<%= provider.redirect_uri || '' %>" placeholder="留空则使用默认地址">
             <small class="form-text" style="color: var(--text-muted); font-size: 12px; margin-top: 4px; display: block;">
-              默认回调地址：<code><%= typeof req !== 'undefined' ? req.protocol + '://' + req.get('host') : '' %>/oauth/callback/<%= provider.provider %></code>
+              默认回调地址：<code><%= typeof siteBaseUrl !== 'undefined' ? siteBaseUrl : (typeof req !== 'undefined' ? req.protocol + '://' + req.get('host') : '') %>/oauth/callback/<%= provider.provider %></code>
             </small>
           </div>
         </div>

@@ -101,12 +101,14 @@ function generateState() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// 解析回调地址：优先使用后台配置的 redirect_uri，未配置时按当前请求推导（auth-url 与 callback 必须一致）
+// 解析回调地址：优先使用后台配置的 redirect_uri，未配置时使用统一站点 BaseURL
+// （反代后 req.protocol 可能为 http，使用 SITE_URL 环境变量确保回调地址正确）
 function resolveRedirectUri(req, provider, config) {
   if (config && config.redirect_uri) {
     return config.redirect_uri;
   }
-  return `${req.protocol}://${req.get('host')}/oauth/callback/${provider}`;
+  const baseUrl = req.siteBaseUrl || `${req.protocol}://${req.get('host')}`;
+  return `${baseUrl}/oauth/callback/${provider}`;
 }
 
 // 获取OAuth授权URL

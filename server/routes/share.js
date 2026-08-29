@@ -151,7 +151,7 @@ router.get('/:token', (req, res) => {
   const db = req.db;
   const token = req.params.token;
   const resolved = resolveShare(db, token);
-  const baseUrl = req.protocol + '://' + req.get('host');
+  const baseUrl = req.siteBaseUrl || (req.protocol + '://' + req.get('host'));
 
   if (!resolved || !isShareAvailable(resolved.share, resolved.source)) {
     return res.render('share/share-detail', {
