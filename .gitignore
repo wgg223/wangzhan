@@ -13,7 +13,6 @@
 # ---------- 一、白名单：放行当前项目已有文件 ----------
 /*
 !/.gitignore
-!/.env.example
 !/.eslintignore
 !/.eslintrc.json
 !/.eslintrc-frontend.json
@@ -55,10 +54,9 @@ npm-debug.log*
 # 备份
 backups/
 
-# 环境变量与密钥（生产密钥一律不上传）
+# 环境变量与密钥（生产密钥一律不上传；.env.example 示例文件亦不跟踪）
 .env
 .env.*
-!.env.example
 .session_secret
 .dev_encryption_key
 *.key
@@ -101,7 +99,9 @@ Thumbs.db
 *.bak
 *.orig
 
-# Python（如再次引入部署脚本）
+# Python（部署脚本与运行时产物一律不跟踪）
+deploy.py
+full_check.py
 *.pyc
 __pycache__/
 *.pyo
