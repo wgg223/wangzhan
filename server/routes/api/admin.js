@@ -20,6 +20,8 @@ const { apiAuth, apiRequireAdmin, apiRequirePermission, apiRequireSuperAdmin, ap
 const { ROLE_WHITELIST, canOperateUser, ensureAtLeastOneActiveSuperAdmin, validatePassword } = require('../../middlewares/auth');
 const { grantDefaultPermissions } = require('../../config/db-helpers');
 const { logActivity } = require('../../config/activity');
+const { cleanupUserDependencies } = require('../../utils/user-deps');
+const fsSafe = require('../../utils/fs-safe');
 
 const router = express.Router();
 router.use(apiAuth, apiRequireAdmin, apiAdminAudit);   // 整组路由的全局鉴权
@@ -276,7 +278,23 @@ router.delete('/users/:id', apiRequirePermission('users.manage'), (req, res) => 
   if (user.role === 'super_admin' && !ensureAtLeastOneActiveSuperAdmin(db, user.id)) {
     return res.status(400).json({ error: '不能删除最后一个超级管理员' });
   }
-  db.run('DELETE FROM users WHERE id = ?', [id]);
+
+  // 事务内先清理关联数据，再删除用户，避免外键约束失败（FOREIGN KEY constraint failed）
+  let filesToDelete = [];
+  try {
+    db.run('BEGIN');
+    filesToDelete = cleanupUserDependencies(db, id);
+    db.run('DELETE FROM users WHERE id = ?', [id]);
+    db.run('COMMIT');
+  } catch (err) {
+    try { db.run('ROLLBACK'); } catch (rollbackErr) { /* 忽略回滚异常 */ }
+    console.error('API 删除用户失败:', err);
+    return res.status(500).json({ error: '删除用户失败: ' + err.message });
+  }
+  // 事务提交成功后删除图片文件（文件删除不可回滚，置于事务外；异步删除不阻塞响应）
+  filesToDelete.forEach(filePath => {
+    fsSafe.safeUnlink(filePath);
+  });
   saveDatabase();
   res.json({ success: true });
 });

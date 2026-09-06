@@ -152,6 +152,22 @@
               <div id="emailResult" style="margin-top:8px;font-size:14px;"></div>
             </div>
           </div>
+
+          <div class="card" style="margin-top:20px;border:1px solid #fecaca;background:#fff7f7;">
+            <h3 class="card-title" style="color:#dc2626;">危险操作</h3>
+            <p class="card-desc">
+              注销账号后，您的账号将被<strong>永久禁用</strong>、无法登录，所有个人数据将被清除，此操作<strong>不可撤销</strong>。
+            </p>
+            <% if (userData.role === 'super_admin') { %>
+              <p style="font-size:13px;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px 14px;">
+                超级管理员账户是系统核心账户，不可自行注销。如需注销，请先将角色变更为普通管理员后再操作。
+              </p>
+            <% } else { %>
+              <a href="/auth/delete-account" class="btn btn-danger" style="background:#dc2626;color:#fff;border:none;padding:10px 26px;border-radius:6px;font-size:14px;text-decoration:none;display:inline-block;">
+                注销账号
+              </a>
+            <% } %>
+          </div>
         </div>
 
         <!-- 我的内容 -->

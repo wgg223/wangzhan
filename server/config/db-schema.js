@@ -61,6 +61,14 @@ function createTables(db) {
     }
   });
 
+  // 创建会话表（express-session 自定义 SQLite 存储，降低内存驻留）
+  db.run(`CREATE TABLE IF NOT EXISTS sessions (
+    sid TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    expires INTEGER NOT NULL
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires)');
+
   // 创建页面表
   db.run(`CREATE TABLE IF NOT EXISTS pages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -573,6 +581,7 @@ function createTables(db) {
   try { db.run('ALTER TABLE ai_conversations ADD COLUMN current_branch_id INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   try { db.run('ALTER TABLE ai_conversations ADD COLUMN memory_enabled INTEGER DEFAULT 1'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   try { db.run("ALTER TABLE ai_conversations ADD COLUMN memory_mode TEXT DEFAULT 'summary'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN rag_enabled INTEGER DEFAULT 1'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // AI 世界书（World Book）：按触发词注入上下文的设定条目
   db.run(`CREATE TABLE IF NOT EXISTS ai_world_book (
@@ -588,6 +597,19 @@ function createTables(db) {
     FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
   )`);
   try { db.run('ALTER TABLE ai_world_book ADD COLUMN constant INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+
+  // AI 默认世界书（全局模板）：新会话创建时自动复制进会话世界书，后台可管理
+  db.run(`CREATE TABLE IF NOT EXISTS ai_default_world_book (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
+    content TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    position TEXT DEFAULT 'before_char',
+    sort_order INTEGER DEFAULT 0,
+    constant INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 
   // AI 记忆（摘要记忆 + 向量记忆）
   db.run(`CREATE TABLE IF NOT EXISTS ai_memories (

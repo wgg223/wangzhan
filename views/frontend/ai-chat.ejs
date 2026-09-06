@@ -159,6 +159,8 @@
       <div id="acWorldList" class="ac-world-list"></div>
     </div>
     <div class="ac-modal-foot">
+      <button class="ac-btn ac-btn-sm" id="acWorldImport">⤵ 从默认模板添加</button>
+      <span style="flex:1"></span>
       <button class="ac-btn ac-btn-primary" id="acWorldAdd">＋ 添加条目</button>
     </div>
   </div>
@@ -205,6 +207,7 @@
     </div>
     <div class="ac-modal-body">
       <label class="ac-field ac-check"><input type="checkbox" id="acMemoryEnabled"> 启用长期记忆</label>
+      <label class="ac-field ac-check"><input type="checkbox" id="acRagEnabled"> 启用知识库问答（RAG）</label>
       <label class="ac-field">记忆模式
         <select id="acMemoryMode">
           <option value="summary">摘要记忆</option>

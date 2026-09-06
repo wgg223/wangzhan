@@ -86,8 +86,9 @@ function buildContext(db, conv, userMsg, opts = {}) {
     if (block) systemParts.push(block);
   }
 
-  // RAG 块（后台开启 + 有嵌入配置时）
-  if (String(settings.ai_rag_enabled || '0') === '1' && embCfg && queryEmbedding) {
+  // RAG 块（全局开启 + 会话开启 + 有嵌入配置时）
+  const ragOn = conv.rag_enabled !== 0 && String(settings.ai_rag_enabled || '0') === '1' && embCfg && queryEmbedding;
+  if (ragOn) {
     const hits = searchRag(db, queryEmbedding, parseInt(settings.ai_rag_max_results, 10) || 5, parseFloat(settings.ai_rag_min_score) || 0.3);
     const ragBlock = buildRagBlock(hits);
     if (ragBlock) systemParts.push(ragBlock);

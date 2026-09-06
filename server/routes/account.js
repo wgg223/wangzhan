@@ -438,4 +438,52 @@ router.post('/account/comment/:id/delete', isAuthenticated, (req, res) => {
   res.redirect('/account?success=评论已删除');
 });
 
+// 我的分享列表（图片/AI生图/AI对话分享链接管理）
+router.get('/account/shares', isAuthenticated, (req, res) => {
+  const db = req.db;
+  const userId = req.session.user.id;
+  const settings = getSettings(db);
+
+  // 分页参数
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const pageSize = 20;
+  const offset = (page - 1) * pageSize;
+
+  const where = 'WHERE s.created_by = ?';
+  const totalRow = queryOne(db, 'SELECT COUNT(*) AS count FROM image_shares s ' + where, [userId]);
+  const total = totalRow ? totalRow.count : 0;
+
+  const shares = queryAll(db, `
+    SELECT s.*,
+      u.nickname AS creator_nickname, u.username AS creator_username,
+      COALESCE(img.title, aiimg.prompt, conv.title, '') AS source_title,
+      COALESCE(img.url, aiimg.image_path, '') AS source_path
+    FROM image_shares s
+    LEFT JOIN users u ON u.id = s.created_by
+    LEFT JOIN images img ON s.source_type = 'image' AND img.id = s.source_id
+    LEFT JOIN ai_image_records aiimg ON s.source_type = 'ai_image' AND aiimg.id = s.source_id
+    LEFT JOIN ai_conversations conv ON s.source_type = 'ai_chat' AND conv.id = s.source_id
+    ${where}
+    ORDER BY s.created_at DESC
+    LIMIT ? OFFSET ?`, [userId, pageSize, offset]);
+
+  // 生成/复用 CSRF 令牌（供停用/启用/取消分享等 JSON POST 使用）
+  if (!req.session.doubleSubmitToken) {
+    req.session.doubleSubmitToken = crypto.randomBytes(32).toString('hex');
+  }
+  res.locals.csrfToken = req.session.doubleSubmitToken;
+
+  res.render('frontend/my-shares', {
+    user: req.session.user,
+    settings,
+    shares,
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    success: req.query.success,
+    error: req.query.error
+  });
+});
+
 module.exports = router;

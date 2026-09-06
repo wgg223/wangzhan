@@ -43,6 +43,7 @@ router.get('/ai-chat', isAuthenticated, hasPermission('aichat.manage'), (req, re
   const models = queryAll(db, "SELECT * FROM ai_models WHERE user_id IS NULL ORDER BY is_default DESC, sort_order ASC, id ASC");
   models.forEach(m => { m.has_key = Boolean(m.api_key && m.api_key.indexOf('ENC:') === 0); });
   const roles = queryAll(db, "SELECT * FROM ai_roles WHERE is_official = 1 ORDER BY sort_order ASC, id ASC");
+  const defaultWorldBook = queryAll(db, 'SELECT * FROM ai_default_world_book ORDER BY sort_order ASC, id ASC');
   const docs = queryAll(db, 'SELECT * FROM ai_knowledge_docs ORDER BY id DESC');
   const quotaRows = queryAll(db, `
     SELECT q.*, u.username, u.nickname, u.role
@@ -55,6 +56,7 @@ router.get('/ai-chat', isAuthenticated, hasPermission('aichat.manage'), (req, re
     aiSettings: settings,
     models,
     roles,
+    defaultWorldBook,
     docs,
     quotaRows,
     hasEmbeddings: Boolean(settings.ai_embedding_api_base && settings.ai_embedding_model),
@@ -142,6 +144,9 @@ router.post('/ai-chat/roles/save', isAuthenticated, hasPermission('aichat.manage
   const examples = (first(req.body.examples) || '').trim().slice(0, 4000);
   if (!name) return res.status(400).json({ error: '角色名称不能为空' });
   if (!systemPrompt && !greeting) return res.status(400).json({ error: '角色设定或开场白至少填写一项' });
+  // 官方角色去重：与其他官方角色同名（大小写不敏感，排除自身）时拒绝
+  const dup = queryOne(db, 'SELECT id, name FROM ai_roles WHERE LOWER(name) = LOWER(?) AND is_official = 1 AND id != ?', [name, id]);
+  if (dup) return res.status(400).json({ error: '同名官方角色「' + dup.name + '」已存在，请换一个名称' });
 
   const existing = id ? queryOne(db, 'SELECT id FROM ai_roles WHERE id = ? AND is_official = 1', [id]) : null;
   if (existing) {
@@ -163,6 +168,45 @@ router.post('/ai-chat/roles/delete', isAuthenticated, hasPermission('aichat.mana
   db.run('DELETE FROM ai_roles WHERE id = ?', [row.id]);
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'delete', target_type: 'ai_role', target_title: row.name, detail: `删除 AI 聊天角色：${row.name}`, ip: req.ip });
+  res.json({ success: true });
+});
+
+// ============ 默认世界书（全局模板，新会话自动复制） ============
+
+const DEFAULT_WORLD_BOOK_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top'];
+
+router.post('/ai-chat/world-book-defaults/save', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const id = toInt(first(req.body.id), 0);
+  const key = (first(req.body.key) || '').trim().slice(0, 200);
+  let content = (first(req.body.content) || '').trim().slice(0, 8000);
+  const position = DEFAULT_WORLD_BOOK_POSITIONS.indexOf(first(req.body.position)) !== -1 ? first(req.body.position) : 'before_char';
+  const sortOrder = Math.max(toInt(first(req.body.sort_order), 0), 0);
+  const enabled = first(req.body.enabled) === '0' ? 0 : 1;
+  const constant = first(req.body.constant) === '1' || first(req.body.constant) === 'on' ? 1 : 0;
+  if (id) {
+    const existing = queryOne(db, 'SELECT * FROM ai_default_world_book WHERE id = ?', [id]);
+    if (!existing) return res.status(404).json({ error: '条目不存在' });
+    if (!content) content = existing.content; // 编辑/启停时内容留空保留原文
+    db.run('UPDATE ai_default_world_book SET key = ?, content = ?, position = ?, sort_order = ?, enabled = ?, constant = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [key, content, position, sortOrder, enabled, constant, id]);
+  } else {
+    if (!content) return res.status(400).json({ error: '内容不能为空' });
+    db.run('INSERT INTO ai_default_world_book (key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?)',
+      [key, content, position, sortOrder, enabled, constant]);
+  }
+  saveDatabase();
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'ai_default_world_book', target_title: key || '（常驻）', detail: `保存默认世界书条目：${key || '（常驻）'}`, ip: req.ip });
+  res.json({ success: true });
+});
+
+router.post('/ai-chat/world-book-defaults/delete', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT id, key FROM ai_default_world_book WHERE id = ?', [toInt(first(req.body.id), 0)]);
+  if (!row) return res.status(404).json({ error: '条目不存在' });
+  db.run('DELETE FROM ai_default_world_book WHERE id = ?', [row.id]);
+  saveDatabase();
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'delete', target_type: 'ai_default_world_book', target_title: row.key || '（常驻）', detail: `删除默认世界书条目：${row.key || '（常驻）'}`, ip: req.ip });
   res.json({ success: true });
 });
 

@@ -129,6 +129,8 @@ function insertDefaultDataIfNeeded(db) {
     // 图片分享管理
     ['image-share.manage', '图片分享管理', '图片的查看、上传、编辑、删除、审核、分类及用户管理'],
     ['image-share.share', '创建分享链接', '为图片或AI生图图片生成分享链接（查看无需登录，下载需登录）'],
+    // 分享管理
+    ['shares.manage', '分享管理', '查询全部用户的分享链接，停用、启用或取消分享'],
     // AI提示词管理
     ['prompts.manage', 'AI提示词管理', '提示词板块、分类、提示词的创建、编辑和删除'],
     // AI生图
@@ -153,6 +155,17 @@ function insertDefaultDataIfNeeded(db) {
   defaultPermissions.forEach(([key, name, desc]) => {
     db.run('INSERT OR IGNORE INTO permissions (perm_key, perm_name, description) VALUES (?, ?, ?)', [key, name, desc]);
   });
+
+  // 新权限补发：为已存在的 admin 角色用户补发 shares.manage（admin 晋升时授予全部权限，此处兜底）
+  try {
+    const adminUsers = queryAll(db, "SELECT id FROM users WHERE role = 'admin'");
+    adminUsers.forEach(u => {
+      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+        [u.id, 'shares.manage', u.id]);
+    });
+  } catch (e) {
+    console.error('[db-seed] 补发 shares.manage 权限失败:', e.message);
+  }
 
   // 迁移旧权限到新权限（为已有用户映射旧权限到新权限）
   try {

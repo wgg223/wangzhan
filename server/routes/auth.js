@@ -1881,6 +1881,11 @@ router.get('/delete-account', (req, res) => {
   const db = req.db;
   const user = req.session.user;
 
+  // 生成/复用双提交 Cookie CSRF 令牌（表单隐藏域 _csrf 使用）
+  if (!req.session.doubleSubmitToken) {
+    req.session.doubleSubmitToken = crypto.randomBytes(32).toString('hex');
+  }
+
   const deleteAccountAgreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'delete_account_agreement'");
   const agreementContent = deleteAccountAgreement ? deleteAccountAgreement.setting_value : '';
 
@@ -1906,19 +1911,34 @@ router.get('/delete-account', (req, res) => {
   res.render('frontend/delete-account', {
     user: user,
     settings: res.locals.settings || {},
-    error: null,
+    error: req.query.error || null,
     success: null,
     step: step,
+    csrfToken: req.session.doubleSubmitToken,
     agreementContent: agreementContent,
     smtpConfigured: smtpConfigured,
     userHasEmail: userHasEmail
   });
 });
 
+// 注销账号 CSRF 校验（双提交 Cookie 模式：表单 _csrf 或请求头令牌与会话令牌一致）
+function checkDeleteAccountCsrf(req) {
+  const submittedToken = req.headers['x-csrf-token']
+    || req.headers['csrf-token']
+    || req.headers['x-xsrf-token']
+    || (req.body && req.body._csrf);
+  return Boolean(submittedToken) && submittedToken === req.session.doubleSubmitToken;
+}
+
 // 注销账号 - 发送邮箱验证码
 router.post('/delete-account/send-code', sendCodeLimiter, (req, res) => {
   if (!req.session.user) {
     return res.redirect('/auth/frontend/login');
+  }
+
+  // CSRF 校验（双提交 Cookie 模式）
+  if (!checkDeleteAccountCsrf(req)) {
+    return res.redirect('/auth/delete-account?error=' + encodeURIComponent('安全验证失败，请刷新页面后重试'));
   }
 
   const db = req.db;
@@ -1931,6 +1951,7 @@ router.post('/delete-account/send-code', sendCodeLimiter, (req, res) => {
       error: '超级管理员账户不可注销。如需注销，请先将角色变更为普通管理员后再操作。',
       success: null,
       step: 'confirm',
+      csrfToken: req.session.doubleSubmitToken,
       agreementContent: '',
       smtpConfigured: false,
       userHasEmail: false
@@ -1963,6 +1984,7 @@ router.post('/delete-account/send-code', sendCodeLimiter, (req, res) => {
         error: null,
         success: '验证码已发送到您的邮箱，请查收',
         step: 'verify',
+        csrfToken: req.session.doubleSubmitToken,
         agreementContent: agreementContent,
         smtpConfigured: true,
         userHasEmail: true
@@ -1975,6 +1997,7 @@ router.post('/delete-account/send-code', sendCodeLimiter, (req, res) => {
         error: null,
         success: '邮件发送失败，但验证码已生成，请查看控制台',
         step: 'verify',
+        csrfToken: req.session.doubleSubmitToken,
         agreementContent: agreementContent,
         smtpConfigured: true,
         userHasEmail: true
@@ -1992,6 +2015,11 @@ router.post('/delete-account', (req, res) => {
     return res.redirect('/auth/frontend/login');
   }
 
+  // CSRF 校验（双提交 Cookie 模式）
+  if (!checkDeleteAccountCsrf(req)) {
+    return res.redirect('/auth/delete-account?error=' + encodeURIComponent('安全验证失败，请刷新页面后重试'));
+  }
+
   const deleteAccountAgreement = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'delete_account_agreement'");
   const agreementContent = deleteAccountAgreement ? deleteAccountAgreement.setting_value : '';
 
@@ -2005,6 +2033,7 @@ router.post('/delete-account', (req, res) => {
       error: errorMsg,
       success: successMsg,
       step: step || 'confirm',
+      csrfToken: req.session.doubleSubmitToken,
       agreementContent: agreementContent,
       smtpConfigured: smtpConfigured,
       userHasEmail: userHasEmail
@@ -2145,6 +2174,7 @@ function performDeleteAccount(db, user, req, res, agreementContent, smtpConfigur
       error: '注销失败，请稍后重试',
       success: null,
       step: 'confirm',
+      csrfToken: req.session.doubleSubmitToken,
       agreementContent: agreementContent,
       smtpConfigured: smtpConfigured,
       userHasEmail: userHasEmail

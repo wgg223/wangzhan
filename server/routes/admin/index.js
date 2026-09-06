@@ -42,6 +42,7 @@ const serverLogsRouter = require('./server-logs');
 const promptsRouter = require('./prompts');
 const aiImageRouter = require('./ai-image');
 const aiChatRouter = require('./ai-chat');
+const sharesRouter = require('./shares');
 
 // ---------- Admin 全局中间件 ----------
 router.use(isAuthenticated);
@@ -93,6 +94,7 @@ router.use(projectsRouter);
 router.use(resetRouter);
 router.use(leaderboardRouter);
 router.use(imageShareRouter);
+router.use(sharesRouter);
 router.use(mediaRouter);
 router.use(messagesRouter);
 router.use('/system-update', isSuperAdmin, systemUpdateRouter);

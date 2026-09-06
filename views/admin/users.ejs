@@ -17,6 +17,12 @@
     <span>👁️</span> 当前为只读模式：您仅可查看用户列表，添加、禁用、删除、修改角色等操作仅超级管理员可用。如需操作权限，请前往 <a href="/permissions/apply">🔑 权限申请</a> 页面申请。
   </div>
   <% } %>
+
+  <% if (typeof error !== 'undefined' && error) { %>
+  <div class="alert alert-error">
+    <%= error %>
+  </div>
+  <% } %>
   
   <div class="section-card accent-primary">
     <div class="section-header bg-gradient-primary">
@@ -62,38 +68,50 @@
                 </td>
                 <td>
                   <span class="status-badge status-<%= u.status %>">
-                    <% if (u.status === 'active') { %>✅ 已激活<% } %>
-                    <% if (u.status === 'pending') { %>⏳ 待审核<% } %>
-                    <% if (u.status === 'disabled') { %>🚫 已禁用<% } %>
+                    <% if (u.deactivated_at) { %>❌ 已注销<% } %>
+                    <% if (!u.deactivated_at && u.status === 'active') { %>✅ 已激活<% } %>
+                    <% if (!u.deactivated_at && u.status === 'pending') { %>⏳ 待审核<% } %>
+                    <% if (!u.deactivated_at && u.status === 'disabled') { %>🚫 已禁用<% } %>
                   </span>
                 </td>
                 <td><%= new Date(u.created_at).toLocaleDateString('zh-CN') %></td>
                 <% if (!readOnly) { %>
                 <td class="actions">
                   <% if (u.id !== user.id) { %>
-                    <% if (u.status === 'pending') { %>
-                      <form action="/admin/users/approve/<%= u.id %>" method="POST" class="inline-form">
+                    <% if (!u.deactivated_at) { %>
+                      <% if (u.status === 'pending') { %>
+                        <form action="/admin/users/approve/<%= u.id %>" method="POST" class="inline-form">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                          <button type="submit" class="btn btn-small btn-success">✓ 通过</button>
+                        </form>
+                      <% } %>
+                      <% if (u.status === 'active') { %>
+                        <form action="/admin/users/disable/<%= u.id %>" method="POST" class="inline-form">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                          <button type="submit" class="btn btn-small btn-warning">禁用</button>
+                        </form>
+                      <% } %>
+                      <% if (u.status === 'disabled') { %>
+                        <form action="/admin/users/approve/<%= u.id %>" method="POST" class="inline-form">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                          <button type="submit" class="btn btn-small btn-success">启用</button>
+                        </form>
+                      <% } %>
+                      <button type="button" class="btn btn-small btn-info" data-user-id="<%= u.id %>" data-username="<%= u.username %>" onclick="resetPasswordFromBtn(this)">🔑 重置</button>
+                    <% } else { %>
+                      <span class="current-user-label" style="color:#b91c1c;background:#fee2e2;">已注销，仅可删除</span>
+                    <% } %>
+                    <% if (u.deactivated_at) { %>
+                      <form action="/admin/users/delete/<%= u.id %>" method="POST" class="inline-form" onsubmit="return confirm('该用户已自行注销账号。确定要彻底删除此账号及其全部关联数据吗？此操作不可恢复！')">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                        <button type="submit" class="btn btn-small btn-success">✓ 通过</button>
+                        <button type="submit" class="btn btn-small btn-danger">删除</button>
+                      </form>
+                    <% } else { %>
+                      <form action="/admin/users/delete/<%= u.id %>" method="POST" class="inline-form" onsubmit="return confirm('确定要删除这个用户吗？')">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="btn btn-small btn-danger">删除</button>
                       </form>
                     <% } %>
-                    <% if (u.status === 'active') { %>
-                      <form action="/admin/users/disable/<%= u.id %>" method="POST" class="inline-form">
-                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                        <button type="submit" class="btn btn-small btn-warning">禁用</button>
-                      </form>
-                    <% } %>
-                    <% if (u.status === 'disabled') { %>
-                      <form action="/admin/users/approve/<%= u.id %>" method="POST" class="inline-form">
-                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                        <button type="submit" class="btn btn-small btn-success">启用</button>
-                      </form>
-                    <% } %>
-                    <button type="button" class="btn btn-small btn-info" data-user-id="<%= u.id %>" data-username="<%= u.username %>" onclick="resetPasswordFromBtn(this)">🔑 重置</button>
-                    <form action="/admin/users/delete/<%= u.id %>" method="POST" class="inline-form" onsubmit="return confirm('确定要删除这个用户吗？')">
-                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <button type="submit" class="btn btn-small btn-danger">删除</button>
-                    </form>
                   <% } else { %>
                     <span class="current-user-label">当前登录</span>
                   <% } %>

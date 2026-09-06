@@ -158,6 +158,24 @@ function manageShareStatus(req, res, enabled) {
 router.post('/api/disable', (req, res) => manageShareStatus(req, res, false));
 router.post('/api/enable', (req, res) => manageShareStatus(req, res, true));
 
+// 取消分享（删除分享记录，本人/管理员；删除后链接立即失效）
+router.post('/api/delete', (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  if (!user) return res.status(401).json({ error: '请先登录' });
+
+  const token = (req.body.token || '').trim();
+  const share = queryOne(db, 'SELECT * FROM image_shares WHERE share_token = ?', [token]);
+  if (!share) return res.status(404).json({ error: '分享链接不存在' });
+  if (!canManageSource(db, user, share)) {
+    return res.status(403).json({ error: '无权操作该分享链接' });
+  }
+
+  db.run('DELETE FROM image_shares WHERE id = ?', [share.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
 // ============ 公开分享页 ============
 
 // 分享页（公开，无需登录）

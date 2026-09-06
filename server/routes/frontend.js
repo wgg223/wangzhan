@@ -1376,7 +1376,7 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
   const user = req.session.user;
   const settings = getSettings(db);
   const conversations = queryAll(db, `SELECT id, title, model, role_id, system_prompt, message_count,
-      memory_enabled, memory_mode, current_branch_id, updated_at
+      memory_enabled, memory_mode, rag_enabled, current_branch_id, updated_at
     FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC, id DESC`, [user.id]);
   const roles = queryAll(db, `SELECT id, name, avatar, description, category, is_official, user_id,
       greeting, personality, scenario, examples
@@ -1660,6 +1660,36 @@ router.post('/ai-chat/api/world-book/delete', isAuthenticated, hasFrontendPermis
   res.json({ success: true });
 });
 
+// 从默认世界书模板导入：把当前启用的默认条目复制进本会话（已存在的 key 跳过）
+router.post('/ai-chat/api/world-book/import-defaults', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const defaults = queryAll(db, 'SELECT key, content, position, sort_order, enabled, constant FROM ai_default_world_book WHERE enabled = 1 ORDER BY sort_order ASC, id ASC');
+  const existing = new Set(queryAll(db, 'SELECT key FROM ai_world_book WHERE conversation_id = ?', [conv.id]).map(r => String(r.key).trim().toLowerCase()));
+  let imported = 0;
+  defaults.forEach(e => {
+    const k = String(e.key || '').trim();
+    if (existing.has(k.toLowerCase())) return;
+    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [conv.id, k, e.content, e.position, e.sort_order, e.enabled, e.constant]);
+    imported++;
+  });
+  saveDatabase();
+  res.json({ success: true, data: { imported, total: defaults.length } });
+});
+
+// 会话级知识库（RAG）开关
+router.post('/ai-chat/api/conversations/rag', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const ragEnabled = req.body.rag_enabled === true || req.body.rag_enabled === 1 || req.body.rag_enabled === '1' ? 1 : 0;
+  db.run('UPDATE ai_conversations SET rag_enabled = ? WHERE id = ?', [ragEnabled, conv.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
 // 记忆设置
 router.post('/ai-chat/api/memory/settings', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
   const db = req.db;
@@ -1694,6 +1724,9 @@ router.post('/ai-chat/api/roles', isAuthenticated, hasFrontendPermission('aichat
   const greeting = String(req.body.greeting || '').trim().slice(0, 1000);
   if (!name) return res.status(400).json({ error: '角色名称不能为空' });
   if (!systemPrompt && !greeting) return res.status(400).json({ error: '角色设定或开场白至少填写一项' });
+  // 角色去重：与官方角色或本人已有角色同名（大小写不敏感）时拒绝
+  const dup = queryOne(db, 'SELECT id, name FROM ai_roles WHERE LOWER(name) = LOWER(?) AND (is_official = 1 OR user_id = ?)', [name, user.id]);
+  if (dup) return res.status(400).json({ error: '同名角色「' + dup.name + '」已存在（官方角色或您的角色），请换一个名称' });
   db.run(`INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, is_official, user_id, sort_order)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)`,
   [name,

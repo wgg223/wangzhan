@@ -20,18 +20,21 @@ const { saveDatabase, queryAll, queryOne, generateUid } = require('../../config/
 const { grantDefaultPermissions } = require('../../config/db-helpers');
 const { logActivity } = require('../../config/activity');
 const { createNotification } = require('../community');
+const { cleanupUserDependencies } = require('../../utils/user-deps');
+const fsSafe = require('../../utils/fs-safe');
 
 // ============ 用户管理 ============
 
 // 用户列表页（非超管只读：前端按 readOnly 隐藏操作按钮）
 router.get('/users', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
-  const users = queryAll(db, 'SELECT id, uid, username, email, role, status, created_at FROM users ORDER BY created_at DESC');
+  const users = queryAll(db, 'SELECT id, uid, username, email, role, status, created_at, deactivated_at FROM users ORDER BY created_at DESC');
 
   res.render('admin/users', {
     user: req.session.user,
     users: users,
     readOnly: req.session.user.role !== 'super_admin',
+    error: req.query.error || null,
     settings: res.locals.settings || {}
   });
 });
@@ -88,9 +91,15 @@ router.post('/users/create', isAuthenticated, isSuperAdmin, (req, res) => {
 });
 
 // 批准账户（pending→active 或重新启用），并发送站内通知
+// 已自行注销的账号（deactivated_at 非空）禁止重新启用，仅可删除
 router.post('/users/approve/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
-  const targetUser = queryOne(db, 'SELECT username, status FROM users WHERE id = ?', [req.params.id]);
+  const targetUser = queryOne(db, 'SELECT username, status, deactivated_at FROM users WHERE id = ?', [req.params.id]);
+
+  if (targetUser && targetUser.deactivated_at) {
+    return res.redirect('/admin/users?error=' + encodeURIComponent('该账号已由用户自行注销，无法重新启用。如需移除，请直接删除该账号。'));
+  }
+
   db.run("UPDATE users SET status = 'active' WHERE id = ?", [req.params.id]);
   saveDatabase();
   if (targetUser) {
@@ -120,9 +129,14 @@ router.post('/users/disable/:id', isAuthenticated, isSuperAdmin, (req, res) => {
     return res.status(400).json({ error: '不能禁用当前登录的管理员账户' });
   }
 
-  const targetUser = queryOne(db, 'SELECT username, role FROM users WHERE id = ?', [req.params.id]);
+  const targetUser = queryOne(db, 'SELECT username, role, deactivated_at FROM users WHERE id = ?', [req.params.id]);
   if (!targetUser) {
     return res.status(404).json({ error: '用户不存在' });
+  }
+
+  // 已自行注销的账号（deactivated_at 非空）禁止再次禁用，仅可删除
+  if (targetUser.deactivated_at) {
+    return res.redirect('/admin/users?error=' + encodeURIComponent('该账号已由用户自行注销，仅可删除账号，无需禁用。'));
   }
 
   // 角色等级比较：非超管不能动同级或更高
@@ -221,7 +235,22 @@ router.post('/users/delete/:id', isAuthenticated, isSuperAdmin, (req, res) => {
     return res.status(400).json({ error: '不能删除最后一个超级管理员' });
   }
 
-  db.run('DELETE FROM users WHERE id = ?', [req.params.id]);
+  // 事务内先清理关联数据，再删除用户，避免外键约束失败（FOREIGN KEY constraint failed）
+  let filesToDelete = [];
+  try {
+    db.run('BEGIN');
+    filesToDelete = cleanupUserDependencies(db, parseInt(req.params.id, 10));
+    db.run('DELETE FROM users WHERE id = ?', [req.params.id]);
+    db.run('COMMIT');
+  } catch (err) {
+    try { db.run('ROLLBACK'); } catch (rollbackErr) { /* 忽略回滚异常 */ }
+    console.error('删除用户失败:', err);
+    return res.status(500).json({ error: '删除用户失败: ' + err.message });
+  }
+  // 事务提交成功后删除图片文件（文件删除不可回滚，置于事务外；异步删除不阻塞响应）
+  filesToDelete.forEach(filePath => {
+    fsSafe.safeUnlink(filePath);
+  });
   saveDatabase();
   if (targetUser) {
     logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'delete', target_type: 'user', target_id: parseInt(req.params.id), target_title: targetUser.username, detail: '删除用户：' + targetUser.username, ip: req.ip });

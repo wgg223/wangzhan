@@ -451,6 +451,15 @@ function getDbPath() {
   return dbPath;
 }
 
+/**
+ * 当前是否使用原生 better-sqlite3 驱动
+ * （sql.js 回退模式下部分能力不可用，如自定义会话存储）
+ * @returns {boolean}
+ */
+function isUsingNativeSql() {
+  return useNativeSql;
+}
+
 // 导出数据库模块的全部公共 API
 module.exports = {
   initDatabase,
@@ -467,5 +476,6 @@ module.exports = {
   closeDatabase,
   closeAndDeleteDatabase,
   getDbPath,
+  isUsingNativeSql,
   generateUid,
 };

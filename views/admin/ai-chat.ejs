@@ -37,6 +37,7 @@
   <button type="button" class="active" data-tab="models">模型</button>
   <button type="button" data-tab="roles">角色</button>
   <button type="button" data-tab="settings">设置</button>
+  <button type="button" data-tab="worldbook">默认世界书</button>
   <button type="button" data-tab="knowledge">知识库</button>
   <button type="button" data-tab="quota">配额统计</button>
 </div>
@@ -165,6 +166,58 @@
   <div class="ai-chat-actions">
     <button type="button" class="btn btn-primary" onclick="saveSettings()">保存设置</button>
     <span class="ai-chat-msg" id="settingsMsg"></span>
+  </div>
+</div>
+
+<!-- ============ 默认世界书 ============ -->
+<div class="ai-chat-panel" id="tab-worldbook">
+  <div class="ai-chat-hint">默认世界书是全局模板：<strong>用户新建会话时自动复制启用中的条目</strong>到该会话（副本，会话内可自由编辑）；前台世界书弹窗也可手动「从默认模板添加」。触发词留空或勾选常驻 = 始终注入。</div>
+  <table class="admin-table" style="max-width:900px;">
+    <thead><tr><th>ID</th><th>触发词</th><th>内容</th><th>位置</th><th>常驻</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>
+      <% defaultWorldBook.forEach(w => { %>
+      <tr data-dwb-id="<%= w.id %>">
+        <td><%= w.id %></td>
+        <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><%= w.key || '（常驻）' %></td>
+        <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><%= w.content %></td>
+        <td><%= w.position %></td>
+        <td><%= w.constant ? '是' : '否' %></td>
+        <td><%= w.enabled ? '启用' : '停用' %></td>
+        <td>
+          <button type="button" class="btn btn-sm" onclick="editDefaultWorldBook(<%= w.id %>)">编辑</button>
+          <button type="button" class="btn btn-sm" onclick="toggleDefaultWorldBook(<%= w.id %>, <%= w.enabled %>)"><%= w.enabled ? '停用' : '启用' %></button>
+          <button type="button" class="btn btn-sm btn-danger" onclick="deleteDefaultWorldBook(<%= w.id %>)">删除</button>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (!defaultWorldBook.length) { %><tr><td colspan="7" class="text-muted">暂无默认世界书条目</td></tr><% } %>
+    </tbody>
+  </table>
+  <button type="button" class="btn btn-primary" onclick="editDefaultWorldBook(0)" style="margin-top:8px;">＋ 新增条目</button>
+  <div id="dwbFormWrap" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--border-color); border-radius:10px; background: var(--bg-card);">
+    <h3 style="margin-bottom:12px; font-size:15px;" id="dwbFormTitle">新增默认世界书条目</h3>
+    <div class="ai-chat-form" id="dwbForm">
+      <input type="hidden" id="dwb_id">
+      <label>触发词（多个用逗号分隔，留空=常驻注入）<input id="dwb_key" placeholder="如：雨夜, 城市"></label>
+      <label class="full">内容<textarea id="dwb_content" rows="4" placeholder="注入给 AI 的设定内容…"></textarea></label>
+      <label>注入位置
+        <select id="dwb_position">
+          <option value="system_top">system_top（系统顶层）</option>
+          <option value="before_char">before_char（角色前）</option>
+          <option value="after_char">after_char（角色后）</option>
+          <option value="user_top">user_top（用户消息前）</option>
+          <option value="assistant_top">assistant_top（助手回复前）</option>
+        </select>
+      </label>
+      <label>排序<input id="dwb_sort_order" type="number" value="0" min="0"></label>
+      <label><input type="checkbox" id="dwb_constant" style="width:auto; margin-right:6px;">常驻注入（忽略触发词）</label>
+      <label><input type="checkbox" id="dwb_enabled" style="width:auto; margin-right:6px;" checked>启用</label>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
+      <button type="button" class="btn btn-primary" onclick="saveDefaultWorldBook()">保存</button>
+      <button type="button" class="btn btn-sm" onclick="document.getElementById('dwbFormWrap').style.display='none'">取消</button>
+      <span class="ai-chat-msg" id="dwbMsg"></span>
+    </div>
   </div>
 </div>
 
@@ -426,6 +479,80 @@
     csrfFetch('/admin/ai-chat/knowledge/delete', { method: 'POST', body: fd }, 20000)
       .then(function (json) {
         if (json.success) { var row = document.querySelector('tr[data-kb-id="' + id + '"]'); if (row) row.remove(); }
+        else alert(json.error || '删除失败');
+      })
+      .catch(function (err) { alert(err.message || '删除失败'); });
+  };
+
+  // ============ 默认世界书 ============
+  window.editDefaultWorldBook = function (id) {
+    var wrap = document.getElementById('dwbFormWrap');
+    wrap.style.display = 'block';
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('dwbMsg').textContent = '';
+    if (!id) {
+      document.getElementById('dwbFormTitle').textContent = '新增默认世界书条目';
+      ['dwb_id', 'dwb_key', 'dwb_content', 'dwb_sort_order'].forEach(function (f) { document.getElementById(f).value = ''; });
+      document.getElementById('dwb_position').value = 'before_char';
+      document.getElementById('dwb_constant').checked = false;
+      document.getElementById('dwb_enabled').checked = true;
+      return;
+    }
+    var row = document.querySelector('tr[data-dwb-id="' + id + '"]');
+    if (!row) return;
+    document.getElementById('dwbFormTitle').textContent = '编辑默认世界书条目';
+    document.getElementById('dwb_id').value = id;
+    document.getElementById('dwb_key').value = row.cells[1].textContent === '（常驻）' ? '' : row.cells[1].textContent;
+    document.getElementById('dwb_content').value = row.cells[2].textContent;
+    document.getElementById('dwb_position').value = row.cells[3].textContent;
+    document.getElementById('dwb_constant').checked = row.cells[4].textContent === '是';
+    document.getElementById('dwb_enabled').checked = row.cells[5].textContent === '启用';
+    document.getElementById('dwb_sort_order').value = 0;
+  };
+
+  window.saveDefaultWorldBook = function () {
+    var msg = document.getElementById('dwbMsg');
+    msg.textContent = '';
+    var fd = new FormData();
+    fd.append('id', document.getElementById('dwb_id').value);
+    fd.append('key', document.getElementById('dwb_key').value);
+    fd.append('content', document.getElementById('dwb_content').value);
+    fd.append('position', document.getElementById('dwb_position').value);
+    fd.append('sort_order', document.getElementById('dwb_sort_order').value);
+    fd.append('constant', document.getElementById('dwb_constant').checked ? '1' : '0');
+    fd.append('enabled', document.getElementById('dwb_enabled').checked ? '1' : '0');
+    csrfFetch('/admin/ai-chat/world-book-defaults/save', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) { msg.textContent = '已保存'; msg.className = 'ai-chat-msg ok'; setTimeout(function () { location.reload(); }, 600); }
+        else { msg.textContent = json.error || '保存失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function (err) { msg.textContent = err.message || '保存失败'; msg.className = 'ai-chat-msg err'; });
+  };
+
+  window.toggleDefaultWorldBook = function (id, enabled) {
+    var fd = new FormData();
+    fd.append('id', id);
+    fd.append('key', '');
+    fd.append('content', '');
+    fd.append('position', 'before_char');
+    fd.append('sort_order', '0');
+    fd.append('constant', '0');
+    fd.append('enabled', enabled ? '0' : '1');
+    csrfFetch('/admin/ai-chat/world-book-defaults/save', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) location.reload();
+        else alert(json.error || '操作失败');
+      })
+      .catch(function (err) { alert(err.message || '操作失败'); });
+  };
+
+  window.deleteDefaultWorldBook = function (id) {
+    if (!window.confirm('确定删除该默认世界书条目？')) return;
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/world-book-defaults/delete', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) { var row = document.querySelector('tr[data-dwb-id="' + id + '"]'); if (row) row.remove(); }
         else alert(json.error || '删除失败');
       })
       .catch(function (err) { alert(err.message || '删除失败'); });

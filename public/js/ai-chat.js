@@ -36,8 +36,8 @@
     'acInput', 'acSend', 'acStop', 'acRoleBtn', 'acRoleLabel', 'acWorldBtn', 'acMemoryBtn', 'acBranchBtn',
     'acModelBtn', 'acModelLabel', 'acModelModal', 'acModelList',
     'acRoleModal', 'acRoleList', 'acRoleCreate', 'acRoleCreateModal', 'acNewRoleName', 'acNewRolePrompt', 'acNewRoleGreeting', 'acNewRoleDesc', 'acNewRolePersonality', 'acNewRoleScenario', 'acNewRoleExamples', 'acRoleSave',
-    'acWorldModal', 'acWorldList', 'acWorldAdd', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
-    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acMemoryModal', 'acMemoryEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
+    'acWorldModal', 'acWorldList', 'acWorldAdd', 'acWorldImport', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
+    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acMemoryModal', 'acMemoryEnabled', 'acRagEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
     'acBranchModal', 'acBranchList', 'acMsgMenu', 'acMenuBtn', 'acSidebar',
     'acModelsToggle', 'acModelsBody', 'acMyModels', 'acGlobalModels', 'acModelAddBtn', 'acModelAddRow',
     'acmProvider', 'acmKey', 'acmEndpoint', 'acmApiKey', 'acmDefault', 'acmSave', 'acmCancel', 'acmGetWrap', 'acmGetLink',
@@ -1220,6 +1220,19 @@
     return map[pos] || pos;
   }
 
+  // 从默认世界书模板导入到当前会话（已存在的 key 跳过）
+  function importDefaultWorldBook() {
+    if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+    api('/ai-chat/api/world-book/import-defaults', { conversation_id: state.currentConv.id }).then(function (json) {
+      if (json && json.data && json.data.imported > 0) {
+        selectConversation(state.currentConv.id);
+        showToast('已从默认模板导入 ' + json.data.imported + ' 条', 'success');
+      } else {
+        showToast('默认模板中无新条目可导入（可能已全部存在）', 'info');
+      }
+    }).catch(function (err) { showToast(err.message, 'error'); });
+  }
+
   function openWorldEdit(w) {
     els.acWorldEditTitle.textContent = w ? '编辑条目' : '添加条目';
     els.acWorldKey.value = w ? (w.key || '') : '';
@@ -1265,6 +1278,7 @@
   function openMemoryModal() {
     if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
     els.acMemoryEnabled.checked = state.currentConv.memory_enabled !== 0;
+    els.acRagEnabled.checked = state.currentConv.rag_enabled !== 0;
     els.acMemoryMode.value = state.currentConv.memory_mode || 'summary';
     showModal('acMemoryModal');
   }
@@ -1277,8 +1291,15 @@
     }).then(function () {
       state.currentConv.memory_enabled = els.acMemoryEnabled.checked ? 1 : 0;
       state.currentConv.memory_mode = els.acMemoryMode.value;
+      // 知识库（RAG）开关独立保存
+      return api('/ai-chat/api/conversations/rag', {
+        conversation_id: state.currentConv.id,
+        rag_enabled: els.acRagEnabled.checked ? 1 : 0
+      });
+    }).then(function () {
+      state.currentConv.rag_enabled = els.acRagEnabled.checked ? 1 : 0;
       hideModal('acMemoryModal');
-      showToast('记忆设置已保存', 'success');
+      showToast('记忆与知识库设置已保存', 'success');
     }).catch(function (err) { showToast(err.message, 'error'); });
   }
 
@@ -1407,6 +1428,7 @@
 
   els.acWorldBtn.addEventListener('click', openWorldModal);
   els.acWorldAdd.addEventListener('click', function () { openWorldEdit(null); });
+  els.acWorldImport.addEventListener('click', importDefaultWorldBook);
   els.acWorldSave.addEventListener('click', saveWorldEntry);
   els.acWorldDelete.addEventListener('click', deleteWorldEntry);
 

@@ -13,13 +13,24 @@ const { estimateTokens, normalizeError } = require('./utils');
 // ============ 会话 ============
 
 function createConversation(db, user, data = {}) {
-  db.run(`INSERT INTO ai_conversations (user_id, title, model, system_prompt, role_id)
-    VALUES (?, ?, ?, ?, ?)`,
+  // 新会话默认知识库开关：跟随全局 RAG 设置
+  const ragSetting = queryOne(db, "SELECT value FROM ai_settings WHERE key = 'ai_rag_enabled'");
+  const ragEnabled = ragSetting && String(ragSetting.value) === '1' ? 1 : 0;
+  db.run(`INSERT INTO ai_conversations (user_id, title, model, system_prompt, role_id, rag_enabled)
+    VALUES (?, ?, ?, ?, ?, ?)`,
   [user.id, String(data.title || '新对话').slice(0, 100),
     String(data.model || '').slice(0, 100),
     String(data.system_prompt || '').slice(0, 4000),
-    data.role_id ? parseInt(data.role_id, 10) : null]);
+    data.role_id ? parseInt(data.role_id, 10) : null,
+    ragEnabled]);
   const conv = queryOne(db, 'SELECT * FROM ai_conversations WHERE id = last_insert_rowid()');
+
+  // 默认世界书：新会话自动复制启用中的全局默认条目（副本，会话内可自由编辑）
+  const defaultEntries = queryAll(db, 'SELECT key, content, position, sort_order, enabled, constant FROM ai_default_world_book WHERE enabled = 1 ORDER BY sort_order ASC, id ASC');
+  defaultEntries.forEach(e => {
+    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [conv.id, e.key, e.content, e.position, e.sort_order, e.enabled, e.constant]);
+  });
 
   // 角色开场白：新会话选择带开场白的角色时，自动注入第一条 AI 消息
   if (conv.role_id) {

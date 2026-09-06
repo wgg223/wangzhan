@@ -102,8 +102,17 @@ class SystemMonitor {
 
       // 检查堆内存
       if (heapPercent > 90) {
-        this.logger.warn(`[监控] V8堆内存使用率过高: ${heapPercent.toFixed(1)}%`);
+        this.logger.warn(
+          `[监控] V8堆内存使用率过高: ${heapPercent.toFixed(1)}% ` +
+          `(heapUsed=${this._formatBytes(memUsage.heapUsed)}, heapTotal=${this._formatBytes(memUsage.heapTotal)}, ` +
+          `rss=${this._formatBytes(memUsage.rss)}, external=${this._formatBytes(memUsage.external || 0)})`
+        );
         this._tryGC();
+      } else if (heapPercent > 75) {
+        this.logger.warn(
+          `[监控] V8堆内存使用率预警: ${heapPercent.toFixed(1)}% ` +
+          `(heapUsed=${this._formatBytes(memUsage.heapUsed)}, rss=${this._formatBytes(memUsage.rss)})`
+        );
       }
     } catch (err) {
       // 健康检查失败不应影响主流程

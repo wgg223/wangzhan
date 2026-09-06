@@ -48,6 +48,8 @@ module.exports = {
     exec_mode: 'fork',
     max_memory_restart: '800M',
     node_args: ['--max-old-space-size=768', '--expose-gc'],
+    // 每日 04:00 低峰期自动重启，释放长期运行累积的内存碎片（2G 小内存机建议保留）
+    cron_restart: '0 4 * * *',
     env: {
       NODE_ENV: 'production',
       PORT: 3000,

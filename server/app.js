@@ -94,12 +94,27 @@ app.use(express.urlencoded({
 }));
 
 // ============ 会话中间件 ============
+// 优先使用 SQLite 会话存储（降低 V8 堆内存驻留 + 服务重启不掉线）；
+// 仅在 better-sqlite3 原生模式下启用，失败时自动回退内存存储（默认行为）
+const { SqliteSessionStore } = require('./config/session-store');
+let sessionStore;
+try {
+  if (require('./config/database').isUsingNativeSql()) {
+    sessionStore = new SqliteSessionStore(() => require('./config/database').getDb());
+    console.log('[session] 使用 SQLite 会话存储');
+  }
+} catch (err) {
+  console.error('[session] SQLite 会话存储初始化失败，回退内存存储:', err.message);
+  sessionStore = undefined;
+}
+
 app.use(session({
   // 会话签名密钥：优先环境变量；未设置时生成随机密钥（重启后所有会话失效，仅限开发）
   secret: process.env.SESSION_SECRET || (() => {
     console.error('[安全] 未设置 SESSION_SECRET 环境变量，使用随机密钥（重启后所有会话失效）');
     return require('crypto').randomBytes(32).toString('hex');
   })(),
+  store: sessionStore,          // undefined 时 express-session 使用默认内存存储
   resave: false,          // 会话未修改时不强制重存
   saveUninitialized: false, // 未初始化的会话不写 Cookie（减少无状态请求的存储）
   rolling: true,          // 每次响应刷新会话有效期（活跃用户不掉线）

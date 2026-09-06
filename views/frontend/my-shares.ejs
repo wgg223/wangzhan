@@ -1,0 +1,343 @@
+<%# ===== 页面模板：frontend/my-shares.ejs =====%>
+<%# 说明：我的分享页：查看/停用/启用/取消分享自己创建的分享链接（EJS 服务端模板） %>
+<div class="container">
+  <div class="account-page">
+    <h1 class="page-title">我的分享</h1>
+
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <div class="card my-shares-card">
+      <div class="card-header-line">
+        <h3 class="card-title">分享列表 <span class="share-count-badge"><%= total %></span></h3>
+        <a href="/account" class="btn btn-small btn-outline">← 返回账号管理</a>
+      </div>
+
+      <% if (shares.length === 0) { %>
+        <div class="shares-empty">
+          <p>暂无分享内容</p>
+          <p class="shares-empty-hint">你可以在图片、AI生图、AI对话页面中创建分享链接，创建后在这里统一管理。</p>
+        </div>
+      <% } else { %>
+        <div class="shares-table-wrap">
+          <table class="shares-table">
+            <thead>
+              <tr>
+                <th>类型</th>
+                <th>内容</th>
+                <th>分享链接</th>
+                <th>状态</th>
+                <th>数据</th>
+                <th>创建时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% shares.forEach(function(s) { %>
+                <%
+                  var typeName = s.source_type === 'image' ? '图片' : (s.source_type === 'ai_image' ? 'AI生图' : 'AI对话');
+                  var typeClass = s.source_type === 'image' ? 'type-image' : (s.source_type === 'ai_image' ? 'type-aiimg' : 'type-aichat');
+                  var active = s.status === 1;
+                  var shareUrl = '/share/' + s.share_token;
+                %>
+                <tr>
+                  <td><span class="share-type <%= typeClass %>"><%= typeName %></span></td>
+                  <td>
+                    <div class="share-title">
+                      <% if ((s.source_type === 'image' || s.source_type === 'ai_image') && s.source_path) { %>
+                        <img src="<%= s.source_path %>" alt="" class="share-thumb" loading="lazy" onerror="this.style.display='none'">
+                      <% } %>
+                      <span class="share-title-text"><%= s.source_title || '（内容已删除）' %></span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="share-link-cell">
+                      <code class="share-token" title="<%= shareUrl %>">/share/<%= s.share_token %></code>
+                      <button type="button" class="btn btn-small btn-outline share-copy-btn" data-url="<%= shareUrl %>">复制</button>
+                    </div>
+                  </td>
+                  <td>
+                    <% if (active) { %>
+                      <span class="share-status status-on">● 生效中</span>
+                    <% } else { %>
+                      <span class="share-status status-off">○ 已停用</span>
+                    <% } %>
+                  </td>
+                  <td>
+                    <span class="share-stat">👁 <%= s.view_count %></span>
+                    <span class="share-stat">⬇ <%= s.download_count %></span>
+                  </td>
+                  <td class="share-time"><%= new Date(s.created_at).toLocaleString('zh-CN') %></td>
+                  <td>
+                    <div class="share-actions">
+                      <a href="<%= shareUrl %>" target="_blank" rel="noopener" class="btn btn-small btn-outline">查看</a>
+                      <% if (active) { %>
+                        <button type="button" class="btn btn-small btn-warning share-toggle-btn" data-token="<%= s.share_token %>" data-action="disable">停用</button>
+                      <% } else { %>
+                        <button type="button" class="btn btn-small btn-success share-toggle-btn" data-token="<%= s.share_token %>" data-action="enable">启用</button>
+                      <% } %>
+                      <button type="button" class="btn btn-small btn-danger share-delete-btn" data-token="<%= s.share_token %>">取消分享</button>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+
+        <% if (totalPages > 1) { %>
+        <div class="shares-pagination">
+          <% if (page > 1) { %>
+            <a href="/account/shares?page=<%= page - 1 %>" class="btn btn-small btn-outline">← 上一页</a>
+          <% } %>
+          <span class="shares-page-info">第 <%= page %> / <%= totalPages %> 页（共 <%= total %> 条）</span>
+          <% if (page < totalPages) { %>
+            <a href="/account/shares?page=<%= page + 1 %>" class="btn btn-small btn-outline">下一页 →</a>
+          <% } %>
+        </div>
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<style>
+.account-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 0;
+}
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 18px;
+}
+.card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.card-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.btn-outline {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+.btn-outline:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+}
+.my-shares-card { padding: 24px; }
+.card-header-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.share-count-badge {
+  display: inline-block;
+  background: #eef2ff;
+  color: #4f46e5;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.shares-table-wrap { overflow-x: auto; }
+.shares-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.shares-table th {
+  text-align: left;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+  color: #475569;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.shares-table td {
+  padding: 12px;
+  border-bottom: 1px solid #eef2f7;
+  vertical-align: middle;
+}
+.shares-table tr:hover td { background: #fafbff; }
+.share-type {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.type-image { background: #ecfdf5; color: #059669; }
+.type-aiimg { background: #fef3c7; color: #b45309; }
+.type-aichat { background: #ede9fe; color: #6d28d9; }
+.share-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 180px;
+}
+.share-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.share-title-text {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+.share-link-cell { display: flex; align-items: center; gap: 6px; }
+.share-token {
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 3px 8px;
+  border-radius: 6px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+.share-status { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.status-on { color: #059669; }
+.status-off { color: #94a3b8; }
+.share-stat { display: inline-block; font-size: 12px; color: #64748b; margin-right: 8px; white-space: nowrap; }
+.share-time { color: #94a3b8; font-size: 12px; white-space: nowrap; }
+.share-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.share-actions .btn { margin: 0; }
+.shares-empty { text-align: center; padding: 60px 20px; color: #94a3b8; }
+.shares-empty p { margin: 6px 0; }
+.shares-empty-hint { font-size: 13px; }
+.shares-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-top: 20px;
+}
+.shares-page-info { font-size: 13px; color: #64748b; }
+</style>
+
+<script>
+(function() {
+  var csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken
+      },
+      body: JSON.stringify(body)
+    }).then(function(res) { return res.json(); });
+  }
+
+  function reloadWithMsg(msg) {
+    var base = '/account/shares?';
+    var page = new URLSearchParams(location.search).get('page');
+    if (page) base += 'page=' + page + '&';
+    location.href = base + 'success=' + encodeURIComponent(msg);
+  }
+
+  // 复制分享链接
+  document.querySelectorAll('.share-copy-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var url = location.origin + this.dataset.url;
+      var done = function() {
+        var old = this.textContent;
+        this.textContent = '已复制';
+        var self = this;
+        setTimeout(function() { self.textContent = old; }, 1500);
+      }.bind(this);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(function() {
+          fallbackCopy(url);
+          done();
+        });
+      } else {
+        fallbackCopy(url);
+        done();
+      }
+    });
+  });
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  // 停用 / 启用
+  document.querySelectorAll('.share-toggle-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var token = this.dataset.token;
+      var action = this.dataset.action; // disable / enable
+      var tip = action === 'disable' ? '确定要停用这条分享吗？停用后链接将无法访问。' : '确定要重新启用这条分享吗？';
+      if (!window.confirm(tip)) return;
+      var self = this;
+      self.disabled = true;
+      postJson('/share/api/' + action, { token: token }).then(function(data) {
+        if (data.success) {
+          reloadWithMsg(action === 'disable' ? '分享已停用' : '分享已启用');
+        } else {
+          alert(data.error || '操作失败');
+          self.disabled = false;
+        }
+      }).catch(function() {
+        alert('操作失败，请稍后重试');
+        self.disabled = false;
+      });
+    });
+  });
+
+  // 取消分享（删除）
+  document.querySelectorAll('.share-delete-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var token = this.dataset.token;
+      if (!window.confirm('确定要取消这条分享吗？取消后分享链接将永久失效，且无法恢复。')) return;
+      var self = this;
+      self.disabled = true;
+      postJson('/share/api/delete', { token: token }).then(function(data) {
+        if (data.success) {
+          reloadWithMsg('分享已取消');
+        } else {
+          alert(data.error || '操作失败');
+          self.disabled = false;
+        }
+      }).catch(function() {
+        alert('操作失败，请稍后重试');
+        self.disabled = false;
+      });
+    });
+  });
+})();
+</script>

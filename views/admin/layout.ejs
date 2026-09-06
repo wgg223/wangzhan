@@ -145,7 +145,7 @@
           </ul>
         </div>
         <% } %>
-        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'messages.manage') || hasPerm(userPermissions, 'leaderboard.manage') || hasPerm(userPermissions, 'image-share.manage'))) { %>
+        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'messages.manage') || hasPerm(userPermissions, 'leaderboard.manage') || hasPerm(userPermissions, 'image-share.manage') || hasPerm(userPermissions, 'shares.manage'))) { %>
         <div class="nav-group">
           <p class="nav-group-title">社区互动</p>
           <ul>
@@ -157,6 +157,9 @@
             <% } %>
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.manage')) { %>
             <li><a href="/admin/image-share" class="<%= isActive('/admin/image-share') ? 'active' : '' %>">🖼️ 图片分享</a></li>
+            <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'shares.manage')) { %>
+            <li><a href="/admin/shares" class="<%= isActive('/admin/shares') ? 'active' : '' %>">🔗 分享管理</a></li>
             <% } %>
           </ul>
         </div>
