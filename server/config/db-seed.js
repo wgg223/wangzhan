@@ -111,7 +111,6 @@ function insertDefaultDataIfNeeded(db) {
     ['articles.access', '文章访问', '浏览文章列表和详情'],
     ['novels.access', '小说访问', '访问小说模块'],
     ['image-share.access', '图片分享访问', '访问图片分享模块'],
-    ['poem-game.access', '诗词游戏访问', '访问诗词游戏模块'],
     ['prompts.view', 'AI提示词查询', '访问AI提示词页面并查看提示词内容'],
     // 站点统计权限
     ['site_stats.view', '站点统计', '查看站点基本统计数据（用户数、运行状态等）'],
@@ -142,7 +141,6 @@ function insertDefaultDataIfNeeded(db) {
     // 系统管理
     ['settings.manage', '系统设置', '网站基础设置、SMTP、协议、弹窗、CDN等配置'],
     ['data.manage', '数据管理', '数据备份、恢复、导入和导出'],
-    ['leaderboard.manage', '排行榜管理', '排行榜数据的查看和管理'],
     ['community.access', '社区访问', '访问社区页面，浏览动态列表'],
     ['community.detail.access', '动态详情访问', '查看社区动态的详细内容和评论'],
     ['articles.detail.access', '文章详情访问', '查看文章详情内容'],
@@ -224,8 +222,7 @@ function insertDefaultDataIfNeeded(db) {
       'community.notification.view': 'community.access', 'community.notification.mark-read': 'community.access',
       'community.access': 'community.access', 'messages.access': 'messages.access',
       'search.access': 'homepage.access', 'novels.read': 'novels.access',
-      'image-share.browse': 'image-share.access',
-      'leaderboard.view': 'leaderboard.manage'
+      'image-share.browse': 'image-share.access'
     };
 
     const migratedUsers = new Set();
@@ -267,9 +264,6 @@ function insertDefaultDataIfNeeded(db) {
     ['image', '图片分享', '图片、分类、评论',
       JSON.stringify(['images', 'image_categories', 'image_comments', 'image_logs', 'image_configs']),
       JSON.stringify(['uploads/images']), '🖼️'],
-    ['poem', '诗词游戏', '排行榜数据',
-      JSON.stringify(['poem_leaderboard']),
-      JSON.stringify([]), '🎮'],
     ['ai-prompts', 'AI提示词库', '板块、分类、提示词、评论',
       JSON.stringify(['prompt_sections', 'prompt_categories', 'prompts', 'prompt_comments']),
       JSON.stringify([]), '🤖'],
@@ -415,7 +409,7 @@ function insertDefaultDataIfNeeded(db) {
   try {
     const defaultUserPerms = [
       'homepage.access', 'articles.access', 'novels.access',
-      'image-share.access', 'poem-game.access', 'site_stats.view',
+      'image-share.access', 'site_stats.view',
       'community.access', 'community.detail.access', 'articles.detail.access',
       'novels.detail.access', 'images.detail.access'
     ];

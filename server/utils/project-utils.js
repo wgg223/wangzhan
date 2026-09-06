@@ -21,7 +21,7 @@ const TABLE_WHITELIST = new Set([
   'app_setup', 'users', 'pages', 'articles', 'article_drafts', 'tags', 'content_tags',
   'content_versions', 'media', 'settings', 'permissions', 'user_permissions',
   'permission_applications', 'comments', 'novels', 'novel_chapters', 'media_comments',
-  'activity_logs', 'poem_leaderboard', 'image_categories', 'images', 'image_logs',
+  'activity_logs', 'image_categories', 'images', 'image_logs',
   'image_configs', 'image_comments', 'image_favorites', 'image_tags', 'image_tag_relations',
   'image_shares', 'internal_messages', 'user_follows', 'notifications', 'content_likes',
   'community_posts', 'community_post_comments', 'conversations', 'private_messages',

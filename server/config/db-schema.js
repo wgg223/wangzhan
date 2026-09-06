@@ -281,22 +281,6 @@ function createTables(db) {
   try { db.run("ALTER TABLE activity_logs ADD COLUMN route TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   try { db.run("ALTER TABLE activity_logs ADD COLUMN method TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
-  // 创建诗词游戏排行榜表
-  db.run(`CREATE TABLE IF NOT EXISTS poem_leaderboard (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    username TEXT NOT NULL,
-    game_mode TEXT NOT NULL,
-    difficulty TEXT NOT NULL,
-    category TEXT DEFAULT '全部',
-    score INTEGER NOT NULL,
-    combo_max INTEGER DEFAULT 0,
-    correct_count INTEGER DEFAULT 0,
-    total_count INTEGER DEFAULT 0,
-    duration INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-
   // ============ 图片分享模块表 ============
 
   // 图片分类表

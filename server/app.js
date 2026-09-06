@@ -251,8 +251,6 @@ app.use((req, res, next) => {
     res.locals.layout = false;                  // 分享页无布局（独立页面）
   } else if (req.path.startsWith('/novels/') && req.path.includes('/chapter/')) {
     res.locals.layout = false;                  // 小说阅读页独立渲染
-  } else if (req.path.startsWith('/poem-game')) {
-    res.locals.layout = false;                  // 诗词游戏独立页面
   } else if (req.path.startsWith('/image-share')) {
     res.locals.layout = false;                  // 图片分享独立页面
   } else if (req.path.startsWith('/ai-prompts')) {
@@ -297,14 +295,13 @@ const { activityLogger } = require('./middlewares/activity-logger');
 app.use(activityLogger);
 
 // ============ 路由挂载 ============
-// 按域拆分：认证 / OAuth / 账户 / 后台 / 权限申请 / API / 诗词游戏 / 图片分享 / 分享 / 前台 / 社区 / 私信 / 内容
+// 按域拆分：认证 / OAuth / 账户 / 后台 / 权限申请 / API / 图片分享 / 分享 / 前台 / 社区 / 私信 / 内容
 const authRoutes = require('./routes/auth');
 const oauthRoutes = require('./routes/oauth').router;
 const accountRoutes = require('./routes/account');
 const adminRoutes = require('./routes/admin/index');
 const frontendRoutes = require('./routes/frontend');
 const setupRoutes = require('./routes/setup');
-const poemGameRoutes = require('./routes/poem-game');
 const imageShareRoutes = require('./routes/image-share');
 const communityRoutes = require('./routes/community');
 const contentRoutes = require('./routes/content');
@@ -325,7 +322,6 @@ app.use('/api/v1', globalLimiter, apiLimiter, apiAccessLogger, apiRoutes); // AP
 // Maintenance mode middleware - only affects frontend routes（维护模式开关，仅影响前台）
 app.use(maintenanceMiddleware);
 
-app.use('/poem-game', globalLimiter, poemGameRoutes);   // 诗词游戏
 app.use('/image-share', globalLimiter, imageShareRoutes); // 图片分享站
 app.use('/share', globalLimiter, shareRoutes);          // 分享页面
 app.use('/', globalLimiter, frontendRoutes);            // 前台页面

@@ -20,7 +20,6 @@ const ROUTE_TARGET_MAP = {
   '/home': 'frontend',
   '/articles': 'article',
   '/novels': 'novel',
-  '/poem-game': 'poem_game',
   '/image-share': 'image_share',
   '/setup': 'setup',
   '/messages': 'message',

@@ -23,7 +23,7 @@ No test suite exists. `npm test` is not configured.
 
 - **Entry point**: `server/app.js` — Express app, middleware stack, route mounting
 - **Database**: `server/config/database.js` — SQLite with 40+ tables, auto-migrates on startup
-- **Routes**: `server/routes/` — auth, admin (nested), frontend, setup, poem-game, image-share, community, content
+- **Routes**: `server/routes/` — auth, admin (nested), frontend, setup, image-share, community, content
 - **Templates**: `views/` — EJS with `express-ejs-layouts`. Layout selection is path-based in `app.js:156-185`
 - **Admin routes**: `server/routes/admin/` — separate layout (`admin/layout.ejs`), all under `/admin`
 - **Cache**: `server/config/cache.js` — in-memory LRU cache (settings 60s, queries 15s, pages 60s)
@@ -35,7 +35,7 @@ No test suite exists. `npm test` is not configured.
 - PM2 process name: `website-admin`. Session secret persisted to `.session_secret` file
 - Security middleware applied globally to all routes except `/setup`, `/health`, static assets, and XHR
 - Activity logging middleware (`server/middlewares/activity-logger.js`) records user actions globally
-- ESLint overrides: `scripts/` allows `no-process-exit` and `no-sync`. `public/js/poems_data.js` disables unused-vars and max-len
+- ESLint overrides: `scripts/` allows `no-process-exit` and `no-sync`.
 
 ## File Patterns
 

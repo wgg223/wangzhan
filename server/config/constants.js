@@ -29,14 +29,6 @@ const PROJECT_DEFINITIONS = {
     file_dirs: ['uploads/images'],
     icon: '🖼️'
   },
-  poem: {
-    id: 'poem',
-    name: '诗词游戏',
-    description: '排行榜数据',
-    tables: ['poem_leaderboard'],
-    file_dirs: [],
-    icon: '🎮'
-  },
   ai_chat: {
     id: 'ai_chat',
     name: 'AI 聊天',
@@ -85,8 +77,6 @@ const ALL_TABLES = [
   // 图片分享
   'images', 'image_categories', 'image_comments', 'image_configs', 'image_favorites',
   'image_logs', 'image_tags', 'image_tag_relations',
-  // 诗词游戏
-  'poem_leaderboard',
   // 站内信
   'internal_messages',
   // 用户关注

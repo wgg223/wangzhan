@@ -107,7 +107,7 @@ function generateUid(db) {
  * @param {number} grantedBy - 授权者ID
  */
 function grantDefaultPermissions(db, userId, grantedBy) {
-  const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access', 'poem-game.access'];
+  const defaultPerms = ['homepage.access', 'articles.access', 'novels.access', 'image-share.access'];
   defaultPerms.forEach(perm => {
     db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
       [userId, perm, grantedBy]);

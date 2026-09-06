@@ -13,7 +13,6 @@ const express = require('express');
 const authRoutes = require('./auth');           // 登录/注册/Token
 const articleRoutes = require('./articles');    // 文章
 const imageRoutes = require('./images');        // 图片分享
-const poemRoutes = require('./poems');          // 诗词题库/排行榜
 const novelRoutes = require('./novels');        // 小说
 const communityRoutes = require('./community'); // 社区
 const messageRoutes = require('./messages');    // 私信
@@ -40,7 +39,6 @@ router.use((req, res, next) => {
 router.use('/auth', authRoutes);
 router.use('/', articleRoutes);
 router.use('/', imageRoutes);
-router.use('/', poemRoutes);
 router.use('/', novelRoutes);
 router.use('/', communityRoutes);
 router.use('/', messageRoutes);

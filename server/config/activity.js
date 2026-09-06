@@ -330,7 +330,6 @@ const targetLabels = {
   admin: '后台管理',
   ai_chat: 'AI聊天',
   frontend: '前台页面',
-  poem_game: '诗词游戏',
   profile: '个人资料',
   search: '搜索',
   setup: '系统安装',

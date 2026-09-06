@@ -38,7 +38,6 @@ public/lib/
 # 第三方库和压缩文件
 public/rp-hub/
 RP-Hub/
-public/js/poems_data.js
 public/vendor/
 
 # EJS模板文件（ESLint不直接处理模板）

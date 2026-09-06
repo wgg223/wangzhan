@@ -38,7 +38,7 @@ router.get('/', isAuthenticated, isSuperAdmin, (req, res) => {
   // 说明：articleCount 依赖当前管理员身份，单独实时计算；其余全局统计统一缓存
   const {
     userCount, pageCount, commentCount, novelCount,
-    mediaCount, imageCount, imageCategoryCount, poemGameCount, novelChapterCount
+    mediaCount, imageCount, imageCategoryCount, novelChapterCount
   } = queryCache.getOrSet('dashboard_stats', () => {
     const userCount = queryOne(db, 'SELECT COUNT(*) as count FROM users')?.count || 0;
     const pageCount = queryOne(db, 'SELECT COUNT(*) as count FROM pages')?.count || 0;
@@ -51,15 +51,13 @@ router.get('/', isAuthenticated, isSuperAdmin, (req, res) => {
     let mediaCount = 0;
     let imageCount = 0;
     let imageCategoryCount = 0;
-    let poemGameCount = 0;
     let novelChapterCount = 0;
     try { mediaCount = queryOne(db, 'SELECT COUNT(*) as count FROM media')?.count || 0; } catch (e) { /* ignore */ }
     try { imageCount = queryOne(db, 'SELECT COUNT(*) as count FROM images')?.count || 0; } catch (e) { /* ignore */ }
     try { imageCategoryCount = queryOne(db, 'SELECT COUNT(*) as count FROM image_categories')?.count || 0; } catch (e) { /* ignore */ }
-    try { poemGameCount = queryOne(db, 'SELECT COUNT(*) as count FROM poem_leaderboard')?.count || 0; } catch (e) { /* ignore */ }
     try { novelChapterCount = queryOne(db, 'SELECT COUNT(*) as count FROM novel_chapters')?.count || 0; } catch (e) { /* ignore */ }
 
-    return { userCount, pageCount, commentCount, novelCount, mediaCount, imageCount, imageCategoryCount, poemGameCount, novelChapterCount };
+    return { userCount, pageCount, commentCount, novelCount, mediaCount, imageCount, imageCategoryCount, novelChapterCount };
   }, 15);
 
   // 系统运行状态
@@ -172,7 +170,6 @@ router.get('/', isAuthenticated, isSuperAdmin, (req, res) => {
       mediaCount,
       imageCount,
       imageCategoryCount,
-      poemGameCount,
       novelChapterCount,
       processUptime,
       processMemory,

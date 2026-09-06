@@ -1322,7 +1322,6 @@ select:focus {
 .perm-group.perm-group-setting { border-left-color: #64748b; }
 .perm-group.perm-group-data { border-left-color: #0ea5e9; }
 .perm-group.perm-group-log { border-left-color: #78716c; }
-.perm-group.perm-group-leaderboard { border-left-color: #eab308; }
 
 .perm-group h3 {
   margin: 0 0 var(--space-3) 0;

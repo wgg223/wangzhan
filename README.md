@@ -10,7 +10,7 @@
 
 - 文章展示与阅读（Markdown 支持），文章附件下载（zip/rar/7z/exe/apk 等 40+ 格式，单文件最大 200MB，分片断点续传）
 - 图片分享（上传/浏览/分类/评论/收藏，审核制）
-- 小说阅读（章节管理）、诗词游戏（排行榜）
+- 小说阅读（章节管理）
 - 用户注册与登录（AJAX 无刷新、失败图形验证码、30 天会话保持、登录后跳回来源页）
 - 个人中心（第三方账号绑定：GitHub/微信/QQ/微博/Google）、站内信、实时私信
 - 社区动态（关注/粉丝/动态流/内容聚合浏览）
@@ -29,7 +29,7 @@
 - AI 提示词管理（三级 CRUD + CSV 批量导入导出）
 - AI 生图管理（服务商配置、密钥加密存储、每日限额、生成记录）
 - AI 聊天管理（模型/角色/知识库/世界书/配额配置）
-- 小说管理、项目管理、媒体管理、页面管理、排行榜管理、站内信管理
+- 小说管理、项目管理、媒体管理、页面管理、站内信管理
 - 权限管理（细粒度权限控制）、操作日志（多维度筛选）
 - 系统设置（基础/SMTP/协议/弹窗）
 
@@ -90,7 +90,6 @@ wangzhan-注释版/
 │   │   ├── image-share.js           # 图片分享
 │   │   ├── oauth.js                 # 第三方登录
 │   │   ├── permission-applications.js # 权限申请
-│   │   ├── poem-game.js             # 诗词游戏
 │   │   ├── private-message.js       # 私信
 │   │   ├── setup.js                 # 安装向导
 │   │   ├── share.js                 # 内容分享链接
@@ -113,7 +112,7 @@ wangzhan-注释版/
 │   └── maintenance.ejs              # 维护模式页面
 ├── public/                          # 静态资源
 │   ├── css/                         # 样式（CSS 变量系统，支持暗色模式）
-│   ├── js/                          # 前端脚本（含 poems_data.js 诗词题库）
+│   ├── js/                          # 前端脚本
 │   ├── assets/                      # 图片资源
 │   ├── pwa/                         # PWA（manifest / Service Worker / 图标）
 │   ├── uploads/                     # 用户上传文件（含 ai-images / attachments / dynamics）
@@ -169,7 +168,6 @@ npm run health           # 健康检查
 | 前端首页 | `http://localhost:3000` |
 | 管理后台 | `http://localhost:3000/admin` |
 | 图片分享 | `http://localhost:3000/image-share` |
-| 诗词游戏 | `http://localhost:3000/poem-game` |
 | AI 提示词 | `http://localhost:3000/ai-prompts` |
 | AI 生图 | `http://localhost:3000/ai-image` |
 | AI 聊天 | `http://localhost:3000/ai-chat` |
@@ -197,7 +195,7 @@ OAuth 第三方登录（GitHub/Google）的 `CLIENT_ID` / `CLIENT_SECRET` 也可
 `server/routes/api/` 提供 JSON 接口层，供客户端应用 / 第三方集成使用，与网页端共用同一数据库、数据实时互通：
 
 - **鉴权**：Token 机制。`POST /api/v1/auth/login` 返回 30 天有效的 Token，后续请求携带 `Authorization: Bearer <token>`；Token 哈希存于 `api_tokens` 表（启动时自动建表），改密后旧 Token 失效。
-- **用户端**：注册/登录/资料/改密、文章（列表/详情/评论/点赞）、图片分享（分类/浏览/上传/收藏/评论）、诗词游戏（随机题库/排行榜）、小说（列表/目录/章节）、社区（动态流/关注/点赞/通知）、私信（会话/消息/未读数）、搜索。
+- **用户端**：注册/登录/资料/改密、文章（列表/详情/评论/点赞）、图片分享（分类/浏览/上传/收藏/评论）、小说（列表/目录/章节）、社区（动态流/关注/点赞/通知）、私信（会话/消息/未读数）、搜索。
 - **管理端**（需管理员权限）：仪表盘、用户、文章、评论、图片审核、分类、小说、设置、日志、权限、媒体、备份、维护模式。
 
 ## 开发工具
@@ -282,6 +280,7 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 - **Node 24 兼容修复**：SQLite 会话存储 `SqliteSessionStore` 继承 `express-session.Store`（EventEmitter），修复 Node 24 下 `store.on is not a function` 导致的服务无法启动问题
 - **分享管理**：前台新增「我的分享」列表（图片/AI 生图/AI 对话分享链接分页管理），支持停用/启用/取消分享；后台新增分享管理（`shares.manage` 权限），可查询、停用、启用、取消全部用户分享链接；取消分享后链接立即失效
 - **AI 聊天增强**：世界书支持从默认模板一键导入当前条目（按 key 去重）、会话级知识库（RAG）开关、角色卡创建同名去重（官方/本人角色）
+- **诗词游戏模块移除**：删除诗词游戏前台页面与路由（`/poem-game`）、诗词题库（`public/js/poems_data.js`）、诗词 API（`/api/v1/poems/*`、`/api/v1/poem-leaderboard`）、后台排行榜管理（`/admin/leaderboard`）及 `poem_leaderboard` 表、`poem-game.access` / `leaderboard.manage` 权限、`poem` 项目定义
 
 ### v5.11.0 (2026-09-07)
 

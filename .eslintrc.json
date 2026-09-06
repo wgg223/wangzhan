@@ -147,13 +147,6 @@
         "formatTime": "readonly",
         "withButtonLoading": "readonly"
       }
-    },
-    {
-      "files": ["public/js/poems_data.js"],
-      "rules": {
-        "no-unused-vars": "off",
-        "max-len": "off"
-      }
     }
   ]
 }

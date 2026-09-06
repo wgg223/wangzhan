@@ -145,15 +145,12 @@
           </ul>
         </div>
         <% } %>
-        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'messages.manage') || hasPerm(userPermissions, 'leaderboard.manage') || hasPerm(userPermissions, 'image-share.manage') || hasPerm(userPermissions, 'shares.manage'))) { %>
+        <% if (typeof userPermissions !== 'undefined' && (hasPerm(userPermissions, 'messages.manage') || hasPerm(userPermissions, 'image-share.manage') || hasPerm(userPermissions, 'shares.manage'))) { %>
         <div class="nav-group">
           <p class="nav-group-title">社区互动</p>
           <ul>
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'messages.manage')) { %>
             <li><a href="/admin/messages" class="<%= isActive('/admin/messages') ? 'active' : '' %>">📬 站内信</a></li>
-            <% } %>
-            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'leaderboard.manage')) { %>
-            <li><a href="/admin/leaderboard" class="<%= isActive('/admin/leaderboard') ? 'active' : '' %>">🏆 排行榜</a></li>
             <% } %>
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'image-share.manage')) { %>
             <li><a href="/admin/image-share" class="<%= isActive('/admin/image-share') ? 'active' : '' %>">🖼️ 图片分享</a></li>

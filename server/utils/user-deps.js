@@ -12,7 +12,7 @@
  *        （image_comments / image_favorites / image_tag_relations 通过 image_id 级联清理）
  *      - image_logs.admin_id（NOT NULL）→ 删除
  *   2. 无外键约束但引用 user_id 的孤儿数据（删除后避免残留脏引用）：
- *      - internal_messages / poem_leaderboard / api_access_logs / activity_logs / image_shares
+ *      - internal_messages / api_access_logs / activity_logs / image_shares
  *
  * 说明：定义 ON DELETE CASCADE / SET NULL 的表（user_permissions.user_id、notifications、
  *       community_*、conversations、private_messages、ai_*、api_tokens 等）由 SQLite 自动处理，
@@ -74,7 +74,6 @@ function cleanupUserDependencies(db, userId) {
 
   // 3) 无外键约束的孤儿数据（引用已删除用户的残留记录）
   db.run('DELETE FROM internal_messages WHERE from_user_id = ? OR to_user_id = ?', [userId, userId]);
-  db.run('DELETE FROM poem_leaderboard WHERE user_id = ?', [userId]);
   db.run('DELETE FROM api_access_logs WHERE user_id = ?', [userId]);
   db.run('DELETE FROM activity_logs WHERE user_id = ?', [userId]);
   db.run('DELETE FROM image_shares WHERE created_by = ?', [userId]);

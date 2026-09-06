@@ -228,7 +228,7 @@
         <div class="perm-group perm-group-setting">
           <h3>⚙️ 系统管理权限</h3>
           <div class="perm-group-items">
-            <% permissions.filter(function(p) { return p.perm_key === 'settings.manage' || p.perm_key === 'data.manage' || p.perm_key === 'leaderboard.manage'; }).forEach(function(perm) { %>
+            <% permissions.filter(function(p) { return p.perm_key === 'settings.manage' || p.perm_key === 'data.manage'; }).forEach(function(perm) { %>
               <div class="perm-tree-item">
                 <span class="perm-key"><%= perm.perm_key %></span>
                 <span class="perm-name"><%= perm.perm_name %></span>
