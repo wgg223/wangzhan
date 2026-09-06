@@ -136,15 +136,20 @@ router.post('/ai-chat/roles/save', isAuthenticated, hasPermission('aichat.manage
   const category = (first(req.body.category) || 'default').trim().slice(0, 50);
   const description = (first(req.body.description) || '').trim().slice(0, 200);
   const systemPrompt = (first(req.body.system_prompt) || '').trim().slice(0, 4000);
-  if (!name || !systemPrompt) return res.status(400).json({ error: '名称和角色设定不能为空' });
+  const greeting = (first(req.body.greeting) || '').trim().slice(0, 1000);
+  const personality = (first(req.body.personality) || '').trim().slice(0, 2000);
+  const scenario = (first(req.body.scenario) || '').trim().slice(0, 2000);
+  const examples = (first(req.body.examples) || '').trim().slice(0, 4000);
+  if (!name) return res.status(400).json({ error: '角色名称不能为空' });
+  if (!systemPrompt && !greeting) return res.status(400).json({ error: '角色设定或开场白至少填写一项' });
 
   const existing = id ? queryOne(db, 'SELECT id FROM ai_roles WHERE id = ? AND is_official = 1', [id]) : null;
   if (existing) {
-    db.run('UPDATE ai_roles SET name = ?, category = ?, description = ?, system_prompt = ? WHERE id = ?',
-      [name, category, description, systemPrompt, existing.id]);
+    db.run('UPDATE ai_roles SET name = ?, category = ?, description = ?, system_prompt = ?, greeting = ?, personality = ?, scenario = ?, examples = ? WHERE id = ?',
+      [name, category, description, systemPrompt, greeting, personality, scenario, examples, existing.id]);
   } else {
-    db.run('INSERT INTO ai_roles (name, description, system_prompt, category, is_official, user_id, sort_order) VALUES (?, ?, ?, ?, 1, NULL, 0)',
-      [name, description, systemPrompt, category]);
+    db.run('INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, is_official, user_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, 0)',
+      [name, description, systemPrompt, greeting, personality, scenario, examples, category]);
   }
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'ai_role', target_title: name, detail: `保存 AI 聊天角色：${name}`, ip: req.ip });

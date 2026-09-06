@@ -78,6 +78,29 @@ function modelInfoFromRow(row) {
 }
 
 /**
+ * 获取 OpenAI 兼容 /models 模型列表（用户填写 API Key / 端点后自动拉取可用模型）
+ * @param {string} apiEndpoint - OpenAI 兼容端点（如 https://api.deepseek.com/v1）
+ * @param {string|null} apiKey - Bearer Key（可为空，部分免费端点无需 Key）
+ * @returns {Promise<Array<{id: string, owned_by: string}>>}
+ */
+async function fetchModelList(apiEndpoint, apiKey) {
+  const base = String(apiEndpoint || '').trim().replace(/\/+$/, '');
+  if (!base) throw Object.assign(new Error('请先填写 API 端点'), { status: 400 });
+  const url = base + '/models';
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+  const resp = await axios.get(url, { headers, timeout: 30000 });
+  const data = resp.data && resp.data.data;
+  if (!Array.isArray(data)) throw Object.assign(new Error('接口未返回模型列表（非 OpenAI 兼容）'), { status: 400 });
+  const list = data
+    .map(d => ({ id: String(d.id || ''), owned_by: String(d.owned_by || '') }))
+    .filter(d => d.id)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (!list.length) throw Object.assign(new Error('模型列表为空'), { status: 400 });
+  return list;
+}
+
+/**
  * 解析 embeddings 配置（向量记忆/RAG 用；未配置返回 null 表示降级）
  */
 function resolveEmbeddings(db) {
@@ -222,4 +245,4 @@ async function callEmbeddings(embCfg, texts) {
   }
 }
 
-module.exports = { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings, POLLINATIONS_ENDPOINT };
+module.exports = { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings, fetchModelList, POLLINATIONS_ENDPOINT };

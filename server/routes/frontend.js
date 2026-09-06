@@ -1317,7 +1317,7 @@ const crypto = require('crypto');
 const aiChatService = require('../services/ai-chat');
 const { checkQuota } = require('../services/ai-chat/quota');
 const { refreshSummary } = require('../services/ai-chat/memory');
-const { resolveModel } = require('../services/ai-chat/provider');
+const { resolveModel, fetchModelList } = require('../services/ai-chat/provider');
 
 // AI 聊天接口限流
 const aiChatSendLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 6, keyGenerator: r => `aichat:send:${r.session.user.id}`, message: '发送过于频繁，请稍后再试' });
@@ -1378,7 +1378,8 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
   const conversations = queryAll(db, `SELECT id, title, model, role_id, system_prompt, message_count,
       memory_enabled, memory_mode, current_branch_id, updated_at
     FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC, id DESC`, [user.id]);
-  const roles = queryAll(db, `SELECT id, name, avatar, description, category, is_official, user_id
+  const roles = queryAll(db, `SELECT id, name, avatar, description, category, is_official, user_id,
+      greeting, personality, scenario, examples
     FROM ai_roles WHERE is_official = 1 OR user_id = ? ORDER BY is_official DESC, sort_order ASC, id ASC`, [user.id]);
   const models = queryAll(db, `SELECT id, name, model_key, provider, api_endpoint, api_key, is_default, max_tokens, temperature
     FROM ai_models WHERE user_id = ? ORDER BY is_default DESC, id ASC`, [user.id]);
@@ -1424,17 +1425,30 @@ router.post('/ai-chat/api/conversations/rename', isAuthenticated, hasFrontendPer
   res.json({ success: true });
 });
 
-// 切换会话角色
+// 切换会话角色（空会话切换角色时自动注入该角色的开场白）
 router.post('/ai-chat/api/conversations/role', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
   const db = req.db;
   const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const roleId = parseInt(req.body.role_id, 10) || null;
+  let greeting = '';
   if (roleId) {
-    const role = queryOne(db, 'SELECT id FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [roleId, req.session.user.id]);
+    const role = queryOne(db, 'SELECT id, greeting FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [roleId, req.session.user.id]);
     if (!role) return res.status(404).json({ error: '角色不存在' });
+    greeting = role.greeting || '';
   }
   db.run('UPDATE ai_conversations SET role_id = ? WHERE id = ?', [roleId, conv.id]);
+  // 会话尚无任何消息且角色带开场白 → 注入开场白作为第一条 AI 消息
+  if (greeting) {
+    const msgCount = queryOne(db, 'SELECT COUNT(*) AS c FROM ai_messages WHERE conversation_id = ?', [conv.id]);
+    if (!msgCount || msgCount.c === 0) {
+      const { estimateTokens } = require('../services/ai-chat/utils');
+      db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status)
+        VALUES (?, 0, 'assistant', ?, ?, '', 'done')`,
+      [conv.id, greeting, estimateTokens(greeting)]);
+      db.run('UPDATE ai_conversations SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
+    }
+  }
   saveDatabase();
   res.json({ success: true });
 });
@@ -1475,7 +1489,7 @@ router.get('/ai-chat/api/conversations/:id/messages', isAuthenticated, hasFronte
   const branchId = conv.current_branch_id || 0;
   const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, model, status, error, is_pinned, created_at FROM ai_messages WHERE conversation_id = ? AND branch_id = ? ORDER BY id ASC', [conv.id, branchId]);
   const branches = queryAll(db, 'SELECT id, name, parent_message_id, created_at FROM ai_branches WHERE conversation_id = ? ORDER BY id ASC', [conv.id]);
-  const worldBook = queryAll(db, 'SELECT id, key, content, position, enabled, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
+  const worldBook = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
   const summaries = queryAll(db, "SELECT id, content, created_at FROM ai_memories WHERE conversation_id = ? AND type = 'summary' ORDER BY id ASC", [conv.id]);
   res.json({ success: true, data: { conversation: conv, messages, branches, worldBook, summaries } });
 });
@@ -1526,7 +1540,7 @@ router.post('/ai-chat/api/send', isAuthenticated, hasFrontendPermission('aichat.
       signal,
       onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined
     });
-    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, quota: result.quota });
+    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, model: result.model, quota: result.quota });
     sendEvent('done', { aborted: !!result.aborted });
   });
 });
@@ -1548,7 +1562,7 @@ router.post('/ai-chat/api/messages/regenerate', isAuthenticated, hasFrontendPerm
       signal,
       onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined
     });
-    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, quota: result.quota });
+    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, model: result.model, quota: result.quota });
     sendEvent('done', { aborted: !!result.aborted });
   });
 });
@@ -1602,7 +1616,7 @@ router.get('/ai-chat/api/world-book', isAuthenticated, hasFrontendPermission('ai
   const db = req.db;
   const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.query.conversation_id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
-  const list = queryAll(db, 'SELECT id, key, content, position, enabled, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
+  const list = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
   res.json({ success: true, data: list });
 });
 
@@ -1618,16 +1632,17 @@ router.post('/ai-chat/api/world-book', isAuthenticated, hasFrontendPermission('a
   const position = WORLD_BOOK_POSITIONS.indexOf(req.body.position) !== -1 ? req.body.position : 'before_char';
   const sortOrder = parseInt(req.body.sort_order, 10) || 0;
   const enabled = req.body.enabled === false || req.body.enabled === 0 ? 0 : 1;
+  const constant = req.body.constant === true || req.body.constant === 1 || req.body.constant === '1' ? 1 : 0;
   if (!content) return res.status(400).json({ error: '内容不能为空' });
 
   if (id) {
     const row = queryOne(db, 'SELECT id FROM ai_world_book WHERE id = ? AND conversation_id = ?', [id, conv.id]);
     if (!row) return res.status(404).json({ error: '条目不存在' });
-    db.run('UPDATE ai_world_book SET key = ?, content = ?, position = ?, sort_order = ?, enabled = ? WHERE id = ?',
-      [key, content, position, sortOrder, enabled, id]);
+    db.run('UPDATE ai_world_book SET key = ?, content = ?, position = ?, sort_order = ?, enabled = ?, constant = ? WHERE id = ?',
+      [key, content, position, sortOrder, enabled, constant, id]);
   } else {
-    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled) VALUES (?, ?, ?, ?, ?, ?)',
-      [conv.id, key, content, position, sortOrder, enabled]);
+    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [conv.id, key, content, position, sortOrder, enabled, constant]);
   }
   saveDatabase();
   res.json({ success: true });
@@ -1670,16 +1685,26 @@ router.post('/ai-chat/api/memory/refresh', isAuthenticated, hasFrontendPermissio
   }
 });
 
-// 创建用户角色
+// 创建用户角色（支持开场白/性格/场景/示例对话等角色卡字段）
 router.post('/ai-chat/api/roles', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatRoleLimiter, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const name = String(req.body.name || '').trim().slice(0, 50);
   const systemPrompt = String(req.body.system_prompt || '').trim().slice(0, 4000);
+  const greeting = String(req.body.greeting || '').trim().slice(0, 1000);
   if (!name) return res.status(400).json({ error: '角色名称不能为空' });
-  if (!systemPrompt) return res.status(400).json({ error: '角色设定不能为空' });
-  db.run('INSERT INTO ai_roles (name, description, system_prompt, category, is_official, user_id, sort_order) VALUES (?, ?, ?, ?, 0, ?, 0)',
-    [name, String(req.body.description || '').slice(0, 200), systemPrompt, String(req.body.category || 'default').slice(0, 50), user.id]);
+  if (!systemPrompt && !greeting) return res.status(400).json({ error: '角色设定或开场白至少填写一项' });
+  db.run(`INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, is_official, user_id, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)`,
+  [name,
+    String(req.body.description || '').slice(0, 200),
+    systemPrompt,
+    greeting,
+    String(req.body.personality || '').slice(0, 2000),
+    String(req.body.scenario || '').slice(0, 2000),
+    String(req.body.examples || '').slice(0, 4000),
+    String(req.body.category || 'default').slice(0, 50),
+    user.id]);
   const role = queryOne(db, 'SELECT * FROM ai_roles WHERE id = last_insert_rowid()');
   saveDatabase();
   res.json({ success: true, data: role });
@@ -1741,6 +1766,31 @@ router.post('/ai-chat/api/models/delete', isAuthenticated, hasFrontendPermission
   db.run('DELETE FROM ai_models WHERE id = ?', [row.id]);
   saveDatabase();
   res.json({ success: true });
+});
+
+// 自动获取模型列表（OpenAI 兼容 /models）：按用户填写的端点+Key 实时拉取
+router.post('/ai-chat/api/models/fetch', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatModelLimiter, async (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  let endpoint = String(req.body.api_endpoint || '').trim().slice(0, 300);
+  let apiKey = String(req.body.api_key || '').trim();
+  const id = parseInt(req.body.id, 10) || 0;
+  // 编辑已有模型时 Key 留空 → 使用已加密存储的 Key
+  if (!apiKey && id) {
+    const row = queryOne(db, 'SELECT api_endpoint, api_key FROM ai_models WHERE id = ? AND user_id = ?', [id, user.id]);
+    if (row) {
+      if (!endpoint) endpoint = row.api_endpoint || '';
+      const { decrypt } = require('../config/crypto-secure');
+      apiKey = decrypt(row.api_key || '') || '';
+    }
+  }
+  try {
+    const list = await fetchModelList(endpoint, apiKey);
+    res.json({ success: true, data: list });
+  } catch (err) {
+    const { normalizeError } = require('../services/ai-chat/utils');
+    res.status(400).json({ error: normalizeError(err) });
+  }
 });
 
 // 测试用户自建模型连通性（短文本非流式）

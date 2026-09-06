@@ -583,9 +583,11 @@ function createTables(db) {
     enabled INTEGER DEFAULT 1,
     position TEXT DEFAULT 'before_char',
     sort_order INTEGER DEFAULT 0,
+    constant INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
   )`);
+  try { db.run('ALTER TABLE ai_world_book ADD COLUMN constant INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // AI 记忆（摘要记忆 + 向量记忆）
   db.run(`CREATE TABLE IF NOT EXISTS ai_memories (
@@ -682,6 +684,10 @@ function createTables(db) {
     avatar TEXT DEFAULT '',
     description TEXT DEFAULT '',
     system_prompt TEXT NOT NULL,
+    greeting TEXT DEFAULT '',
+    personality TEXT DEFAULT '',
+    scenario TEXT DEFAULT '',
+    examples TEXT DEFAULT '',
     category TEXT DEFAULT 'default',
     is_official INTEGER DEFAULT 0,
     user_id INTEGER,
@@ -689,6 +695,12 @@ function createTables(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
   )`);
+
+  // AI 角色卡字段（开场白/性格/场景/示例对话）— 存量库迁移
+  try { db.run("ALTER TABLE ai_roles ADD COLUMN greeting TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE ai_roles ADD COLUMN personality TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE ai_roles ADD COLUMN scenario TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE ai_roles ADD COLUMN examples TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // AI 用户配额表
   db.run(`CREATE TABLE IF NOT EXISTS ai_quota (

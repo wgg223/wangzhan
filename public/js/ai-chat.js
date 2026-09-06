@@ -35,12 +35,13 @@
   ['acConvList', 'acConvSearch', 'acNewChat', 'acQuotaBadge', 'acConvTitle', 'acMessages', 'acEmpty',
     'acInput', 'acSend', 'acStop', 'acRoleBtn', 'acRoleLabel', 'acWorldBtn', 'acMemoryBtn', 'acBranchBtn',
     'acModelBtn', 'acModelLabel', 'acModelModal', 'acModelList',
-    'acRoleModal', 'acRoleList', 'acRoleCreate', 'acRoleCreateModal', 'acNewRoleName', 'acNewRolePrompt', 'acRoleSave',
+    'acRoleModal', 'acRoleList', 'acRoleCreate', 'acRoleCreateModal', 'acNewRoleName', 'acNewRolePrompt', 'acNewRoleGreeting', 'acNewRoleDesc', 'acNewRolePersonality', 'acNewRoleScenario', 'acNewRoleExamples', 'acRoleSave',
     'acWorldModal', 'acWorldList', 'acWorldAdd', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
-    'acWorldContent', 'acWorldSave', 'acWorldDelete', 'acMemoryModal', 'acMemoryEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
+    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acMemoryModal', 'acMemoryEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
     'acBranchModal', 'acBranchList', 'acMsgMenu', 'acMenuBtn', 'acSidebar',
     'acModelsToggle', 'acModelsBody', 'acMyModels', 'acGlobalModels', 'acModelAddBtn', 'acModelAddRow',
     'acmProvider', 'acmKey', 'acmEndpoint', 'acmApiKey', 'acmDefault', 'acmSave', 'acmCancel', 'acmGetWrap', 'acmGetLink',
+    'acmFetch', 'acmFetchWrap', 'acmFetchList', 'acmFetchUse', 'acmFetchTip',
     'acShareBtn', 'acShareModal', 'acShareUrl', 'acShareCopy', 'acShareToggle',
     'acPickPrompt', 'acPromptModal', 'acPromptSearch', 'acPromptList', 'acPromptCount', 'acPromptMore']
     .forEach(function (id) { els[id] = document.getElementById(id); });
@@ -53,6 +54,16 @@
       body: JSON.stringify(data || {})
     }, 20000).catch(function (err) {
       throw new Error((err && err.message) || '网络请求失败');
+    });
+  }
+
+  // 自动获取模型列表（更长超时，服务商 /models 接口可能较慢）
+  function fetchModelsApi(payload) {
+    return csrfFetch('/ai-chat/api/models/fetch', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    }, 35000).catch(function (err) {
+      throw new Error((err && err.message) || '获取模型失败');
     });
   }
 

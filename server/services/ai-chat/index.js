@@ -19,7 +19,20 @@ function createConversation(db, user, data = {}) {
     String(data.model || '').slice(0, 100),
     String(data.system_prompt || '').slice(0, 4000),
     data.role_id ? parseInt(data.role_id, 10) : null]);
-  return queryOne(db, 'SELECT * FROM ai_conversations WHERE id = last_insert_rowid()');
+  const conv = queryOne(db, 'SELECT * FROM ai_conversations WHERE id = last_insert_rowid()');
+
+  // 角色开场白：新会话选择带开场白的角色时，自动注入第一条 AI 消息
+  if (conv.role_id) {
+    const role = queryOne(db, 'SELECT greeting FROM ai_roles WHERE id = ?', [conv.role_id]);
+    const greeting = role && role.greeting ? String(role.greeting).trim() : '';
+    if (greeting) {
+      db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status)
+        VALUES (?, 0, 'assistant', ?, ?, '', 'done')`,
+      [conv.id, greeting, estimateTokens(greeting)]);
+      db.run('UPDATE ai_conversations SET message_count = message_count + 1 WHERE id = ?', [conv.id]);
+    }
+  }
+  return queryOne(db, 'SELECT * FROM ai_conversations WHERE id = ?', [conv.id]);
 }
 
 function getOwnConversation(db, user, convId) {
@@ -163,7 +176,7 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
     // 主动停止：保留半截内容，status=stopped，不计配额
     if (signal && signal.aborted) {
       const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '');
-      return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true, quota: quotaCheck.quota };
+      return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true, model: modelInfo.model_key, quota: quotaCheck.quota };
     }
     const reason = normalizeError(err);
     const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason);
@@ -188,7 +201,7 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
     }
   }
 
-  return { messageId: msgId, content: full, tokens, aborted: false, quota: checkQuota(db, user).quota };
+  return { messageId: msgId, content: full, tokens, aborted: false, model: modelInfo.model_key, quota: checkQuota(db, user).quota };
 }
 
 function saveAssistantMessage(db, conv, content, modelInfo, status, error) {
@@ -241,7 +254,7 @@ async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
   } catch (err) {
     if (signal && signal.aborted) {
       const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '');
-      return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true, quota: quotaCheck.quota };
+      return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true, model: modelInfo.model_key, quota: quotaCheck.quota };
     }
     const reason = normalizeError(err);
     const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason);
@@ -251,7 +264,7 @@ async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
 
   const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '');
   consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
-  return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: false, quota: checkQuota(db, user).quota };
+  return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: false, model: modelInfo.model_key, quota: checkQuota(db, user).quota };
 }
 
 module.exports = {

@@ -9,7 +9,7 @@ const crypto = require('crypto');
 
 // 生成图存储根目录（web 可访问）
 const UPLOAD_ROOT = path.join(__dirname, '../../../public/uploads/ai-images');
-const MAX_IMAGE_SIZE = 15 * 1024 * 1024; // 15MB
+const MAX_IMAGE_SIZE = 100 * 1024 * 1024; // 100MB（RunningHub 等超高清模型可生成 1 亿像素大图）
 
 /**
  * 通过魔数嗅探图片类型

@@ -53,12 +53,18 @@
             <option value="">自定义</option>
           </select>
           <input type="text" class="ac-model-input" id="acmKey" placeholder="模型标识 model_key" maxlength="100" autocomplete="off">
+          <button type="button" class="ac-btn ac-btn-sm" id="acmFetch" title="填写 API Key 后自动获取可用模型">⟳ 获取模型</button>
           <input type="text" class="ac-model-input ac-model-input-wide" id="acmEndpoint" placeholder="API 端点（如 https://api.deepseek.com/v1）" maxlength="300" autocomplete="off">
           <input type="password" class="ac-model-input ac-model-input-wide" id="acmApiKey" placeholder="API Key（加密存储）" maxlength="300" autocomplete="off">
           <label class="ac-model-default"><input type="checkbox" id="acmDefault"> 默认</label>
           <button type="button" class="ac-btn ac-btn-primary ac-btn-sm" id="acmSave">保存</button>
           <button type="button" class="ac-btn ac-btn-sm" id="acmCancel">取消</button>
           <div class="ac-model-add-get" id="acmGetWrap" hidden>🔗 <a id="acmGetLink" href="#" target="_blank" rel="noopener">前往获取 API Key</a></div>
+          <div class="ac-model-fetch-wrap" id="acmFetchWrap" hidden>
+            <select class="ac-model-input" id="acmFetchList"></select>
+            <button type="button" class="ac-btn ac-btn-sm" id="acmFetchUse">选用</button>
+            <span class="ac-model-fetch-tip" id="acmFetchTip"></span>
+          </div>
         </div>
         <button type="button" class="ac-btn ac-btn-sm" id="acModelAddBtn">＋ 添加模型</button>
         <div class="ac-global-models" id="acGlobalModels"></div>
@@ -124,7 +130,15 @@
     </div>
     <div class="ac-modal-body">
       <label class="ac-field">角色名称<input id="acNewRoleName" maxlength="50" placeholder="如：冷面侦探"></label>
-      <label class="ac-field">角色设定（system prompt）<textarea id="acNewRolePrompt" rows="6" maxlength="4000" placeholder="描述角色的性格、身份、说话方式…"></textarea></label>
+      <label class="ac-field">角色设定（system prompt）<textarea id="acNewRolePrompt" rows="5" maxlength="4000" placeholder="描述角色的性格、身份、说话方式…"></textarea></label>
+      <label class="ac-field">开场白（角色对你说的第一句话）<textarea id="acNewRoleGreeting" rows="2" maxlength="1000" placeholder="选此角色开新对话时自动发出，可留空"></textarea></label>
+      <label class="ac-field">简介<textarea id="acNewRoleDesc" rows="2" maxlength="200" placeholder="一句话介绍，显示在角色卡片上（可留空）"></textarea></label>
+      <details class="ac-field ac-role-advanced">
+        <summary>高级设定（可选）</summary>
+        <label class="ac-field">性格<textarea id="acNewRolePersonality" rows="2" maxlength="2000" placeholder="角色的性格特征、口头禅、喜好…"></textarea></label>
+        <label class="ac-field">场景<textarea id="acNewRoleScenario" rows="2" maxlength="2000" placeholder="当前剧情场景、环境设定…"></textarea></label>
+        <label class="ac-field">示例对话<textarea id="acNewRoleExamples" rows="3" maxlength="4000" placeholder="展示角色说话风格的对话示例（仅供模仿风格）"></textarea></label>
+      </details>
     </div>
     <div class="ac-modal-foot">
       <button class="ac-btn ac-btn-sm" data-ac-close="acRoleCreateModal">取消</button>
@@ -159,7 +173,7 @@
     </div>
     <div class="ac-modal-body">
       <div class="ac-field-row">
-        <label class="ac-field">触发词<input id="acWorldKey" maxlength="100" placeholder="留空 = 常驻注入"></label>
+        <label class="ac-field">触发词<input id="acWorldKey" maxlength="100" placeholder="多个用逗号分隔，留空 = 常驻注入"></label>
         <label class="ac-field">位置
           <select id="acWorldPos">
             <option value="system_top">系统提示前</option>
@@ -170,6 +184,7 @@
           </select>
         </label>
       </div>
+      <label class="ac-field ac-check"><input type="checkbox" id="acWorldConstant"> 常驻注入（忽略触发词，始终加入上下文）</label>
       <label class="ac-field">内容<textarea id="acWorldContent" rows="8" maxlength="20000" placeholder="条目内容（可含设定、背景、人物介绍…）"></textarea></label>
     </div>
     <div class="ac-modal-foot">
