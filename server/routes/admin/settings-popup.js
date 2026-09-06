@@ -1,9 +1,17 @@
+/**
+ * 弹窗设置路由（后台）
+ * 能力：
+ *   GET  /admin/settings/popup —— 弹窗设置页（支持 ?success=1 提示保存成功）
+ *   POST /admin/settings/popup —— 保存站内信弹窗/欢迎弹窗开关、标题与内容
+ * 安全：布尔开关强制归一为 '0'/'1' 再入库；操作写审计日志。
+ */
+
 const express = require('express');
 const router = express.Router();
 const { getSettings, upsertSettings } = require('../../utils/settings');
 const { safeLogActivity } = require('../../utils/error-handler');
 
-// 弹窗设置 - 仅管理员可访问
+// 弹窗设置 - 仅管理员可访问（上层路由统一鉴权）
 
 // GET - 弹窗设置页面
 router.get('/', (req, res) => {
@@ -23,7 +31,7 @@ router.get('/', (req, res) => {
 router.post('/', (req, res) => {
   const db = req.db;
 
-  // 站内信弹窗和欢迎弹窗需要特殊处理布尔值
+  // 站内信弹窗和欢迎弹窗需要特殊处理布尔值（只接受 '1'，其余一律置 '0'）
   const messagePopupEnabled = req.body.message_popup_enabled === '1' ? '1' : '0';
   const welcomePopupEnabled = req.body.welcome_popup_enabled === '1' ? '1' : '0';
 

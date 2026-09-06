@@ -2,6 +2,12 @@
  * 内容管理增强路由
  * 文章草稿自动保存、标签系统、内容版本管理
  */
+/**
+ * 内容路由（Web 端：文章详情/标签/评论/附件下载等）
+ * 覆盖：文章详情页（含上一篇/下一篇）、标签页、文章评论列表与发表、
+ *       附件下载（鉴权 + 计数）、点赞等。
+ * 说明：各功能块已有分段注释；附件下载需登录且校验文章已发布。
+ */
 const express = require('express');
 const router = express.Router();
 const { queryOne, queryAll, getDb } = require('../config/database');

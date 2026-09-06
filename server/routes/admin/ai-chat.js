@@ -1,3 +1,16 @@
+/**
+ * AI 聊天管理路由（后台，需 aichat.manage 权限）
+ * 模块：
+ *   - 总览页        GET  /admin/ai-chat                     （模型/官方角色/知识库/配额一览）
+ *   - 模型管理      POST /admin/ai-chat/models/{save,delete,test}  （全局模型 CRUD + 连通性测试，Key 加密存储）
+ *   - 角色管理      POST /admin/ai-chat/roles/{save,delete}         （官方角色 CRUD，system_prompt≤4000字）
+ *   - 系统设置      POST /admin/ai-chat/settings/save               （开关/配额/RAG/记忆/Embedding/流式）
+ *   - 知识库 RAG    POST /admin/ai-chat/knowledge/{upload,delete,reembed} （txt/md≤2MB，上传即分块嵌入）
+ *   - 配额管理      GET /admin/ai-chat/quota  POST /admin/ai-chat/quota/update
+ *   - 统计          GET /admin/ai-chat/stats
+ * 说明：模型/角色均为全局（user_id IS NULL）；API Key 以 ENC: 前缀密文落库，永不回显明文；
+ *       默认模型变更会同步写 settings.ai_default_model 并清缓存，前台立即生效。
+ */
 const express = require('express');
 const multer = require('multer');
 const path = require('path');

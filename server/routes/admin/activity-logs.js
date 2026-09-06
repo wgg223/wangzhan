@@ -1,3 +1,11 @@
+/**
+ * 操作日志管理路由（后台，仅超管）
+ * 能力：GET /admin/activity-logs —— 多维筛选的操作日志列表页
+ * 筛选维度：action / target_type（支持逗号分隔多值）/ username / keyword（detail或标题模糊）
+ *          / date_from / date_to / ip / route / method
+ * 页面附带：今日/认证类/其他统计、近7天趋势、可用筛选项（action/target_type/route 下拉数据）。
+ */
+
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isSuperAdmin } = require('../../middlewares/auth');
@@ -6,6 +14,7 @@ const { actionLabels, targetLabels, getActivityStats, getActiveUsers } = require
 
 // ============ 操作日志管理 ============
 
+// 日志列表页（仅超管）：动态筛选 + 分页
 router.get('/activity-logs', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -14,7 +23,7 @@ router.get('/activity-logs', isAuthenticated, isSuperAdmin, (req, res) => {
 
   const { action, target_type, username, keyword, date_from, date_to, ip, route, method } = req.query;
 
-  // 构建筛选条件
+  // 构建筛选条件（全部参数化，防 SQL 注入）
   const conditions = [];
   const params = [];
 
@@ -23,7 +32,7 @@ router.get('/activity-logs', isAuthenticated, isSuperAdmin, (req, res) => {
     params.push(action);
   }
   if (target_type) {
-    // 支持多目标类型筛选，用逗号分隔
+    // 支持多目标类型筛选，用逗号分隔 → IN (?, ?, ...)
     const types = target_type.split(',').map(t => t.trim()).filter(Boolean);
     if (types.length === 1) {
       conditions.push('target_type = ?');
@@ -64,7 +73,7 @@ router.get('/activity-logs', isAuthenticated, isSuperAdmin, (req, res) => {
 
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
-  // 获取统计
+  // 获取统计：总条数 / 今日 / 认证类 / 其他
   const total = queryOne(db, `SELECT COUNT(*) as count FROM activity_logs ${where}`, params)?.count || 0;
   const today = queryOne(db,
     "SELECT COUNT(*) as count FROM activity_logs WHERE created_at >= datetime('now', '+8 hours', 'start of day')"
@@ -81,7 +90,7 @@ router.get('/activity-logs', isAuthenticated, isSuperAdmin, (req, res) => {
     [...params, limit, offset]
   );
 
-  // 添加中文标签
+  // 添加中文标签（action/target_type 显示为可读文案）
   const logsWithLabels = logs.map(log => ({
     ...log,
     action_label: actionLabels[log.action] || log.action,
@@ -90,14 +99,14 @@ router.get('/activity-logs', isAuthenticated, isSuperAdmin, (req, res) => {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  // 构建分页URL（含当前筛选参数）
+  // 构建分页URL（保留当前筛选参数，只替换 page）
   function buildPageUrl(p) {
     const query = new URLSearchParams(req.query);
     query.set('page', p);
     return '/admin/activity-logs?' + query.toString();
   }
 
-  // 获取可用的操作类型列表（用于筛选下拉框）
+  // 获取可用的操作类型列表（用于筛选下拉框，按出现次数降序取前100）
   let availableActions = [];
   try {
     availableActions = queryAll(db,
@@ -113,7 +122,7 @@ router.get('/activity-logs', isAuthenticated, isSuperAdmin, (req, res) => {
     ) || [];
   } catch (e) { /* ignore */ }
 
-  // 获取可用路由列表
+  // 获取可用路由列表（取前50，去空）
   let availableRoutes = [];
   try {
     availableRoutes = queryAll(db,
@@ -142,7 +151,7 @@ router.get('/activity-logs', isAuthenticated, isSuperAdmin, (req, res) => {
       method: method || ''
     },
     buildPageUrl: buildPageUrl,
-    // 新增数据
+    // 筛选下拉数据
     availableActions: availableActions,
     availableTargetTypes: availableTargetTypes,
     availableRoutes: availableRoutes,

@@ -1,3 +1,16 @@
+/**
+ * 数据重置路由（后台，仅超管）
+ * 能力：
+ *   POST /reset/selective       —— 选择性重置（users/content/media/social/logs/tags，需密码验证）
+ *   GET  /reset                 —— 全局重置页（含统计预览）
+ *   POST /reset/execute         —— 全局重置（保留超管与设置；按依赖顺序清表 + 清理文件）
+ *   GET  /reset/factory         —— 恢复出厂设置页
+ *   POST /reset/factory-execute —— 完全恢复出厂（删除数据库文件 + 清上传文件 + 销毁会话）
+ * 安全要点：所有危险操作均需 bcrypt 验证管理员密码；重置类型白名单过滤；
+ *           文件删除经 safeFilePath 校验必须位于 public 目录内（防路径穿越）；
+ *           表名拼接 SQL 前经 isAllowedTable 白名单校验。
+ */
+
 const express = require('express');
 const router = express.Router();
 const path = require('path');
@@ -18,7 +31,7 @@ const EXTRA_RESET_TABLES = [
   'user_oauth_bindings', 'permission_applications', 'article_attachments', 'api_tokens'
 ];
 
-// 选择性重置的合法类型
+// 选择性重置的合法类型（前端伪造类型会被过滤）
 const VALID_RESET_TYPES = ['users', 'content', 'media', 'social', 'logs', 'tags'];
 
 /**
@@ -50,7 +63,7 @@ async function deleteDbFiles(db, sql, pathColumn) {
 }
 
 /**
- * 收集所有项目的统计数据和全局统计
+ * 收集所有项目的统计数据和全局统计（用于重置页预览）
  */
 function collectAllStats(db) {
   const allProjectDefs = getAllProjectDefinitions(db);
@@ -68,6 +81,7 @@ function collectAllStats(db) {
     };
   });
 
+  // 全局各表计数（供选择性重置页使用；content/social 为多项合计）
   const globalStats = {
     users: queryOne(db, "SELECT COUNT(*) as count FROM users WHERE role != 'super_admin'")?.count || 0,
     media: queryOne(db, 'SELECT COUNT(*) as count FROM media')?.count || 0,
@@ -94,6 +108,7 @@ function collectAllStats(db) {
 
 // ============ 选择性重置 ============
 
+// 选择性重置：按 types 数组逐类清空（媒体类会先删文件）
 router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) => {
   const db = req.db;
   const { password, types } = req.body;
@@ -120,7 +135,7 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
   const results = [];
 
   try {
-    // 用户数据
+    // 用户数据（保留超管）
     if (validTypes.includes('users')) {
       db.run("DELETE FROM users WHERE role != 'super_admin'");
       db.run('DELETE FROM user_permissions WHERE user_id NOT IN (SELECT id FROM users)');
@@ -138,9 +153,8 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
       results.push('内容数据');
     }
 
-    // 媒体文件
+    // 媒体文件（先删文件再删记录）
     if (validTypes.includes('media')) {
-      // 删除文件
       await deleteDbFiles(db, 'SELECT file_path FROM media', 'file_path');
       await deleteDbFiles(db, 'SELECT url AS file_path FROM images', 'file_path');
       await deleteDbFiles(db, 'SELECT file_path FROM article_attachments', 'file_path');
@@ -199,6 +213,7 @@ router.post('/reset/selective', isAuthenticated, isSuperAdmin, async (req, res) 
 
 // ============ 重置服务器 ============
 
+// 全局重置页（统计预览）
 router.get('/reset', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
@@ -213,6 +228,7 @@ router.get('/reset', isAuthenticated, isSuperAdmin, (req, res) => {
   });
 });
 
+// 全局重置执行：清文件 → 按依赖顺序清业务表 → 删普通用户
 router.post('/reset/execute', isAuthenticated, isSuperAdmin, async (req, res) => {
   const db = req.db;
   const { password } = req.body;
@@ -240,8 +256,7 @@ router.post('/reset/execute', isAuthenticated, isSuperAdmin, async (req, res) =>
   totalDeletedFiles += await deleteDbFiles(db, 'SELECT url AS file_path FROM images', 'file_path');
   totalDeletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM article_attachments', 'file_path');
 
-  // 2. 按依赖顺序删除所有业务数据表
-  // 先删除有外键依赖的子表
+  // 2. 按依赖顺序删除所有业务数据表（先删有外键依赖的子表）
   const resetTables = new Set([
     ...DEPENDENT_TABLES,
     ...ALL_TABLES,
@@ -290,6 +305,7 @@ router.post('/reset/execute', isAuthenticated, isSuperAdmin, async (req, res) =>
 
 // ============ 完全恢复出厂设置（删除数据库文件） ============
 
+// 恢复出厂设置页（统计预览 + 含超管的总用户数）
 router.get('/reset/factory', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
@@ -308,6 +324,7 @@ router.get('/reset/factory', isAuthenticated, isSuperAdmin, (req, res) => {
   });
 });
 
+// 恢复出厂执行：清文件 → 关闭并删除数据库文件 → 销毁会话
 router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, async (req, res) => {
   const db = req.db;
   const { password } = req.body;
@@ -333,6 +350,7 @@ router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, async (req,
     deletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM novel_chapters', 'file_path');
     deletedFiles += await deleteDbFiles(db, 'SELECT file_path FROM article_attachments', 'file_path');
 
+    // 关闭数据库连接并删除数据库文件（重启后重新初始化）
     const deletedCount = closeAndDeleteDatabase();
 
     req.session.destroy((err) => {
@@ -354,7 +372,7 @@ router.post('/reset/factory-execute', isAuthenticated, isSuperAdmin, async (req,
 });
 
 /**
- * 获取所有需要重置的业务数据表（去重）
+ * 获取所有需要重置的业务数据表（去重：合并项目定义中的表，排除已单独处理的依赖表）
  */
 function getAllTablesToReset(db) {
   const projects = getAllProjectDefinitions(db);

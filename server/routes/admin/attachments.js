@@ -1,3 +1,20 @@
+/**
+ * 文章附件管理路由（后台，需 articles.manage 权限；下载需权限校验）
+ * 能力：
+ *   POST /upload/init           —— 初始化断点续传会话（文件名/大小/分片数校验；每用户并发≤5；200MB上限）
+ *   POST /upload/chunk          —— 上传单个分片（会话归属校验；分片索引越界校验；3MB 内存上限）
+ *   GET  /upload/status/:id     —— 查询上传进度
+ *   POST /upload/merge          —— 合并分片为最终文件（文件名净化后落盘，删分片目录）
+ *   POST /upload/cancel         —— 取消上传（uploadId 正则白名单 + 路径越界校验）
+ *   POST /save / batch-save     —— 写入/批量写入附件记录（file_path 白名单校验）
+ *   GET  /list/:articleId       —— 文章附件列表
+ *   POST /delete/:id            —— 删除附件（safeResolveAttachment 防穿越）
+ *   GET  /download/:id          —— 下载（IDOR 防护：上传者/文章作者/articles.manage 权限；下载计数+1）
+ *   POST /update-article        —— 为孤儿附件回填文章 ID（限本人上传）
+ *   POST /cleanup               —— 清理不在保留列表中的附件（参数化 IN 查询）
+ * 安全要点：扩展名双白名单（ALLOWED/BLOCKED）；路径统一走 isValidAttachmentPath+safeResolveAttachment；
+ *           分片内存上限 3MB；会话 24 小时自动过期清理。
+ */
 const express = require('express');
 const router = express.Router();
 const path = require('path');

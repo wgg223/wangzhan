@@ -1,3 +1,12 @@
+/**
+ * OAuth 第三方登录路由（Web 端）
+ * 覆盖：
+ *   - 提供商管理：默认提供商初始化、启用列表查询（getEnabledProviders 被 account 复用）；
+ *   - OAuth 发起（跳转授权页）与回调（state 校验、open_id 绑定/登录）；
+ *   - 绑定与解绑、使用 OAuth 身份直接注册；
+ * 安全要点：回调校验 state 防 CSRF；第三方 open_id 与 provider 唯一绑定；
+ *           绑定前校验邮箱/用户名冲突；生成随机密码保障无密码账号可登录。
+ */
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();

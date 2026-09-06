@@ -1,3 +1,15 @@
+/**
+ * 媒体管理路由（后台）
+ * 能力：
+ *   GET  /admin/media/list    —— 媒体文件列表（管理员看全部，普通用户只看自己的）
+ *   POST /admin/media/upload  —— 通用媒体上传（存入 images 表）
+ * 安全要点：
+ *   - 上传文件大小/类型由 upload.js 的 multer 配置限制（最大10MB）；
+ *   - 上传后做文件完整性校验（磁盘实际大小 vs multer 报告大小），
+ *     不一致即删除不完整文件并报错（防坏文件入库）；
+ *   - 列表数据不暴露原始路径（只返回可公开访问的 url）。
+ */
+
 const express = require('express');
 const router = express.Router();
 const path = require('path');
@@ -16,6 +28,7 @@ router.get('/media/list', isAuthenticated, hasPermission('media.manage'), (req, 
 
   let media;
   if (isAdmin) {
+    // 管理员可见全部媒体
     media = queryAll(db, `
       SELECT i.id, i.title AS original_name, i.url AS file_path,
         CASE
@@ -30,6 +43,7 @@ router.get('/media/list', isAuthenticated, hasPermission('media.manage'), (req, 
       ORDER BY i.created_at DESC
     `);
   } else {
+    // 普通用户只能看到自己上传的媒体
     media = queryAll(db, `
       SELECT i.id, i.title AS original_name, i.url AS file_path,
         CASE
@@ -87,8 +101,10 @@ router.post('/media/upload', isAuthenticated, hasPermission('media.manage'), (re
         return res.status(500).json({ success: false, message: '文件上传失败，文件未保存成功' });
       }
 
+      // 确保存在"文章配图"默认分类（兜底分类）
       const cateId = ensureMediaDefaultCategory(db);
 
+      // 写入 images 表（status=1 直接发布）
       const result = db.run(
         'INSERT INTO images (title, description, url, cate_id, user_id, status) VALUES (?, ?, ?, ?, ?, ?)',
         [originalName, '', filePath, cateId, uploadedBy, 1]

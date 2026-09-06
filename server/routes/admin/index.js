@@ -1,3 +1,12 @@
+/**
+ * 后台管理路由聚合入口
+ * 职责：
+ *   1. 全局鉴权链：isAuthenticated（必须登录）→ canAccessAdmin（必须可进后台）
+ *      → doubleSubmitCookie（CSRF 双提交 Cookie，所有写操作需带 _csrf / X-CSRF-Token）；
+ *   2. 注入模板变量 userPermissions（默认空数组）与 currentPath（侧边栏高亮）；
+ *   3. 挂载全部后台子路由模块（各模块内部再按需叠加 hasPermission / isSuperAdmin）。
+ * 说明：普通用户访问 /admin 根路径时重定向到 /admin/site-stats（仅超管可见仪表盘）。
+ */
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated, canAccessAdmin, isAdmin, isSuperAdmin, hasPermission } = require('../../middlewares/auth');

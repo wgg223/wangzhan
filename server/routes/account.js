@@ -1,3 +1,18 @@
+/**
+ * 个人账号管理路由（前台用户中心）
+ * 页面/接口：
+ *   GET  /account                        —— 账号主页（资料/文章/评论/OAuth绑定/AI Key 状态）
+ *   POST /account/profile                —— 更新昵称与简介
+ *   POST /account/password               —— 修改密码（需验证当前密码）
+ *   POST /account/username               —— 修改用户名（需验证密码 + 查重）
+ *   POST /account/email/send-code        —— 发送邮箱验证码（5 分钟限 3 次）
+ *   POST /account/email/verify           —— 校验验证码并更新邮箱（10 分钟有效）
+ *   POST /account/avatar                 —— 上传头像（2MB 上限，自动清理旧头像）
+ *   POST /account/unbind/:provider       —— 解除第三方登录绑定（双提交 Cookie CSRF 校验）
+ *   POST /account/article/:id/delete     —— 删除自己的文章（校验归属）
+ *   POST /account/comment/:id/delete     —— 删除自己的评论（校验归属）
+ * 安全要点：头像上传 MIME 白名单 + 服务端扩展名；旧头像删除前校验路径在 avatars 目录内。
+ */
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');

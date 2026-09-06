@@ -1,3 +1,11 @@
+/**
+ * 用户权限申请路由（前台）
+ * 页面/接口：
+ *   GET  /permissions/apply —— 权限申请页（按分类展示全部权限 + 已拥有/待审核状态）
+ *   POST /permissions/apply  —— 提交权限申请（每用户每小时限 5 条；校验权限存在/未拥有/无待审重复）
+ *   POST /permissions/cancel —— 取消待审核的申请（仅本人、仅 pending 状态）
+ * 说明：内存限流表每 10 分钟清理过期窗口，防止内存膨胀。
+ */
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated } = require('../middlewares/auth');

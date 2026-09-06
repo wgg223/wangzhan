@@ -1,3 +1,14 @@
+/**
+ * AI 生图管理路由（后台，需 imagegen.manage 权限）
+ * 模块：
+ *   - 总览页        GET  /admin/ai-image                     （服务商列表/每日限额/提示词优化配置/最近记录）
+ *   - 服务商配置    POST /admin/ai-image/providers/{save,fetch-models}  （密钥加密存储；填新 Key 自动拉取模型列表）
+ *   - 设置          POST /admin/ai-image/settings/save       （每日限额1-500/自动换服务商/提示词优化 LLM 配置）
+ *   - 生成记录      GET  /admin/ai-image/records             （分页+按服务商/状态/用户筛选）
+ *                  POST /admin/ai-image/records/delete       （删除记录+图片文件+关联分享；路径白名单校验防穿越）
+ * 说明：API Key 一律 ENC: 前缀加密落库；删除文件前用 isSafeAiImagePath 校验
+ *       必须位于 /uploads/ai-images/ 目录内，防路径穿越删除。
+ */
 const express = require('express');
 const path = require('path');
 const fs = require('fs');

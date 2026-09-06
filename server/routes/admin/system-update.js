@@ -1,3 +1,19 @@
+/**
+ * 系统在线更新路由（后台，仅超管；挂载于 /admin/system-update）
+ * 能力：
+ *   GET  /admin/system-update            —— 更新页面
+ *   POST /admin/system-update/check      —— 检查 GitHub Release（10s 超时；版本号比较）
+ *   POST /admin/system-update/download   —— 启动后台更新任务（服务端自行决定目标版本；禁止降级）
+ *   GET  /admin/system-update/progress   —— 查询任务进度（内存态，单实例）
+ *   POST /admin/system-update/restart    —— 重启服务器（PM2 多级回退 → 直接拉起新进程）
+ *   GET  /admin/system-update/status     —— 服务器状态
+ * 安全与健壮性：
+ *   - 下载地址域名白名单（仅 GitHub 官方）+ 路径须含 wgg223/wangzhan；
+ *   - zip-slip 双重防护（adm-zip 条目名校验 + 系统 unzip 回退后的全量扫描）；
+ *   - 更新包完整性校验（package.json 版本号与 Release 一致、server/ 存在）；
+ *   - 复制失败即中止并自动回滚；检测 server/server 等嵌套目录异常；旧备份仅保留 3 份；
+ *   - 降级禁止；npm install 仅在依赖变化时执行。
+ */
 const express = require('express');
 const router = express.Router();
 const { logActivity } = require('../../config/activity');

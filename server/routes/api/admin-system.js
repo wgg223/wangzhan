@@ -1,7 +1,20 @@
+/**
+ * 管理端系统 API 路由（供 Flutter App 使用）
+ * 整组路由统一鉴权：apiAuth + apiRequireAdmin + apiAdminAudit。
+ * 模块：
+ *   - 操作日志查询/清理（仅超管）
+ *   - 权限管理（查询/保存用户权限）
+ *   - 媒体管理（列表/删除）
+ *   - 备份管理（列表/创建/删除 zip 备份）
+ *   - 系统信息（平台/内存/数据库大小等）
+ *   - 维护模式开关（仅超管）
+ * 安全要点：备份文件名用 path.basename 防目录穿越；媒体删除路径做了规范化。
+ */
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const AdmZip = require('adm-zip');
+const AdmZip = require('adm-zip');   // zip 压缩库（生成备份包）
 const { queryOne, queryAll, getDb, saveDatabase, getDbPath } = require('../../config/database');
 const { apiAuth, apiRequireAdmin, apiRequirePermission, apiRequireSuperAdmin, apiAdminAudit } = require('../../middlewares/api-auth');
 const { canOperateUser } = require('../../middlewares/auth');
@@ -9,14 +22,25 @@ const { canOperateUser } = require('../../middlewares/auth');
 const router = express.Router();
 router.use(apiAuth, apiRequireAdmin, apiAdminAudit);
 
-const projectRoot = path.join(__dirname, '../../..');
-const backupDir = path.join(projectRoot, 'backups');
+const projectRoot = path.join(__dirname, '../../..');   // 项目根目录
+const backupDir = path.join(projectRoot, 'backups');    // 备份文件存放目录
 
+/**
+ * 安全转整数
+ * @param {*} v - 输入值
+ * @param {number} def - 默认值
+ * @returns {number}
+ */
 function toInt(v, def = 0) {
   const n = parseInt(v);
   return isNaN(n) ? def : n;
 }
 
+/**
+ * 格式化字节数
+ * @param {number} bytes
+ * @returns {string}
+ */
 function formatSize(bytes) {
   if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
   if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
@@ -24,6 +48,7 @@ function formatSize(bytes) {
 }
 
 // ============ 操作日志 ============
+// 仅超管可查全站操作日志（分页）
 router.get('/logs', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
@@ -38,6 +63,7 @@ router.get('/logs', apiRequireSuperAdmin, (req, res) => {
   res.json({ logs: rows || [], total, page });
 });
 
+// 清理 N 天前的操作日志（days 参数 1~3650）
 router.delete('/logs', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const days = Math.min(3650, Math.max(1, toInt(req.query.days, 7)));
@@ -48,6 +74,7 @@ router.delete('/logs', apiRequireSuperAdmin, (req, res) => {
 });
 
 // ============ 权限管理 ============
+// 查询某用户的所有权限点（含是否已授予）
 router.get('/users/:id/permissions', apiRequirePermission('permissions.manage'), (req, res) => {
   const db = getDb();
   const userId = toInt(req.params.id);
@@ -64,6 +91,7 @@ router.get('/users/:id/permissions', apiRequirePermission('permissions.manage'),
   res.json({ permissions });
 });
 
+// 保存用户权限（全量覆盖；仅超管；超管本人权限不可改）
 router.put('/users/:id/permissions', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const userId = toInt(req.params.id);
@@ -83,7 +111,7 @@ router.put('/users/:id/permissions', apiRequireSuperAdmin, (req, res) => {
     return res.status(403).json({ error: '无权修改超级管理员的权限' });
   }
 
-  // perm_key 必须真实存在于 permissions 表
+  // perm_key 必须真实存在于 permissions 表（防伪造权限键）
   const validKeys = new Set(
     (queryAll(db, 'SELECT perm_key FROM permissions') || []).map((p) => p.perm_key)
   );
@@ -92,6 +120,7 @@ router.put('/users/:id/permissions', apiRequireSuperAdmin, (req, res) => {
     return res.status(400).json({ error: '非法的权限项：' + unknownKey });
   }
 
+  // 全量覆盖：先删后插（记录授予人）
   db.run('DELETE FROM user_permissions WHERE user_id = ?', [userId]);
   for (const key of permKeys) {
     db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)', [userId, key, req.apiUser.id]);
@@ -116,11 +145,13 @@ router.get('/media', apiRequirePermission('media.manage'), (req, res) => {
   res.json({ media: rows || [], total, page });
 });
 
+// 删除媒体（连带删除磁盘文件；路径做规范化防止目录穿越）
 router.delete('/media/:id', apiRequirePermission('media.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   const m = queryOne(db, 'SELECT * FROM media WHERE id = ?', [id]);
   if (m && m.file_path) {
+    // 规范化路径：去掉开头的 / 与 public/ 前缀，再拼接到项目根
     let rel = m.file_path;
     if (rel.startsWith('/')) rel = rel.slice(1);
     if (rel.startsWith('public/')) rel = rel.slice(7);
@@ -135,6 +166,11 @@ router.delete('/media/:id', apiRequirePermission('media.manage'), (req, res) => 
 });
 
 // ============ 备份管理 ============
+/**
+ * 扫描备份目录，返回备份文件列表（按时间倒序）
+ * @returns {Array} [{ name, size, createdAt, type, sizeLabel }]
+ * 说明：type 按文件名前缀推断：full-* = 完整备份，db-* = 仅数据库。
+ */
 function getBackupList() {
   if (!fs.existsSync(backupDir)) return [];
   const backups = [];
@@ -156,15 +192,17 @@ function getBackupList() {
   return backups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
+// 备份列表
 router.get('/backups', apiRequirePermission('data.manage'), (req, res) => {
   res.json({ backups: getBackupList() });
 });
 
+// 创建备份：type=database 仅数据库；type=full 数据库+上传文件+配置文件
 router.post('/backups', apiRequirePermission('data.manage'), (req, res) => {
   const type = (req.body.type || 'database').toString();
   try {
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);   // 时间戳命名
     const name = `${type === 'full' ? 'full' : 'db'}-${stamp}.zip`;
     const zip = new AdmZip();
 
@@ -185,6 +223,7 @@ router.post('/backups', apiRequirePermission('data.manage'), (req, res) => {
   }
 });
 
+// 删除备份（path.basename 防目录穿越；仅允许 .zip 文件）
 router.delete('/backups/:name', apiRequirePermission('data.manage'), (req, res) => {
   const name = path.basename(req.params.name); // 防路径穿越
   const filePath = path.join(backupDir, name);
@@ -196,9 +235,11 @@ router.delete('/backups/:name', apiRequirePermission('data.manage'), (req, res) 
 });
 
 // ============ 系统信息 ============
+// 汇总：平台/Node 版本/运行时长/内存/CPU 核数/数据库大小与表数/上传目录大小/备份总大小
 router.get('/system/info', (req, res) => {
   const db = getDb();
   const dbSize = fs.existsSync(getDbPath()) ? fs.statSync(getDbPath()).size : 0;
+  // 递归统计 uploads 目录总大小
   const uploadsDir = path.join(projectRoot, 'public/uploads');
   const uploadSize = fs.existsSync(uploadsDir)
     ? fs.readdirSync(uploadsDir, { recursive: true }).reduce((acc, f) => {
@@ -211,6 +252,7 @@ router.get('/system/info', (req, res) => {
     : 0;
   const backupSize = getBackupList().reduce((acc, b) => acc + b.size, 0);
 
+  // 统计业务表数量（排除 sqlite_ 内部表）
   let tableCount = 0;
   try {
     tableCount = queryAll(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").length;
@@ -230,16 +272,25 @@ router.get('/system/info', (req, res) => {
     db_tables: tableCount,
     upload_size: formatSize(uploadSize),
     backup_size: formatSize(backupSize),
-    cache_hit_rate: '-',
+    cache_hit_rate: '-',   // 预留字段
   });
 });
 
+/**
+ * 获取 CPU 核数
+ * @returns {number|null}
+ */
 function osCpuCount() {
   try {
     return require('os').cpus().length;
   } catch (e) { return null; }
 }
 
+/**
+ * 格式化运行时长（秒 → 天/小时/分钟）
+ * @param {number} seconds
+ * @returns {string}
+ */
 function formatDuration(seconds) {
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
@@ -250,12 +301,14 @@ function formatDuration(seconds) {
 }
 
 // ============ 维护模式 ============
+// 仅超管：开关维护模式并保存标题/说明文案（设置走 upsert + 清缓存）
 router.post('/maintenance/toggle', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const enabled = req.body.enabled === true;
   const title = (req.body.title || '系统维护中').toString().slice(0, 100);
   const message = (req.body.message || '系统正在进行维护升级，请稍后再试。').toString().slice(0, 500);
 
+  // 设置 upsert 小工具
   const upsert = (key, value) => {
     const existing = queryOne(db, 'SELECT id FROM settings WHERE setting_key = ?', [key]);
     if (existing) {
@@ -269,6 +322,7 @@ router.post('/maintenance/toggle', apiRequireSuperAdmin, (req, res) => {
   upsert('maintenance_message', message);
   saveDatabase();
 
+  // 清设置缓存使维护模式立即生效
   try {
     const { settingsCache } = require('../../config/cache');
     settingsCache.delete('settings');

@@ -1,9 +1,19 @@
+/**
+ * 基础设置路由（后台）
+ * 能力：
+ *   GET  /admin/settings/basic —— 基础设置页
+ *   POST /admin/settings/basic —— 保存站点名称/描述/关键词/URL/Logo/备案号/页脚HTML/
+ *                                 站点开关/注册开关/默认角色/评论与文章审核/验证码/
+ *                                 语言时区/每页条数/主题 等 20+ 项设置
+ * 安全：upsertSettings 只写白名单键；操作写审计日志；AJAX 与表单双响应支持。
+ */
+
 const express = require('express');
 const router = express.Router();
 const { getSettings, upsertSettings } = require('../../utils/settings');
 const { safeLogActivity } = require('../../utils/error-handler');
 
-// 基础设置 - 仅管理员可访问
+// 基础设置 - 仅管理员可访问（上层路由统一鉴权）
 
 // GET - 基础设置页面
 router.get('/', (req, res) => {
@@ -17,7 +27,7 @@ router.get('/', (req, res) => {
   });
 });
 
-// POST - 保存基础设置
+// POST - 保存基础设置（逐项透传到 upsertSettings，缺失字段保留原值）
 router.post('/', (req, res) => {
   const db = req.db;
   const {

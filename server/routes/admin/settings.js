@@ -1,3 +1,23 @@
+/**
+ * 网站设置路由（后台，仅超管/设置管理权限）
+ * 模块：
+ *   GET  /admin/settings               —— 设置页（含用户权限列表）
+ *   POST /admin/settings               —— 保存基础设置+SMTP+CDN（smtp_pass 加密存储，留空不覆盖）
+ *   POST /admin/settings/test-smtp     —— 测试 SMTP 连接
+ *   POST /admin/settings/test-cdn      —— 测试 CDN 连通性
+ *   POST /admin/upload-background      —— 上传背景图
+ *   POST /admin/upload-logo            —— 上传 Logo
+ *   GET  /admin/settings/backup        —— 导出配置备份（剔除敏感项）
+ *   GET  /admin/settings/backup/list   —— 备份列表
+ *   POST /admin/settings/backup/restore—— 恢复配置（禁止恢复敏感项；路径穿越防护）
+ *   DELETE /admin/settings/backup/:filename —— 删除备份文件
+ *   GET/POST /admin/settings/oauth     —— 第三方登录配置（client_secret 掩码回显）
+ *   POST /admin/settings/dedup         —— 数据库去重
+ *   POST /admin/settings/vacuum        —— VACUUM + ANALYZE 优化
+ * 安全要点：敏感 key（smtp_pass 等）以 ENC: 密文存储；备份导出/恢复双向过滤敏感项；
+ *           备份文件路径校验防穿越；OAuth secret 永不回显明文。
+ */
+
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated, hasPermission, isSuperAdmin } = require('../../middlewares/auth');
@@ -13,6 +33,7 @@ const { backupDir } = require('../../config/app-root');
 
 // ============ 网站设置 ============
 
+// 设置页：读取全部设置 + 当前用户权限点（admin/super_admin 默认全量）
 router.get('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const settingsObj = getSettings(db);
@@ -33,6 +54,7 @@ router.get('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
   });
 });
 
+// 保存全部基础设置（幂等 upsert；SMTP 密码单独加密处理）
 router.post('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { site_name, site_description, icp_number, icp_link, footer_text, logo, user_agreement, privacy_policy, delete_account_agreement, welcome_popup_enabled, welcome_popup_title, welcome_popup_content } = req.body;
@@ -65,12 +87,13 @@ router.post('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
     cdn_version: req.body.cdn_version || '1.0.0'
   });
 
+  // SMTP 密码：仅在填写了新值时加密更新（留空保留原值）
   if (req.body.smtp_pass) {
     db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [encrypt(req.body.smtp_pass), 'smtp_pass']);
     saveDatabase();
   }
 
-  // 重新加载CDN配置
+  // 重新加载CDN配置（内存态即时生效）
   cdnConfig.loadFromDatabase(db);
 
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'settings', target_id: null, target_title: '网站设置', detail: '更新了网站基本设置、SMTP配置和CDN配置', ip: req.ip });
@@ -79,7 +102,7 @@ router.post('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
 
 // ============ SMTP 配置测试 ============
 
-// 测试SMTP连接
+// 测试SMTP连接（用表单即时值，不落库）
 router.post('/settings/test-smtp', isAuthenticated, isSuperAdmin, async (req, res) => {
   const { smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass } = req.body;
 
@@ -103,7 +126,7 @@ router.post('/settings/test-smtp', isAuthenticated, isSuperAdmin, async (req, re
 
 // ============ CDN 配置测试 ============
 
-// 测试CDN连接
+// 测试CDN连接：请求 {cdn_base_url}/css/style.css 检查响应头（识别 Cloudflare 与缓存状态）
 router.post('/settings/test-cdn', isAuthenticated, isSuperAdmin, async (req, res) => {
   const { cdn_base_url } = req.body;
 
@@ -154,6 +177,7 @@ router.post('/settings/test-cdn', isAuthenticated, isSuperAdmin, async (req, res
   }
 });
 
+// 上传背景图（写入 settings.background_image）
 router.post('/upload-background', isAuthenticated, isSuperAdmin, upload.single('background'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '没有上传文件' });
@@ -168,6 +192,7 @@ router.post('/upload-background', isAuthenticated, isSuperAdmin, upload.single('
   res.json({ success: true, path: filePath });
 });
 
+// 上传 Logo（写入 settings.logo）
 router.post('/upload-logo', isAuthenticated, isSuperAdmin, upload.single('logo'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '没有上传文件' });
@@ -198,11 +223,11 @@ function isSensitiveSettingKey(key) {
   return /_(pass|secret|key|token)$/i.test(key);
 }
 
+// 导出配置备份为 JSON（剔除敏感字段，防泄露凭据）
 router.get('/settings/backup', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   try {
     const allSettings = queryAll(db, 'SELECT * FROM settings');
-    // 安全：导出时剔除敏感字段（smtp_pass 等），防止备份文件泄露凭据
     const settings = allSettings.filter(s => !isSensitiveSettingKey(s.setting_key));
     const backupDir = require('../../config/app-root').backupDir;
     if (!fs.existsSync(backupDir)) {
@@ -237,6 +262,7 @@ router.get('/settings/backup', isAuthenticated, isSuperAdmin, (req, res) => {
   }
 });
 
+// 备份文件列表（按创建时间倒序）
 router.get('/settings/backup/list', isAuthenticated, isSuperAdmin, (req, res) => {
   const backupDir = require('../../config/app-root').backupDir;
   try {
@@ -261,6 +287,7 @@ router.get('/settings/backup/list', isAuthenticated, isSuperAdmin, (req, res) =>
   }
 });
 
+// 从备份恢复配置（事务内执行；敏感项跳过；恢复后清设置缓存）
 router.post('/settings/backup/restore', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { filename } = req.body;
@@ -272,7 +299,7 @@ router.post('/settings/backup/restore', isAuthenticated, isSuperAdmin, (req, res
   const backupDir = require('../../config/app-root').backupDir;
   const filepath = path.join(backupDir, filename);
 
-  // 安全检查：防止路径遍历
+  // 安全检查：防止路径遍历（filename 含 ../ 时会越出 backupDir）
   if (!filepath.startsWith(backupDir)) {
     return res.status(400).json({ error: '无效的备份文件路径' });
   }
@@ -328,6 +355,7 @@ router.post('/settings/backup/restore', isAuthenticated, isSuperAdmin, (req, res
   }
 });
 
+// 删除备份文件（同样校验路径）
 router.delete('/settings/backup/:filename', isAuthenticated, isSuperAdmin, (req, res) => {
   const backupDir = require('../../config/app-root').backupDir;
   const filename = req.params.filename;
@@ -351,6 +379,7 @@ router.delete('/settings/backup/:filename', isAuthenticated, isSuperAdmin, (req,
 
 // ============ 第三方登录设置 ============
 
+// OAuth 配置页：client_secret 解密后掩码回显（避免页面源码暴露明文）
 router.get('/settings/oauth', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
   const db = req.db;
   const { initDefaultProviders } = require('../../routes/oauth');
@@ -359,7 +388,6 @@ router.get('/settings/oauth', isAuthenticated, hasPermission('settings.manage'),
 
   const providers = queryAll(db, 'SELECT * FROM oauth_providers ORDER BY sort_order ASC');
 
-  // 安全：client_secret 解密后掩码回显，不在页面源码中暴露明文
   const MASKED = '__MASKED_OAUTH_SECRET__';
   const maskedProviders = providers.map(p => {
     let secret = p.client_secret || '';
@@ -379,12 +407,13 @@ router.get('/settings/oauth', isAuthenticated, hasPermission('settings.manage'),
   });
 });
 
+// 保存 OAuth 配置（支持多 provider 批量提交；掩码值不覆盖原 secret）
 router.post('/settings/oauth', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
   const db = req.db;
   const { encrypt } = require('../../config/crypto-secure');
   const { provider_id, client_id, client_secret, redirect_uri, is_enabled } = req.body;
 
-  // 处理多个provider的更新
+  // 处理多个provider的更新（Express 同名表单字段→数组）
   const providerIds = Array.isArray(provider_id) ? provider_id : [provider_id];
   const clientIds = Array.isArray(client_id) ? client_id : [client_id];
   const clientSecrets = Array.isArray(client_secret) ? client_secret : [client_secret];
@@ -428,6 +457,7 @@ router.post('/settings/oauth', isAuthenticated, hasPermission('settings.manage')
 
 // ============ 数据库维护 ============
 
+// 手动去重：清理各表重复数据（由 db-dedup 模块执行）
 router.post('/settings/dedup', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { deduplicateDatabase } = require('../../config/db-dedup');
@@ -451,6 +481,7 @@ router.post('/settings/dedup', isAuthenticated, isSuperAdmin, (req, res) => {
   }
 });
 
+// 数据库优化：VACUUM（回收空间+整理）+ ANALYZE（更新统计信息）
 router.post('/settings/vacuum', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 

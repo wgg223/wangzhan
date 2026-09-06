@@ -1,3 +1,17 @@
+/**
+ * 图片/AI生图/AI对话 分享链接路由
+ * 能力：
+ *   POST /share/api/create   —— 创建分享链接（需 image-share.share 权限，仅本人/管理员）
+ *   POST /share/api/disable  —— 停用分享（本人/管理员）
+ *   POST /share/api/enable   —— 重新启用分享（本人/管理员）
+ *   GET  /share/:token       —— 公开分享页（无需登录，支持 AI 会话只读页）
+ *   GET  /share/:token/file  —— 分享图片文件流（供 <img> 与社交平台 og:image 抓取）
+ *   GET  /share/:token/download —— 下载原图（需登录，任意登录用户）
+ * 安全要点：
+ *   - 分享创建时校验"源记录归属"（仅本人/管理员可分享）；
+ *   - 源文件路径解析白名单：必须以 /uploads/ 开头且最终路径必须在 public 目录内（防穿越）；
+ *   - AI 会话分享只渲染 user/assistant 且非 error 状态的消息。
+ */
 const express = require('express');
 const router = express.Router();
 const path = require('path');

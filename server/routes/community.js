@@ -2,6 +2,13 @@
  * 社区互动路由
  * 用户关注、通知中心、点赞/感谢功能
  */
+/**
+ * 社区路由（Web 端：动态流/关注/通知/点赞等）
+ * 覆盖：社区首页动态流、发布动态、关注/取关、通用点赞、
+ *       通知列表与已读、用户主页等。
+ * 说明：部分内部函数（createNotification 等）被私信模块复用；
+ *       各功能块已有分段注释，标注职责与安全校验。
+ */
 const express = require('express');
 const router = express.Router();
 const { queryOne, queryAll, getDb } = require('../config/database');

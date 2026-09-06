@@ -1,5 +1,21 @@
+/**
+ * 图片分享 API 路由（供 Flutter App 使用）
+ * 接口：
+ *   GET  /api/v1/image-categories      —— 分类列表（游客只见游客可见分类）
+ *   GET  /api/v1/images/favorites      —— 我的收藏（需登录）
+ *   GET  /api/v1/images                —— 图片列表（可见性过滤 + 搜索 + 分页）
+ *   GET  /api/v1/images/:id            —— 图片详情（可见性鉴权）
+ *   POST /api/v1/images/:id/favorite   —— 收藏/取消收藏（需登录）
+ *   POST /api/v1/images/:id/like       —— 点赞/取消点赞（需登录）
+ *   GET  /api/v1/images/:id/comments   —— 评论列表（已审核）
+ *   POST /api/v1/images/:id/comments   —— 发表评论（需登录，管理员直接通过）
+ *   POST /api/v1/images                —— 上传图片（需登录，可信用户免审核）
+ * 安全要点：上传文件按 MIME 白名单过滤 + 服务端生成文件名（忽略原始文件名）；
+ *           可见性过滤统一走 buildVisibilityFilter，防止越权看图。
+ */
+
 const express = require('express');
-const multer = require('multer');
+const multer = require('multer');            // 文件上传中间件
 const path = require('path');
 const fs = require('fs');
 const { queryOne, queryAll, getDb, saveDatabase } = require('../../config/database');
@@ -9,6 +25,7 @@ const { publicDir } = require('../../config/app-root');
 const router = express.Router();
 
 // ============ 上传配置（与网页端一致） ============
+// MIME → 安全扩展名映射（存储时忽略用户原始文件名，防脚本文件伪装）
 const IMAGE_EXT_MAP = {
   'image/jpeg': '.jpg',
   'image/jpg': '.jpg',
@@ -17,21 +34,23 @@ const IMAGE_EXT_MAP = {
   'image/webp': '.webp'
 };
 
+// multer 磁盘存储配置：保存到 public/uploads/images，文件名服务端生成
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(publicDir, 'uploads', 'images');
     if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.mkdirSync(uploadDir, { recursive: true });   // 目录不存在则创建
     }
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);   // 时间戳+随机数防重名
     // 按 mimetype 生成安全扩展名，忽略原始文件名
     cb(null, 'img-' + uniqueSuffix + (IMAGE_EXT_MAP[file.mimetype] || '.jpg'));
   }
 });
 
+// 上传限制：单文件 15MB、最多 10 个；fileFilter 双重校验 MIME 白名单 + 原始扩展名
 const imageUpload = multer({
   storage: storage,
   limits: { fileSize: 15 * 1024 * 1024, files: 10 },
@@ -45,7 +64,14 @@ const imageUpload = multer({
   }
 });
 
-// 可见性过滤（与网页端一致）
+/**
+ * 构建图片可见性过滤 SQL 子句（与网页端一致）
+ * @param {Object|null} user - 当前登录用户（未登录传 null）
+ * @returns {{clause: string, params: Array}} SQL 片段与参数
+ * 规则：
+ *   - 游客：仅公开（visibility 为空/public）图片；
+ *   - 登录用户：公开 + 自己的 + visibility='selected' 且在被授权列表（JSON）中。
+ */
 function buildVisibilityFilter(user) {
   if (user) {
     return {
@@ -59,6 +85,12 @@ function buildVisibilityFilter(user) {
   };
 }
 
+/**
+ * 为图片行附加互动元数据（收藏状态/点赞状态/评论数）
+ * @param {Object|null} row - 图片行
+ * @param {number|null} userId - 当前用户 ID
+ * @returns {Object|null} 增强后的图片对象
+ */
 function imageWithMeta(row, userId) {
   if (!row) return null;
   const db = getDb();
@@ -71,6 +103,7 @@ function imageWithMeta(row, userId) {
 }
 
 // ============ 分类列表 ============
+// 游客只看 is_guest=1 的分类；登录用户看全部启用分类
 router.get('/image-categories', (req, res) => {
   const db = getDb();
   const user = req.apiUser;
@@ -90,6 +123,7 @@ router.get('/images/favorites', apiAuth, (req, res) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
   const offset = (page - 1) * limit;
 
+  // 关联出用户与分类信息；只返回已发布图片
   const rows = queryAll(db, `
     SELECT i.*, u.username, u.nickname, u.avatar AS user_avatar, c.name AS category_name
     FROM image_favorites f
@@ -104,6 +138,7 @@ router.get('/images/favorites', apiAuth, (req, res) => {
 });
 
 // ============ 图片列表 ============
+// 支持 q（标题/描述搜索）、category（分类）、page/limit；可见性按登录态过滤
 router.get('/images', (req, res) => {
   const db = getDb();
   const user = req.apiUser || null;
@@ -113,6 +148,7 @@ router.get('/images', (req, res) => {
   const q = (req.query.q || '').trim();
   const category = parseInt(req.query.category) || null;
 
+  // 动态拼接 WHERE（参数全部占位符，防注入）
   const visFilter = buildVisibilityFilter(user);
   let where = `i.status = 1 AND ${visFilter.clause}`;
   const params = [...visFilter.params];
@@ -145,6 +181,7 @@ router.get('/images', (req, res) => {
 });
 
 // ============ 图片详情 ============
+// 查详情后再用可见性过滤校验一次，无权查看返回 403（防止绕过列表直接拿图）
 router.get('/images/:id', (req, res) => {
   const db = getDb();
   const id = parseInt(req.params.id);
@@ -159,6 +196,7 @@ router.get('/images/:id', (req, res) => {
   `, [id]);
   if (!row) return res.status(404).json({ error: '图片不存在' });
 
+  // 可见性二次鉴权
   const visFilter = buildVisibilityFilter(user);
   const isAllowed = queryOne(db,
     `SELECT id FROM images WHERE id = ? AND ${visFilter.clause}`,
@@ -170,6 +208,7 @@ router.get('/images/:id', (req, res) => {
 });
 
 // ============ 收藏/取消收藏 ============
+// 切换式收藏：仅允许对已发布图片操作
 router.post('/images/:id/favorite', apiAuth, (req, res) => {
   const db = getDb();
   const imageId = parseInt(req.params.id);
@@ -181,9 +220,9 @@ router.post('/images/:id/favorite', apiAuth, (req, res) => {
 
   const existing = queryOne(db, 'SELECT id FROM image_favorites WHERE user_id = ? AND image_id = ?', [userId, imageId]);
   if (existing) {
-    db.run('DELETE FROM image_favorites WHERE id = ?', [existing.id]);
+    db.run('DELETE FROM image_favorites WHERE id = ?', [existing.id]);   // 取消收藏
   } else {
-    db.run('INSERT INTO image_favorites (image_id, user_id) VALUES (?, ?)', [imageId, userId]);
+    db.run('INSERT INTO image_favorites (image_id, user_id) VALUES (?, ?)', [imageId, userId]);  // 收藏
   }
   saveDatabase();
   res.json({ favorited: !existing });
@@ -212,6 +251,7 @@ router.post('/images/:id/like', apiAuth, (req, res) => {
 });
 
 // ============ 评论 ============
+// 列表：只返回已审核评论，最多 100 条
 router.get('/images/:id/comments', (req, res) => {
   const db = getDb();
   const imageId = parseInt(req.params.id);
@@ -224,6 +264,7 @@ router.get('/images/:id/comments', (req, res) => {
   res.json({ comments: rows || [] });
 });
 
+// 发表评论：管理员直接通过，普通用户待审核（与网页端一致）
 router.post('/images/:id/comments', apiAuth, (req, res) => {
   const db = getDb();
   const imageId = parseInt(req.params.id);
@@ -242,6 +283,8 @@ router.post('/images/:id/comments', apiAuth, (req, res) => {
 });
 
 // ============ 上传图片 ============
+// 需登录；标题/分类必填；分类必须存在且启用；
+// 可信用户（image_no_review=1）上传直接发布，否则待审核。
 router.post('/images', apiAuth, imageUpload.array('files', 10), (req, res) => {
   const db = getDb();
   const title = (req.body.title || '').trim();
@@ -260,9 +303,10 @@ router.post('/images', apiAuth, imageUpload.array('files', 10), (req, res) => {
   }
 
   const user = req.apiUser;
-  // 可信用户免审核，否则待审核
+  // 可信用户免审核，否则待审核（status: 1=已发布, 0=待审核）
   const status = user.image_no_review === 1 ? 1 : 0;
 
+  // 逐张写入图片记录（多图时标题追加序号区分）
   for (let i = 0; i < req.files.length; i++) {
     const f = req.files[i];
     const url = '/uploads/images/' + f.filename;

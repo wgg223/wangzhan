@@ -1,3 +1,17 @@
+/**
+ * 用户管理路由（后台）
+ * 能力：
+ *   GET  /admin/users               —— 用户列表（非超管只读）
+ *   POST /admin/users/create        —— 手动创建账户（仅超管；用户名/邮箱查重；密码≥8位提示）
+ *   POST /admin/users/approve/:id   —— 批准/启用账户（并发送站内通知）
+ *   POST /admin/users/disable/:id   —— 禁用账户（不可禁用自己/同级或更高；不可禁用最后一名超管）
+ *   POST /admin/users/role/:id      —— 修改角色（白名单校验；晋升 admin 时授予全部权限点）
+ *   POST /admin/users/delete/:id    —— 删除账户（同样受锁死保护）
+ *   POST /admin/users/import-csv    —— CSV 批量导入（校验+分批让出事件循环）
+ * 安全要点：全程 isSuperAdmin；操作前 canOperateUser / ROLE_HIERARCHY / ensureAtLeastOneActiveSuperAdmin
+ *           三重保护，防止权限越级与管理端锁死。
+ */
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -9,6 +23,7 @@ const { createNotification } = require('../community');
 
 // ============ 用户管理 ============
 
+// 用户列表页（非超管只读：前端按 readOnly 隐藏操作按钮）
 router.get('/users', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
   const users = queryAll(db, 'SELECT id, uid, username, email, role, status, created_at FROM users ORDER BY created_at DESC');
@@ -21,6 +36,7 @@ router.get('/users', isAuthenticated, hasPermission('users.manage'), (req, res) 
   });
 });
 
+// 手动创建账户（仅超管）
 router.post('/users/create', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { username, email, password, role } = req.body;
@@ -71,6 +87,7 @@ router.post('/users/create', isAuthenticated, isSuperAdmin, (req, res) => {
   res.json({ success: true, message: '账户创建成功' });
 });
 
+// 批准账户（pending→active 或重新启用），并发送站内通知
 router.post('/users/approve/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const targetUser = queryOne(db, 'SELECT username, status FROM users WHERE id = ?', [req.params.id]);
@@ -79,6 +96,7 @@ router.post('/users/approve/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   if (targetUser) {
     logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'approve', target_type: 'user', target_id: parseInt(req.params.id), target_title: targetUser.username, detail: '批准用户：' + targetUser.username, ip: req.ip });
 
+    // 按原状态生成不同文案的通知
     var notifTitle = targetUser.status === 'pending' ? '账号已通过审核' : '账号已启用';
     var notifContent = targetUser.status === 'pending' ? '您的账号已通过管理员审核，现在可以正常使用所有功能。' : '您的账号已被管理员重新启用。';
     createNotification(db, {
@@ -94,6 +112,7 @@ router.post('/users/approve/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   res.redirect('/admin/users');
 });
 
+// 禁用账户（多重保护：不能禁自己、不能禁同级/更高、不能禁最后一名超管）
 router.post('/users/disable/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
@@ -106,6 +125,7 @@ router.post('/users/disable/:id', isAuthenticated, isSuperAdmin, (req, res) => {
     return res.status(404).json({ error: '用户不存在' });
   }
 
+  // 角色等级比较：非超管不能动同级或更高
   const currentUserRoleVal = ROLE_HIERARCHY[req.session.user.role] || 0;
   const targetUserRoleVal = ROLE_HIERARCHY[targetUser.role] || 0;
   if (targetUserRoleVal >= currentUserRoleVal && req.session.user.role !== 'super_admin') {
@@ -135,6 +155,7 @@ router.post('/users/disable/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   res.redirect('/admin/users');
 });
 
+// 修改用户角色（仅超管；白名单 + 可操作校验 + 锁死保护）
 router.post('/users/role/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { role } = req.body;
@@ -176,6 +197,7 @@ router.post('/users/role/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   res.redirect('/admin/users');
 });
 
+// 删除用户（与禁用同样的保护逻辑）
 router.post('/users/delete/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
 
@@ -221,6 +243,7 @@ const csvUpload = multer({
   }
 });
 
+// CSV 批量导入（仅超管）：表头需含 username/password，可选 email/role
 router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single('csv_file'), async (req, res) => {
   const db = req.db;
   if (!req.file) {
@@ -234,7 +257,7 @@ router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single
       return res.status(400).json({ error: 'CSV 文件至少需要包含表头和一行数据' });
     }
 
-    // 解析表头
+    // 解析表头（大小写不敏感）
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
     const usernameIdx = headers.indexOf('username');
     const passwordIdx = headers.indexOf('password');
@@ -248,6 +271,7 @@ router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single
     const results = { success: 0, failed: 0, errors: [] };
     const validRoles = ['user', 'visitor', 'admin'];
 
+    // 逐行校验并插入
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(',').map(c => c.trim());
       const username = cols[usernameIdx];

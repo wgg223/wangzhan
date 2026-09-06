@@ -1,3 +1,12 @@
+/**
+ * 古诗词游戏（飞花令）路由
+ * 接口：
+ *   GET  /poem-game                  —— 游戏页面
+ *   GET  /poem-game/api/poem-leaderboard —— 排行榜查询（支持 mode/difficulty 筛选 + 分页）
+ *   POST /poem-game/api/poem-leaderboard —— 提交分数（每 IP 每分钟 30 次限流防刷榜）
+ * 安全要点：分数服务端校验（0-10000 有限数字）；未登录用户用自定义用户名提交
+ *           （存在匿名冒名风险，见检查报告）。
+ */
 const express = require('express');
 const router = express.Router();
 const { queryAll, queryOne, saveDatabase } = require('../config/database');

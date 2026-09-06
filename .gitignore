@@ -1,7 +1,40 @@
-# Dependencies
+# ============================================================
+# 项目 .gitignore —— 白名单模式
+#
+# 原则：git 只跟踪「当前项目已有文件」；
+#       后续产生的任何其他文件（运行产物 / 下载物 / 临时文件 / 密钥等）
+#       默认全部忽略，不会上传。
+#
+# 维护方法：今后确有新文件需要跟踪时，在下方「放行清单」追加一行：
+#     !/<文件或目录名>
+#   （server/ views/ public/ 三个源码目录已整体放行，其内部新增源码自动可见）
+# ============================================================
+
+# ---------- 一、白名单：放行当前项目已有文件 ----------
+/*
+!/.gitignore
+!/.env.example
+!/.eslintignore
+!/.eslintrc.json
+!/.eslintrc-frontend.json
+!/AGENTS.md
+!/LICENSE
+!/README.md
+!/部署指南.md
+!/cdn-config.js
+!/ecosystem.config.js
+!/package.json
+!/package-lock.json
+!/server/
+!/views/
+!/public/
+
+# ---------- 二、放行目录内部的运行产物（黑名单） ----------
+
+# 依赖
 node_modules/
 
-# Database
+# 数据库（SQLite 及其衍生文件）
 database.sqlite
 database.sqlite.tmp
 database.sqlite.backup.*
@@ -9,37 +42,66 @@ database.sqlite-wal
 database.sqlite-shm
 database.sqlite-journal
 
-# Uploads
+# 用户上传文件（public/ 已放行，此处排除 uploads 全部内容，仅保留占位 .gitkeep）
 public/uploads/*
-!public/uploads/.gitkeep
+!public/uploads/dynamics/
+!public/uploads/dynamics/.gitkeep
 
-# Logs
+# 日志
 logs/
 *.log
 npm-debug.log*
 
-# Backups
+# 备份
 backups/
 
-# Environment variables
+# 环境变量与密钥（生产密钥一律不上传）
 .env
 .env.*
 !.env.example
+.session_secret
+.dev_encryption_key
+*.key
+*.pem
+config.json
+security-config.json
 
-# OS files
+# 临时 / 缓存 / 构建产物
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+*.cache
+.parcel-cache/
+dist/
+build/
+coverage/
+.nyc_output/
+*.tgz
+*.zip
+
+# PM2 / 部署 / 运行时状态
+.pm2/
+.mimocode/.cron-lock
+.setup_completed
+deploy/
+deploy_logs/
+
+# 操作系统 / IDE / 编辑器
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-scripts/*.py
-scripts/.file_checksums.json
+*.sublime-project
+*.sublime-workspace
+*.bak
+*.orig
 
-# Python
+# Python（如再次引入部署脚本）
 *.pyc
 __pycache__/
 *.pyo
@@ -49,74 +111,7 @@ venv/
 ENV/
 env/
 
-# Build and dist
-dist/
-build/
-*.tgz
-*.zip
-
-# Cache
-.cache/
-*.cache
-.parcel-cache/
-
-# Coverage
-coverage/
-.nyc_output/
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.temp
-
-# Cookies and auth
+# 其他工具产物
 cookies.txt
 login_result.html
-
-# Setup
-.setup_completed
-
-# Scripts
-scripts/.file_checksums.json
-
-# Vendor maps
-public/vendor/**/*.map
-
-# RP-Hub (legacy)
-RP-Hub/
-
-# Sensitive files
-*.key
-*.pem
-config.json
-security-config.json
-
-# PM2
-.pm2/
-
-# MiMoCode runtime state
-.mimocode/.cron-lock
-
-# Editor
-*.sublime-project
-*.sublime-workspace
-
-# Misc
-*.bak
-*.orig
 .writerHelper
-.vscode
-
-# Android (not needed for Node.js project)
-android/
-
-# Deploy
-deploy/
-deploy_logs/
-
-# PM2 会话密钥
-.session_secret
-
-# 开发环境加密密钥
-.dev_encryption_key

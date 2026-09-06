@@ -1,3 +1,20 @@
+/**
+ * AI 提示词管理路由（后台）
+ * 权限模型：prompts.view（查看）与 prompts.manage（管理）两级；
+ *           admin/super_admin 默认全量。编辑按钮由 canManage 控制。
+ * 模块：
+ *   GET  /admin/prompts                    —— 总览页（板块/分类/提示词/评论）
+ *   POST /admin/prompts/sections/{save,delete/:id}    —— 板块增删改
+ *   POST /admin/prompts/categories/{save,delete/:id}  —— 分类增删改（校验所属板块存在）
+ *   GET  /admin/prompts/prompts/{new,edit/:id}        —— 提示词编辑器
+ *   POST /admin/prompts/prompts/{save,delete/:id}     —— 提示词增删改
+ *   POST /admin/prompts/comments/{approve,delete}/:id —— 评论审核/删除
+ *   GET  /admin/prompts/export              —— 全量导出 CSV（含 BOM）
+ *   GET  /admin/prompts/import-template     —— 导入模板（含说明与示例行）
+ *   POST /admin/prompts/import              —— CSV 导入（板块/分类按名复用、重复跳过、# 开头跳过）
+ * 说明：所有变更会 clearPromptsCache() 清理前台 ai_prompts_* 缓存，即时生效。
+ */
+
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated, hasPermission, getUserPermissions } = require('../../middlewares/auth');
@@ -39,13 +56,14 @@ function first(value) {
   return Array.isArray(value) ? (value[0] || '') : (value || '');
 }
 
-// 从 Markdown 原文生成纯文本摘要
+// 从 Markdown 原文生成纯文本摘要（去除 # * ` > _ ~ - 等标记符，压缩空白，取前100字）
 function makeExcerpt(content) {
   return (content || '').replace(/[#*`>_~\-()![\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
 }
 
 // ============ 管理总览页（查询权限） ============
 
+// 总览页：四表联查（板块带分类数与提示词数、分类带提示词数、提示词带归属名、评论带待审优先）
 router.get('/prompts', isAuthenticated, requireView, (req, res) => {
   const db = req.db;
 
@@ -70,6 +88,7 @@ router.get('/prompts', isAuthenticated, requireView, (req, res) => {
     LEFT JOIN prompt_sections s ON c.section_id = s.id
     ORDER BY p.sort_order ASC, p.id DESC`);
 
+  // 评论：待审优先，再按时间倒序
   const comments = queryAll(db, `
     SELECT pc.*, p.title AS prompt_title, u.username
     FROM prompt_comments pc
@@ -90,6 +109,7 @@ router.get('/prompts', isAuthenticated, requireView, (req, res) => {
 
 // ============ 板块管理 ============
 
+// 保存板块（有 id 更新，无 id 新建）
 router.post('/prompts/sections/save', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const id = first(req.body.id);
@@ -121,6 +141,7 @@ router.post('/prompts/sections/save', isAuthenticated, hasPermission('prompts.ma
   res.redirect('/admin/prompts');
 });
 
+// 删除板块（外键级联删除其分类与提示词）
 router.post('/prompts/sections/delete/:id', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const section = queryOne(db, 'SELECT name FROM prompt_sections WHERE id = ?', [req.params.id]);
@@ -143,6 +164,7 @@ router.post('/prompts/sections/delete/:id', isAuthenticated, hasPermission('prom
 
 // ============ 分类管理 ============
 
+// 保存分类（校验所属板块真实存在）
 router.post('/prompts/categories/save', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const id = first(req.body.id);
@@ -181,6 +203,7 @@ router.post('/prompts/categories/save', isAuthenticated, hasPermission('prompts.
   res.redirect('/admin/prompts');
 });
 
+// 删除分类（级联删除其提示词）
 router.post('/prompts/categories/delete/:id', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const category = queryOne(db, 'SELECT name FROM prompt_categories WHERE id = ?', [req.params.id]);
@@ -214,6 +237,7 @@ function getEditorData(db) {
   return sectionsWithCats;
 }
 
+// 新建提示词页
 router.get('/prompts/prompts/new', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   res.render('admin/prompt-editor', {
     user: req.session.user,
@@ -223,6 +247,7 @@ router.get('/prompts/prompts/new', isAuthenticated, hasPermission('prompts.manag
   });
 });
 
+// 编辑提示词页
 router.get('/prompts/prompts/edit/:id', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const prompt = queryOne(db, 'SELECT * FROM prompts WHERE id = ?', [req.params.id]);
@@ -239,6 +264,7 @@ router.get('/prompts/prompts/edit/:id', isAuthenticated, hasPermission('prompts.
   });
 });
 
+// 保存提示词（摘要为空时自动从内容截取）
 router.post('/prompts/prompts/save', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const id = first(req.body.id);
@@ -272,6 +298,7 @@ router.post('/prompts/prompts/save', isAuthenticated, hasPermission('prompts.man
   } else {
     db.run('INSERT INTO prompts (category_id, title, content, excerpt, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?)',
       [categoryId, title, content, safeExcerpt, sortOrder, isActive]);
+    // 回查新记录 ID（供 AJAX 继续编辑）
     const newPrompt = queryOne(db, 'SELECT id FROM prompts WHERE title = ? AND category_id = ? ORDER BY id DESC LIMIT 1',
       [title, categoryId]);
     if (newPrompt) promptId = newPrompt.id;
@@ -287,6 +314,7 @@ router.post('/prompts/prompts/save', isAuthenticated, hasPermission('prompts.man
   res.redirect('/admin/prompts');
 });
 
+// 删除提示词
 router.post('/prompts/prompts/delete/:id', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const prompt = queryOne(db, 'SELECT title FROM prompts WHERE id = ?', [req.params.id]);
@@ -309,6 +337,7 @@ router.post('/prompts/prompts/delete/:id', isAuthenticated, hasPermission('promp
 
 // ============ 评论管理 ============
 
+// 通过评论审核
 router.post('/prompts/comments/approve/:id', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const comment = queryOne(db, 'SELECT * FROM prompt_comments WHERE id = ?', [req.params.id]);
@@ -324,6 +353,7 @@ router.post('/prompts/comments/approve/:id', isAuthenticated, hasPermission('pro
   res.redirect('/admin/prompts');
 });
 
+// 删除评论
 router.post('/prompts/comments/delete/:id', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const comment = queryOne(db, 'SELECT * FROM prompt_comments WHERE id = ?', [req.params.id]);
@@ -343,7 +373,7 @@ router.post('/prompts/comments/delete/:id', isAuthenticated, hasPermission('prom
 
 const { CSV_HEADERS, toCsv, parseCsv } = require('../../utils/csv');
 
-// 导出全部提示词为 CSV（查询权限）
+// 导出全部提示词为 CSV（查询权限；BOM 保证 Excel 中文正常）
 router.get('/prompts/export', isAuthenticated, requireView, (req, res) => {
   const db = req.db;
   const prompts = queryAll(db, `
@@ -398,7 +428,7 @@ router.get('/prompts/import-template', isAuthenticated, requireView, (req, res) 
   res.send('\uFEFF' + toCsv(rows));
 });
 
-// 导入 CSV（body: { csv: string }）
+// 导入 CSV（body: { csv: string }）：板块/分类按名复用、重复跳过
 router.post('/prompts/import', isAuthenticated, hasPermission('prompts.manage'), (req, res) => {
   const db = req.db;
   const csvText = (req.body && typeof req.body.csv === 'string') ? req.body.csv : '';
@@ -443,7 +473,7 @@ router.post('/prompts/import', isAuthenticated, hasPermission('prompts.manage'),
     const title = get(row, '标题');
     const content = get(row, '内容');
 
-    // 以 # 开头的说明行直接跳过
+    // 以 # 开头的说明行直接跳过；全空行跳过
     if (sectionName.charAt(0) === '#') continue;
     if (!sectionName && !categoryName && !title && !content) continue;
 

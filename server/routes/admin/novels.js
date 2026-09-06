@@ -1,3 +1,20 @@
+/**
+ * 小说管理路由（后台）
+ * 能力：
+ *   GET  /admin/novels                       —— 小说列表（含章节数）
+ *   GET  /admin/novels/new                   —— 新建小说编辑器
+ *   GET  /admin/novels/edit/:id              —— 编辑小说（含章节列表）
+ *   POST /admin/novels/save                  —— 保存/更新小说（封面可选上传）
+ *   POST /admin/novels/upload-chapter        —— 单文件上传章节（TXT/JSON，自动提取标题）
+ *   POST /admin/novels/batch-upload-chapters —— 批量上传章节（≤100个）
+ *   POST /admin/novels/delete-chapter/:id    —— 删除章节（同时删文件）
+ *   POST /admin/novels/batch-delete-chapters —— 批量删除章节
+ *   POST /admin/novels/reupload-chapter/:id  —— 重新上传章节内容
+ *   POST /admin/novels/delete/:id            —— 删除整本小说及其章节文件
+ * 安全要点：上传经 novelUpload/imageUpload 白名单过滤；删除文件走 fsSafe.safeUnlinkSync
+ *           （限制在 public 目录内，防路径穿越）。
+ */
+
 const express = require('express');
 const router = express.Router();
 const path = require('path');
@@ -12,6 +29,7 @@ const { renderError } = require('../../utils/response');
 
 // ============ 小说管理 ============
 
+// 小说列表（左连上传者用户名 + 子查询章节数）
 router.get('/novels', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const novels = queryAll(db, `
@@ -29,6 +47,7 @@ router.get('/novels', isAuthenticated, hasPermission('novels.manage'), (req, res
   });
 });
 
+// 新建小说页（novel=null 表示新建模式）
 router.get('/novels/new', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   res.render('admin/novel-editor', {
     user: req.session.user,
@@ -37,6 +56,7 @@ router.get('/novels/new', isAuthenticated, hasPermission('novels.manage'), (req,
   });
 });
 
+// 编辑小说页（带章节列表）
 router.get('/novels/edit/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const novel = queryOne(db, 'SELECT * FROM novels WHERE id = ?', [req.params.id]);
@@ -54,6 +74,7 @@ router.get('/novels/edit/:id', isAuthenticated, hasPermission('novels.manage'), 
   });
 });
 
+// 保存小说（有 id 则更新，否则新建；封面可选）
 router.post('/novels/save', isAuthenticated, hasPermission('novels.manage'), imageUpload.single('cover_image'), (req, res) => {
   try {
     const db = req.db;
@@ -85,6 +106,7 @@ router.post('/novels/save', isAuthenticated, hasPermission('novels.manage'), ima
   }
 });
 
+// 单文件上传章节：读取文本内容入库，章节号自动递增
 router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   novelUpload.single('chapter_file')(req, res, function(err) {
     if (err) {
@@ -102,6 +124,7 @@ router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.man
       return res.status(400).json({ error: '小说ID不能为空' });
     }
 
+    // 读取上传的文本文件内容（自动探测 UTF-8/GBK 编码）
     const filePath = path.join(__dirname, '../../public/uploads/novels', req.file.filename);
     let content = '';
     try {
@@ -110,6 +133,7 @@ router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.man
       return res.status(500).json({ error: '读取文件失败' });
     }
 
+    // 章节号 = 现有最大章节号 + 1
     const maxChapter = queryOne(db, 'SELECT MAX(chapter_number) as max_num FROM novel_chapters WHERE novel_id = ?', [novel_id]);
     const chapterNumber = (maxChapter?.max_num || 0) + 1;
 
@@ -126,6 +150,7 @@ router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.man
   });
 });
 
+// 批量上传章节（≤100 个文件；自动从正文提取章节标题）
 router.post('/novels/batch-upload-chapters', isAuthenticated, hasPermission('novels.manage'), function(req, res, next) {
   novelUpload.array('chapter_files', 100)(req, res, function(err) {
     if (err) {
@@ -155,11 +180,13 @@ router.post('/novels/batch-upload-chapters', isAuthenticated, hasPermission('nov
 
     const results = { success: [], errors: [] };
 
+    // 逐个文件处理：读内容 → 提取标题 → 入库
     req.files.forEach((file) => {
       try {
         const filePath = path.join(__dirname, '../../public/uploads/novels', file.filename);
         let content = readTextFileContent(filePath);
 
+        // 章节标题自动提取：优先匹配「第N章/节/卷/篇/部分」，其次英文 Chapter N，再退回首行/文件名
         let chapterTitle = '';
         const titleMatch = content.match(/(第[\s]*(?:\d+|[一二三四五六七八九十百千万]+)[\s]*(?:章|节|卷|篇|部分)[\s]*[^\n]{0,50})/);
         if (titleMatch) {
@@ -206,6 +233,7 @@ router.post('/novels/batch-upload-chapters', isAuthenticated, hasPermission('nov
   }
 });
 
+// 删除单个章节（连同上传的文件）
 router.post('/novels/delete-chapter/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const chapter = queryOne(db, 'SELECT * FROM novel_chapters WHERE id = ?', [req.params.id]);
@@ -223,6 +251,7 @@ router.post('/novels/delete-chapter/:id', isAuthenticated, hasPermission('novels
   res.redirect('/admin/novels/edit/' + chapter.novel_id);
 });
 
+// 批量删除章节（逐个校验存在性；失败计数）
 router.post('/novels/batch-delete-chapters', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const { ids, novel_id } = req.body;
@@ -267,6 +296,7 @@ router.post('/novels/batch-delete-chapters', isAuthenticated, hasPermission('nov
   res.json({ success: true, message: '成功删除 ' + deletedCount + ' 个章节' + (failCount > 0 ? '，' + failCount + ' 个失败' : '') });
 });
 
+// 重新上传章节内容（替换文件与正文）
 router.post('/novels/reupload-chapter/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   novelUpload.single('chapter_file')(req, res, function(err) {
     if (err) {
@@ -285,6 +315,7 @@ router.post('/novels/reupload-chapter/:id', isAuthenticated, hasPermission('nove
       return res.status(400).json({ error: '请上传TXT文件' });
     }
 
+    // 删除旧文件后写入新内容
     const oldFilePath = path.join(__dirname, '../../public', chapter.file_path);
     fsSafe.safeUnlinkSync(oldFilePath);
 
@@ -306,6 +337,7 @@ router.post('/novels/reupload-chapter/:id', isAuthenticated, hasPermission('nove
   });
 });
 
+// 删除整本小说（先删所有章节文件，再删记录）
 router.post('/novels/delete/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
   const db = req.db;
   const novelInfo = queryOne(db, 'SELECT title FROM novels WHERE id = ?', [req.params.id]);

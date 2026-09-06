@@ -1,6 +1,13 @@
 /**
- * 数据库默认数据播种
- * 使用 INSERT OR IGNORE 保证幂等
+ * 数据库默认数据播种（种子数据）
+ * 作用：首次安装/升级时向各配置表写入默认值，包括：
+ *   - image_configs   图片分享站点配置（站点名、审核开关、大小限制等）
+ *   - image_categories 图片默认分类（风景/人物/动物/建筑/美食/抽象）
+ *   - settings        全站设置（站点名、ICP 备案、SMTP、用户协议/隐私政策等长文本）
+ *   - permissions     后台权限点定义
+ *   - 以及后续各业务模块的默认数据（AI 角色、提示词分类等，见下文分段）
+ * 幂等保证：全部使用 INSERT OR IGNORE，重复执行不会产生重复数据；
+ * 协议升级：agreement_version 变更时强制覆盖更新用户协议/隐私政策正文。
  */
 
 const { queryAll } = require('./db-helpers');

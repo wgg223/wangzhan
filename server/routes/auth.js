@@ -1,3 +1,19 @@
+/**
+ * 认证与账号路由（Web 端核心认证模块，支持多来源 frontend/admin/app）
+ * 页面路由（GET）：/login /register /change-password /change-username
+ *   /:source/login /:source/register /:source/forgot-password /:source/change-password
+ *   /:source/change-username /:source/force-change-password
+ * 接口路由（POST）：/:source/login（限流+异常检测）、/:source/register（含邮箱验证码）
+ *   /:source/register/resend-code、/:source/forgot-password/send-code|reset
+ *   /:source/change-password、/:source/change-username、/:source/force-change-password
+ *   /admin-reset-password/:userId（管理员重置）、/delete-account/send-code、/delete-account
+ * 其他：GET /captcha /captcha/json、GET /logout、/2fa/status|setup|verify|disable
+ *       GET /admin/login-anomalies（登录异常检测管理）
+ * 安全要点：各接口独立限流器；登录异常检测（IP/设备/频率）；验证码防爆破；
+ *           密码 bcrypt + SHA-256 旧密码自动升级；改密/改用户名后 token_version 递增；
+ *           删除账号需验证码 + 协议确认；2FA 基于 TOTP（服务 two-factor-auth）。
+ * 下面代码段内已有的 // ==== 分段注释标注了各功能块，此处不再重复。
+ */
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');

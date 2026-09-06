@@ -1,3 +1,15 @@
+/**
+ * 社区 API 路由（供 Flutter App 使用）
+ * 接口：
+ *   GET  /api/v1/community/feed          —— 社区动态流（登录用户看关注的，游客看全站文章）
+ *   POST /api/v1/community/posts         —— 发布动态（需登录）
+ *   POST /api/v1/users/:id/follow        —— 关注/取消关注（需登录，切换式）
+ *   POST /api/v1/like/:targetType/:targetId —— 通用点赞（需登录，白名单限定类型）
+ *   GET  /api/v1/users/:id               —— 用户主页信息（含粉丝/关注/文章数）
+ *   GET  /api/v1/notifications           —— 我的通知列表（需登录）
+ *   POST /api/v1/notifications/read-all  —— 全部标记已读（需登录）
+ */
+
 const express = require('express');
 const { queryOne, queryAll, getDb, saveDatabase } = require('../../config/database');
 const { apiAuth } = require('../../middlewares/api-auth');
@@ -5,6 +17,8 @@ const { apiAuth } = require('../../middlewares/api-auth');
 const router = express.Router();
 
 // ============ 社区动态流（与网页端语义一致） ============
+// 登录用户：聚合"关注的人发布的文章 + 关注的人发表的评论"；
+// 游客：全站已发布文章。
 router.get('/community/feed', (req, res) => {
   const db = getDb();
   const userId = req.apiUser ? req.apiUser.id : null;
@@ -14,6 +28,7 @@ router.get('/community/feed', (req, res) => {
 
   let rows;
   if (userId) {
+    // 关注流的文章 + 评论，UNION 后按时间（第5列）倒序分页
     rows = queryAll(db, `
       SELECT 'article' AS type, a.id, a.title AS content, a.cover_image, a.created_at,
         u.id AS user_id, u.username, u.nickname, u.avatar AS user_avatar
@@ -34,6 +49,7 @@ router.get('/community/feed', (req, res) => {
       LIMIT ? OFFSET ?
     `, [userId, userId, limit, offset]);
   } else {
+    // 游客：全站已发布文章流
     rows = queryAll(db, `
       SELECT 'article' AS type, a.id, a.title AS content, a.cover_image, a.created_at,
         u.id AS user_id, u.username, u.nickname, u.avatar AS user_avatar
@@ -45,6 +61,7 @@ router.get('/community/feed', (req, res) => {
     `, [limit, offset]);
   }
 
+  // 为每条动态补点赞数、评论数、当前用户是否点赞、图片列表
   const posts = (rows || []).map((r) => {
     const likeCount = queryOne(db,
       "SELECT COUNT(*) AS count FROM content_likes WHERE target_type = ? AND target_id = ?",
@@ -87,6 +104,7 @@ router.post('/community/posts', apiAuth, (req, res) => {
 });
 
 // ============ 关注 / 取消关注 ============
+// 切换式关注；不能关注自己；目标必须为激活用户
 router.post('/users/:id/follow', apiAuth, (req, res) => {
   const db = getDb();
   const targetId = parseInt(req.params.id);
@@ -100,15 +118,16 @@ router.post('/users/:id/follow', apiAuth, (req, res) => {
 
   const existing = queryOne(db, 'SELECT id FROM user_follows WHERE follower_id = ? AND following_id = ?', [userId, targetId]);
   if (existing) {
-    db.run('DELETE FROM user_follows WHERE id = ?', [existing.id]);
+    db.run('DELETE FROM user_follows WHERE id = ?', [existing.id]);   // 取消关注
   } else {
-    db.run('INSERT INTO user_follows (follower_id, following_id) VALUES (?, ?)', [userId, targetId]);
+    db.run('INSERT INTO user_follows (follower_id, following_id) VALUES (?, ?)', [userId, targetId]);  // 关注
   }
   saveDatabase();
   res.json({ following: !existing });
 });
 
 // ============ 通用点赞 ============
+// targetType 白名单校验，防止客户端对任意类型/任意 ID 刷赞
 const VALID_LIKE_TYPES = ['article', 'comment', 'image', 'image_comment', 'novel_chapter'];
 
 router.post('/like/:targetType/:targetId', apiAuth, (req, res) => {
@@ -121,6 +140,7 @@ router.post('/like/:targetType/:targetId', apiAuth, (req, res) => {
     return res.status(400).json({ error: '不支持的点赞类型' });
   }
 
+  // 切换式点赞
   const existing = queryOne(db,
     'SELECT id FROM content_likes WHERE user_id = ? AND target_type = ? AND target_id = ?',
     [userId, targetType, targetId]);
@@ -138,6 +158,7 @@ router.post('/like/:targetType/:targetId', apiAuth, (req, res) => {
 });
 
 // ============ 用户主页信息 ============
+// 只返回安全字段 + 粉丝数/关注数/已发布文章数
 router.get('/users/:id', (req, res) => {
   const db = getDb();
   const id = parseInt(req.params.id);
@@ -161,6 +182,7 @@ router.get('/users/:id', (req, res) => {
 });
 
 // ============ 通知 ============
+// 我的通知分页列表，附带发送者信息
 router.get('/notifications', apiAuth, (req, res) => {
   const db = getDb();
   const page = Math.max(1, parseInt(req.query.page) || 1);

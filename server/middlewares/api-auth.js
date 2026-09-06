@@ -1,3 +1,13 @@
+/**
+ * API Token 鉴权中间件集（给原生 App / Flutter 客户端使用）
+ * 职责：
+ *   - apiAuth             ：校验 Authorization: Bearer <token>，注入 req.apiUser
+ *   - apiRequireAdmin     ：要求管理员角色
+ *   - apiRequirePermission：要求细粒度权限（支持通配符）
+ *   - apiRequireSuperAdmin：要求超级管理员
+ *   - apiAdminAudit       ：API 管理操作审计日志
+ * 与 Web 端 session 鉴权不同，API 使用数据库中的 token 记录（见 config/tokens.js）。
+ */
 const { queryOne, queryAll, getDb } = require('../config/database');
 const { findTokenRecord, touchToken } = require('../config/tokens');
 const { logActivity } = require('../config/activity');
@@ -10,6 +20,7 @@ const { logActivity } = require('../config/activity');
  */
 function apiAuth(req, res, next) {
   try {
+    // 从 Authorization 头解析 Bearer Token
     const header = req.headers.authorization || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) {
@@ -21,11 +32,13 @@ function apiAuth(req, res, next) {
       return res.status(503).json({ error: '数据库暂时不可用' });
     }
 
+    // 查 token 记录（含过期时间校验）
     const record = findTokenRecord(db, token);
     if (!record) {
       return res.status(401).json({ error: '登录已过期，请重新登录' });
     }
 
+    // 查 token 对应的用户
     const user = queryOne(
       db,
       'SELECT id, uid, username, nickname, avatar, role, status, email, bio, image_no_review, token_version FROM users WHERE id = ?',
@@ -43,8 +56,10 @@ function apiAuth(req, res, next) {
       return res.status(401).json({ error: '登录已失效，请重新登录' });
     }
 
-    touchToken(db, token);
+    touchToken(db, token);   // 刷新 token 最近使用时间/过期时间
 
+    // 注入用户信息：req.apiUser 供后续 API 中间件使用；
+    // 同时写 req.session.user 复用现有 isAdmin 等依赖 session 的逻辑
     req.apiUser = user;
     req.session = req.session || {};
     req.session.user = user;
@@ -58,6 +73,7 @@ function apiAuth(req, res, next) {
 
 /**
  * 管理员权限校验（API 版，失败返回 JSON 403 而非重定向）
+ * @returns {Function} Express 中间件
  */
 function apiRequireAdmin(req, res, next) {
   const user = req.apiUser;
@@ -72,6 +88,8 @@ function apiRequireAdmin(req, res, next) {
  * 其他用户需在 user_permissions 表中被授予对应 perm_key。
  * 与 web 版 hasPermission 对齐，但返回 JSON 403 而非重定向。
  * 支持精确匹配与通配符匹配（articles.* 覆盖 articles.xxx）。
+ * @param {string} permKey - 权限键，如 'articles.edit'
+ * @returns {Function} Express 中间件
  */
 function apiRequirePermission(permKey) {
   return (req, res, next) => {
@@ -87,6 +105,7 @@ function apiRequirePermission(permKey) {
     if (!db) {
       return res.status(503).json({ error: '数据库暂时不可用' });
     }
+    // 查该用户被授予的所有权限键
     const userPerms = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [user.id]);
     const keys = (userPerms || []).map((p) => p.perm_key);
     // 精确匹配
@@ -104,6 +123,7 @@ function apiRequirePermission(permKey) {
 
 /**
  * API 超级管理员校验（返回 JSON 403）
+ * @returns {Function} Express 中间件
  */
 function apiRequireSuperAdmin(req, res, next) {
   const user = req.apiUser;
@@ -117,8 +137,10 @@ function apiRequireSuperAdmin(req, res, next) {
  * API 管理端审计中间件：在 apiAuth 之后挂载，
  * 对所有非 GET 请求记录操作日志（修复 API 管理操作审计全盲问题）。
  * 已显式调用 logActivity 的路由会产生一条额外的概览记录，不影响审计完整性。
+ * @returns {Function} Express 中间件
  */
 function apiAdminAudit(req, res, next) {
+  // GET/HEAD/OPTIONS 不记录
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     return next();
   }
@@ -127,6 +149,7 @@ function apiAdminAudit(req, res, next) {
     return next();
   }
 
+  // 按路径关键字推断目标类型与动作
   const reqPath = req.path;
   let targetType = 'system';
   let action = req.method.toLowerCase();
@@ -174,6 +197,7 @@ function apiAdminAudit(req, res, next) {
     if (req.method === 'POST') action = 'toggle';
   }
 
+  // 从路径提取目标资源 ID
   const idMatch = reqPath.match(/\/(\d+)/);
   const targetId = idMatch ? idMatch[1] : '';
 

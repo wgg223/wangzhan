@@ -1,3 +1,13 @@
+/**
+ * 图片分享模块路由（Web 端）
+ * 覆盖：
+ *   - 图片分享首页/分类页/详情页浏览；
+ *   - 图片上传（多图、分片断点续传）、收藏、点赞、评论；
+ *   - 后台管理：图片审核、分类管理、站点配置、操作日志；
+ *   - 原图直链保护（/uploads/images 由中间件统一鉴权）。
+ * 说明：本文件各功能块已有 // ==== 分段注释；上传走魔数校验 + 扩展名/MIME 双重白名单，
+ *       可见性/审核状态在查询层统一过滤。
+ */
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');

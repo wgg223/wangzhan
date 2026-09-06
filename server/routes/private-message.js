@@ -1,3 +1,16 @@
+/**
+ * 站内私信路由（前台 Web）
+ * 接口：
+ *   GET/PUT /api/messages/settings          —— 获取/更新私信接收设置（all/following/mutual）
+ *   POST     /api/messages/conversations    —— 获取或创建会话（校验目标存在与对方权限）
+ *   GET      /api/messages/conversations    —— 会话列表（对方信息+最后消息+未读数）
+ *   GET      /api/messages/conversations/:id —— 消息列表（分页，校验会话归属）
+ *   POST     /api/messages/conversations/:id —— 发送消息（HTML 净化 + 权限校验 + 生成通知）
+ *   PATCH    /api/messages/conversations/:id/read —— 标记已读
+ *   GET      /api/messages/unread-total     —— 未读总数
+ * 安全要点：所有会话操作先校验成员身份；发送前二次校验对方接收权限；
+ *           消息经 sanitize 纯文本化防 XSS；目标用户须为激活状态。
+ */
 const express = require('express');
 const router = express.Router();
 const { queryOne, queryAll, getDb, saveDatabase } = require('../config/database');

@@ -1,3 +1,15 @@
+/**
+ * 权限管理路由（后台）
+ * 能力：
+ *   GET  /admin/permissions            —— 权限管理页（权限点列表、用户权限矩阵、权限申请审核）
+ *   POST /admin/permissions/grant      —— 授予权限（仅超管；权限键白名单校验；目标用户操作校验）
+ *   POST /admin/permissions/revoke     —— 撤销权限（仅超管，与 grant 权限矩阵对称）
+ *   POST /admin/permissions/approve    —— 批准权限申请（=授予，仅超管）
+ *   POST /admin/permissions/reject     —— 拒绝权限申请（记录驳回原因）
+ * 安全要点：授予/撤销/批准均校验 perm_key 真实存在、目标用户可操作
+ *           （canOperateUser：不能操作自己/超管保护/同级不可动）。
+ */
+
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated, hasPermission, canOperateUser } = require('../../middlewares/auth');
@@ -6,19 +18,21 @@ const { logActivity } = require('../../config/activity');
 
 // ============ 权限管理 ============
 
+// 权限管理页：权限点 + 全部用户权限矩阵 + 待审/全部申请
 router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
 
   const allPermissions = queryAll(db, 'SELECT * FROM permissions ORDER BY id ASC');
   const users = queryAll(db, 'SELECT id, username, email, role, status FROM users ORDER BY created_at DESC');
 
+  // 为每个用户查其权限键集合（N+1 查询，数据量小可接受）
   const userPerms = {};
   users.forEach(u => {
     const perms = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [u.id]);
     userPerms[u.id] = perms.map(p => p.perm_key);
   });
 
-  // 获取待审核的权限申请
+  // 获取待审核的权限申请（关联申请人、权限名与描述）
   const pendingApplications = queryAll(db,
     `SELECT pa.*, u.username, u.email, p.perm_name, p.description 
      FROM permission_applications pa 
@@ -28,7 +42,7 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
      ORDER BY pa.created_at DESC`
   );
 
-  // 获取所有申请记录
+  // 获取所有申请记录（含审核人信息）
   const allApplications = queryAll(db,
     `SELECT pa.*, u.username, u.email, p.perm_name, p.description,
      r.username as reviewer_name
@@ -38,7 +52,7 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
      LEFT JOIN users r ON pa.reviewed_by = r.id
      ORDER BY pa.created_at DESC`
   );
-  // 兼容旧数据库：确保 reject_reason 字段存在
+  // 兼容旧数据库：确保 reject_reason 字段存在（旧库可能没有该列）
   allApplications.forEach(app => {
     if (app.reject_reason === undefined) app.reject_reason = '';
   });
@@ -54,6 +68,7 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
   });
 });
 
+// 授予权限（仅超管）
 router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { user_id, perm_key } = req.body;
@@ -67,7 +82,7 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.ma
     return res.status(403).json({ error: '仅超级管理员可授予权限' });
   }
 
-  // perm_key 必须真实存在于 permissions 表
+  // perm_key 必须真实存在于 permissions 表（防伪造权限键）
   const permExists = queryOne(db, 'SELECT id FROM permissions WHERE perm_key = ?', [perm_key]);
   if (!permExists) {
     return res.status(400).json({ error: '非法的权限项' });
@@ -83,6 +98,7 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.ma
     return res.status(403).json({ error: check.reason });
   }
 
+  // 已拥有则跳过（幂等）
   const existing = queryOne(db, 'SELECT id FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user_id, perm_key]);
   if (!existing) {
     db.run('INSERT INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
@@ -96,6 +112,7 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.ma
   res.redirect('/admin/permissions');
 });
 
+// 撤销权限（仅超管，与 grant 权限矩阵对齐）
 router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { user_id, perm_key } = req.body;
@@ -147,19 +164,20 @@ router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.
     return res.status(403).json({ error: '仅超级管理员可批准权限申请' });
   }
 
+  // 只允许处理 pending 状态的申请
   const application = queryOne(db, 'SELECT * FROM permission_applications WHERE id = ? AND status = ?', [application_id, 'pending']);
   if (!application) {
     return res.status(404).json({ error: '申请不存在或已处理' });
   }
 
-  // 授予权限
+  // 授予权限（已存在则跳过）
   const existing = queryOne(db, 'SELECT id FROM user_permissions WHERE user_id = ? AND perm_key = ?', [application.user_id, application.perm_key]);
   if (!existing) {
     db.run('INSERT INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
       [application.user_id, application.perm_key, req.session.user.id]);
   }
 
-  // 更新申请状态
+  // 更新申请状态为 approved，记录审核人
   db.run('UPDATE permission_applications SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?',
     ['approved', req.session.user.id, application_id]);
   saveDatabase();
@@ -181,7 +199,7 @@ router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.
   res.json({ success: true, message: '已批准权限申请' });
 });
 
-// 拒绝权限申请
+// 拒绝权限申请（记录驳回原因）
 router.post('/permissions/reject', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { application_id, reason } = req.body;
@@ -195,7 +213,7 @@ router.post('/permissions/reject', isAuthenticated, hasPermission('permissions.m
     return res.status(404).json({ error: '申请不存在或已处理' });
   }
 
-  // 更新申请状态
+  // 更新申请状态为 rejected + 驳回原因
   db.run('UPDATE permission_applications SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, reject_reason = ? WHERE id = ?',
     ['rejected', req.session.user.id, reason || '', application_id]);
   saveDatabase();

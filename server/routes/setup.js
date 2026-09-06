@@ -1,3 +1,13 @@
+/**
+ * 系统初始化安装路由（首次部署向导）
+ * 能力：
+ *   GET  /setup              —— 安装表单页（含数据库模式预设选择）
+ *   POST /setup              —— 提交安装（应用 PRAGMA → 建超管 → 播种默认数据 → 分配权限 → 自动登录）
+ *   POST /setup/restore      —— 上传数据库文件恢复（最大 200MB）
+ *   GET  /setup/check-username —— AJAX 用户名查重
+ * 保护：整组挂载"未安装才放行"中间件，已安装直接跳首页，防止重复初始化；
+ *      安装提交前二次校验 users 表为空（防并发安装竞态）。
+ */
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const router = express.Router();

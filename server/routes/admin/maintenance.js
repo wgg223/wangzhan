@@ -1,3 +1,17 @@
+/**
+ * 系统维护路由（后台，仅超管）
+ * 模块：
+ *   - 维护模式    GET/POST /maintenance、GET /maintenance/status（需登录防匿名探测）
+ *   - 缓存清理    POST /maintenance/clear-cache（settings/query/page 三缓存）
+ *   - 系统信息    GET  /maintenance/system-info（服务器/数据库表统计/存储占用/缓存统计）
+ *   - 临时清理    POST /maintenance/clean-temp（temp_update、temp、30天前日志）
+ *   - 日志清理    POST /maintenance/clean-logs（按天数删除 activity_logs）
+ *   - 数据库优化  POST /maintenance/optimize-db（VACUUM + 释放量统计）
+ *   - 定时备份    GET/POST /maintenance/scheduled-backup（cron 表达式校验；保存后重初始化定时任务）
+ *   - 手动备份    POST /maintenance/backup-now（复用定时备份执行函数）
+ * 说明：定时备份任务由 initScheduledBackup 初始化（server.js 启动时调用）；
+ *       备份保留 30 天自动清理；可邮件通知成功/失败；scheduled-backup 手动备份也走同一流程。
+ */
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');

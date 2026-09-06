@@ -1,3 +1,18 @@
+/**
+ * 系统备份/恢复路由（后台，仅超管）
+ * 能力：
+ *   GET  /admin/backup                        —— 备份管理页
+ *   GET  /admin/backup/list                   —— 备份列表 API
+ *   POST /admin/backup/create                 —— 创建备份（type: full/database/uploads/config；备份名白名单）
+ *   POST /admin/backup/restore                —— 恢复备份（密码二次确认；源/目标路径双重 safeJoin 防穿越）
+ *   POST /admin/backup/upload-restore         —— 上传 .sqlite 恢复数据库（≤200MB；密码二次确认；自动备份当前库）
+ *   DELETE /admin/backup/:name                —— 删除备份（备份名正则白名单 + 目录包含校验）
+ *   GET  /admin/backup/:name/download         —— 下载备份为 ZIP（adm-zip 打包）
+ *   GET  /admin/backup/update-backups         —— 系统更新自动备份列表（项目根 backup_* 目录）
+ *   DELETE /admin/backup/update-backup/:name  —— 删除更新自动备份（仅 backup_<时间戳> 格式）
+ * 安全要点：所有涉及路径的接口均做白名单/包含校验防路径穿越；恢复/上传均需 bcrypt 密码二次确认；
+ *           完整备份排除 .env（防 SESSION_SECRET / DATA_ENCRYPTION_KEY 泄露）。
+ */
 const express = require('express');
 const router = express.Router();
 const { logActivity } = require('../../config/activity');

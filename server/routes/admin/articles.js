@@ -1,3 +1,17 @@
+/**
+ * 文章管理路由（后台）
+ * 能力：
+ *   GET  /admin/articles           —— 文章列表（管理员看全部，普通作者只看自己的）
+ *   GET  /admin/articles/new       —— 新建文章编辑器
+ *   GET  /admin/articles/edit/:id  —— 编辑文章（非作者非管理员 403）
+ *   POST /admin/articles/save      —— 保存文章（新建/更新；富文本 XSS 净化；越权编辑拦截）
+ *   POST /admin/articles/delete/:id —— 删除文章（连带删除附件文件；越权删除拦截）
+ * 安全要点：
+ *   - 正文经 html-sanitizer 白名单净化（防存储型 XSS）；
+ *   - 编辑/删除均校验文章归属（普通用户只能动自己的文章）；
+ *   - 数组型表单字段（重复字段）防御性取首元素，防参数混淆。
+ */
+
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated, hasPermission, isAdminRole } = require('../../middlewares/auth');
@@ -8,6 +22,7 @@ const { sanitize } = require('../../utils/html-sanitizer');
 
 // ============ 文章管理 ============
 
+// 文章列表：管理员可见全部，普通作者仅见自己的
 router.get('/articles', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const db = req.db;
   let articles;
@@ -24,6 +39,7 @@ router.get('/articles', isAuthenticated, hasPermission('articles.manage'), (req,
   });
 });
 
+// 新建文章（编辑器空状态）
 router.get('/articles/new', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   res.render('admin/article-editor', {
     user: req.session.user,
@@ -32,6 +48,7 @@ router.get('/articles/new', isAuthenticated, hasPermission('articles.manage'), (
   });
 });
 
+// 编辑文章：先查文章，再校验归属（非管理员只能编辑自己的）
 router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const db = req.db;
   const article = queryOne(db, 'SELECT * FROM articles WHERE id = ?', [req.params.id]);
@@ -51,6 +68,7 @@ router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.manage
   });
 });
 
+// 保存文章（新建或更新）
 router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const db = req.db;
   let { id, title, content, category, status, cover_image, location } = req.body;
@@ -73,6 +91,7 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
   let articleId = id;
 
   if (id) {
+    // 更新：校验文章归属（非管理员只能改自己的）
     const existing = queryOne(db, 'SELECT author_id FROM articles WHERE id = ?', [id]);
     if (existing && !isAdminRole(req.session.user) && existing.author_id !== req.session.user.id) {
       return res.status(403).json({ error: '无权编辑此文章' });
@@ -80,6 +99,7 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
     db.run('UPDATE articles SET title=?, content=?, category=?, status=?, cover_image=?, location=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
       [title, safeContent, category || '', status || 'published', cover_image || '', locationValue, id]);
   } else {
+    // 新建：插入后取回自增 id（按 标题+作者 倒序取最新一条）
     db.run('INSERT INTO articles (title, content, category, status, cover_image, location, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [title, safeContent, category || '', status || 'published', cover_image || '', locationValue, req.session.user.id]);
     const newArticle = queryOne(db, 'SELECT id FROM articles WHERE title = ? AND author_id = ? ORDER BY id DESC LIMIT 1',
@@ -90,7 +110,7 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: id ? 'update' : 'create', target_type: 'article', target_id: id || null, target_title: title, detail: (id ? '更新' : '创建') + '文章：' + title, ip: req.ip });
 
-  // AJAX请求返回JSON
+  // AJAX请求返回JSON（编辑器无刷新保存）
   if (req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest') {
     return res.json({ success: true, articleId: articleId });
   }
@@ -98,6 +118,7 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
   res.redirect('/admin/articles');
 });
 
+// 删除文章（连带删除附件文件）
 router.post('/articles/delete/:id', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
   const db = req.db;
   const article = queryOne(db, 'SELECT title, author_id FROM articles WHERE id = ?', [req.params.id]);
@@ -106,11 +127,12 @@ router.post('/articles/delete/:id', isAuthenticated, hasPermission('articles.man
     return res.status(404).json({ error: '文章不存在' });
   }
 
+  // 越权删除拦截：非管理员只能删自己的
   if (!isAdminRole(req.session.user) && article.author_id !== req.session.user.id) {
     return res.status(403).json({ error: '无权删除此文章' });
   }
 
-  // 删除关联的附件文件
+  // 删除关联的附件文件（file_path 以 /uploads/ 开头，拼接安全）
   const attachments = queryAll(db, 'SELECT file_path FROM article_attachments WHERE article_id = ?', [req.params.id]);
   const fs = require('fs');
   const path = require('path');

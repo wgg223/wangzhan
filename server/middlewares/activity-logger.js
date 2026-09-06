@@ -2,11 +2,17 @@
  * 全局操作日志中间件
  * 自动记录每个已登录用户在站点上的操作行为
  * 包括：页面访问、API请求、表单提交等
+ * 设计要点：
+ *   - 只记录已登录用户，匿名访问不记录（避免日志爆炸）；
+ *   - 静态资源、健康检查、高频轮询接口自动跳过；
+ *   - GET 的 /api/、/ajax/ 请求默认跳过，但高危 GET（备份下载、重置、导出）强制记录；
+ *   - 查询参数中的 password/token/secret/api_key 等敏感字段不写入日志；
+ *   - 记录动作异步执行（setImmediate），不阻塞业务请求。
  */
 const { logActivity } = require('../config/activity');
 const { getDb } = require('../config/database');
 
-// 需要记录的路由前缀映射（用于确定 target_type）
+// 需要记录的路由前缀映射（用于确定 target_type 目标类型）
 const ROUTE_TARGET_MAP = {
   '/admin': 'admin',
   '/auth': 'auth',
@@ -44,6 +50,10 @@ const HIGH_RISK_GET_PATTERNS = [
 
 /**
  * 判断路径是否需要跳过记录
+ * @param {string} path - 请求路径
+ * @param {string} method - HTTP 方法
+ * @returns {boolean} true=跳过（不记录）
+ * 判定顺序：静态资源 → GET 跳过列表 → 高危 GET 强制记录 → GET API/AJAX 跳过
  */
 function shouldSkip(path, method) {
   // 静态资源跳过
@@ -70,7 +80,10 @@ function shouldSkip(path, method) {
 }
 
 /**
- * 根据路径确定目标类型
+ * 根据路径确定目标类型（target_type 字段）
+ * @param {string} path - 请求路径
+ * @returns {string} 目标类型标识（如 article/novel/admin）
+ * 说明：路由前缀按长度降序匹配，保证 /articles/xxx 优先于 / 等短前缀。
  */
 function determineTargetType(path) {
   // 按优先级从长到短匹配
@@ -82,11 +95,15 @@ function determineTargetType(path) {
     }
   }
 
-  return 'page';
+  return 'page';   // 未匹配到已知模块，记为普通页面
 }
 
 /**
- * 根据路径和方法确定操作类型
+ * 根据路径和方法确定操作类型（action 字段）
+ * @param {string} path - 请求路径
+ * @param {string} method - HTTP 方法
+ * @returns {string} 操作类型（view/create/update/delete/login...）
+ * 说明：GET 一律记 view；POST 按路径关键字推断具体动作，默认 submit。
  */
 function determineAction(path, method) {
   if (method === 'GET') {
@@ -120,7 +137,9 @@ function determineAction(path, method) {
 }
 
 /**
- * 从路径中提取目标ID
+ * 从路径中提取目标ID（target_id 字段）
+ * @param {string} path - 请求路径
+ * @returns {string} 路径中的首个数字段，如 /articles/123 → '123'；无则空串
  */
 function extractTargetId(path) {
   // 匹配 /articles/123 或 /admin/users/456/edit 等模式
@@ -129,7 +148,9 @@ function extractTargetId(path) {
 }
 
 /**
- * 从路径中提取目标标题（最后一段路径）
+ * 从路径中提取目标标题（target_title 字段，取最后一段路径）
+ * @param {string} path - 请求路径
+ * @returns {string} 末段路径文本；若末段是纯数字 ID 则返回空串
  */
 function extractTargetTitle(path) {
   const segments = path.split('/').filter(Boolean);
@@ -143,6 +164,8 @@ function extractTargetTitle(path) {
  * 获取客户端IP地址
  * 仅使用 req.ip（由 trust proxy 配置决定是否取 X-Forwarded-For），
  * 不直接读取请求头，防止 X-Forwarded-For 伪造污染日志与安全统计
+ * @param {Object} req - Express 请求对象
+ * @returns {string} IP 字符串
  */
 function getClientIp(req) {
   return req.ip || req.connection?.remoteAddress || '';
@@ -178,7 +201,7 @@ function activityLogger(req, res, next) {
     detail = `访问页面: ${path}`;
   } else {
     detail = `${method} ${path}`;
-    // 如果有查询参数，附加关键参数
+    // 如果有查询参数，附加关键参数（敏感参数过滤后）
     const queryKeys = Object.keys(req.query);
     if (queryKeys.length > 0) {
       const filteredQuery = {};

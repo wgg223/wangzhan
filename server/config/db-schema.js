@@ -1,6 +1,12 @@
 /**
- * 数据库表结构定义
- * 所有 CREATE TABLE 和 ALTER TABLE 迁移
+ * 数据库表结构定义（DDL 与迁移）
+ * 作用：集中定义全站 40+ 张业务表的 CREATE TABLE IF NOT EXISTS，
+ *       以及存量数据库的 ALTER TABLE 增量迁移。
+ * 说明：
+ *   - 每个表创建前都有对应的注释（见下方各表段）；
+ *   - 迁移语句单独执行并捕获 "duplicate column name" 异常（列已存在的正常噪音），
+ *     其余错误打印日志后继续，保证旧库可平滑升级到新结构；
+ *   - app_setup 表必须第一个创建，因为数据库初始化流程依赖它记录安装状态。
  */
 
 const { queryAll } = require('./db-helpers');

@@ -1,3 +1,15 @@
+/**
+ * 管理端 API 路由（供 Flutter App 的后台管理功能使用）
+ * 整组路由统一鉴权：apiAuth（Token 登录）+ apiRequireAdmin（管理员）+ apiAdminAudit（审计日志）。
+ * 模块：
+ *   - 仪表盘统计、用户管理、文章管理、评论管理、图片管理、图片分类、小说管理、设置
+ * 安全要点：
+ *   - 用户操作统一走 canOperateUser（不能操作自己/超管保护/同级不可动）；
+ *   - 角色修改/创建用户/重置密码仅限 super_admin；
+ *   - 禁用/降级/删除超管前检查是否还剩至少一个激活超管（防管理端锁死）；
+ *   - 动态 WHERE 全部参数化，防 SQL 注入。
+ */
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -10,16 +22,23 @@ const { grantDefaultPermissions } = require('../../config/db-helpers');
 const { logActivity } = require('../../config/activity');
 
 const router = express.Router();
-router.use(apiAuth, apiRequireAdmin, apiAdminAudit);
+router.use(apiAuth, apiRequireAdmin, apiAdminAudit);   // 整组路由的全局鉴权
 
-const projectRoot = path.join(__dirname, '../../..');
+const projectRoot = path.join(__dirname, '../../..');  // 项目根目录（用于拼接文件路径）
 
+/**
+ * 安全转整数（NaN 时返回默认值）
+ * @param {*} v - 输入值
+ * @param {number} def - 默认值
+ * @returns {number}
+ */
 function toInt(v, def = 0) {
   const n = parseInt(v);
   return isNaN(n) ? def : n;
 }
 
 // ============ 仪表盘 ============
+// 汇总各类统计数字：用户/文章/图片/小说/评论/待审/今日访问/运行时长/数据库大小
 router.get('/dashboard', (req, res) => {
   const db = getDb();
   const count = (sql, params = []) => queryOne(db, sql, params)?.count || 0;
@@ -35,13 +54,18 @@ router.get('/dashboard', (req, res) => {
     novel_count: count('SELECT COUNT(*) AS count FROM novels'),
     comment_count: count("SELECT COUNT(*) AS count FROM comments WHERE status = 'approved'"),
     pending_images: count('SELECT COUNT(*) AS count FROM images WHERE status = 0'),
-    pending_comments: commentPending + imageCommentPending + mediaCommentPending,
+    pending_comments: commentPending + imageCommentPending + mediaCommentPending,   // 三类待审评论合计
     today_visits: count("SELECT COUNT(*) AS count FROM activity_logs WHERE created_at >= date('now')"),
     uptime: (process.uptime() / 3600).toFixed(1) + ' 小时',
     db_size: formatSize(fs.existsSync(getDbPath()) ? fs.statSync(getDbPath()).size : 0),
   });
 });
 
+/**
+ * 格式化文件大小为可读字符串
+ * @param {number} bytes - 字节数
+ * @returns {string}
+ */
 function formatSize(bytes) {
   if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
   if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
@@ -49,6 +73,7 @@ function formatSize(bytes) {
 }
 
 // ============ 用户管理 ============
+// 用户列表：支持关键词与角色筛选，附带粉丝/关注/文章数
 router.get('/users', apiRequirePermission('users.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
@@ -81,6 +106,7 @@ router.get('/users', apiRequirePermission('users.manage'), (req, res) => {
   res.json({ users: rows || [], total, page });
 });
 
+// 修改用户角色/状态
 router.put('/users/:id', apiRequirePermission('users.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
@@ -134,6 +160,7 @@ router.post('/users', (req, res) => {
   const db = getDb();
   const { username, email, password, role } = req.body || {};
 
+  // 基础校验：用户名/密码必填，密码走强度校验
   if (!username || !password) {
     return res.status(400).json({ error: '用户名和密码不能为空' });
   }
@@ -145,6 +172,7 @@ router.post('/users', (req, res) => {
     return res.status(400).json({ error: pwdCheck.reason });
   }
 
+  // 用户名/邮箱唯一性校验
   const existingUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
   if (existingUser) {
     return res.status(400).json({ error: '用户名已被使用' });
@@ -156,6 +184,7 @@ router.post('/users', (req, res) => {
     }
   }
 
+  // 角色白名单（不允许直接创建 super_admin，只能后续由超管提升）
   const userRole = role || 'user';
   const validRoles = ['user', 'visitor', 'admin'];
   if (!validRoles.includes(userRole)) {
@@ -167,6 +196,7 @@ router.post('/users', (req, res) => {
   db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
     [newUid, username, hashedPassword, email || '', userRole]);
 
+  // 为新用户授予默认前台权限
   const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
   if (newUser) {
     grantDefaultPermissions(db, newUser.id, req.apiUser.id);
@@ -207,6 +237,7 @@ router.post('/users/:id/reset-password', (req, res) => {
     return res.status(403).json({ error: check.reason });
   }
 
+  // 生成 8 位随机新密码（4 字节 hex），并强制用户下次登录修改
   const newPassword = crypto.randomBytes(4).toString('hex');
   const hashedPassword = bcrypt.hashSync(newPassword, 10);
   db.run('UPDATE users SET password = ?, must_change_password = 1, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
@@ -229,6 +260,7 @@ router.post('/users/:id/reset-password', (req, res) => {
   res.json({ success: true, message: '密码已重置', new_password: newPassword });
 });
 
+// 删除用户（含超管保护）
 router.delete('/users/:id', apiRequirePermission('users.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
@@ -250,6 +282,7 @@ router.delete('/users/:id', apiRequirePermission('users.manage'), (req, res) => 
 });
 
 // ============ 文章管理 ============
+// 文章列表（标题搜索 + 分页）
 router.get('/articles', apiRequirePermission('articles.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
@@ -273,6 +306,7 @@ router.get('/articles', apiRequirePermission('articles.manage'), (req, res) => {
   res.json({ articles: rows || [], total, page });
 });
 
+// 修改文章状态（发布/草稿/待审/回收站）
 router.put('/articles/:id', apiRequirePermission('articles.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
@@ -285,6 +319,7 @@ router.put('/articles/:id', apiRequirePermission('articles.manage'), (req, res) 
   res.json({ success: true });
 });
 
+// 删除文章
 router.delete('/articles/:id', apiRequirePermission('articles.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
@@ -321,6 +356,7 @@ router.delete('/comments/:id', apiRequirePermission('comments.manage'), (req, re
 });
 
 // ============ 图片管理 ============
+// 图片列表（可按状态筛选）
 router.get('/images', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const page = Math.max(1, toInt(req.query.page, 1));
@@ -346,6 +382,7 @@ router.get('/images', apiRequirePermission('image-share.manage'), (req, res) => 
   res.json({ images: rows || [], total, page });
 });
 
+// 审核图片（0=驳回，1=通过）
 router.put('/images/:id', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
@@ -358,11 +395,13 @@ router.put('/images/:id', apiRequirePermission('image-share.manage'), (req, res)
   res.json({ success: true });
 });
 
+// 删除图片（连带删除磁盘文件）
 router.delete('/images/:id', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
   const img = queryOne(db, 'SELECT * FROM images WHERE id = ?', [id]);
   if (img && img.url) {
+    // 删除磁盘上的图片文件（url 以 /uploads/ 开头，拼接安全）
     const filePath = path.join(projectRoot, 'public', img.url);
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -380,6 +419,7 @@ router.get('/categories', apiRequirePermission('image-share.manage'), (req, res)
   res.json({ categories: rows || [] });
 });
 
+// 新建分类
 router.post('/categories', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const name = (req.body.name || '').trim();
@@ -390,6 +430,7 @@ router.post('/categories', apiRequirePermission('image-share.manage'), (req, res
   res.json({ success: true });
 });
 
+// 删除分类（该分类下图片的 cate_id 置 0，避免孤儿数据）
 router.delete('/categories/:id', apiRequirePermission('image-share.manage'), (req, res) => {
   const db = getDb();
   const id = toInt(req.params.id);
@@ -422,6 +463,7 @@ router.delete('/novels/:id', apiRequirePermission('novels.manage'), (req, res) =
 });
 
 // ============ 设置 ============
+// 读取全部设置（键值对形式返回）
 router.get('/settings', apiRequirePermission('settings.manage'), (req, res) => {
   const db = getDb();
   const rows = queryAll(db, 'SELECT setting_key, setting_value FROM settings ORDER BY setting_key ASC');
@@ -432,6 +474,7 @@ router.get('/settings', apiRequirePermission('settings.manage'), (req, res) => {
   res.json({ settings });
 });
 
+// 批量保存设置：键名校验（字母数字下划线）+ 值截断 2000 字符 + upsert
 router.put('/settings', apiRequirePermission('settings.manage'), (req, res) => {
   const db = getDb();
   const values = req.body.settings;
@@ -439,8 +482,8 @@ router.put('/settings', apiRequirePermission('settings.manage'), (req, res) => {
     return res.status(400).json({ error: '缺少设置数据' });
   }
   for (const [key, value] of Object.entries(values)) {
-    if (!/^[a-zA-Z0-9_]{1,64}$/.test(key)) continue;
-    const v = String(value ?? '').slice(0, 2000);
+    if (!/^[a-zA-Z0-9_]{1,64}$/.test(key)) continue;   // 键名白名单校验，防注入/防塞多余键
+    const v = String(value ?? '').slice(0, 2000);       // 值截断
     const existing = queryOne(db, 'SELECT id FROM settings WHERE setting_key = ?', [key]);
     if (existing) {
       db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [v, key]);
@@ -449,6 +492,7 @@ router.put('/settings', apiRequirePermission('settings.manage'), (req, res) => {
     }
   }
   saveDatabase();
+  // 清除设置缓存，使新值立即生效
   try {
     const { settingsCache } = require('../../config/cache');
     settingsCache.delete('settings');

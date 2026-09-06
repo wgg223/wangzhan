@@ -1,3 +1,22 @@
+/**
+ * 图片分享站管理路由（后台，需 image-share.manage 权限）
+ * 模块：
+ *   - 仪表盘    GET  /image-share                     （统计+最近操作日志）
+ *   - 图片管理  GET  /image-share/images              （管理员看全站/普通用户看自己，支持按状态筛选）
+ *   - 审核      POST /image-share/review              （通过 status=1 / 驳回 status=2；驳回联动停用分享链接）
+ *   - 删除      POST /image-share/delete              （删文件+记录+分享链接）
+ *   - 分类管理  GET/POST /image-share/categories...   （增删改；有图分类禁止删除）
+ *   - 设置      GET/POST /image-share/settings        （站点配置）
+ *   - 日志      GET  /image-share/logs
+ *   - 免审核    GET/POST /image-share/trusted-users/toggle （image_no_review 开关）
+ *   - 评论管理  GET  /image-share/comments   POST review/delete
+ *   - 可见性    POST /image-share/set-visibility      （public/private/selected；非管理员只能改自己的）
+ *   - 用户列表  GET  /image-share/visible-users       （供选择可见用户弹窗）
+ *   - 用户启停  POST /image-share/users/toggle        （canOperateUser + 超管锁死保护）
+ *   - 批量操作  POST /image-share/batch-{delete,review,delete-categories}（参数化 IN 查询）
+ * 说明：所有写操作使用参数化 SQL；文件删除走 fsSafe.safeUnlinkSync；
+ *       image_shares 状态与 images.status 联动（驳回即下架分享）。
+ */
 const express = require('express');
 const router = express.Router();
 const path = require('path');

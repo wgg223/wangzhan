@@ -1,3 +1,14 @@
+/**
+ * 管理员账户设置路由（后台个人中心）
+ * 能力：
+ *   GET  /admin/profile              —— 资料页（用户名/邮箱/密码/头像/简介）
+ *   POST /admin/profile/update       —— 更新用户名与邮箱（用户名查重）
+ *   POST /admin/profile/password     —— 修改密码（验证当前密码，新密码≥6位）
+ *   POST /admin/profile/avatar       —— 上传头像（2MB 上限，MIME 白名单）
+ *   POST /admin/profile/bio          —— 更新个人简介（≤200字）
+ * 说明：与前台 /account 功能重叠但独立实现；头像上传用 multer 白名单过滤。
+ */
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -8,7 +19,7 @@ const { isAuthenticated, canAccessAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryOne } = require('../../config/database');
 const logger = require('../../utils/logger');
 
-// 头像上传配置
+// 头像上传配置：保存到 public/uploads/avatars，文件名=用户ID+时间戳+随机数
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, '../../../public/uploads/avatars');
@@ -23,6 +34,7 @@ const avatarStorage = multer.diskStorage({
   }
 });
 
+// 头像上传限制：2MB；MIME 白名单
 const avatarUpload = multer({
   storage: avatarStorage,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
@@ -38,6 +50,7 @@ const avatarUpload = multer({
 
 // ============ 账户设置 ============
 
+// 资料页（只读安全字段，不含密码/密钥）
 router.get('/profile', isAuthenticated, canAccessAdmin, (req, res) => {
   const db = req.db;
   const userData = queryOne(db, 'SELECT id, username, email, role, status, created_at FROM users WHERE id = ?', [req.session.user.id]);
@@ -51,6 +64,7 @@ router.get('/profile', isAuthenticated, canAccessAdmin, (req, res) => {
   });
 });
 
+// 更新用户名与邮箱（用户名唯一性校验，排除自己）
 router.post('/profile/update', isAuthenticated, (req, res) => {
   const db = req.db;
   const { username, email } = req.body;
@@ -73,6 +87,7 @@ router.post('/profile/update', isAuthenticated, (req, res) => {
   saveDatabase();
   logger.debug('[profile/update] 数据库更新完成', { userId, newUsername: username, newEmail: email || '' });
 
+  // 同步更新 session 中的用户信息
   req.session.user.username = username;
   req.session.user.email = email || '';
 
@@ -86,6 +101,7 @@ router.post('/profile/update', isAuthenticated, (req, res) => {
   });
 });
 
+// 修改密码（验证当前密码）
 router.post('/profile/password', isAuthenticated, (req, res) => {
   const db = req.db;
   const { current_password, new_password, confirm_password } = req.body;
@@ -115,7 +131,7 @@ router.post('/profile/password', isAuthenticated, (req, res) => {
   res.redirect('/admin/profile?success=1');
 });
 
-// 头像上传
+// 头像上传：写入记录 + 清理旧头像（默认头像不清理）
 router.post('/profile/avatar', isAuthenticated, avatarUpload.single('avatar'), (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
@@ -149,7 +165,7 @@ router.post('/profile/avatar', isAuthenticated, avatarUpload.single('avatar'), (
   });
 });
 
-// 更新个人简介
+// 更新个人简介（≤200字）
 router.post('/profile/bio', isAuthenticated, (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
