@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v6.0.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v6.1.0 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -271,6 +271,14 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 
 ## 版本历史
 
+### v6.1.0 (2026-09-07)
+
+**诗词游戏模块移除**
+- **前台**：删除诗词游戏页面与路由（`/poem-game`）、诗词题库（`public/js/poems_data.js` 14MB）
+- **API**：删除诗词接口（`/api/v1/poems/random`、`/api/v1/poem-leaderboard`）
+- **后台**：删除排行榜管理（`/admin/leaderboard`）及仪表盘诗词游戏统计
+- **数据与权限**：删除 `poem_leaderboard` 表、`poem` 项目定义、`poem-game.access` / `leaderboard.manage` 权限及用户授权、相关活动日志
+
 ### v6.0.0 (2026-09-07)
 
 **账号注销 + 分享管理 + AI 聊天增强 + Node 24 兼容**
@@ -280,7 +288,6 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 - **Node 24 兼容修复**：SQLite 会话存储 `SqliteSessionStore` 继承 `express-session.Store`（EventEmitter），修复 Node 24 下 `store.on is not a function` 导致的服务无法启动问题
 - **分享管理**：前台新增「我的分享」列表（图片/AI 生图/AI 对话分享链接分页管理），支持停用/启用/取消分享；后台新增分享管理（`shares.manage` 权限），可查询、停用、启用、取消全部用户分享链接；取消分享后链接立即失效
 - **AI 聊天增强**：世界书支持从默认模板一键导入当前条目（按 key 去重）、会话级知识库（RAG）开关、角色卡创建同名去重（官方/本人角色）
-- **诗词游戏模块移除**：删除诗词游戏前台页面与路由（`/poem-game`）、诗词题库（`public/js/poems_data.js`）、诗词 API（`/api/v1/poems/*`、`/api/v1/poem-leaderboard`）、后台排行榜管理（`/admin/leaderboard`）及 `poem_leaderboard` 表、`poem-game.access` / `leaderboard.manage` 权限、`poem` 项目定义
 
 ### v5.11.0 (2026-09-07)
 
