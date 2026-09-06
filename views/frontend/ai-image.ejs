@@ -232,6 +232,19 @@
   </div>
 </div>
 
+<!-- 大图查看灯箱 -->
+<div class="aiimg-lightbox-mask" id="aiimgLightbox" style="display:none;">
+  <button type="button" class="aiimg-lightbox-close" id="aiimgLightboxClose">✕</button>
+  <div class="aiimg-lightbox">
+    <img class="aiimg-lightbox-img" id="aiimgLightboxImg" src="" alt="大图查看">
+    <div class="aiimg-lightbox-info">
+      <div class="aiimg-lightbox-prompt" id="aiimgLightboxPrompt"></div>
+      <div class="aiimg-lightbox-meta" id="aiimgLightboxMeta"></div>
+    </div>
+    <div class="aiimg-lightbox-actions" id="aiimgLightboxActions"></div>
+  </div>
+</div>
+
 <style>
   .aiimg-page { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
   .aiimg-header { margin-bottom: 20px; }
@@ -348,6 +361,20 @@
   .toast-message.admin-toast.toast-error { border-color: rgba(239,68,68,.5); }
   .toast-message.admin-toast.toast-warning { border-color: rgba(245,158,11,.5); }
   .toast-message.admin-toast.hiding { opacity: 0; }
+  /* 大图查看灯箱 */
+  .aiimg-lightbox-mask { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; animation: aiimgFadeIn .2s ease; }
+  @keyframes aiimgFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .aiimg-lightbox { display: flex; flex-direction: column; align-items: center; max-width: 92vw; max-height: 92vh; }
+  .aiimg-lightbox-img { max-width: 90vw; max-height: 72vh; object-fit: contain; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,.5); cursor: zoom-out; }
+  .aiimg-lightbox-info { margin-top: 12px; text-align: center; color: #e2e8f0; max-width: 80vw; }
+  .aiimg-lightbox-prompt { font-size: 13px; line-height: 1.6; color: #cbd5e1; margin-bottom: 6px; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .aiimg-lightbox-meta { font-size: 12px; color: #94a3b8; }
+  .aiimg-lightbox-actions { margin-top: 10px; display: flex; gap: 10px; justify-content: center; }
+  .aiimg-lightbox-actions .aiimg-btn { background: rgba(255,255,255,.12); color: #f1f5f9; border-color: rgba(255,255,255,.2); }
+  .aiimg-lightbox-actions .aiimg-btn:hover { background: rgba(255,255,255,.2); }
+  .aiimg-lightbox-close { position: absolute; top: 16px; right: 20px; background: rgba(255,255,255,.15); border: none; color: #fff; font-size: 22px; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .2s; }
+  .aiimg-lightbox-close:hover { background: rgba(255,255,255,.3); }
+  .aiimg-clickable-img { cursor: zoom-in; }
 </style>
 
 <script type="application/json" id="ai-image-data"><%- JSON.stringify({
@@ -372,4 +399,4 @@
     pixel: 'pixel art, retro game style, 16-bit'
   }
 }).replace(/</g, '\\u003c') %></script>
-<script defer src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-image.js') : '/js/ai-image.js' %>"></script>
+<script defer src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-image.js') : '/js/ai-image.js' %>?v=20260907"></script>

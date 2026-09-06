@@ -235,11 +235,13 @@
       ep.className = 'ac-model-input';
       ep.value = m.api_endpoint || '';
       ep.placeholder = 'API 端点';
+      ep.setAttribute('data-f-role', 'ep');
 
       var key = document.createElement('input');
       key.type = 'password';
       key.className = 'ac-model-input';
       key.placeholder = m.has_key ? '已配置，填入覆盖' : 'API Key';
+      key.setAttribute('data-f-role', 'key');
 
       var def = document.createElement('button');
       def.type = 'button';
@@ -259,6 +261,14 @@
       test.textContent = '测试';
       test.addEventListener('click', function () { testMyModel(m.id, test); });
 
+      var fetchBtn = document.createElement('button');
+      fetchBtn.type = 'button';
+      fetchBtn.className = 'ac-btn ac-btn-sm';
+      fetchBtn.textContent = '获取';
+      fetchBtn.title = '按端点 + Key 自动获取可用模型';
+      fetchBtn.setAttribute('data-f-role', 'fetch');
+      fetchBtn.addEventListener('click', function () { fetchModelsForRow(m, row); });
+
       var del = document.createElement('button');
       del.type = 'button';
       del.className = 'ac-btn ac-btn-sm';
@@ -272,16 +282,17 @@
       row.appendChild(def);
       row.appendChild(save);
       row.appendChild(test);
+      row.appendChild(fetchBtn);
       row.appendChild(del);
       wrap.appendChild(row);
     });
   }
 
-  function saveMyModel(m, endpoint, apiKey) {
+  function saveMyModel(m, endpoint, apiKey, modelKey) {
     api('/ai-chat/api/models', {
       id: m.id,
       name: m.name,
-      model_key: m.model_key,
+      model_key: modelKey || m.model_key,
       provider: m.provider,
       api_endpoint: endpoint,
       api_key: apiKey,
@@ -290,6 +301,60 @@
       showToast('已保存', 'success');
       loadBootstrap({ autoSelect: false });
     }).catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  // 已有模型行：按行内端点 + Key 获取模型列表，选择后直接更新该模型的 model_key
+  function fetchModelsForRow(m, rowEl) {
+    var ep = rowEl.querySelector('[data-f-role="ep"]').value.trim();
+    var key = rowEl.querySelector('[data-f-role="key"]').value.trim();
+    var btn = rowEl.querySelector('[data-f-role="fetch"]');
+    if (!ep && !key) { showToast('请先填写 API 端点与 API Key', 'error'); return; }
+    btn.disabled = true;
+    btn.textContent = '…';
+    fetchModelsApi({ id: m.id, api_endpoint: ep, api_key: key })
+      .then(function (json) {
+        var list = json.data || [];
+        var old = rowEl.parentNode.querySelector('.ac-model-fetch-row[data-for="' + m.id + '"]');
+        if (old) old.remove();
+        var bar = document.createElement('div');
+        bar.className = 'ac-model-fetch-row';
+        bar.dataset.for = m.id;
+        var sel = document.createElement('select');
+        sel.className = 'ac-model-input';
+        list.forEach(function (md) {
+          var opt = document.createElement('option');
+          opt.value = md.id;
+          opt.textContent = md.id + (md.owned_by ? '（' + md.owned_by + '）' : '');
+          sel.appendChild(opt);
+        });
+        var use = document.createElement('button');
+        use.type = 'button';
+        use.className = 'ac-btn ac-btn-primary ac-btn-sm';
+        use.textContent = '设为模型';
+        use.addEventListener('click', function () {
+          if (!sel.value) return;
+          saveMyModel(m, ep, key, sel.value);
+          bar.remove();
+        });
+        var cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'ac-btn ac-btn-sm';
+        cancel.textContent = '取消';
+        cancel.addEventListener('click', function () { bar.remove(); });
+        var tip = document.createElement('span');
+        tip.className = 'ac-model-fetch-tip';
+        tip.textContent = '共 ' + list.length + ' 个模型';
+        bar.appendChild(sel);
+        bar.appendChild(use);
+        bar.appendChild(cancel);
+        bar.appendChild(tip);
+        rowEl.after(bar);
+      })
+      .catch(function (err) { showToast(err.message, 'error'); })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = '获取';
+      });
   }
 
   function setDefaultMyModel(id) {
@@ -334,6 +399,9 @@
     els.acmApiKey.value = '';
     els.acmDefault.checked = false;
     els.acmGetWrap.hidden = true;
+    els.acmFetchWrap.hidden = true;
+    els.acmFetchList.innerHTML = '';
+    els.acmFetchTip.textContent = '';
   }
 
   // ============ 提示词库选择（同 AI 生图：浏览全部 + 搜索 + 分页） ============
@@ -668,6 +736,12 @@
       tag.textContent = '分支' + m.branch_id;
       meta.appendChild(tag);
     }
+    if (m.role === 'assistant' && m.model) {
+      var mtag = document.createElement('span');
+      mtag.className = 'ac-msg-model-tag';
+      mtag.textContent = m.model;
+      meta.appendChild(mtag);
+    }
     var actions = document.createElement('span');
     actions.className = 'ac-msg-actions';
     buildMsgActions(actions, m);
@@ -698,6 +772,18 @@
       var raw = marked.parse(el.textContent);
       el.innerHTML = DOMPurify.sanitize(raw);
       el.classList.add('markdown');
+      // 代码块添加复制按钮
+      el.querySelectorAll('pre').forEach(function (pre) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ac-code-copy';
+        btn.textContent = '复制';
+        btn.addEventListener('click', function () {
+          var code = pre.querySelector('code');
+          copyToClipboard(code ? code.textContent : pre.textContent, '代码已复制');
+        });
+        pre.appendChild(btn);
+      });
     } catch (e) { /* 渲染失败保留纯文本 */ }
   }
 
@@ -768,6 +854,7 @@
 
     convPromise.then(function (conv) {
       els.acInput.value = '';
+      els.acInput.style.height = 'auto';
       // 用户消息立即上屏
       var userMsg = { id: 'u' + Date.now(), role: 'user', content: content, branch_id: conv.current_branch_id || 0 };
       state.messages.push(userMsg);
@@ -812,6 +899,7 @@
       var contentEl = lastEl && lastEl.querySelector('.ac-msg-content');
       if (contentEl) {
         contentEl.textContent = text;
+        contentEl.classList.add('streaming');
         scrollToBottom();
       }
     }
@@ -824,6 +912,7 @@
         placeholderMsg.id = data.id;
         placeholderMsg.content = data.content || placeholderMsg.content;
         placeholderMsg.tokens = data.tokens;
+        if (data.model) placeholderMsg.model = data.model;
         if (data.quota) state.quota = data.quota;
         renderQuota();
       } else if (event === 'error') {
@@ -893,8 +982,8 @@
     if (!window.confirm('删除该消息及其后的所有消息？')) return;
     api('/ai-chat/api/messages/delete', { message_id: m.id, conversation_id: state.currentConv.id })
       .then(function () {
-        state.messages = state.messages.filter(function (x) { return x.id !== m.id; });
-        renderMessages();
+        // 服务端会级联删除其后同分支消息，重新拉取保持一致
+        selectConversation(state.currentConv.id);
       })
       .catch(function (err) { showToast(err.message, 'error'); });
   }
@@ -977,13 +1066,22 @@
       var h = document.createElement('h3');
       h.textContent = (r.is_official ? '🎭 ' : '⭐ ') + r.name;
       var p = document.createElement('p');
-      p.textContent = r.description || r.system_prompt || '';
+      p.textContent = r.description || r.personality || r.system_prompt || '';
+      var foot = document.createElement('div');
+      foot.className = 'ac-role-card-foot';
       var tag = document.createElement('span');
       tag.className = 'ac-role-tag';
       tag.textContent = r.is_official ? '官方' : '我的';
+      foot.appendChild(tag);
+      if (r.greeting) {
+        var g = document.createElement('span');
+        g.className = 'ac-role-tag ac-role-tag-greeting';
+        g.textContent = '有开场白';
+        foot.appendChild(g);
+      }
       card.appendChild(h);
       card.appendChild(p);
-      card.appendChild(tag);
+      card.appendChild(foot);
       card.addEventListener('click', function () {
         hideModal('acRoleModal');
         startWithRole(r.id);
@@ -1000,6 +1098,8 @@
           state.currentConv.role_id = roleId;
           updateRoleLabel();
           showToast('已切换角色', 'success');
+          // 重新加载消息（角色带开场白时会注入第一条 AI 消息）
+          selectConversation(state.currentConv.id);
         })
         .catch(function (err) { showToast(err.message, 'error'); });
       return;
@@ -1009,12 +1109,12 @@
         var conv = json.data;
         state.conversations.unshift(conv);
         state.currentConv = conv;
-        state.messages = [];
         renderConversations();
         els.acConvTitle.textContent = conv.title || '新对话';
-        renderMessages();
         updateRoleLabel();
         updateModelLabel();
+        // 加载消息（含开场白）
+        selectConversation(conv.id);
       })
       .catch(function (err) { showToast(err.message, 'error'); });
   }
@@ -1022,18 +1122,30 @@
   function createRole() {
     var name = els.acNewRoleName.value.trim();
     var prompt = els.acNewRolePrompt.value.trim();
+    var greeting = els.acNewRoleGreeting.value.trim();
     if (!name) { showToast('请输入角色名称', 'error'); return; }
-    if (!prompt) { showToast('请输入角色设定', 'error'); return; }
-    api('/ai-chat/api/roles', { name: name, system_prompt: prompt })
-      .then(function (json) {
-        state.roles.push(json.data);
-        els.acNewRoleName.value = '';
-        els.acNewRolePrompt.value = '';
-        hideModal('acRoleCreateModal');
-        renderRoleList();
-        showToast('角色已创建', 'success');
-      })
-      .catch(function (err) { showToast(err.message, 'error'); });
+    if (!prompt && !greeting) { showToast('角色设定或开场白至少填写一项', 'error'); return; }
+    api('/ai-chat/api/roles', {
+      name: name,
+      system_prompt: prompt,
+      greeting: greeting,
+      description: els.acNewRoleDesc.value.trim(),
+      personality: els.acNewRolePersonality.value.trim(),
+      scenario: els.acNewRoleScenario.value.trim(),
+      examples: els.acNewRoleExamples.value.trim()
+    }).then(function (json) {
+      state.roles.push(json.data);
+      els.acNewRoleName.value = '';
+      els.acNewRolePrompt.value = '';
+      els.acNewRoleGreeting.value = '';
+      els.acNewRoleDesc.value = '';
+      els.acNewRolePersonality.value = '';
+      els.acNewRoleScenario.value = '';
+      els.acNewRoleExamples.value = '';
+      hideModal('acRoleCreateModal');
+      renderRoleList();
+      showToast('角色已创建', 'success');
+    }).catch(function (err) { showToast(err.message, 'error'); });
   }
 
   // ============ 世界书 ============
@@ -1052,7 +1164,7 @@
     }
     state.worldBook.forEach(function (w) {
       var item = document.createElement('div');
-      item.className = 'ac-world-item' + (w.enabled ? '' : ' off');
+      item.className = 'ac-world-item' + (w.enabled ? '' : ' off') + (w.constant ? ' constant' : '');
       var key = document.createElement('span');
       key.className = 'ac-world-key';
       key.textContent = w.key || '（常驻）';
@@ -1065,9 +1177,42 @@
       item.appendChild(key);
       item.appendChild(prev);
       item.appendChild(pos);
+      if (w.constant) {
+        var ctag = document.createElement('span');
+        ctag.className = 'ac-world-pos ac-world-const';
+        ctag.textContent = '常驻';
+        item.appendChild(ctag);
+      }
+      var tog = document.createElement('button');
+      tog.type = 'button';
+      tog.className = 'ac-world-toggle';
+      tog.textContent = w.enabled ? '停用' : '启用';
+      tog.title = w.enabled ? '停用该条目' : '启用该条目';
+      tog.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleWorldEntry(w);
+      });
+      item.appendChild(tog);
       item.addEventListener('click', function () { openWorldEdit(w); });
       els.acWorldList.appendChild(item);
     });
+  }
+
+  // 快速启用/停用世界书条目（保留原字段）
+  function toggleWorldEntry(w) {
+    api('/ai-chat/api/world-book', {
+      conversation_id: state.currentConv.id,
+      id: w.id,
+      key: w.key || '',
+      content: w.content || '',
+      position: w.position || 'before_char',
+      enabled: w.enabled ? 0 : 1,
+      constant: w.constant ? 1 : 0
+    }).then(function () {
+      w.enabled = w.enabled ? 0 : 1;
+      renderWorldList();
+      showToast(w.enabled ? '条目已启用' : '条目已停用', 'success');
+    }).catch(function (err) { showToast(err.message, 'error'); });
   }
 
   function positionLabel(pos) {
@@ -1079,6 +1224,7 @@
     els.acWorldEditTitle.textContent = w ? '编辑条目' : '添加条目';
     els.acWorldKey.value = w ? (w.key || '') : '';
     els.acWorldPos.value = w ? (w.position || 'before_char') : 'before_char';
+    els.acWorldConstant.checked = Boolean(w && w.constant);
     els.acWorldContent.value = w ? (w.content || '') : '';
     els.acWorldDelete.style.display = w ? 'inline-block' : 'none';
     els.acWorldEditModal.dataset.id = w ? w.id : '';
@@ -1093,7 +1239,8 @@
       id: id,
       key: els.acWorldKey.value,
       content: els.acWorldContent.value,
-      position: els.acWorldPos.value
+      position: els.acWorldPos.value,
+      constant: els.acWorldConstant.checked ? 1 : 0
     };
     api('/ai-chat/api/world-book', payload).then(function () {
       hideModal('acWorldEditModal');
@@ -1246,6 +1393,13 @@
     }
   });
 
+  // 输入框自适应高度
+  function autoResizeInput() {
+    els.acInput.style.height = 'auto';
+    els.acInput.style.height = Math.min(els.acInput.scrollHeight, 180) + 'px';
+  }
+  els.acInput.addEventListener('input', autoResizeInput);
+
   els.acRoleBtn.addEventListener('click', openRoleModal);
   els.acModelBtn.addEventListener('click', openModelModal);
   els.acRoleCreate.addEventListener('click', function () { showModal('acRoleCreateModal'); });
@@ -1302,6 +1456,42 @@
   });
   els.acmCancel.addEventListener('click', resetAddModelForm);
   els.acmProvider.addEventListener('change', applyProviderPreset);
+
+  // 添加模型：填写端点 + Key 后自动获取可用模型
+  els.acmFetch.addEventListener('click', function () {
+    var endpoint = els.acmEndpoint.value.trim();
+    var apiKey = els.acmApiKey.value.trim();
+    if (!endpoint && !apiKey) { showToast('请先填写 API 端点与 API Key', 'error'); return; }
+    els.acmFetch.disabled = true;
+    els.acmFetch.textContent = '获取中…';
+    fetchModelsApi({ api_endpoint: endpoint, api_key: apiKey })
+      .then(function (json) {
+        var list = json.data || [];
+        els.acmFetchList.innerHTML = '';
+        list.forEach(function (md) {
+          var opt = document.createElement('option');
+          opt.value = md.id;
+          opt.textContent = md.id + (md.owned_by ? '（' + md.owned_by + '）' : '');
+          els.acmFetchList.appendChild(opt);
+        });
+        els.acmFetchTip.textContent = '共 ' + list.length + ' 个模型';
+        els.acmFetchWrap.hidden = false;
+      })
+      .catch(function (err) { showToast(err.message, 'error'); })
+      .then(function () {
+        els.acmFetch.disabled = false;
+        els.acmFetch.textContent = '⟳ 获取模型';
+      });
+  });
+  els.acmFetchUse.addEventListener('click', function () {
+    var v = els.acmFetchList.value;
+    if (v) {
+      els.acmKey.value = v;
+      els.acmKey.focus();
+      showToast('已选用模型：' + v, 'success');
+    }
+    els.acmFetchWrap.hidden = true;
+  });
 
   els.acmSave.addEventListener('click', function () {
     var providerKey = els.acmProvider.value;

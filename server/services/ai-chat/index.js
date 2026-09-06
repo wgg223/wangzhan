@@ -176,7 +176,10 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
     // 主动停止：保留半截内容，status=stopped，不计配额
     if (signal && signal.aborted) {
       const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '');
-      return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true, model: modelInfo.model_key, quota: quotaCheck.quota };
+      return {
+        messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true,
+        model: modelInfo.model_key, quota: quotaCheck.quota
+      };
     }
     const reason = normalizeError(err);
     const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason);
@@ -201,7 +204,10 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
     }
   }
 
-  return { messageId: msgId, content: full, tokens, aborted: false, model: modelInfo.model_key, quota: checkQuota(db, user).quota };
+  return {
+    messageId: msgId, content: full, tokens, aborted: false,
+    model: modelInfo.model_key, quota: checkQuota(db, user).quota
+  };
 }
 
 function saveAssistantMessage(db, conv, content, modelInfo, status, error) {
@@ -254,7 +260,10 @@ async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
   } catch (err) {
     if (signal && signal.aborted) {
       const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '');
-      return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true, model: modelInfo.model_key, quota: quotaCheck.quota };
+      return {
+        messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true,
+        model: modelInfo.model_key, quota: quotaCheck.quota
+      };
     }
     const reason = normalizeError(err);
     const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason);
@@ -264,7 +273,10 @@ async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
 
   const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '');
   consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
-  return { messageId: msgId, content: full, tokens: estimateTokens(full), aborted: false, model: modelInfo.model_key, quota: checkQuota(db, user).quota };
+  return {
+    messageId: msgId, content: full, tokens: estimateTokens(full), aborted: false,
+    model: modelInfo.model_key, quota: checkQuota(db, user).quota
+  };
 }
 
 module.exports = {

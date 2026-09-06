@@ -49,6 +49,20 @@
   .aiimg-pager button { padding: 4px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); cursor: pointer; font-size: 12px; }
   .aiimg-pager button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
   .aiimg-fetch-hint { font-size: 11px; color: var(--gray-500); margin-top: 4px; }
+  .aiimg-table img.aiimg-clickable { cursor: zoom-in; }
+  /* 大图查看灯箱 */
+  .aiimg-lb-mask { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 20px; animation: aiimgLbFade .2s ease; }
+  @keyframes aiimgLbFade { from { opacity: 0; } to { opacity: 1; } }
+  .aiimg-lb-wrap { display: flex; flex-direction: column; align-items: center; max-width: 92vw; max-height: 92vh; }
+  .aiimg-lb-img { max-width: 90vw; max-height: 72vh; object-fit: contain; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,.5); cursor: zoom-out; }
+  .aiimg-lb-info { margin-top: 12px; text-align: center; color: #e2e8f0; max-width: 80vw; }
+  .aiimg-lb-prompt { font-size: 13px; line-height: 1.6; color: #cbd5e1; margin-bottom: 6px; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .aiimg-lb-meta { font-size: 12px; color: #94a3b8; }
+  .aiimg-lb-actions { margin-top: 10px; display: flex; gap: 10px; justify-content: center; }
+  .aiimg-lb-actions a, .aiimg-lb-actions button { background: rgba(255,255,255,.12); color: #f1f5f9; border: 1px solid rgba(255,255,255,.2); padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; text-decoration: none; }
+  .aiimg-lb-actions a:hover, .aiimg-lb-actions button:hover { background: rgba(255,255,255,.2); }
+  .aiimg-lb-close { position: absolute; top: 16px; right: 20px; background: rgba(255,255,255,.15); border: none; color: #fff; font-size: 20px; width: 38px; height: 38px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .aiimg-lb-close:hover { background: rgba(255,255,255,.3); }
 </style>
 
 <div class="admin-page">
@@ -174,6 +188,19 @@
       </table>
     </div>
     <div class="aiimg-pager" id="aiimgRecPager"></div>
+  </div>
+</div>
+
+<!-- 大图查看灯箱 -->
+<div class="aiimg-lb-mask" id="aiimgLbMask" style="display:none;">
+  <button type="button" class="aiimg-lb-close" id="aiimgLbClose">✕</button>
+  <div class="aiimg-lb-wrap">
+    <img class="aiimg-lb-img" id="aiimgLbImg" src="" alt="大图查看">
+    <div class="aiimg-lb-info">
+      <div class="aiimg-lb-prompt" id="aiimgLbPrompt"></div>
+      <div class="aiimg-lb-meta" id="aiimgLbMeta"></div>
+    </div>
+    <div class="aiimg-lb-actions" id="aiimgLbActions"></div>
   </div>
 </div>
 
@@ -312,7 +339,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       rows.forEach(function(r) {
         var img = r.image_path
-          ? '<img src="' + r.image_path + '" alt="" loading="lazy">'
+          ? '<img class="aiimg-clickable" src="' + r.image_path + '" alt="" loading="lazy" data-url="' + escapeHtml(r.image_path) + '" data-prompt="' + escapeHtml(r.prompt || '') + '" data-provider="' + escapeHtml(r.provider || '') + '" data-model="' + escapeHtml(r.model || '') + '" data-size="' + escapeHtml(r.size || '') + '" data-user="' + escapeHtml(r.username || ('#' + r.user_id)) + '" data-time="' + escapeHtml(r.created_at || '') + '">'
           : '<div style="width:44px;height:44px;background:var(--bg-secondary,#f1f5f9);border-radius:6px;"></div>';
         var badge = r.status === 'success'
           ? '<span class="aiimg-badge aiimg-badge-ok">成功</span>'
@@ -342,6 +369,19 @@ document.addEventListener('DOMContentLoaded', function() {
           }).catch(function() { showToast('删除请求失败', 'error'); });
         });
       });
+      // 绑定大图查看
+      document.querySelectorAll('#aiimgRecBody .aiimg-clickable').forEach(function(img) {
+        img.addEventListener('click', function() {
+          openLb(img.getAttribute('data-url'), {
+            prompt: img.getAttribute('data-prompt'),
+            provider: img.getAttribute('data-provider'),
+            model: img.getAttribute('data-model'),
+            size: img.getAttribute('data-size'),
+            user: img.getAttribute('data-user'),
+            time: img.getAttribute('data-time')
+          });
+        });
+      });
       // 分页
       var totalPages = Math.max(Math.ceil(json.data.total / json.data.pageSize), 1);
       var pager = document.getElementById('aiimgRecPager');
@@ -365,6 +405,38 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('aiimgRecProvider').addEventListener('change', function() { loadRecords(1); });
   document.getElementById('aiimgRecStatus').addEventListener('change', function() { loadRecords(1); });
   document.getElementById('aiimgRecRefresh').addEventListener('click', function() { loadRecords(1); });
+
+  // ============ 大图查看灯箱 ============
+  function openLb(imgUrl, info) {
+    if (!imgUrl) return;
+    info = info || {};
+    document.getElementById('aiimgLbImg').src = imgUrl;
+    document.getElementById('aiimgLbPrompt').textContent = info.prompt || '';
+    var metaParts = [];
+    if (info.provider) metaParts.push(info.provider);
+    if (info.model) metaParts.push(info.model);
+    if (info.size) metaParts.push(info.size);
+    if (info.user) metaParts.push('用户: ' + info.user);
+    if (info.time) metaParts.push(info.time);
+    document.getElementById('aiimgLbMeta').textContent = metaParts.join(' · ');
+    document.getElementById('aiimgLbActions').innerHTML =
+      '<a href="' + escapeHtml(imgUrl) + '" download target="_blank" rel="noopener">⬇️ 下载原图</a>' +
+      '<a href="' + escapeHtml(imgUrl) + '" target="_blank" rel="noopener">🔗 新窗口打开</a>';
+    document.getElementById('aiimgLbMask').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+  function closeLb() {
+    document.getElementById('aiimgLbMask').style.display = 'none';
+    document.getElementById('aiimgLbImg').src = '';
+    document.body.style.overflow = '';
+  }
+  document.getElementById('aiimgLbClose').addEventListener('click', closeLb);
+  document.getElementById('aiimgLbMask').addEventListener('click', function(e) {
+    if (e.target.id === 'aiimgLbMask' || e.target.id === 'aiimgLbImg') closeLb();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.getElementById('aiimgLbMask').style.display === 'flex') closeLb();
+  });
 
   loadRecords(1);
 })();

@@ -73,7 +73,14 @@
   <div class="ai-chat-form" id="modelForm">
     <input type="hidden" id="m_id">
     <label>名称<input id="m_name" placeholder="如：DeepSeek V3"></label>
-    <label>模型标识 model_key<input id="m_model_key" placeholder="如：deepseek-chat"></label>
+    <label>模型标识 model_key
+      <div style="display:flex; gap:8px;">
+        <input id="m_model_key" placeholder="如：deepseek-chat" style="flex:1; min-width:0;">
+        <button type="button" class="btn btn-sm" onclick="fetchModels()">⟳ 获取模型</button>
+      </div>
+      <select id="m_fetch_list" style="display:none; margin-top:6px;" onchange="document.getElementById('m_model_key').value=this.value"></select>
+      <span id="m_fetch_msg" style="font-size:11px; color:var(--gray-500);"></span>
+    </label>
     <label>服务商（OpenAI 兼容）<input id="m_provider" placeholder="如：deepseek / openai / siliconflow"></label>
     <label>API 端点（留空用默认）<input id="m_api_endpoint" placeholder="如：https://api.deepseek.com/v1"></label>
     <label>API Key（留空不修改，新增可不填）<input id="m_api_key" type="password" placeholder="Bearer 密钥"></label>
@@ -96,9 +103,9 @@
   <div class="ai-chat-hint">官方角色对全部用户可见，可在前台一键选用。</div>
   <div id="roleList">
     <% roles.forEach(r => { %>
-    <div class="ai-chat-role-card" data-role-id="<%= r.id %>">
+    <div class="ai-chat-role-card" data-role-id="<%= r.id %>" data-greeting="<%= r.greeting || '' %>" data-personality="<%= r.personality || '' %>" data-scenario="<%= r.scenario || '' %>" data-examples="<%= r.examples || '' %>">
       <h3>🎭 <%= r.name %> <span style="font-size:12px; color:var(--gray-500);">#<%= r.category %></span></h3>
-      <p><%= r.description || r.system_prompt.slice(0, 120) %></p>
+      <p><%= r.description || r.personality || r.system_prompt.slice(0, 120) %></p>
       <div class="ai-chat-actions">
         <button type="button" class="btn btn-sm" onclick="editRole(<%= r.id %>)">编辑</button>
         <button type="button" class="btn btn-sm btn-danger" onclick="deleteRole(<%= r.id %>)">删除</button>
@@ -119,6 +126,10 @@
     <label>分类（自定义标签）<input id="r_category" placeholder="如：rp / writing / default"></label>
     <label class="full">简介<input id="r_description" placeholder="一句话介绍，显示在角色卡片上"></label>
     <label class="full">角色设定（system prompt）<textarea id="r_system_prompt" placeholder="角色身份、性格、说话方式、规则…"></textarea></label>
+    <label class="full">开场白（角色对你说的第一句话）<textarea id="r_greeting" placeholder="选择该角色开启新对话时自动发出的第一条 AI 消息，可留空"></textarea></label>
+    <label class="full">性格<textarea id="r_personality" placeholder="角色性格特征、口头禅、喜好…（并入角色上下文）"></textarea></label>
+    <label class="full">场景<textarea id="r_scenario" placeholder="当前剧情场景、环境设定…（并入角色上下文）"></textarea></label>
+    <label class="full">示例对话<textarea id="r_examples" placeholder="展示角色说话风格的对话示例（仅供模仿风格，并入角色上下文）"></textarea></label>
   </div>
   <div class="ai-chat-actions">
     <button type="button" class="btn btn-primary" onclick="saveRole()">保存</button>
@@ -239,6 +250,36 @@
 
   window.cancelModelForm = function () { document.getElementById('modelFormWrap').style.display = 'none'; };
 
+  // 自动获取模型列表（按端点 + Key 调 OpenAI 兼容 /models）
+  window.fetchModels = function () {
+    var endpoint = document.getElementById('m_api_endpoint').value.trim();
+    var key = document.getElementById('m_api_key').value.trim();
+    var msg = document.getElementById('m_fetch_msg');
+    var sel = document.getElementById('m_fetch_list');
+    if (!endpoint && !key) { msg.textContent = '请先填写 API 端点与 API Key'; return; }
+    msg.textContent = '获取中…';
+    sel.style.display = 'none';
+    sel.innerHTML = '';
+    csrfFetch('/ai-chat/api/models/fetch', {
+      method: 'POST',
+      body: JSON.stringify({ api_endpoint: endpoint, api_key: key })
+    }, 35000)
+      .then(function (json) {
+        if (!json.success) { msg.textContent = json.error || '获取失败'; return; }
+        var list = json.data || [];
+        if (!list.length) { msg.textContent = '未获取到模型'; return; }
+        list.forEach(function (md) {
+          var opt = document.createElement('option');
+          opt.value = md.id;
+          opt.textContent = md.id + (md.owned_by ? '（' + md.owned_by + '）' : '');
+          sel.appendChild(opt);
+        });
+        sel.style.display = 'block';
+        msg.textContent = '共 ' + list.length + ' 个模型，选择后自动填入 model_key';
+      })
+      .catch(function (err) { msg.textContent = (err && err.message) || '获取失败'; });
+  };
+
   window.saveModel = function () {
     var msg = document.getElementById('modelFormMsg');
     msg.textContent = '';
@@ -283,11 +324,10 @@
     document.getElementById('roleFormMsg').textContent = '';
     if (!id) {
       document.getElementById('roleFormTitle').textContent = '新增角色';
-      document.getElementById('r_id').value = '';
-      document.getElementById('r_name').value = '';
-      document.getElementById('r_category').value = '';
-      document.getElementById('r_description').value = '';
-      document.getElementById('r_system_prompt').value = '';
+      ['r_id', 'r_name', 'r_category', 'r_description', 'r_system_prompt',
+        'r_greeting', 'r_personality', 'r_scenario', 'r_examples'].forEach(function (f) {
+        document.getElementById(f).value = '';
+      });
       return;
     }
     var card = document.querySelector('.ai-chat-role-card[data-role-id="' + id + '"]');
@@ -301,6 +341,10 @@
     var p = card.querySelector('p').textContent;
     document.getElementById('r_system_prompt').value = p;
     document.getElementById('r_description').value = p;
+    // 新字段：从卡片 data-* 读取（无则留空）
+    ['greeting', 'personality', 'scenario', 'examples'].forEach(function (f) {
+      document.getElementById('r_' + f).value = card.getAttribute('data-' + f) || '';
+    });
   };
 
   window.cancelRoleForm = function () { document.getElementById('roleFormWrap').style.display = 'none'; };
@@ -318,7 +362,9 @@
 
   window.deleteRole = function (id) {
     if (!window.confirm('确定删除该角色？')) return;
-    csrfFetch('/admin/ai-chat/roles/delete', { method: 'POST', body: new FormData() }, 20000)
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/roles/delete', { method: 'POST', body: fd }, 20000)
       .then(function (json) {
         if (json.success) { var card = document.querySelector('.ai-chat-role-card[data-role-id="' + id + '"]'); if (card) card.remove(); }
         else alert(json.error || '删除失败');

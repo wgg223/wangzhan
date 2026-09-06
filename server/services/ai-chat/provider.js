@@ -245,4 +245,6 @@ async function callEmbeddings(embCfg, texts) {
   }
 }
 
-module.exports = { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings, fetchModelList, POLLINATIONS_ENDPOINT };
+module.exports = {
+  resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings, fetchModelList, POLLINATIONS_ENDPOINT
+};

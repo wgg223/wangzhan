@@ -138,7 +138,13 @@
     shareMask: document.getElementById('aiimgShareMask'),
     shareClose: document.getElementById('aiimgShareClose'),
     shareUrl: document.getElementById('aiimgShareUrl'),
-    shareCopy: document.getElementById('aiimgShareCopy')
+    shareCopy: document.getElementById('aiimgShareCopy'),
+    lightbox: document.getElementById('aiimgLightbox'),
+    lightboxImg: document.getElementById('aiimgLightboxImg'),
+    lightboxPrompt: document.getElementById('aiimgLightboxPrompt'),
+    lightboxMeta: document.getElementById('aiimgLightboxMeta'),
+    lightboxActions: document.getElementById('aiimgLightboxActions'),
+    lightboxClose: document.getElementById('aiimgLightboxClose')
   };
 
   if (!providers.length) {
@@ -558,7 +564,7 @@
     var html = timeHtml + '<div class="aiimg-result-grid">';
     images.forEach(function(img) {
       html += '<div class="aiimg-result-item">' +
-        '<img src="' + escapeHtml(img.url) + '" alt="生成图片" loading="lazy">' +
+        '<img class="aiimg-clickable-img" src="' + escapeHtml(img.url) + '" alt="生成图片" loading="lazy" data-url="' + escapeHtml(img.url) + '" data-prompt="' + escapeHtml(d.prompt || '') + '" data-provider="' + escapeHtml(d.provider || '') + '" data-model="' + escapeHtml(d.model || '') + '" data-size="' + escapeHtml(d.size || '') + '">' +
         '<div class="aiimg-result-actions">' +
         '<a class="aiimg-btn aiimg-btn-sm" href="' + escapeHtml(img.url) + '" download target="_blank" rel="noopener">⬇️ 下载</a>' +
         (canShare ? '<button type="button" class="aiimg-btn aiimg-btn-sm aiimg-share" data-url="' + escapeHtml(img.url) + '">📤 分享</button>' : '') +
@@ -567,6 +573,17 @@
     });
     html += '</div>';
     els.results.innerHTML = html;
+    // 绑定大图查看
+    els.results.querySelectorAll('.aiimg-clickable-img').forEach(function(img) {
+      img.addEventListener('click', function() {
+        openLightbox(img.getAttribute('data-url'), {
+          prompt: img.getAttribute('data-prompt'),
+          provider: img.getAttribute('data-provider'),
+          model: img.getAttribute('data-model'),
+          size: img.getAttribute('data-size')
+        });
+      });
+    });
     els.results.querySelectorAll('.aiimg-share').forEach(function(btn) {
       btn.addEventListener('click', function() {
         shareImage(btn.getAttribute('data-url'));
@@ -619,6 +636,56 @@
       };
     }
   }
+
+  // ============ 大图查看灯箱 ============
+  function openLightbox(imgUrl, info) {
+    if (!els.lightbox || !imgUrl) return;
+    info = info || {};
+    els.lightboxImg.src = imgUrl;
+    els.lightboxPrompt.textContent = info.prompt || '';
+    var metaParts = [];
+    if (info.provider) metaParts.push(info.provider);
+    if (info.model) metaParts.push(info.model);
+    if (info.size) metaParts.push(info.size);
+    if (info.time) metaParts.push(info.time);
+    els.lightboxMeta.textContent = metaParts.join(' · ');
+    // 操作按钮
+    var actionsHtml = '<a class="aiimg-btn aiimg-btn-sm" href="' + escapeHtml(imgUrl) + '" download target="_blank" rel="noopener">⬇️ 下载原图</a>';
+    if (canShare) actionsHtml += '<button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgLbShare">📤 分享</button>';
+    if (canShareLink) actionsHtml += '<button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgLbShareLink">🔗 分享链接</button>';
+    els.lightboxActions.innerHTML = actionsHtml;
+    // 绑定分享按钮
+    var lbShare = document.getElementById('aiimgLbShare');
+    if (lbShare) lbShare.addEventListener('click', function() { shareImage(imgUrl); });
+    var lbShareLink = document.getElementById('aiimgLbShareLink');
+    if (lbShareLink) lbShareLink.addEventListener('click', function() { shareLinkByImage(imgUrl); });
+    els.lightbox.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    if (!els.lightbox) return;
+    els.lightbox.style.display = 'none';
+    els.lightboxImg.src = '';
+    document.body.style.overflow = '';
+  }
+
+  // 灯箱事件绑定
+  if (els.lightboxClose) {
+    els.lightboxClose.addEventListener('click', closeLightbox);
+  }
+  if (els.lightbox) {
+    els.lightbox.addEventListener('click', function(e) {
+      if (e.target === els.lightbox || e.target === els.lightboxImg) {
+        closeLightbox();
+      }
+    });
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && els.lightbox && els.lightbox.style.display === 'flex') {
+      closeLightbox();
+    }
+  });
 
   // ============ 分享到图片分享 ============
   function shareImage(imageUrl) {
@@ -680,7 +747,7 @@
       var html = '';
       records.forEach(function(r) {
         var thumb = r.image_path
-          ? '<img class="aiimg-history-thumb" src="' + escapeHtml(r.image_path) + '" alt="" loading="lazy">'
+          ? '<img class="aiimg-history-thumb aiimg-clickable-img" src="' + escapeHtml(r.image_path) + '" alt="" loading="lazy" data-url="' + escapeHtml(r.image_path) + '" data-prompt="' + escapeHtml(r.prompt || '') + '" data-provider="' + escapeHtml(r.provider || '') + '" data-model="' + escapeHtml(r.model || '') + '" data-size="' + escapeHtml(r.size || '') + '" data-time="' + escapeHtml(r.created_at || '') + '">'
           : '<div class="aiimg-history-thumb"></div>';
         var statusHtml = r.status === 'success'
           ? '<span style="color:#10b981;">✓ 成功</span>'
@@ -723,6 +790,18 @@
       els.history.querySelectorAll('.aiimg-history-sharelink').forEach(function(btn) {
         btn.addEventListener('click', function() {
           createShareLink(parseInt(btn.getAttribute('data-id'), 10));
+        });
+      });
+      // 绑定大图查看
+      els.history.querySelectorAll('.aiimg-clickable-img').forEach(function(img) {
+        img.addEventListener('click', function() {
+          openLightbox(img.getAttribute('data-url'), {
+            prompt: img.getAttribute('data-prompt'),
+            provider: img.getAttribute('data-provider'),
+            model: img.getAttribute('data-model'),
+            size: img.getAttribute('data-size'),
+            time: img.getAttribute('data-time')
+          });
         });
       });
       // 分页

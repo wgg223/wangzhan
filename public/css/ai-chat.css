@@ -90,9 +90,10 @@
 .ac-models-body { padding: 0 14px 10px; }
 .ac-models-body.collapsed { display: none; }
 .ac-model-line {
-  display: grid; grid-template-columns: 170px 80px 1fr 1fr 64px auto auto auto; gap: 6px;
+  display: grid; grid-template-columns: 170px 80px 1fr 1fr 64px auto auto auto auto; gap: 6px;
   align-items: center; padding: 6px 0; border-top: 1px solid var(--border-color);
 }
+.ac-model-line .ac-btn { white-space: nowrap; }
 .ac-model-line-name { font-size: 12px; color: var(--text-primary); font-weight: var(--font-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ac-model-line-name small { display: block; font-weight: normal; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ac-model-line-status { font-size: 11px; color: var(--text-muted); }
@@ -101,18 +102,38 @@
   width: 100%; padding: 5px 8px; border-radius: var(--radius-sm);
   background: var(--bg-primary); border: 1px solid var(--border-color);
   color: var(--text-primary); font-size: 12px; outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease;
 }
-.ac-model-input:focus { border-color: var(--primary); }
+.ac-model-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-focus); }
 .ac-model-input option { background: var(--bg-card); }
-.ac-model-add-row { display: grid; grid-template-columns: 60px 130px 1fr 1fr 64px auto auto; gap: 6px; align-items: center; padding: 8px 0 4px; border-top: 1px solid var(--border-color); }
+.ac-model-add-row {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 8px 0 4px; border-top: 1px solid var(--border-color);
+}
+/* hidden 属性必须覆盖 flex 布局，否则无法隐藏 */
+.ac-model-add-row[hidden] { display: none; }
+.ac-model-fetch-wrap[hidden] { display: none; }
+.ac-model-add-row > * { flex: 0 0 auto; }
 .ac-model-add-row .ac-model-add-name { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.ac-model-add-row #acmProvider { flex: 0 0 130px; min-width: 110px; }
+.ac-model-add-row #acmKey { flex: 1 1 170px; min-width: 130px; }
+.ac-model-add-row #acmEndpoint, .ac-model-add-row #acmApiKey { flex: 1 1 210px; min-width: 170px; }
 .ac-model-default { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
 .ac-model-default input { width: auto; margin: 0; }
 .ac-global-models { margin-top: 8px; font-size: 11px; color: var(--text-muted); line-height: 1.7; }
 .ac-global-models span { display: inline-block; margin: 2px 6px 2px 0; padding: 2px 8px; border-radius: var(--radius-full); background: var(--primary-focus); color: var(--text-secondary); }
-.ac-model-add-get { grid-column: 1 / -1; font-size: 11px; color: var(--text-muted); padding: 2px 0; }
+.ac-model-add-get, .ac-model-fetch-wrap { flex-basis: 100%; }
+.ac-model-add-get { font-size: 11px; color: var(--text-muted); padding: 2px 0; }
 .ac-model-add-get a { color: var(--info); text-decoration: none; }
 .ac-model-add-get a:hover { text-decoration: underline; }
+.ac-model-fetch-wrap { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.ac-model-fetch-wrap select { flex: 1 1 320px; min-width: 200px; }
+.ac-model-fetch-tip { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.ac-model-fetch-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 6px 0 8px; border-top: 1px dashed var(--border-color);
+}
+.ac-model-fetch-row select { flex: 1 1 300px; min-width: 200px; }
 
 /* ---------- 消息区 ---------- */
 .ac-messages { flex: 1; overflow-y: auto; padding: 16px 0; background: var(--bg-primary); scroll-behavior: smooth; }
@@ -279,6 +300,95 @@
 .ac-prompt-item-title { font-size: 13px; color: var(--text-primary); font-weight: var(--font-medium); }
 .ac-prompt-item-excerpt { font-size: 12px; color: var(--text-muted); margin-top: 3px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
+/* ---------- 优化：动效与细节 ---------- */
+
+/* 消息入场动画 */
+.ac-msg { animation: ac-msg-in .22s ease both; }
+@keyframes ac-msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 弹窗动效：遮罩淡入 + 内容缩放上浮 */
+.ac-modal-overlay { animation: ac-overlay-in .18s ease both; }
+.ac-modal { animation: ac-modal-in .2s cubic-bezier(.2, .9, .3, 1.2) both; }
+@keyframes ac-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ac-modal-in {
+  from { opacity: 0; transform: translateY(14px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 消息区 / 会话栏滚动条 */
+.ac-messages::-webkit-scrollbar, .ac-conv-list::-webkit-scrollbar, .ac-modal-body::-webkit-scrollbar, .ac-prompt-list::-webkit-scrollbar { width: 8px; }
+.ac-messages::-webkit-scrollbar-thumb, .ac-conv-list::-webkit-scrollbar-thumb, .ac-modal-body::-webkit-scrollbar-thumb, .ac-prompt-list::-webkit-scrollbar-thumb {
+  background: var(--border-color); border-radius: 4px;
+}
+.ac-messages::-webkit-scrollbar-thumb:hover, .ac-conv-list::-webkit-scrollbar-thumb:hover, .ac-modal-body::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* 流式生成光标 */
+.ac-msg-content.streaming::after {
+  content: ''; display: inline-block; width: 8px; height: 1em; vertical-align: text-bottom;
+  margin-left: 2px; border-radius: 1px; background: var(--primary);
+  animation: ac-caret .9s steps(1) infinite;
+}
+@keyframes ac-caret { 50% { opacity: 0; } }
+
+/* 代码块：语言头 + 复制按钮 */
+.ac-msg-content.markdown pre { position: relative; }
+.ac-msg-content.markdown pre::before {
+  content: '代码'; display: block; margin: -10px -12px 8px; padding: 3px 12px;
+  font-size: 11px; color: var(--text-muted); background: rgba(127, 127, 127, .12);
+  border-bottom: 1px solid var(--border-color); border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.ac-code-copy {
+  position: absolute; top: 4px; right: 6px; z-index: 1;
+  border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-secondary);
+  font-size: 10px; padding: 1px 8px; border-radius: var(--radius-xs); cursor: pointer; opacity: 0;
+  transition: opacity .15s ease, color .15s ease, border-color .15s ease;
+}
+.ac-msg-content.markdown pre:hover .ac-code-copy { opacity: 1; }
+.ac-code-copy:hover { color: var(--primary); border-color: var(--primary); }
+
+/* 消息模型标识 */
+.ac-msg-model-tag {
+  font-size: 10px; color: var(--text-secondary); background: var(--bg-tertiary);
+  padding: 1px 7px; border-radius: var(--radius-full); max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 角色卡 */
+.ac-role-card { position: relative; }
+.ac-role-card-foot { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.ac-role-tag-greeting { background: var(--primary-focus); color: var(--primary); }
+.ac-role-advanced { border-top: 1px dashed var(--border-color); padding-top: 10px; margin-top: 4px; }
+.ac-role-advanced summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; user-select: none; }
+.ac-role-advanced summary:hover { color: var(--primary); }
+
+/* 世界书：常驻标签 + 快速开关 */
+.ac-world-item { transition: border-color .15s ease, opacity .15s ease; }
+.ac-world-item.constant { border-color: var(--primary-border); background: var(--primary-bg); }
+.ac-world-const { background: var(--primary-focus); color: var(--primary); }
+.ac-world-toggle {
+  flex: 0 0 auto; border: 1px solid var(--border-color); background: var(--bg-card);
+  color: var(--text-secondary); font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full);
+  cursor: pointer; transition: color .15s ease, border-color .15s ease;
+}
+.ac-world-toggle:hover { color: var(--primary); border-color: var(--primary); }
+
+/* 键盘可达性 */
+.ac-btn:focus-visible, .ac-tool:focus-visible, .ac-model-input:focus-visible,
+.ac-conv-item:focus-visible, .ac-world-toggle:focus-visible, .ac-code-copy:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+
+/* 发送按钮主操作更醒目 */
+.ac-btn-primary { box-shadow: var(--primary-shadow); }
+.ac-btn-primary:active { transform: translateY(1px); filter: brightness(.96); }
+
+/* 输入区更精致 */
+.ac-input-bar textarea { transition: border-color .18s ease, box-shadow .18s ease; }
+.ac-input-bar textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-focus); }
+
 /* ---------- 响应式 ---------- */
 @media (max-width: 820px) {
   .ac-app { height: calc(100vh - 128px); margin: 10px 8px; }
@@ -297,9 +407,10 @@
   .ac-model-line .ac-model-line-name { grid-column: 1 / 3; }
   .ac-model-line-status { grid-column: 1 / 2; }
   .ac-model-line .ac-btn { margin-top: 2px; }
-  .ac-model-add-row { grid-template-columns: 1fr 1fr; }
   .ac-model-add-row .ac-model-add-name { display: none; }
-  .ac-model-add-row .ac-model-default { grid-column: 1 / 3; }
+  .ac-model-add-row #acmProvider, .ac-model-add-row #acmKey { flex: 1 1 40%; min-width: 0; }
+  .ac-model-add-row #acmEndpoint, .ac-model-add-row #acmApiKey { flex: 1 1 100%; min-width: 0; }
+  .ac-model-fetch-wrap select { flex: 1 1 100%; min-width: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
