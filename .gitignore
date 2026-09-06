@@ -115,3 +115,4 @@ env/
 cookies.txt
 login_result.html
 .writerHelper
+.mimocode/
