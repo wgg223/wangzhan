@@ -991,9 +991,18 @@ function createTables(db) {
     FOREIGN KEY (created_by) REFERENCES users(id)
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_spreadsheets_status ON spreadsheets(status)');
-  // 新增 luckysheet_data 字段存储完整表格数据（兼容旧数据库，重复列错误已静默处理）
-  db.run(`ALTER TABLE spreadsheets ADD COLUMN luckysheet_data TEXT`);
-  db.run(`ALTER TABLE spreadsheets ADD COLUMN is_luckysheet INTEGER DEFAULT 0`);
+  // 新增 luckysheet_data 字段存储完整表格数据（先检查列是否存在，避免重复添加报错）
+  try {
+    const existingCols = db.prepare('PRAGMA table_info(spreadsheets)').all().map(function(c) { return c.name; });
+    if (existingCols.indexOf('luckysheet_data') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN luckysheet_data TEXT`);
+    }
+    if (existingCols.indexOf('is_luckysheet') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN is_luckysheet INTEGER DEFAULT 0`);
+    }
+  } catch (e) {
+    console.error('迁移 spreadsheets 表字段失败:', e.message);
+  }
 
   // 表格列定义表
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_columns (
