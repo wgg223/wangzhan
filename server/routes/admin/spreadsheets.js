@@ -20,7 +20,7 @@ const { logActivity } = require('../../config/activity');
 
 const batchImportUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }
+  limits: { fileSize: 200 * 1024 * 1024 }
 });
 
 // 将表头转换为合法的 field_key
@@ -116,6 +116,161 @@ router.post('/spreadsheets', (req, res) => {
   });
 
   res.json({ success: true, redirect: '/admin/spreadsheets' });
+});
+
+// 预览 Excel 文件中的 Sheet 列表（查询表内文件）
+router.post('/spreadsheets/batch-preview', batchImportUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '请上传 Excel 文件' });
+
+  let workbook;
+  try {
+    workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+  } catch (e) {
+    return res.status(400).json({ error: 'Excel 文件解析失败: ' + e.message });
+  }
+
+  const sheetNames = workbook.SheetNames;
+  if (sheetNames.length === 0) return res.status(400).json({ error: 'Excel 文件中没有工作表' });
+
+  const sheets = sheetNames.map(name => {
+    const worksheet = workbook.Sheets[name];
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    const headers = rows.length > 0 ? rows[0].map(h => String(h).trim()).filter(h => h) : [];
+    const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim() !== ''));
+    // 检测是否有图片（xlsx社区版不支持直接提取，但可以检测图片关系）
+    const hasImages = !!(worksheet['!images'] || (worksheet['!merges'] && worksheet['!merges'].length > 0));
+    return {
+      name: name,
+      columns: headers.length,
+      rows: dataRows.length,
+      headers: headers.slice(0, 10),
+      hasImages: hasImages,
+      sampleData: dataRows.slice(0, 3).map(r => r.slice(0, 5).map(c => String(c).substring(0, 50)))
+    };
+  });
+
+  res.json({
+    success: true,
+    data: {
+      filename: req.file.originalname,
+      totalSheets: sheetNames.length,
+      sheets: sheets
+    }
+  });
+});
+
+// 批量导入：多 Sheet Excel 文件，每个 Sheet 创建一个新表格
+router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '请上传 Excel 文件' });
+  const db = req.db;
+  const selectedSheets = req.body.selectedSheets ? JSON.parse(req.body.selectedSheets) : null;
+
+  let workbook;
+  try {
+    workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+  } catch (e) {
+    return res.status(400).json({ error: 'Excel 文件解析失败: ' + e.message });
+  }
+
+  let sheetNames = workbook.SheetNames;
+  if (sheetNames.length === 0) return res.status(400).json({ error: 'Excel 文件中没有工作表' });
+
+  if (selectedSheets && Array.isArray(selectedSheets) && selectedSheets.length > 0) {
+    sheetNames = sheetNames.filter(name => selectedSheets.includes(name));
+  }
+
+  const results = [];
+  let totalRows = 0;
+
+  sheetNames.forEach((sheetName, sheetIdx) => {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    if (rows.length < 2) {
+      results.push({ name: sheetName, success: false, error: '没有数据行' });
+      return;
+    }
+
+    const headers = rows[0].map(h => String(h).trim());
+    const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim() !== ''));
+    if (dataRows.length === 0) {
+      results.push({ name: sheetName, success: false, error: '没有有效数据' });
+      return;
+    }
+
+    const tableName = sheetName.substring(0, 100) || 'Sheet' + (sheetIdx + 1);
+    db.run(
+      'INSERT INTO spreadsheets (name, description, created_by, status, created_at, updated_at) VALUES (?, ?, ?, ?, datetime("now"), datetime("now"))',
+      [tableName, '从 ' + req.file.originalname + ' 批量导入', req.session.user.id, 'active']
+    );
+    const newSheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE name = ? ORDER BY id DESC LIMIT 1', [tableName]);
+    if (!newSheet) {
+      results.push({ name: sheetName, success: false, error: '创建表格失败' });
+      return;
+    }
+
+    const existingKeys = new Set();
+    const colFieldKeys = [];
+    headers.forEach((header, idx) => {
+      if (!header) { colFieldKeys.push(null); return; }
+      const fieldKey = toFieldKey(header, existingKeys, idx);
+      const colName = header.substring(0, 50);
+      db.run(
+        'INSERT INTO spreadsheet_columns (spreadsheet_id, name, field_key, type, width, is_visible, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [newSheet.id, colName, fieldKey, 'text', 150, 1, idx]
+      );
+      colFieldKeys.push(fieldKey);
+    });
+
+    let imported = 0;
+    dataRows.forEach((row, rowIdx) => {
+      const rowData = {};
+      headers.forEach((header, idx) => {
+        const fieldKey = colFieldKeys[idx];
+        if (fieldKey && row[idx] !== undefined && String(row[idx]).trim() !== '') {
+          rowData[fieldKey] = String(row[idx]);
+        }
+      });
+      if (Object.keys(rowData).length > 0) {
+        db.run(
+          'INSERT INTO spreadsheet_rows (spreadsheet_id, row_data, sort_order) VALUES (?, ?, ?)',
+          [newSheet.id, JSON.stringify(rowData), rowIdx]
+        );
+        imported++;
+      }
+    });
+
+    totalRows += imported;
+    results.push({
+      id: newSheet.id,
+      name: tableName,
+      success: true,
+      columns: colFieldKeys.filter(k => k).length,
+      rows: imported
+    });
+  });
+
+  saveDatabase();
+
+  logActivity(db, {
+    user_id: req.session.user.id,
+    username: req.session.user.username,
+    action: 'batch_import',
+    target_type: 'spreadsheet',
+    target_id: 0,
+    target_title: '批量导入表格',
+    detail: '从 ' + req.file.originalname + ' 批量导入 ' + results.filter(function(r) { return r.success; }).length + ' 个表格，共 ' + totalRows + ' 行数据',
+    ip: req.ip
+  });
+
+  res.json({
+    success: true,
+    data: {
+      totalSheets: sheetNames.length,
+      importedSheets: results.filter(r => r.success).length,
+      totalRows: totalRows,
+      results: results
+    }
+  });
 });
 
 // 编辑表格设置
@@ -247,119 +402,3 @@ router.delete('/spreadsheets/:id/columns/:colId', (req, res) => {
   res.json({ success: true });
 });
 
-// 批量导入：多 Sheet Excel 文件，每个 Sheet 创建一个新表格
-router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: '请上传 Excel 文件' });
-  const db = req.db;
-
-  let workbook;
-  try {
-    workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-  } catch (e) {
-    return res.status(400).json({ error: 'Excel 文件解析失败: ' + e.message });
-  }
-
-  const sheetNames = workbook.SheetNames;
-  if (sheetNames.length === 0) return res.status(400).json({ error: 'Excel 文件中没有工作表' });
-
-  const results = [];
-  let totalRows = 0;
-
-  sheetNames.forEach((sheetName, sheetIdx) => {
-    const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-    if (rows.length < 2) {
-      results.push({ name: sheetName, success: false, error: '没有数据行' });
-      return;
-    }
-
-    const headers = rows[0].map(h => String(h).trim());
-    const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim() !== ''));
-    if (dataRows.length === 0) {
-      results.push({ name: sheetName, success: false, error: '没有有效数据' });
-      return;
-    }
-
-    // 创建新表格
-    const tableName = sheetName.substring(0, 100) || 'Sheet' + (sheetIdx + 1);
-    db.run(
-      'INSERT INTO spreadsheets (name, description, created_by, status, created_at, updated_at) VALUES (?, ?, ?, ?, datetime("now"), datetime("now"))',
-      [tableName, '从 ' + req.file.originalname + ' 批量导入', req.session.user.id, 'active']
-    );
-    const newSheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE name = ? ORDER BY id DESC LIMIT 1', [tableName]);
-    if (!newSheet) {
-      results.push({ name: sheetName, success: false, error: '创建表格失败' });
-      return;
-    }
-
-    // 创建列
-    const existingKeys = new Set();
-    const colFieldKeys = [];
-    headers.forEach((header, idx) => {
-      if (!header) {
-        colFieldKeys.push(null);
-        return;
-      }
-      const fieldKey = toFieldKey(header, existingKeys, idx);
-      const colName = header.substring(0, 50);
-      db.run(
-        'INSERT INTO spreadsheet_columns (spreadsheet_id, name, field_key, type, width, is_visible, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [newSheet.id, colName, fieldKey, 'text', 150, 1, idx]
-      );
-      colFieldKeys.push(fieldKey);
-    });
-
-    // 导入行数据
-    let imported = 0;
-    dataRows.forEach((row, rowIdx) => {
-      const rowData = {};
-      headers.forEach((header, idx) => {
-        const fieldKey = colFieldKeys[idx];
-        if (fieldKey && row[idx] !== undefined && String(row[idx]).trim() !== '') {
-          rowData[fieldKey] = String(row[idx]);
-        }
-      });
-      if (Object.keys(rowData).length > 0) {
-        db.run(
-          'INSERT INTO spreadsheet_rows (spreadsheet_id, row_data, sort_order) VALUES (?, ?, ?)',
-          [newSheet.id, JSON.stringify(rowData), rowIdx]
-        );
-        imported++;
-      }
-    });
-
-    totalRows += imported;
-    results.push({
-      id: newSheet.id,
-      name: tableName,
-      success: true,
-      columns: colFieldKeys.filter(k => k).length,
-      rows: imported
-    });
-  });
-
-  saveDatabase();
-
-  logActivity(db, {
-    user_id: req.session.user.id,
-    username: req.session.user.username,
-    action: 'batch_import',
-    target_type: 'spreadsheet',
-    target_id: 0,
-    target_title: '批量导入表格',
-    detail: `从 ${req.file.originalname} 批量导入 ${results.filter(r => r.success).length} 个表格，共 ${totalRows} 行数据`,
-    ip: req.ip
-  });
-
-  res.json({
-    success: true,
-    data: {
-      totalSheets: sheetNames.length,
-      importedSheets: results.filter(r => r.success).length,
-      totalRows: totalRows,
-      results: results
-    }
-  });
-});
-
-module.exports = router;
