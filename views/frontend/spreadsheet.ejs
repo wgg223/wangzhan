@@ -1,0 +1,205 @@
+<%# ===== 页面模板：frontend/spreadsheet.ejs =====%>
+<%# 说明：在线表格查看/编辑页（EJS 服务端模板 + 前端 JS 交互） %>
+<div class="spreadsheet-page">
+  <div class="spreadsheet-header">
+    <div class="spreadsheet-title-area">
+      <a href="/spreadsheet" class="back-link">← 返回列表</a>
+      <h1 class="spreadsheet-title"><%= sheet.name %></h1>
+      <% if (sheet.description) { %>
+      <p class="spreadsheet-desc"><%= sheet.description %></p>
+      <% } %>
+    </div>
+    <div class="spreadsheet-actions">
+      <% if (canManage) { %>
+      <span class="role-badge admin-badge">编辑模式</span>
+      <button class="btn btn-outline" id="btnAddColumn">➕ 添加列</button>
+      <button class="btn btn-outline" id="btnColumnSettings">👁️ 列显示</button>
+      <button class="btn btn-primary" id="btnAddRow">➕ 添加行</button>
+      <% } else { %>
+      <span class="role-badge viewer-badge">只读模式</span>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="spreadsheet-toolbar">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="🔍 搜索表格内容..." />
+    </div>
+    <div class="toolbar-info">
+      <span id="rowCountInfo">共 0 条</span>
+    </div>
+  </div>
+
+  <div class="spreadsheet-container">
+    <table class="spreadsheet-table" id="spreadsheetTable">
+      <thead>
+        <tr id="tableHeadRow">
+          <th class="row-num-col">#</th>
+          <% columns.forEach(function(col) { %>
+          <th class="<%= col.is_visible ? '' : 'hidden-col' %>" data-col-id="<%= col.id %>" data-field="<%= col.field_key %>" style="width:<%= col.width %>px;">
+            <span class="col-header-text"><%= col.name %></span>
+            <span class="col-sort-icon" data-field="<%= col.field_key %>">↕</span>
+          </th>
+          <% }); %>
+          <% if (canManage) { %>
+          <th class="action-col">操作</th>
+          <% } %>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr class="loading-row"><td colspan="100">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="spreadsheet-pagination">
+    <div class="pagination-info" id="paginationInfo">第 0 页 / 共 0 页</div>
+    <div class="pagination-controls">
+      <button class="page-btn" id="btnFirstPage">首页</button>
+      <button class="page-btn" id="btnPrevPage">上一页</button>
+      <span class="page-numbers" id="pageNumbers"></span>
+      <button class="page-btn" id="btnNextPage">下一页</button>
+      <button class="page-btn" id="btnLastPage">末页</button>
+      <select class="page-size-select" id="pageSizeSelect">
+        <option value="10">10条/页</option>
+        <option value="20" selected>20条/页</option>
+        <option value="50">50条/页</option>
+        <option value="100">100条/页</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- 列显示设置弹窗 -->
+<div class="modal-overlay" id="columnModal" style="display:none;">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>列显示设置</h3>
+      <button class="modal-close" onclick="closeColumnModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="columnModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeColumnModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 添加列弹窗 -->
+<div class="modal-overlay" id="addColumnModal" style="display:none;">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>添加新列</h3>
+      <button class="modal-close" onclick="closeAddColumnModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>列名称</label>
+        <input type="text" id="newColName" placeholder="例如：价格" />
+      </div>
+      <div class="form-group">
+        <label>字段标识（英文，唯一）</label>
+        <input type="text" id="newColKey" placeholder="例如：price" />
+      </div>
+      <div class="form-group">
+        <label>列类型</label>
+        <select id="newColType">
+          <option value="text">文本</option>
+          <option value="number">数字</option>
+          <option value="date">日期</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>列宽度（px）</label>
+        <input type="number" id="newColWidth" value="150" min="50" max="500" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAddColumnModal()">取消</button>
+      <button class="btn btn-primary" onclick="submitAddColumn()">确认添加</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.spreadsheet-page { max-width: 100%; padding: 16px; }
+.spreadsheet-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+.spreadsheet-title-area { flex: 1; min-width: 200px; }
+.back-link { display: inline-block; color: #667eea; text-decoration: none; font-size: 14px; margin-bottom: 8px; }
+.back-link:hover { text-decoration: underline; }
+.spreadsheet-title { font-size: 24px; color: #1a1a2e; margin: 0 0 4px; }
+.spreadsheet-desc { color: #666; margin: 0; font-size: 14px; }
+.spreadsheet-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.role-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.admin-badge { background: #e8f5e9; color: #2e7d32; }
+.viewer-badge { background: #fff3e0; color: #e65100; }
+.btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none; transition: all 0.2s; text-decoration: none; display: inline-block; }
+.btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+.btn-primary:hover { opacity: 0.9; }
+.btn-outline { background: #fff; border: 1px solid #ddd; color: #333; }
+.btn-outline:hover { border-color: #667eea; color: #667eea; }
+.btn-secondary { background: #f0f0f0; color: #333; }
+.btn-danger { background: #f44336; color: #fff; }
+.spreadsheet-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.search-box { flex: 1; max-width: 400px; }
+.search-box input { width: 100%; padding: 10px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+.search-box input:focus { border-color: #667eea; }
+.toolbar-info { color: #666; font-size: 13px; }
+.spreadsheet-container { overflow-x: auto; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; }
+.spreadsheet-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.spreadsheet-table thead th { background: #f5f5f7; padding: 12px 10px; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0; white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+.spreadsheet-table thead th.hidden-col { display: none; }
+.col-header-text { cursor: pointer; user-select: none; }
+.col-sort-icon { color: #ccc; margin-left: 4px; font-size: 11px; }
+.col-sort-icon.asc { color: #667eea; }
+.col-sort-icon.desc { color: #667eea; }
+.row-num-col { width: 50px; text-align: center !important; color: #999; }
+.action-col { width: 100px; text-align: center !important; }
+.spreadsheet-table tbody td { padding: 10px; border-bottom: 1px solid #f0f0f0; color: #333; vertical-align: top; }
+.spreadsheet-table tbody tr:hover { background: #f8f9ff; }
+.spreadsheet-table tbody td.hidden-col { display: none; }
+.spreadsheet-table tbody td.editing { padding: 4px; }
+.cell-input { width: 100%; padding: 6px 8px; border: 1px solid #667eea; border-radius: 4px; font-size: 14px; outline: none; }
+.cell-text { cursor: pointer; min-height: 20px; word-break: break-all; }
+.cell-text:hover { background: #eef0ff; border-radius: 4px; }
+.row-actions { display: flex; gap: 4px; justify-content: center; }
+.row-action-btn { padding: 4px 8px; font-size: 12px; border: none; border-radius: 4px; cursor: pointer; }
+.row-action-btn.edit { background: #e3f2fd; color: #1565c0; }
+.row-action-btn.delete { background: #ffebee; color: #c62828; }
+.row-action-btn.save { background: #e8f5e9; color: #2e7d32; }
+.row-action-btn.cancel { background: #f5f5f5; color: #666; }
+.loading-row td { text-align: center; padding: 40px; color: #999; }
+.empty-row td { text-align: center; padding: 40px; color: #999; }
+.spreadsheet-pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; flex-wrap: wrap; gap: 8px; }
+.pagination-info { color: #666; font-size: 13px; }
+.pagination-controls { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.page-btn { padding: 6px 12px; border: 1px solid #ddd; background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.page-btn:hover:not(:disabled) { border-color: #667eea; color: #667eea; }
+.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.page-btn.active { background: #667eea; color: #fff; border-color: #667eea; }
+.page-numbers { display: flex; gap: 4px; }
+.page-size-select { padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; margin-left: 8px; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.modal { background: #fff; border-radius: 12px; width: 90%; max-width: 500px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }
+.modal-header h3 { margin: 0; font-size: 18px; }
+.modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.modal-footer { padding: 12px 20px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 8px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; margin-bottom: 6px; font-weight: 500; color: #333; font-size: 14px; }
+.form-group input, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; }
+.form-group input:focus, .form-group select:focus { border-color: #667eea; }
+.col-toggle-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+.col-toggle-item:last-child { border-bottom: none; }
+.col-toggle-item input[type="checkbox"] { margin-right: 10px; width: 18px; height: 18px; cursor: pointer; }
+.col-toggle-item label { cursor: pointer; flex: 1; }
+</style>
+
+<script>
+window.SPREADSHEET_CONFIG = {
+  sheetId: <%= sheet.id %>,
+  canManage: <%= canManage ? 'true' : 'false' %>,
+  columns: <%- JSON.stringify(columns) %>
+};
+</script>
+<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/spreadsheet.js') : '/js/spreadsheet.js' %>"></script>
