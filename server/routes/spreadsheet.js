@@ -337,24 +337,81 @@ const importUpload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 最大50MB
 });
 
-// 统一解析导入文件，返回二维数组（第一行为表头）
+// Excel日期序列号转日期字符串
+function excelDateToString(value) {
+  if (typeof value !== 'number' || value < 20000 || value > 80000) return null;
+  try {
+    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+    if (isNaN(date.getTime())) return null;
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 处理单元格值
+function processCellValue(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') {
+    const dateStr = excelDateToString(value);
+    if (dateStr) return dateStr;
+  }
+  return String(value);
+}
+
+// 自动检测表头行
+function detectHeaderRow(rows) {
+  if (rows.length === 0) return 0;
+  const firstRow = rows[0];
+  const totalCols = firstRow.length;
+  const nonEmptyCols = firstRow.filter(function(c) { return String(c).trim() !== ''; }).length;
+  
+  // 条件1：第一行非空列比例很低（<40%），认为是标题行
+  if (totalCols >= 2 && nonEmptyCols / totalCols < 0.4 && rows.length > 1) {
+    return 1;
+  }
+  
+  // 条件2：第一行只有1列有值，且第二行有更多列有值，认为是标题行
+  if (nonEmptyCols <= 1 && rows.length > 1) {
+    const secondRowNonEmpty = rows[1].filter(function(c) { return String(c).trim() !== ''; }).length;
+    if (secondRowNonEmpty > nonEmptyCols) {
+      return 1;
+    }
+  }
+  
+  return 0;
+}
+
+// 统一解析导入文件，返回 { headers, dataRows }
 function parseImportFile(file) {
   const ext = (file.originalname.split('.').pop() || '').toLowerCase();
+  let rawRows;
   if (ext === 'csv') {
     const text = file.buffer.toString('utf-8');
-    return parseCSV(text);
-  }
-  if (ext === 'xlsx' || ext === 'xls') {
+    rawRows = parseCSV(text);
+  } else if (ext === 'xlsx' || ext === 'xls') {
     const workbook = XLSX.read(file.buffer, { type: 'buffer' });
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) throw new Error('Excel 文件中没有工作表');
     const worksheet = workbook.Sheets[firstSheetName];
-    // header:1 返回二维数组，defval:'' 空单元格填充空字符串
-    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-    // 转换所有值为字符串
-    return rows.map(row => row.map(cell => String(cell == null ? '' : cell)));
+    rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
+  } else {
+    throw new Error('不支持的文件格式，请上传 CSV 或 XLSX 文件');
   }
-  throw new Error('不支持的文件格式，请上传 CSV 或 XLSX 文件');
+
+  if (rawRows.length === 0) throw new Error('文件为空');
+
+  // 自动检测表头行
+  const headerRowIdx = detectHeaderRow(rawRows);
+  const headers = rawRows[headerRowIdx].map(function(h) { return processCellValue(h).trim(); });
+  const dataRows = rawRows.slice(headerRowIdx + 1).filter(function(r) {
+    return r.some(function(c) { return processCellValue(c).trim() !== ''; });
+  });
+
+  return { headers: headers, dataRows: dataRows, headerRowIdx: headerRowIdx };
 }
 
 // 简易 CSV 解析器（支持引号包裹、逗号、换行）
@@ -398,17 +455,19 @@ router.post('/api/spreadsheet/:id/import/preview', isAuthenticated, (req, res, n
   const sheetId = parseInt(req.params.id, 10);
   const db = req.db;
 
-  let rows;
+  let parsed;
   try {
-    rows = parseImportFile(req.file);
+    parsed = parseImportFile(req.file);
   } catch (e) {
     return res.status(400).json({ error: e.message || '文件解析失败' });
   }
 
-  if (rows.length === 0) return res.status(400).json({ error: '文件为空' });
+  if (parsed.dataRows.length === 0) return res.status(400).json({ error: '文件没有数据行' });
 
-  const headers = rows[0].map(h => String(h).trim());
-  const sampleRows = rows.slice(1, 6); // 最多预览5行数据
+  const headers = parsed.headers;
+  const sampleRows = parsed.dataRows.slice(0, 5).map(function(r) {
+    return r.map(function(c) { return processCellValue(c); });
+  });
 
   // 获取表格现有列
   const columns = queryAll(db, 'SELECT * FROM spreadsheet_columns WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC', [sheetId]);
@@ -455,17 +514,17 @@ router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => 
   const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ?', [sheetId]);
   if (!sheet) return res.status(404).json({ error: '表格不存在' });
 
-  let rows;
+  let parsed;
   try {
-    rows = parseImportFile(req.file);
+    parsed = parseImportFile(req.file);
   } catch (e) {
     return res.status(400).json({ error: e.message || '文件解析失败' });
   }
 
-  if (rows.length < 2) return res.status(400).json({ error: '文件没有数据行' });
+  if (parsed.dataRows.length === 0) return res.status(400).json({ error: '文件没有数据行' });
 
-  const headers = rows[0].map(h => String(h).trim());
-  const dataRows = rows.slice(1);
+  const headers = parsed.headers;
+  const dataRows = parsed.dataRows;
 
   // 获取现有列
   const existingColumns = queryAll(db, 'SELECT id, name, field_key, sort_order FROM spreadsheet_columns WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC', [sheetId]);
@@ -522,8 +581,9 @@ router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => 
     const rowData = {};
     headers.forEach((header, idx) => {
       const fieldKey = headerToFieldKey[idx];
-      if (fieldKey && row[idx] !== undefined && row[idx] !== '') {
-        rowData[fieldKey] = row[idx];
+      const cellValue = processCellValue(row[idx]);
+      if (fieldKey && cellValue !== '') {
+        rowData[fieldKey] = cellValue;
       }
     });
     if (Object.keys(rowData).length > 0) {
