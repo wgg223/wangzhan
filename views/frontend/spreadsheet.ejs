@@ -14,7 +14,8 @@
       <span class="role-badge admin-badge">编辑模式</span>
       <button class="btn btn-outline" id="btnAddColumn">➕ 添加列</button>
       <button class="btn btn-outline" id="btnColumnSettings">👁️ 列显示</button>
-      <button class="btn btn-outline" id="btnImport">📥 导入CSV</button>`n      <button class="btn btn-primary" id="btnAddRow">➕ 添加行</button>
+      <button class="btn btn-outline" id="btnImport">📥 导入CSV</button>
+      <button class="btn btn-primary" id="btnAddRow">➕ 添加行</button>
       <% } else { %>
       <span class="role-badge viewer-badge">只读模式</span>
       <% } %>
@@ -120,6 +121,76 @@
   </div>
 </div>
 
+<!-- CSV导入弹窗 -->
+<div class="modal-overlay" id="importModal" style="display:none;">
+  <div class="modal" style="max-width:700px;">
+    <div class="modal-header">
+      <h3>📥 导入 CSV 数据</h3>
+      <button class="modal-close" onclick="__ss.closeImportModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="importStep1">
+        <div class="form-group">
+          <label>选择 CSV 文件（UTF-8 编码，最大10MB）</label>
+          <input type="file" id="importFile" accept=".csv" style="width:100%;padding:10px;border:1px dashed #ddd;border-radius:6px;" />
+        </div>
+        <div class="form-group">
+          <label>导入模式</label>
+          <select id="importMode">
+            <option value="append">追加（保留现有数据，新增行）</option>
+            <option value="replace">覆盖（清空现有数据后导入）</option>
+          </select>
+        </div>
+        <p class="form-hint">CSV 第一行应为表头，导入时可将 CSV 列映射到表格字段。</p>
+      </div>
+      <div id="importStep2" style="display:none;">
+        <div class="import-summary">
+          <span id="importFileName"></span> · 共 <span id="importRowCount"></span> 行数据
+        </div>
+        <div class="import-mapping-table">
+          <table class="admin-table">
+            <thead><tr><th>CSV 列名</th><th>映射到表格字段</th><th>示例数据</th></tr></thead>
+            <tbody id="importMappingBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="__ss.closeImportModal()">取消</button>
+      <button class="btn btn-outline" id="importPreviewBtn" onclick="__ss.previewImport()">预览并匹配列</button>
+      <button class="btn btn-primary" id="importConfirmBtn" style="display:none;" onclick="__ss.confirmImport()">确认导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 富文本编辑器弹窗 -->
+<div class="modal-overlay" id="richEditorModal" style="display:none;">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-header">
+      <h3>✏️ 编辑单元格</h3>
+      <button class="modal-close" onclick="__ss.closeRichEditor()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="rich-toolbar">
+        <button type="button" class="rich-btn" data-cmd="bold" title="加粗"><b>B</b></button>
+        <button type="button" class="rich-btn" data-cmd="italic" title="斜体"><i>I</i></button>
+        <button type="button" class="rich-btn" data-cmd="underline" title="下划线"><u>U</u></button>
+        <input type="color" class="rich-color" id="richTextColor" title="文字颜色" value="#000000" />
+        <input type="text" class="rich-link-input" id="richLinkUrl" placeholder="超链接URL（可选）" />
+        <button type="button" class="rich-btn" onclick="__ss.clearRichFormat()" title="清除格式">✕</button>
+      </div>
+      <div class="form-group">
+        <label>文本内容</label>
+        <textarea id="richEditText" rows="3" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="__ss.closeRichEditor()">取消</button>
+      <button class="btn btn-primary" onclick="__ss.saveRichEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
 <style>
 .spreadsheet-page { max-width: 100%; padding: 16px; }
 .spreadsheet-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
@@ -193,6 +264,17 @@
 .col-toggle-item:last-child { border-bottom: none; }
 .col-toggle-item input[type="checkbox"] { margin-right: 10px; width: 18px; height: 18px; cursor: pointer; }
 .col-toggle-item label { cursor: pointer; flex: 1; }
+.import-summary { padding: 10px 14px; background: #f0f4ff; border-radius: 6px; margin-bottom: 12px; font-size: 14px; color: #333; }
+.import-mapping-table { max-height: 300px; overflow-y: auto; }
+.import-mapping-table select { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+.rich-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px; background: #f5f5f7; border-radius: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.rich-btn { width: 32px; height: 32px; border: 1px solid #ddd; background: #fff; border-radius: 4px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.rich-btn:hover { border-color: #667eea; color: #667eea; }
+.rich-btn.active { background: #667eea; color: #fff; border-color: #667eea; }
+.rich-color { width: 36px; height: 32px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; padding: 2px; }
+.rich-link-input { flex: 1; min-width: 150px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+.cell-rich { cursor: pointer; }
+.cell-rich a { color: #667eea; text-decoration: underline; }
 .import-summary { padding: 10px 14px; background: #f0f4ff; border-radius: 6px; margin-bottom: 12px; font-size: 14px; color: #333; }
 .import-mapping-table { max-height: 300px; overflow-y: auto; }
 .import-mapping-table select { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
