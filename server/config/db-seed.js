@@ -147,7 +147,9 @@ function insertDefaultDataIfNeeded(db) {
     ['novels.detail.access', '小说详情访问', '查看小说详情和章节内容'],
     ['images.detail.access', '图片详情访问', '查看图片详情和大图'],
     ['community.posts.create', '发布动态', '在社区发布文字动态和图片'],
-    ['community.notifications.manage', '社区通知管理', '查询和删除社区通知']
+    ['community.notifications.manage', '社区通知管理', '查询和删除社区通知'],
+    ['spreadsheet.access', '在线表格访问', '访问在线表格页面，查看和查询表格数据'],
+    ['spreadsheet.manage', '在线表格管理', '创建、编辑、删除在线表格，管理行列数据与列显示']
   ];
 
   defaultPermissions.forEach(([key, name, desc]) => {
