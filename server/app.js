@@ -148,13 +148,14 @@ app.use((req, res, next) => {
   res.setHeader('X-Download-Options', 'noopen');      // IE 下载窗口不自动打开文件
 
   // CSP 内容安全策略：白名单式限制资源加载来源
-  res.setHeader('Content-Security-Policy', [
-    "default-src 'self'",                                       // 默认只允许同源
-    "script-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net static.cloudflareinsights.com",
-    "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net",
-    "img-src 'self' data: blob: https:",                        // 图片允许同源/data/blob/任意 https
-    "font-src 'self' data: cdnjs.cloudflare.com",
-    "connect-src 'self' https:",                                // fetch/XHR 仅同源与 https
+    res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net static.cloudflareinsights.com blob: data:",
+    "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data: cdnjs.cloudflare.com cdn.jsdelivr.net unpkg.com",
+    "connect-src 'self' https: ws: wss:",
+    "worker-src 'self' blob: data:",
     "frame-src 'self' https:",
     "frame-ancestors 'self'",
     "form-action 'self'",
