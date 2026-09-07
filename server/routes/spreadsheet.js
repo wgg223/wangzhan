@@ -425,7 +425,24 @@ router.post('/api/spreadsheet/:id/import/preview', isAuthenticated, (req, res, n
   });
 });
 
-// 执行导入
+// 将表头转换为合法的 field_key
+function toFieldKey(header, existingKeys, idx) {
+  // 先尝试直接用表头（如果是合法的英文标识符）
+  let key = String(header).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
+  if (!/^[a-z_][a-z0-9_]*$/.test(key)) {
+    key = 'col_' + (idx + 1);
+  }
+  // 避免重复
+  let finalKey = key;
+  let counter = 1;
+  while (existingKeys.has(finalKey)) {
+    finalKey = key + '_' + counter++;
+  }
+  existingKeys.add(finalKey);
+  return finalKey;
+}
+
+// 执行导入（自动匹配表头，无对应列自动创建）
 router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => {
   if (!canManageSpreadsheet(req)) return res.status(403).json({ error: '您没有编辑此表格的权限' });
   next();
@@ -434,7 +451,6 @@ router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => 
   const sheetId = parseInt(req.params.id, 10);
   const db = req.db;
   const mode = req.body.mode || 'append'; // append（追加）或 replace（覆盖）
-  const mapping = req.body.mapping ? JSON.parse(req.body.mapping) : {}; // { header: field_key }
 
   const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ?', [sheetId]);
   if (!sheet) return res.status(404).json({ error: '表格不存在' });
@@ -448,8 +464,49 @@ router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => 
 
   if (rows.length < 2) return res.status(400).json({ error: '文件没有数据行' });
 
-  const headers = rows[0].map(h => h.trim());
+  const headers = rows[0].map(h => String(h).trim());
   const dataRows = rows.slice(1);
+
+  // 获取现有列
+  const existingColumns = queryAll(db, 'SELECT id, name, field_key, sort_order FROM spreadsheet_columns WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC', [sheetId]);
+  const existingKeys = new Set(existingColumns.map(c => c.field_key));
+  const maxColOrder = existingColumns.length > 0 ? Math.max(...existingColumns.map(c => c.sort_order || 0)) : 0;
+
+  // 自动匹配表头到 field_key，无对应列自动创建
+  const headerToFieldKey = {};
+  const newColumns = [];
+  let colOrder = maxColOrder + 1;
+
+  headers.forEach((header, idx) => {
+    if (!header) {
+      headerToFieldKey[idx] = null;
+      return;
+    }
+    // 1. 精确匹配 field_key
+    let matched = existingColumns.find(c => c.field_key === header);
+    // 2. 精确匹配 name
+    if (!matched) matched = existingColumns.find(c => c.name === header);
+    // 3. 忽略大小写匹配 field_key
+    if (!matched) matched = existingColumns.find(c => c.field_key.toLowerCase() === header.toLowerCase());
+
+    if (matched) {
+      headerToFieldKey[idx] = matched.field_key;
+    } else {
+      // 自动创建新列
+      const fieldKey = toFieldKey(header, existingKeys, idx);
+      const colName = header.substring(0, 50); // 列名最多50字符
+      newColumns.push({ name: colName, field_key: fieldKey, sort_order: colOrder++ });
+      headerToFieldKey[idx] = fieldKey;
+    }
+  });
+
+  // 创建新列
+  newColumns.forEach(col => {
+    db.run(
+      'INSERT INTO spreadsheet_columns (spreadsheet_id, name, field_key, type, width, is_visible, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [sheetId, col.name, col.field_key, 'text', 150, 1, col.sort_order]
+    );
+  });
 
   // 覆盖模式：先删除所有行
   if (mode === 'replace') {
@@ -461,14 +518,11 @@ router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => 
   let sortOrder = (maxOrder && maxOrder.max_order != null) ? maxOrder.max_order + 1 : 0;
 
   let imported = 0;
-  const columns = queryAll(db, 'SELECT field_key FROM spreadsheet_columns WHERE spreadsheet_id = ?', [sheetId]);
-  const validKeys = new Set(columns.map(c => c.field_key));
-
   dataRows.forEach(row => {
     const rowData = {};
     headers.forEach((header, idx) => {
-      const fieldKey = mapping[header] || header;
-      if (validKeys.has(fieldKey) && row[idx] !== undefined) {
+      const fieldKey = headerToFieldKey[idx];
+      if (fieldKey && row[idx] !== undefined && row[idx] !== '') {
         rowData[fieldKey] = row[idx];
       }
     });
@@ -489,12 +543,12 @@ router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => 
     action: 'import',
     target_type: 'spreadsheet',
     target_id: sheetId,
-    target_title: 'CSV导入',
-    detail: `从 ${req.file.originalname} 导入 ${imported} 行数据（${mode === 'replace' ? '覆盖模式' : '追加模式'}）`,
+    target_title: '文件导入',
+    detail: `从 ${req.file.originalname} 导入 ${imported} 行数据，自动创建 ${newColumns.length} 个新列（${mode === 'replace' ? '覆盖模式' : '追加模式'}）`,
     ip: req.ip
   });
 
-  res.json({ success: true, data: { imported: imported, mode: mode } });
+  res.json({ success: true, data: { imported: imported, mode: mode, newColumns: newColumns.length, totalColumns: existingColumns.length + newColumns.length } });
 });
 
 module.exports = router;
