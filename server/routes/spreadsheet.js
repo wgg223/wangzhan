@@ -114,17 +114,20 @@ router.get('/api/spreadsheet/:id/data', isAuthenticated, hasFrontendPermission('
   if (search) {
     const lowerSearch = search.toLowerCase();
     parsedRows = parsedRows.filter(r => {
-      return Object.values(r.data).some(v =>
-        String(v || '').toLowerCase().includes(lowerSearch)
-      );
+      return Object.values(r.data).some(v => {
+        const text = (v && typeof v === 'object') ? (v.text || '') : String(v || '');
+        return text.toLowerCase().includes(lowerSearch);
+      });
     });
   }
 
   // 排序
   if (sortField) {
     parsedRows.sort((a, b) => {
-      const va = String(a.data[sortField] || '');
-      const vb = String(b.data[sortField] || '');
+      const vaRaw = a.data[sortField];
+      const vbRaw = b.data[sortField];
+      const va = (vaRaw && typeof vaRaw === 'object') ? (vaRaw.text || '') : String(vaRaw || '');
+      const vb = (vbRaw && typeof vbRaw === 'object') ? (vbRaw.text || '') : String(vbRaw || '');
       const cmp = va.localeCompare(vb, 'zh-CN', { numeric: true });
       return sortOrder === 'desc' ? -cmp : cmp;
     });
@@ -324,6 +327,155 @@ router.post('/api/spreadsheet/:id/column', isAuthenticated, (req, res, next) => 
   saveDatabase();
 
   res.json({ success: true, data: { id: result.lastInsertRowid, name, field_key, type: type || 'text', width: width || 150, sort_order: newOrder, is_visible: 1 } });
+});
+
+// ============ CSV 导入功能 ============
+const multer = require('multer');
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 最大10MB
+});
+
+// 简易 CSV 解析器（支持引号包裹、逗号、换行）
+function parseCSV(text) {
+  // 移除 BOM
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let cur = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQuotes = true; i++; continue; }
+    if (c === ',') { cur.push(field); field = ''; i++; continue; }
+    if (c === '\r') {
+      if (text[i + 1] === '\n') i++;
+      cur.push(field); rows.push(cur); cur = []; field = ''; i++; continue;
+    }
+    if (c === '\n') { cur.push(field); rows.push(cur); cur = []; field = ''; i++; continue; }
+    field += c; i++;
+  }
+  if (field.length > 0 || cur.length > 0) { cur.push(field); rows.push(cur); }
+  // 移除空行
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+
+// 预览 CSV（解析前几行，返回列名和示例数据）
+router.post('/api/spreadsheet/:id/import/preview', isAuthenticated, (req, res, next) => {
+  if (!canManageSpreadsheet(req)) return res.status(403).json({ error: '您没有编辑此表格的权限' });
+  next();
+}, importUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '请上传 CSV 文件' });
+  const sheetId = parseInt(req.params.id, 10);
+  const db = req.db;
+
+  let text;
+  try {
+    text = req.file.buffer.toString('utf-8');
+  } catch (e) {
+    return res.status(400).json({ error: '文件编码不支持，请使用 UTF-8 编码的 CSV 文件' });
+  }
+
+  const rows = parseCSV(text);
+  if (rows.length === 0) return res.status(400).json({ error: 'CSV 文件为空' });
+
+  const headers = rows[0].map(h => h.trim());
+  const sampleRows = rows.slice(1, 6); // 最多预览5行数据
+
+  // 获取表格现有列
+  const columns = queryAll(db, 'SELECT * FROM spreadsheet_columns WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC', [sheetId]);
+
+  res.json({
+    success: true,
+    data: {
+      filename: req.file.originalname,
+      totalRows: rows.length - 1, // 减去表头
+      headers: headers,
+      sampleRows: sampleRows,
+      tableColumns: columns.map(c => ({ id: c.id, name: c.name, field_key: c.field_key }))
+    }
+  });
+});
+
+// 执行导入
+router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => {
+  if (!canManageSpreadsheet(req)) return res.status(403).json({ error: '您没有编辑此表格的权限' });
+  next();
+}, importUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '请上传 CSV 文件' });
+  const sheetId = parseInt(req.params.id, 10);
+  const db = req.db;
+  const mode = req.body.mode || 'append'; // append（追加）或 replace（覆盖）
+  const mapping = req.body.mapping ? JSON.parse(req.body.mapping) : {}; // { csvHeader: field_key }
+
+  const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ?', [sheetId]);
+  if (!sheet) return res.status(404).json({ error: '表格不存在' });
+
+  let text;
+  try {
+    text = req.file.buffer.toString('utf-8');
+  } catch (e) {
+    return res.status(400).json({ error: '文件编码不支持' });
+  }
+
+  const rows = parseCSV(text);
+  if (rows.length < 2) return res.status(400).json({ error: 'CSV 文件没有数据行' });
+
+  const headers = rows[0].map(h => h.trim());
+  const dataRows = rows.slice(1);
+
+  // 覆盖模式：先删除所有行
+  if (mode === 'replace') {
+    db.run('DELETE FROM spreadsheet_rows WHERE spreadsheet_id = ?', [sheetId]);
+  }
+
+  // 获取最大 sort_order
+  const maxOrder = queryOne(db, 'SELECT MAX(sort_order) AS max_order FROM spreadsheet_rows WHERE spreadsheet_id = ?', [sheetId]);
+  let sortOrder = (maxOrder && maxOrder.max_order != null) ? maxOrder.max_order + 1 : 0;
+
+  let imported = 0;
+  const columns = queryAll(db, 'SELECT field_key FROM spreadsheet_columns WHERE spreadsheet_id = ?', [sheetId]);
+  const validKeys = new Set(columns.map(c => c.field_key));
+
+  dataRows.forEach(row => {
+    const rowData = {};
+    headers.forEach((header, idx) => {
+      const fieldKey = mapping[header] || header;
+      if (validKeys.has(fieldKey) && row[idx] !== undefined) {
+        rowData[fieldKey] = row[idx];
+      }
+    });
+    if (Object.keys(rowData).length > 0) {
+      db.run(
+        'INSERT INTO spreadsheet_rows (spreadsheet_id, row_data, sort_order) VALUES (?, ?, ?)',
+        [sheetId, JSON.stringify(rowData), sortOrder++]
+      );
+      imported++;
+    }
+  });
+
+  saveDatabase();
+
+  logActivity(db, {
+    user_id: req.session.user.id,
+    username: req.session.user.username,
+    action: 'import',
+    target_type: 'spreadsheet',
+    target_id: sheetId,
+    target_title: 'CSV导入',
+    detail: `从 ${req.file.originalname} 导入 ${imported} 行数据（${mode === 'replace' ? '覆盖模式' : '追加模式'}）`,
+    ip: req.ip
+  });
+
+  res.json({ success: true, data: { imported: imported, mode: mode } });
 });
 
 module.exports = router;
