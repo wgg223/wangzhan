@@ -121,44 +121,30 @@
   </div>
 </div>
 
-<!-- CSV导入弹窗 -->
+<!-- 导入弹窗 -->
 <div class="modal-overlay" id="importModal" style="display:none;">
-  <div class="modal" style="max-width:700px;">
+  <div class="modal" style="max-width:500px;">
     <div class="modal-header">
       <h3>📥 导入数据（CSV / Excel）</h3>
       <button class="modal-close" onclick="__ss.closeImportModal()">&times;</button>
     </div>
     <div class="modal-body">
-      <div id="importStep1">
-        <div class="form-group">
-          <label>选择 CSV 或 Excel 文件（最大50MB）</label>
-          <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="width:100%;padding:10px;border:1px dashed #ddd;border-radius:6px;" />
-        </div>
-        <div class="form-group">
-          <label>导入模式</label>
-          <select id="importMode">
-            <option value="append">追加（保留现有数据，新增行）</option>
-            <option value="replace">覆盖（清空现有数据后导入）</option>
-          </select>
-        </div>
-        <p class="form-hint">文件第一行应为表头，系统会自动匹配列名，也可手动调整映射。</p>
+      <div class="form-group">
+        <label>选择 CSV 或 Excel 文件（最大50MB）</label>
+        <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="width:100%;padding:10px;border:1px dashed #ddd;border-radius:6px;" />
       </div>
-      <div id="importStep2" style="display:none;">
-        <div class="import-summary">
-          <span id="importFileName"></span> · 共 <span id="importRowCount"></span> 行数据
-        </div>
-        <div class="import-mapping-table">
-          <table class="admin-table">
-            <thead><tr><th>CSV 列名</th><th>映射到表格字段</th><th>示例数据</th></tr></thead>
-            <tbody id="importMappingBody"></tbody>
-          </table>
-        </div>
+      <div class="form-group">
+        <label>导入模式</label>
+        <select id="importMode">
+          <option value="append">追加（保留现有数据，新增行）</option>
+          <option value="replace">覆盖（清空现有数据后导入）</option>
+        </select>
       </div>
+      <p class="form-hint">系统自动匹配表头，无对应列时自动创建新列，无需手动操作。</p>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="__ss.closeImportModal()">取消</button>
-      <button class="btn btn-outline" id="importPreviewBtn" onclick="__ss.previewImport()">预览并匹配列</button>
-      <button class="btn btn-primary" id="importConfirmBtn" style="display:none;" onclick="__ss.confirmImport()">确认导入</button>
+      <button class="btn btn-primary" id="importConfirmBtn" onclick="__ss.confirmImport()">开始导入</button>
     </div>
   </div>
 </div>
