@@ -329,12 +329,33 @@ router.post('/api/spreadsheet/:id/column', isAuthenticated, (req, res, next) => 
   res.json({ success: true, data: { id: result.lastInsertRowid, name, field_key, type: type || 'text', width: width || 150, sort_order: newOrder, is_visible: 1 } });
 });
 
-// ============ CSV 导入功能 ============
+// ============ 文件导入功能（CSV / XLSX） ============
 const multer = require('multer');
+const XLSX = require('xlsx');
 const importUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 最大10MB
 });
+
+// 统一解析导入文件，返回二维数组（第一行为表头）
+function parseImportFile(file) {
+  const ext = (file.originalname.split('.').pop() || '').toLowerCase();
+  if (ext === 'csv') {
+    const text = file.buffer.toString('utf-8');
+    return parseCSV(text);
+  }
+  if (ext === 'xlsx' || ext === 'xls') {
+    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) throw new Error('Excel 文件中没有工作表');
+    const worksheet = workbook.Sheets[firstSheetName];
+    // header:1 返回二维数组，defval:'' 空单元格填充空字符串
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    // 转换所有值为字符串
+    return rows.map(row => row.map(cell => String(cell == null ? '' : cell)));
+  }
+  throw new Error('不支持的文件格式，请上传 CSV 或 XLSX 文件');
+}
 
 // 简易 CSV 解析器（支持引号包裹、逗号、换行）
 function parseCSV(text) {
@@ -368,26 +389,25 @@ function parseCSV(text) {
   return rows.filter(r => r.some(c => c.trim() !== ''));
 }
 
-// 预览 CSV（解析前几行，返回列名和示例数据）
+// 预览导入文件（解析前几行，返回列名和示例数据）
 router.post('/api/spreadsheet/:id/import/preview', isAuthenticated, (req, res, next) => {
   if (!canManageSpreadsheet(req)) return res.status(403).json({ error: '您没有编辑此表格的权限' });
   next();
 }, importUpload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: '请上传 CSV 文件' });
+  if (!req.file) return res.status(400).json({ error: '请上传 CSV 或 XLSX 文件' });
   const sheetId = parseInt(req.params.id, 10);
   const db = req.db;
 
-  let text;
+  let rows;
   try {
-    text = req.file.buffer.toString('utf-8');
+    rows = parseImportFile(req.file);
   } catch (e) {
-    return res.status(400).json({ error: '文件编码不支持，请使用 UTF-8 编码的 CSV 文件' });
+    return res.status(400).json({ error: e.message || '文件解析失败' });
   }
 
-  const rows = parseCSV(text);
-  if (rows.length === 0) return res.status(400).json({ error: 'CSV 文件为空' });
+  if (rows.length === 0) return res.status(400).json({ error: '文件为空' });
 
-  const headers = rows[0].map(h => h.trim());
+  const headers = rows[0].map(h => String(h).trim());
   const sampleRows = rows.slice(1, 6); // 最多预览5行数据
 
   // 获取表格现有列
@@ -410,24 +430,23 @@ router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => 
   if (!canManageSpreadsheet(req)) return res.status(403).json({ error: '您没有编辑此表格的权限' });
   next();
 }, importUpload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: '请上传 CSV 文件' });
+  if (!req.file) return res.status(400).json({ error: '请上传 CSV 或 XLSX 文件' });
   const sheetId = parseInt(req.params.id, 10);
   const db = req.db;
   const mode = req.body.mode || 'append'; // append（追加）或 replace（覆盖）
-  const mapping = req.body.mapping ? JSON.parse(req.body.mapping) : {}; // { csvHeader: field_key }
+  const mapping = req.body.mapping ? JSON.parse(req.body.mapping) : {}; // { header: field_key }
 
   const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ?', [sheetId]);
   if (!sheet) return res.status(404).json({ error: '表格不存在' });
 
-  let text;
+  let rows;
   try {
-    text = req.file.buffer.toString('utf-8');
+    rows = parseImportFile(req.file);
   } catch (e) {
-    return res.status(400).json({ error: '文件编码不支持' });
+    return res.status(400).json({ error: e.message || '文件解析失败' });
   }
 
-  const rows = parseCSV(text);
-  if (rows.length < 2) return res.status(400).json({ error: 'CSV 文件没有数据行' });
+  if (rows.length < 2) return res.status(400).json({ error: '文件没有数据行' });
 
   const headers = rows[0].map(h => h.trim());
   const dataRows = rows.slice(1);
