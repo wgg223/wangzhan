@@ -1,0 +1,71 @@
+<%# ===== 页面模板：admin/spreadsheets.ejs =====%>
+<%# 说明：后台在线表格管理列表页 %>
+<div class="admin-page-header">
+  <h2>📊 在线表格管理</h2>
+  <a href="/admin/spreadsheets/create" class="btn btn-primary">➕ 创建表格</a>
+</div>
+
+<div class="admin-card">
+  <% if (sheets.length === 0) { %>
+  <div class="empty-state">
+    <p>暂无表格，点击右上角"创建表格"开始</p>
+  </div>
+  <% } else { %>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>表格名称</th>
+        <th>描述</th>
+        <th>列数</th>
+        <th>行数</th>
+        <th>创建者</th>
+        <th>创建时间</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% sheets.forEach(function(sheet) { %>
+      <tr>
+        <td><%= sheet.id %></td>
+        <td><strong><%= sheet.name %></strong></td>
+        <td><%= sheet.description || '-' %></td>
+        <td><%= sheet.col_count %></td>
+        <td><%= sheet.row_count %></td>
+        <td><%= sheet.creator_name || '-' %></td>
+        <td><%= new Date(sheet.created_at).toLocaleString('zh-CN') %></td>
+        <td>
+          <span class="status-badge <%= sheet.status === 'active' ? 'status-active' : 'status-inactive' %>">
+            <%= sheet.status === 'active' ? '正常' : '已停用' %>
+          </span>
+        </td>
+        <td class="table-actions">
+          <a href="/spreadsheet/<%= sheet.id %>" class="action-link" target="_blank">查看</a>
+          <a href="/admin/spreadsheets/<%= sheet.id %>/edit" class="action-link">编辑</a>
+          <a href="/admin/spreadsheets/<%= sheet.id %>/columns" class="action-link">列管理</a>
+          <button class="action-link danger" onclick="deleteSheet(<%= sheet.id %>, '<%= sheet.name.replace(/'/g, "\\'") %>')">删除</button>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<script>
+function deleteSheet(id, name) {
+  if (!confirm('确定要删除表格「' + name + '」吗？此操作不可恢复，所有列和行数据将被删除。')) return;
+  fetch('/admin/spreadsheets/' + id, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        alert('删除成功');
+        location.reload();
+      } else {
+        alert(data.error || '删除失败');
+      }
+    })
+    .catch(err => alert('删除失败: ' + err.message));
+}
+</script>
