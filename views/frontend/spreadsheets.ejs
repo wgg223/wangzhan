@@ -21,7 +21,7 @@
   <% } else { %>
   <div class="sheet-grid">
     <% sheets.forEach(function(sheet) { %>
-    <div class="sheet-card">
+    <a href="/spreadsheet/<%= sheet.id %>/editor" class="sheet-card">
       <div class="sheet-card-icon">📊</div>
       <div class="sheet-card-body">
         <h3 class="sheet-card-title"><%= sheet.name %></h3>
@@ -30,12 +30,8 @@
           <span>创建者：<%= sheet.creator_name || '未知' %></span>
           <span><%= new Date(sheet.created_at).toLocaleDateString('zh-CN') %></span>
         </div>
-        <div class="sheet-card-actions">
-          <a href="/spreadsheet/<%= sheet.id %>/editor" class="sheet-btn sheet-btn-primary">📈 高级表格</a>
-          <a href="/spreadsheet/<%= sheet.id %>" class="sheet-btn">📋 简单视图</a>
-        </div>
       </div>
-    </div>
+    </a>
     <% }); %>
   </div>
   <% } %>
