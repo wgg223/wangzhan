@@ -308,6 +308,7 @@ const contentRoutes = require('./routes/content');
 const permissionApplicationsRoutes = require('./routes/permission-applications');
 const privateMessageRoutes = require('./routes/private-message');
 const shareRoutes = require('./routes/share');
+const spreadsheetRoutes = require('./routes/spreadsheet');
 const apiRoutes = require('./routes/api/index');
 const { apiAccessLogger } = require('./middlewares/api-access-logger');
 
@@ -324,6 +325,7 @@ app.use(maintenanceMiddleware);
 
 app.use('/image-share', globalLimiter, imageShareRoutes); // 图片分享站
 app.use('/share', globalLimiter, shareRoutes);          // 分享页面
+app.use('/', globalLimiter, spreadsheetRoutes);       // 在线表格
 app.use('/', globalLimiter, frontendRoutes);            // 前台页面
 app.use('/', globalLimiter, communityRoutes);           // 社区（动态/关注）
 app.use('/', globalLimiter, privateMessageRoutes);      // 站内私信
