@@ -334,7 +334,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const importUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 } // 最大10MB
+  limits: { fileSize: 50 * 1024 * 1024 } // 最大50MB
 });
 
 // 统一解析导入文件，返回二维数组（第一行为表头）
