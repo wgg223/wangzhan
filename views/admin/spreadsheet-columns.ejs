@@ -1,0 +1,142 @@
+<%# ===== 页面模板：admin/spreadsheet-columns.ejs =====%>
+<%# 说明：后台在线表格列管理页 %>
+<div class="admin-page-header">
+  <h2>📋 列管理 - <%= sheet.name %></h2>
+  <div>
+    <a href="/admin/spreadsheets/<%= sheet.id %>/edit" class="btn btn-secondary">表格设置</a>
+    <a href="/admin/spreadsheets" class="btn btn-secondary">← 返回列表</a>
+  </div>
+</div>
+
+<div class="admin-card">
+  <div class="col-manager-toolbar">
+    <p>管理表格的列：调整名称、字段标识、类型、宽度、显示状态和排序。</p>
+    <button class="btn btn-primary" onclick="addColumnRow()">➕ 添加列</button>
+  </div>
+
+  <table class="admin-table" id="columnsTable">
+    <thead>
+      <tr>
+        <th style="width:50px;">序号</th>
+        <th>列名称</th>
+        <th>字段标识</th>
+        <th style="width:100px;">类型</th>
+        <th style="width:100px;">宽度(px)</th>
+        <th style="width:80px;">显示</th>
+        <th style="width:80px;">操作</th>
+      </tr>
+    </thead>
+    <tbody id="columnsBody">
+      <% columns.forEach(function(col, idx) { %>
+      <tr data-col-id="<%= col.id %>">
+        <td class="col-order"><%= idx + 1 %></td>
+        <td><input type="text" class="col-name-input" value="<%= col.name %>" /></td>
+        <td><input type="text" class="col-key-input" value="<%= col.field_key %>" /></td>
+        <td>
+          <select class="col-type-input">
+            <option value="text" <%= col.type === 'text' ? 'selected' : '' %>>文本</option>
+            <option value="number" <%= col.type === 'number' ? 'selected' : '' %>>数字</option>
+            <option value="date" <%= col.type === 'date' ? 'selected' : '' %>>日期</option>
+          </select>
+        </td>
+        <td><input type="number" class="col-width-input" value="<%= col.width %>" min="50" max="500" /></td>
+        <td>
+          <input type="checkbox" class="col-visible-input" <%= col.is_visible ? 'checked' : '' %> />
+        </td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="removeColumnRow(this)">删除</button>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+
+  <div class="form-actions">
+    <button class="btn btn-primary" onclick="saveColumns()">💾 保存全部修改</button>
+  </div>
+</div>
+
+<style>
+.col-manager-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.col-manager-toolbar p { margin: 0; color: #666; font-size: 14px; }
+#columnsTable input, #columnsTable select { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+#columnsTable input:focus, #columnsTable select:focus { border-color: #667eea; outline: none; }
+.col-order { text-align: center; color: #999; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-danger { background: #f44336; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+</style>
+
+<script>
+function addColumnRow() {
+  var tbody = document.getElementById('columnsBody');
+  var idx = tbody.children.length;
+  var tr = document.createElement('tr');
+  tr.setAttribute('data-col-id', '');
+  tr.innerHTML =
+    '<td class="col-order">' + (idx + 1) + '</td>' +
+    '<td><input type="text" class="col-name-input" placeholder="列名" /></td>' +
+    '<td><input type="text" class="col-key-input" placeholder="field_key" /></td>' +
+    '<td><select class="col-type-input"><option value="text">文本</option><option value="number">数字</option><option value="date">日期</option></select></td>' +
+    '<td><input type="number" class="col-width-input" value="150" min="50" max="500" /></td>' +
+    '<td><input type="checkbox" class="col-visible-input" checked /></td>' +
+    '<td><button class="btn btn-danger btn-sm" onclick="removeColumnRow(this)">删除</button></td>';
+  tbody.appendChild(tr);
+  updateOrderNumbers();
+}
+
+function removeColumnRow(btn) {
+  var tr = btn.closest('tr');
+  var colId = tr.getAttribute('data-col-id');
+  if (colId) {
+    if (!confirm('确定删除此列吗？列中的数据不会被自动清除。')) return;
+    fetch('/admin/spreadsheets/<%= sheet.id %>/columns/' + colId, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => { if (data.success) { tr.remove(); updateOrderNumbers(); } else { alert(data.error); } });
+  } else {
+    tr.remove();
+    updateOrderNumbers();
+  }
+}
+
+function updateOrderNumbers() {
+  document.querySelectorAll('#columnsBody tr').forEach(function(tr, idx) {
+    tr.querySelector('.col-order').textContent = idx + 1;
+  });
+}
+
+function saveColumns() {
+  var columns = [];
+  var valid = true;
+  document.querySelectorAll('#columnsBody tr').forEach(function(tr) {
+    var name = tr.querySelector('.col-name-input').value.trim();
+    var key = tr.querySelector('.col-key-input').value.trim();
+    if (!name || !key) { valid = false; }
+    columns.push({
+      id: tr.getAttribute('data-col-id') || null,
+      name: name,
+      field_key: key,
+      type: tr.querySelector('.col-type-input').value,
+      width: parseInt(tr.querySelector('.col-width-input').value, 10) || 150,
+      is_visible: tr.querySelector('.col-visible-input').checked ? 1 : 0
+    });
+  });
+
+  if (!valid) { alert('列名称和字段标识不能为空'); return; }
+
+  fetch('/admin/spreadsheets/<%= sheet.id %>/columns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ columns: columns })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert('保存成功');
+      location.reload();
+    } else {
+      alert(data.error || '保存失败');
+    }
+  })
+  .catch(err => alert('保存失败: ' + err.message));
+}
+</script>
