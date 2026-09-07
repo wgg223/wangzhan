@@ -991,6 +991,9 @@ function createTables(db) {
     FOREIGN KEY (created_by) REFERENCES users(id)
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_spreadsheets_status ON spreadsheets(status)');
+  // 新增 luckysheet_data 字段存储完整表格数据（兼容旧数据库）
+  db.run(`ALTER TABLE spreadsheets ADD COLUMN luckysheet_data TEXT`, function(err) { /* 忽略已存在错误 */ });
+  db.run(`ALTER TABLE spreadsheets ADD COLUMN is_luckysheet INTEGER DEFAULT 0`, function(err) { /* 忽略已存在错误 */ });
 
   // 表格列定义表
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_columns (
