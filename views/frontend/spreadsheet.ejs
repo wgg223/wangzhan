@@ -125,14 +125,14 @@
 <div class="modal-overlay" id="importModal" style="display:none;">
   <div class="modal" style="max-width:700px;">
     <div class="modal-header">
-      <h3>📥 导入 CSV 数据</h3>
+      <h3>📥 导入数据（CSV / Excel）</h3>
       <button class="modal-close" onclick="__ss.closeImportModal()">&times;</button>
     </div>
     <div class="modal-body">
       <div id="importStep1">
         <div class="form-group">
-          <label>选择 CSV 文件（UTF-8 编码，最大10MB）</label>
-          <input type="file" id="importFile" accept=".csv" style="width:100%;padding:10px;border:1px dashed #ddd;border-radius:6px;" />
+          <label>选择 CSV 或 Excel 文件（最大10MB）</label>
+          <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="width:100%;padding:10px;border:1px dashed #ddd;border-radius:6px;" />
         </div>
         <div class="form-group">
           <label>导入模式</label>
@@ -141,7 +141,7 @@
             <option value="replace">覆盖（清空现有数据后导入）</option>
           </select>
         </div>
-        <p class="form-hint">CSV 第一行应为表头，导入时可将 CSV 列映射到表格字段。</p>
+        <p class="form-hint">文件第一行应为表头，系统会自动匹配列名，也可手动调整映射。</p>
       </div>
       <div id="importStep2" style="display:none;">
         <div class="import-summary">
