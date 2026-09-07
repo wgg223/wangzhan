@@ -44,6 +44,21 @@ router.get('/spreadsheet', isAuthenticated, hasFrontendPermission('spreadsheet.a
   });
 });
 
+// Luckysheet 在线表格编辑页（功能接近 Excel）
+router.get('/spreadsheet/:id/editor', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const sheet = queryOne(db, 'SELECT * FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
+  if (!sheet) return res.status(404).send('表格不存在');
+  const canManage = canManageSpreadsheet(req);
+  res.render('frontend/spreadsheet-editor', {
+    user: req.session.user,
+    sheet: sheet,
+    canManage: canManage,
+    settings: res.locals.settings || {}
+  });
+});
+
 // 表格查看/编辑页
 router.get('/spreadsheet/:id', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const db = req.db;
@@ -609,6 +624,68 @@ router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => 
   });
 
   res.json({ success: true, data: { imported: imported, mode: mode, newColumns: newColumns.length, totalColumns: existingColumns.length + newColumns.length } });
+});
+
+// ============ Luckysheet 在线表格 API ============
+
+// 获取 Luckysheet 表格数据
+router.get('/api/spreadsheet/:id/luckysheet/data', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const sheet = queryOne(db, 'SELECT luckysheet_data FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+  res.json({ success: true, data: sheet.luckysheet_data || null });
+});
+
+// 保存 Luckysheet 表格数据
+router.post('/api/spreadsheet/:id/luckysheet/save', isAuthenticated, (req, res, next) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+
+  // 权限检查
+  if (!canManageSpreadsheet(req)) {
+    return res.status(403).json({ success: false, error: '没有编辑权限' });
+  }
+
+  const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+
+  const luckysheetData = req.body.data;
+  if (typeof luckysheetData !== 'string') {
+    return res.status(400).json({ success: false, error: '数据格式错误' });
+  }
+
+  // 验证 JSON 格式
+  try {
+    JSON.parse(luckysheetData);
+  } catch (e) {
+    return res.status(400).json({ success: false, error: '数据格式不是有效的JSON' });
+  }
+
+  // 限制数据大小（20MB）
+  if (luckysheetData.length > 20 * 1024 * 1024) {
+    return res.status(400).json({ success: false, error: '数据过大，超过20MB限制' });
+  }
+
+  db.run(
+    'UPDATE spreadsheets SET luckysheet_data = ?, is_luckysheet = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [luckysheetData, sheetId],
+    function(err) {
+      if (err) return next(err);
+      saveDatabase(db);
+      logActivity(db, {
+        user_id: req.session.user.id,
+        username: req.session.user.username,
+        action: 'update',
+        target_type: 'spreadsheet',
+        target_id: sheetId,
+        target_title: 'Luckysheet表格保存',
+        detail: `保存在线表格数据（${(luckysheetData.length / 1024).toFixed(1)}KB）`,
+        ip: req.ip
+      });
+      res.json({ success: true });
+    }
+  );
 });
 
 module.exports = router;
