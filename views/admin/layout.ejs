@@ -142,6 +142,9 @@
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'comments.manage')) { %>
             <li><a href="/admin/comments" class="<%= isActive('/admin/comments') ? 'active' : '' %>">💬 评论管理</a></li>
             <% } %>
+            <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'spreadsheet.manage')) { %>
+            <li><a href="/admin/spreadsheets" class="<%= isActive('/admin/spreadsheets') ? 'active' : '' %>">📊 在线表格</a></li>
+            <% } %>
           </ul>
         </div>
         <% } %>
