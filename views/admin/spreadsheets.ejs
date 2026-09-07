@@ -57,24 +57,36 @@
 </div>
 
 <!-- 批量导入弹窗 -->
-<div class="modal-overlay" id="batchImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:none;align-items:center;justify-content:center;">
-  <div class="modal" style="background:#fff;border-radius:8px;max-width:550px;width:90%;max-height:80vh;overflow-y:auto;">
+<div class="modal-overlay" id="batchImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+  <div class="modal" style="background:#fff;border-radius:8px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto;">
     <div class="modal-header" style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
       <h3 style="margin:0;">📥 批量导入表格</h3>
       <button onclick="closeBatchImport()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#999;">&times;</button>
     </div>
     <div class="modal-body" style="padding:20px;">
-      <div style="margin-bottom:16px;">
-        <label style="display:block;margin-bottom:8px;font-weight:500;">选择 Excel 文件（.xlsx/.xls，最大50MB）</label>
-        <input type="file" id="batchImportFile" accept=".xlsx,.xls" style="width:100%;padding:12px;border:2px dashed #ddd;border-radius:6px;cursor:pointer;" />
+      <!-- 第一步：选择文件 -->
+      <div id="batchStep1">
+        <div style="margin-bottom:16px;">
+          <label style="display:block;margin-bottom:8px;font-weight:500;">选择 Excel 文件（.xlsx/.xls，最大200MB）</label>
+          <input type="file" id="batchImportFile" accept=".xlsx,.xls" style="width:100%;padding:12px;border:2px dashed #ddd;border-radius:6px;cursor:pointer;" />
+        </div>
+        <div style="background:#f0f4ff;padding:12px 16px;border-radius:6px;font-size:13px;color:#555;line-height:1.8;">
+          <strong>说明：</strong><br>
+          • 系统会自动读取 Excel 文件中的所有工作表（Sheet）<br>
+          • 可预览每个工作表的列数、行数、表头和图片信息<br>
+          • 可勾选要导入的工作表，每个工作表自动创建为一个新表格<br>
+          • 工作表第一行作为表头，自动创建对应列
+        </div>
       </div>
-      <div style="background:#f0f4ff;padding:12px 16px;border-radius:6px;font-size:13px;color:#555;line-height:1.6;">
-        <strong>说明：</strong><br>
-        • 系统会自动读取 Excel 文件中的所有工作表（Sheet）<br>
-        • 每个工作表自动创建为一个新的在线表格<br>
-        • 工作表第一行作为表头，自动创建对应列<br>
-        • 表格名称使用工作表名称
+      <!-- 第二步：预览并选择Sheet -->
+      <div id="batchStep2" style="display:none;">
+        <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:500;">文件：<span id="batchFileName"></span>（共 <span id="batchSheetCount"></span> 个工作表）</span>
+          <label style="font-size:13px;cursor:pointer;"><input type="checkbox" id="batchSelectAll" checked onchange="toggleSelectAllSheets()"> 全选</label>
+        </div>
+        <div id="batchSheetList" style="max-height:350px;overflow-y:auto;border:1px solid #eee;border-radius:6px;"></div>
       </div>
+      <!-- 导入结果 -->
       <div id="batchImportResult" style="margin-top:16px;display:none;">
         <h4 style="margin:0 0 10px 0;">导入结果</h4>
         <div id="batchImportResultList"></div>
@@ -82,7 +94,8 @@
     </div>
     <div class="modal-footer" style="padding:16px 20px;border-top:1px solid #eee;display:flex;justify-content:flex-end;gap:10px;">
       <button class="btn btn-secondary" onclick="closeBatchImport()">取消</button>
-      <button class="btn btn-primary" id="batchImportBtn" onclick="confirmBatchImport()">开始导入</button>
+      <button class="btn btn-outline" id="batchPreviewBtn" onclick="previewBatchFile()">🔍 预览工作表</button>
+      <button class="btn btn-primary" id="batchImportBtn" style="display:none;" onclick="confirmBatchImport()">开始导入选中项</button>
     </div>
   </div>
 </div>
@@ -93,19 +106,22 @@ function deleteSheet(id, name) {
   fetch('/admin/spreadsheets/' + id, { method: 'DELETE' })
     .then(r => r.json())
     .then(data => {
-      if (data.success) {
-        alert('删除成功');
-        location.reload();
-      } else {
-        alert(data.error || '删除失败');
-      }
+      if (data.success) { alert('删除成功'); location.reload(); }
+      else { alert(data.error || '删除失败'); }
     })
     .catch(err => alert('删除失败: ' + err.message));
 }
 
+var batchPreviewData = null;
+
 function openBatchImport() {
   document.getElementById('batchImportFile').value = '';
+  document.getElementById('batchStep1').style.display = 'block';
+  document.getElementById('batchStep2').style.display = 'none';
   document.getElementById('batchImportResult').style.display = 'none';
+  document.getElementById('batchPreviewBtn').style.display = 'inline-block';
+  document.getElementById('batchImportBtn').style.display = 'none';
+  batchPreviewData = null;
   document.getElementById('batchImportModal').style.display = 'flex';
 }
 
@@ -113,61 +129,119 @@ function closeBatchImport() {
   document.getElementById('batchImportModal').style.display = 'none';
 }
 
-function confirmBatchImport() {
+function previewBatchFile() {
   var fileInput = document.getElementById('batchImportFile');
   if (!fileInput.files || fileInput.files.length === 0) {
     alert('请选择 Excel 文件');
     return;
   }
+  var btn = document.getElementById('batchPreviewBtn');
+  btn.disabled = true;
+  btn.textContent = '解析中...';
+  var formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  fetch('/admin/spreadsheets/batch-preview', { method: 'POST', body: formData })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.success) {
+        batchPreviewData = res.data;
+        document.getElementById('batchFileName').textContent = res.data.filename;
+        document.getElementById('batchSheetCount').textContent = res.data.totalSheets;
+        var listHtml = '';
+        res.data.sheets.forEach(function(sheet, idx) {
+          listHtml += '<div style="padding:12px;border-bottom:1px solid #eee;display:flex;gap:12px;align-items:flex-start;">';
+          listHtml += '<input type="checkbox" class="sheet-checkbox" data-sheet-name="' + sheet.name.replace(/"/g, '&quot;') + '" checked style="margin-top:3px;">';
+          listHtml += '<div style="flex:1;">';
+          listHtml += '<div style="font-weight:500;margin-bottom:4px;">' + sheet.name + 
+            (sheet.hasImages ? ' <span style="color:#e67e22;font-size:12px;">🖼️ 含图片</span>' : '') + '</div>';
+          listHtml += '<div style="font-size:12px;color:#666;margin-bottom:4px;">' + sheet.columns + ' 列 · ' + sheet.rows + ' 行</div>';
+          if (sheet.headers && sheet.headers.length > 0) {
+            listHtml += '<div style="font-size:12px;color:#999;">表头：' + sheet.headers.join('、') + '</div>';
+          }
+          if (sheet.sampleData && sheet.sampleData.length > 0) {
+            listHtml += '<div style="font-size:11px;color:#bbb;margin-top:2px;">示例：' + 
+              sheet.sampleData[0].join(' | ') + '</div>';
+          }
+          listHtml += '</div></div>';
+        });
+        document.getElementById('batchSheetList').innerHTML = listHtml;
+        document.getElementById('batchStep1').style.display = 'none';
+        document.getElementById('batchStep2').style.display = 'block';
+        document.getElementById('batchPreviewBtn').style.display = 'none';
+        document.getElementById('batchImportBtn').style.display = 'inline-block';
+      } else {
+        alert(res.error || '预览失败');
+      }
+    })
+    .catch(function(err) { alert('预览失败: ' + err.message); })
+    .finally(function() {
+      btn.disabled = false;
+      btn.textContent = '🔍 预览工作表';
+    });
+}
 
+function toggleSelectAllSheets() {
+  var checked = document.getElementById('batchSelectAll').checked;
+  document.querySelectorAll('.sheet-checkbox').forEach(function(cb) { cb.checked = checked; });
+}
+
+function confirmBatchImport() {
+  var fileInput = document.getElementById('batchImportFile');
+  var selectedSheets = [];
+  document.querySelectorAll('.sheet-checkbox:checked').forEach(function(cb) {
+    selectedSheets.push(cb.getAttribute('data-sheet-name'));
+  });
+  if (selectedSheets.length === 0) {
+    alert('请至少选择一个工作表');
+    return;
+  }
   var btn = document.getElementById('batchImportBtn');
   btn.disabled = true;
   btn.textContent = '导入中...';
-
   var formData = new FormData();
   formData.append('file', fileInput.files[0]);
-
-  fetch('/admin/spreadsheets/batch-import', {
-    method: 'POST',
-    body: formData
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(res) {
-    if (res.success) {
-      var resultDiv = document.getElementById('batchImportResult');
-      var listDiv = document.getElementById('batchImportResultList');
-      var html = '<p style="margin:0 0 10px 0;color:#28a745;"><strong>导入完成！</strong> 共 ' + res.data.importedSheets + '/' + res.data.totalSheets + ' 个表格，' + res.data.totalRows + ' 行数据</p>';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-      html += '<thead><tr style="background:#f5f5f5;"><th style="padding:8px;text-align:left;border:1px solid #ddd;">工作表</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">状态</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">列数</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">行数</th></tr></thead><tbody>';
-      res.data.results.forEach(function(r) {
-        html += '<tr>';
-        html += '<td style="padding:8px;border:1px solid #ddd;">' + (r.name || '-') + '</td>';
-        if (r.success) {
-          html += '<td style="padding:8px;border:1px solid #ddd;color:#28a745;">✓ 成功</td>';
-          html += '<td style="padding:8px;border:1px solid #ddd;">' + r.columns + '</td>';
-          html += '<td style="padding:8px;border:1px solid #ddd;">' + r.rows + '</td>';
-        } else {
-          html += '<td style="padding:8px;border:1px solid #ddd;color:#dc3545;">✗ ' + (r.error || '失败') + '</td>';
-          html += '<td style="padding:8px;border:1px solid #ddd;">-</td>';
-          html += '<td style="padding:8px;border:1px solid #ddd;">-</td>';
-        }
-        html += '</tr>';
-      });
-      html += '</tbody></table>';
-      listDiv.innerHTML = html;
-      resultDiv.style.display = 'block';
-      btn.textContent = '关闭';
-      btn.onclick = function() { location.reload(); };
-    } else {
-      alert(res.error || '导入失败');
-      btn.disabled = false;
-      btn.textContent = '开始导入';
-    }
-  })
-  .catch(function(err) {
-    alert('导入失败: ' + err.message);
-    btn.disabled = false;
-    btn.textContent = '开始导入';
-  });
+  formData.append('selectedSheets', JSON.stringify(selectedSheets));
+  fetch('/admin/spreadsheets/batch-import', { method: 'POST', body: formData })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.success) {
+        var resultDiv = document.getElementById('batchImportResult');
+        var listDiv = document.getElementById('batchImportResultList');
+        var html = '<p style="margin:0 0 10px 0;color:#28a745;"><strong>导入完成！</strong> 共 ' + res.data.importedSheets + '/' + res.data.totalSheets + ' 个表格，' + res.data.totalRows + ' 行数据</p>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+        html += '<thead><tr style="background:#f5f5f5;"><th style="padding:8px;text-align:left;border:1px solid #ddd;">工作表</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">状态</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">列数</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">行数</th></tr></thead><tbody>';
+        res.data.results.forEach(function(r) {
+          html += '<tr>';
+          html += '<td style="padding:8px;border:1px solid #ddd;">' + (r.name || '-') + '</td>';
+          if (r.success) {
+            html += '<td style="padding:8px;border:1px solid #ddd;color:#28a745;">✓ 成功</td>';
+            html += '<td style="padding:8px;border:1px solid #ddd;">' + r.columns + '</td>';
+            html += '<td style="padding:8px;border:1px solid #ddd;">' + r.rows + '</td>';
+          } else {
+            html += '<td style="padding:8px;border:1px solid #ddd;color:#dc3545;">✗ ' + (r.error || '失败') + '</td>';
+            html += '<td style="padding:8px;border:1px solid #ddd;">-</td>';
+            html += '<td style="padding:8px;border:1px solid #ddd;">-</td>';
+          }
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        listDiv.innerHTML = html;
+        resultDiv.style.display = 'block';
+        document.getElementById('batchStep2').style.display = 'none';
+        btn.textContent = '关闭并刷新';
+        btn.onclick = function() { location.reload(); };
+      } else {
+        alert(res.error || '导入失败');
+        btn.disabled = false;
+        btn.textContent = '开始导入选中项';
+      }
+    })
+    .catch(function(err) { alert('导入失败: ' + err.message); })
+    .finally(function() {
+      if (!btn.onclick) {
+        btn.disabled = false;
+        btn.textContent = '开始导入选中项';
+      }
+    });
 }
 </script>
