@@ -52,7 +52,8 @@ const PERMISSION_CATEGORIES = {
   'content': { name: '内容管理', description: '文章、小说、页面等内容的管理' },
   'community': { name: '社区与消息', description: '评论、站内信等社区功能' },
   'image': { name: '图片分享', description: '图片分享模块管理' },
-  'system': { name: '系统管理', description: '用户、权限、设置等管理功能' }
+  'system': { name: '系统管理', description: '用户、权限、设置等管理功能' },
+  'spreadsheet': { name: '在线表格', description: '在线表格的访问与管理' }
 };
 
 // 获取权限分类
@@ -80,7 +81,9 @@ function getPermCategory(permKey) {
     'novels.detail.access': 'basic',
     'images.detail.access': 'basic',
     'community.posts.create': 'community',
-    'community.notifications.manage': 'system'
+    'community.notifications.manage': 'system',
+    'spreadsheet.access': 'spreadsheet',
+    'spreadsheet.manage': 'spreadsheet'
   };
   if (categoryMap[permKey]) return categoryMap[permKey];
   if (permKey.endsWith('.access')) return 'basic';
