@@ -21,7 +21,7 @@
   <% } else { %>
   <div class="sheet-grid">
     <% sheets.forEach(function(sheet) { %>
-    <a href="/spreadsheet/<%= sheet.id %>" class="sheet-card">
+    <div class="sheet-card">
       <div class="sheet-card-icon">📊</div>
       <div class="sheet-card-body">
         <h3 class="sheet-card-title"><%= sheet.name %></h3>
@@ -30,8 +30,12 @@
           <span>创建者：<%= sheet.creator_name || '未知' %></span>
           <span><%= new Date(sheet.created_at).toLocaleDateString('zh-CN') %></span>
         </div>
+        <div class="sheet-card-actions">
+          <a href="/spreadsheet/<%= sheet.id %>/editor" class="sheet-btn sheet-btn-primary">📈 高级表格</a>
+          <a href="/spreadsheet/<%= sheet.id %>" class="sheet-btn">📋 简单视图</a>
+        </div>
       </div>
-    </a>
+    </div>
     <% }); %>
   </div>
   <% } %>
@@ -57,5 +61,10 @@
 .sheet-card-body { flex: 1; min-width: 0; }
 .sheet-card-title { font-size: 18px; color: #1a1a2e; margin: 0 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-card-desc { font-size: 14px; color: #666; margin: 0 0 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.sheet-card-meta { display: flex; justify-content: space-between; font-size: 12px; color: #999; }
+.sheet-card-meta { display: flex; justify-content: space-between; font-size: 12px; color: #999; margin-bottom: 12px; }
+.sheet-card-actions { display: flex; gap: 8px; }
+.sheet-btn { display: inline-block; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; border: 1px solid #ddd; color: #666; background: #fff; transition: all 0.2s; }
+.sheet-btn:hover { border-color: #667eea; color: #667eea; }
+.sheet-btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border-color: transparent; }
+.sheet-btn-primary:hover { color: #fff; opacity: 0.9; }
 </style>
