@@ -163,7 +163,13 @@ router.post('/spreadsheets/batch-preview', batchImportUpload.single('file'), (re
 router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '请上传 Excel 文件' });
   const db = req.db;
-  const selectedSheets = req.body.selectedSheets ? JSON.parse(req.body.selectedSheets) : null;
+
+  let selectedSheets = null;
+  try {
+    selectedSheets = req.body.selectedSheets ? JSON.parse(req.body.selectedSheets) : null;
+  } catch (e) {
+    return res.status(400).json({ error: 'selectedSheets 参数格式错误' });
+  }
 
   let workbook;
   try {
@@ -176,101 +182,118 @@ router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req
   if (sheetNames.length === 0) return res.status(400).json({ error: 'Excel 文件中没有工作表' });
 
   if (selectedSheets && Array.isArray(selectedSheets) && selectedSheets.length > 0) {
-    sheetNames = sheetNames.filter(name => selectedSheets.includes(name));
+    sheetNames = sheetNames.filter(function(name) { return selectedSheets.indexOf(name) >= 0; });
   }
+
+  if (sheetNames.length === 0) return res.status(400).json({ error: '没有选中的工作表' });
 
   const results = [];
   let totalRows = 0;
 
-  sheetNames.forEach((sheetName, sheetIdx) => {
-    const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-    if (rows.length < 2) {
-      results.push({ name: sheetName, success: false, error: '没有数据行' });
-      return;
-    }
+  try {
+    sheetNames.forEach(function(sheetName, sheetIdx) {
+      const worksheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+      if (rows.length < 2) {
+        results.push({ name: sheetName, success: false, error: '没有数据行' });
+        return;
+      }
 
-    const headers = rows[0].map(h => String(h).trim());
-    const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim() !== ''));
-    if (dataRows.length === 0) {
-      results.push({ name: sheetName, success: false, error: '没有有效数据' });
-      return;
-    }
+      const headers = rows[0].map(function(h) { return String(h).trim(); });
+      const dataRows = rows.slice(1).filter(function(r) { return r.some(function(c) { return String(c).trim() !== ''; }); });
+      if (dataRows.length === 0) {
+        results.push({ name: sheetName, success: false, error: '没有有效数据' });
+        return;
+      }
 
-    const tableName = sheetName.substring(0, 100) || 'Sheet' + (sheetIdx + 1);
-    db.run(
-      'INSERT INTO spreadsheets (name, description, created_by, status, created_at, updated_at) VALUES (?, ?, ?, ?, datetime("now"), datetime("now"))',
-      [tableName, '从 ' + req.file.originalname + ' 批量导入', req.session.user.id, 'active']
-    );
-    const newSheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE name = ? ORDER BY id DESC LIMIT 1', [tableName]);
-    if (!newSheet) {
-      results.push({ name: sheetName, success: false, error: '创建表格失败' });
-      return;
-    }
+      const tableName = (sheetName || 'Sheet' + (sheetIdx + 1)).substring(0, 100);
+      const description = '从 ' + req.file.originalname + ' 批量导入';
 
-    const existingKeys = new Set();
-    const colFieldKeys = [];
-    headers.forEach((header, idx) => {
-      if (!header) { colFieldKeys.push(null); return; }
-      const fieldKey = toFieldKey(header, existingKeys, idx);
-      const colName = header.substring(0, 50);
-      db.run(
-        'INSERT INTO spreadsheet_columns (spreadsheet_id, name, field_key, type, width, is_visible, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [newSheet.id, colName, fieldKey, 'text', 150, 1, idx]
+      // 创建表格并获取新ID
+      const insertResult = db.run(
+        'INSERT INTO spreadsheets (name, description, created_by) VALUES (?, ?, ?)',
+        [tableName, description, req.session.user.id]
       );
-      colFieldKeys.push(fieldKey);
-    });
+      const newSheetId = insertResult.lastInsertRowid;
+      if (!newSheetId) {
+        results.push({ name: sheetName, success: false, error: '创建表格失败' });
+        return;
+      }
 
-    let imported = 0;
-    dataRows.forEach((row, rowIdx) => {
-      const rowData = {};
-      headers.forEach((header, idx) => {
-        const fieldKey = colFieldKeys[idx];
-        if (fieldKey && row[idx] !== undefined && String(row[idx]).trim() !== '') {
-          rowData[fieldKey] = String(row[idx]);
+      // 创建列
+      const existingKeys = new Set();
+      const colFieldKeys = [];
+      headers.forEach(function(header, idx) {
+        if (!header) { colFieldKeys.push(null); return; }
+        const fieldKey = toFieldKey(header, existingKeys, idx);
+        const colName = header.substring(0, 50);
+        db.run(
+          'INSERT INTO spreadsheet_columns (spreadsheet_id, name, field_key, type, width, is_visible, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [newSheetId, colName, fieldKey, 'text', 150, 1, idx]
+        );
+        colFieldKeys.push(fieldKey);
+      });
+
+      // 导入行数据
+      let imported = 0;
+      dataRows.forEach(function(row, rowIdx) {
+        const rowData = {};
+        headers.forEach(function(header, idx) {
+          const fieldKey = colFieldKeys[idx];
+          if (fieldKey && row[idx] !== undefined && String(row[idx]).trim() !== '') {
+            rowData[fieldKey] = String(row[idx]);
+          }
+        });
+        if (Object.keys(rowData).length > 0) {
+          db.run(
+            'INSERT INTO spreadsheet_rows (spreadsheet_id, row_data, sort_order) VALUES (?, ?, ?)',
+            [newSheetId, JSON.stringify(rowData), rowIdx]
+          );
+          imported++;
         }
       });
-      if (Object.keys(rowData).length > 0) {
-        db.run(
-          'INSERT INTO spreadsheet_rows (spreadsheet_id, row_data, sort_order) VALUES (?, ?, ?)',
-          [newSheet.id, JSON.stringify(rowData), rowIdx]
-        );
-        imported++;
+
+      totalRows += imported;
+      results.push({
+        id: newSheetId,
+        name: tableName,
+        success: true,
+        columns: colFieldKeys.filter(function(k) { return k; }).length,
+        rows: imported
+      });
+    });
+
+    saveDatabase();
+
+    // 记录活动日志（不影响主流程）
+    try {
+      logActivity(db, {
+        user_id: req.session.user.id,
+        username: req.session.user.username,
+        action: 'batch_import',
+        target_type: 'spreadsheet',
+        target_id: 0,
+        target_title: '批量导入表格',
+        detail: '从 ' + req.file.originalname + ' 批量导入 ' + results.filter(function(r) { return r.success; }).length + ' 个表格，共 ' + totalRows + ' 行数据',
+        ip: req.ip
+      });
+    } catch (logErr) {
+      console.error('日志记录失败:', logErr.message);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        totalSheets: sheetNames.length,
+        importedSheets: results.filter(function(r) { return r.success; }).length,
+        totalRows: totalRows,
+        results: results
       }
     });
-
-    totalRows += imported;
-    results.push({
-      id: newSheet.id,
-      name: tableName,
-      success: true,
-      columns: colFieldKeys.filter(k => k).length,
-      rows: imported
-    });
-  });
-
-  saveDatabase();
-
-  logActivity(db, {
-    user_id: req.session.user.id,
-    username: req.session.user.username,
-    action: 'batch_import',
-    target_type: 'spreadsheet',
-    target_id: 0,
-    target_title: '批量导入表格',
-    detail: '从 ' + req.file.originalname + ' 批量导入 ' + results.filter(function(r) { return r.success; }).length + ' 个表格，共 ' + totalRows + ' 行数据',
-    ip: req.ip
-  });
-
-  res.json({
-    success: true,
-    data: {
-      totalSheets: sheetNames.length,
-      importedSheets: results.filter(r => r.success).length,
-      totalRows: totalRows,
-      results: results
-    }
-  });
+  } catch (err) {
+    console.error('批量导入失败:', err);
+    res.status(500).json({ error: '导入失败: ' + err.message, stack: err.stack });
+  }
 });
 
 // 编辑表格设置
