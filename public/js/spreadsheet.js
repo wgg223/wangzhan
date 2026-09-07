@@ -579,10 +579,6 @@
   function openImportModal() {
     document.getElementById('importFile').value = '';
     document.getElementById('importMode').value = 'append';
-    document.getElementById('importStep1').style.display = 'block';
-    document.getElementById('importStep2').style.display = 'none';
-    document.getElementById('importPreviewBtn').style.display = 'inline-block';
-    document.getElementById('importConfirmBtn').style.display = 'none';
     document.getElementById('importModal').style.display = 'flex';
   }
 
@@ -591,74 +587,12 @@
     importState.previewData = null;
   }
 
-  function previewImport() {
-    var fileInput = document.getElementById('importFile');
-    if (!fileInput.files || fileInput.files.length === 0) {
-      alert('请先选择 CSV 文件');
-      return;
-    }
-
-    var formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    fetch('/api/spreadsheet/' + sheetId + '/import/preview', {
-      method: 'POST',
-      body: formData
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(res) {
-      if (res.success && res.data) {
-        importState.previewData = res.data;
-        document.getElementById('importFileName').textContent = res.data.filename;
-        document.getElementById('importRowCount').textContent = res.data.totalRows;
-
-        // 生成列匹配表
-        var tbody = document.getElementById('importMappingBody');
-        var html = '';
-        res.data.headers.forEach(function(header, idx) {
-          var sample = res.data.sampleRows[0] ? (res.data.sampleRows[0][idx] || '') : '';
-          html += '<tr>';
-          html += '<td><strong>' + escapeHtml(header) + '</strong></td>';
-          html += '<td><select class="import-map-select" data-csv-header="' + escapeAttr(header) + '">';
-          html += '<option value="">-- 不导入 --</option>';
-          res.data.tableColumns.forEach(function(col) {
-            var selected = (col.field_key === header || col.name === header) ? 'selected' : '';
-            html += '<option value="' + escapeAttr(col.field_key) + '" ' + selected + '>' + escapeHtml(col.name) + ' (' + escapeHtml(col.field_key) + ')</option>';
-          });
-          html += '</select></td>';
-          html += '<td style="color:#999;font-size:12px;">' + escapeHtml(String(sample).substring(0, 30)) + '</td>';
-          html += '</tr>';
-        });
-        tbody.innerHTML = html;
-
-        document.getElementById('importStep1').style.display = 'none';
-        document.getElementById('importStep2').style.display = 'block';
-        document.getElementById('importPreviewBtn').style.display = 'none';
-        document.getElementById('importConfirmBtn').style.display = 'inline-block';
-      } else {
-        alert(res.error || '预览失败');
-      }
-    })
-    .catch(function(err) { alert('预览失败: ' + err.message); });
-  }
+  // 预览功能已移除，导入时自动匹配表头
 
   function confirmImport() {
     var fileInput = document.getElementById('importFile');
     if (!fileInput.files || fileInput.files.length === 0) {
-      alert('请选择 CSV 文件');
-      return;
-    }
-
-    // 收集列映射
-    var mapping = {};
-    document.querySelectorAll('.import-map-select').forEach(function(sel) {
-      var csvHeader = sel.getAttribute('data-csv-header');
-      var fieldKey = sel.value;
-      if (fieldKey) mapping[csvHeader] = fieldKey;
-    });
-
-    if (Object.keys(mapping).length === 0) {
-      alert('请至少映射一列');
+      alert('请选择 CSV 或 Excel 文件');
       return;
     }
 
@@ -670,10 +604,10 @@
     var formData = new FormData();
     formData.append('file', fileInput.files[0]);
     formData.append('mode', mode);
-    formData.append('mapping', JSON.stringify(mapping));
 
-    document.getElementById('importConfirmBtn').disabled = true;
-    document.getElementById('importConfirmBtn').textContent = '导入中...';
+    var btn = document.getElementById('importConfirmBtn');
+    btn.disabled = true;
+    btn.textContent = '导入中...';
 
     fetch('/api/spreadsheet/' + sheetId + '/import', {
       method: 'POST',
@@ -682,18 +616,27 @@
     .then(function(r) { return r.json(); })
     .then(function(res) {
       if (res.success) {
-        alert('导入成功！共导入 ' + res.data.imported + ' 行数据');
+        var msg = '导入成功！共导入 ' + res.data.imported + ' 行数据';
+        if (res.data.newColumns > 0) {
+          msg += '，自动创建 ' + res.data.newColumns + ' 个新列';
+        }
+        alert(msg);
         closeImportModal();
         state.page = 1;
-        loadData();
+        // 如果有新列，刷新页面以更新表头
+        if (res.data.newColumns > 0) {
+          location.reload();
+        } else {
+          loadData();
+        }
       } else {
         alert(res.error || '导入失败');
       }
     })
     .catch(function(err) { alert('导入失败: ' + err.message); })
     .finally(function() {
-      document.getElementById('importConfirmBtn').disabled = false;
-      document.getElementById('importConfirmBtn').textContent = '确认导入';
+      btn.disabled = false;
+      btn.textContent = '开始导入';
     });
   }
 
@@ -723,7 +666,6 @@
     submitAddColumn: submitAddColumn,
     openImportModal: openImportModal,
     closeImportModal: closeImportModal,
-    previewImport: previewImport,
     confirmImport: confirmImport,
     closeRichEditor: closeRichEditor,
     saveRichEdit: saveRichEdit,
