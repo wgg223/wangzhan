@@ -975,6 +975,50 @@ function createTables(db) {
       perms.forEach(p => db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)', [a.id, p.perm_key, a.id]));
     });
   } catch (e) { /* 新库无表时忽略 */ }
+
+
+  // ============ 在线表格模块表 ============
+  // 表格元数据表
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_by INTEGER NOT NULL,
+    status TEXT DEFAULT 'active',
+    page_size INTEGER DEFAULT 20,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_spreadsheets_status ON spreadsheets(status)');
+
+  // 表格列定义表
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_columns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spreadsheet_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    field_key TEXT NOT NULL,
+    type TEXT DEFAULT 'text',
+    width INTEGER DEFAULT 150,
+    sort_order INTEGER DEFAULT 0,
+    is_visible INTEGER DEFAULT 1,
+    options TEXT DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_columns_sheet ON spreadsheet_columns(spreadsheet_id, sort_order)');
+
+  // 表格行数据表（row_data 为 JSON 字符串，key=field_key, value=单元格值）
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_rows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spreadsheet_id INTEGER NOT NULL,
+    row_data TEXT DEFAULT '{}',
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_rows_sheet ON spreadsheet_rows(spreadsheet_id, sort_order)');
 }
 
 module.exports = { createTables };
