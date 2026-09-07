@@ -38,6 +38,56 @@ function toFieldKey(header, existingKeys, idx) {
   return finalKey;
 }
 
+// Excel日期序列号转日期字符串（1900日期系统）
+function excelDateToString(value) {
+  if (typeof value !== 'number' || value < 20000 || value > 80000) return null;
+  try {
+    // Excel日期序列号，1900-01-01对应1（有1900年闰年bug，实际从1899-12-30开始）
+    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+    if (isNaN(date.getTime())) return null;
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 自动检测表头行：如果第一行非空列太少，认为是标题行，使用第二行
+function detectHeaderRow(rows) {
+  if (rows.length === 0) return 0;
+  const firstRow = rows[0];
+  const totalCols = firstRow.length;
+  const nonEmptyCols = firstRow.filter(function(c) { return String(c).trim() !== ''; }).length;
+  
+  // 条件1：第一行非空列比例很低（<40%），认为是标题行
+  if (totalCols >= 2 && nonEmptyCols / totalCols < 0.4 && rows.length > 1) {
+    return 1;
+  }
+  
+  // 条件2：第一行只有1列有值，且第二行有更多列有值，认为是标题行
+  if (nonEmptyCols <= 1 && rows.length > 1) {
+    const secondRowNonEmpty = rows[1].filter(function(c) { return String(c).trim() !== ''; }).length;
+    if (secondRowNonEmpty > nonEmptyCols) {
+      return 1;
+    }
+  }
+  
+  return 0;
+}
+
+// 处理单元格值：转换日期、数字转字符串
+function processCellValue(value) {
+  if (value === null || value === undefined) return '';
+  // 尝试转换Excel日期
+  if (typeof value === 'number') {
+    const dateStr = excelDateToString(value);
+    if (dateStr) return dateStr;
+  }
+  return String(value);
+}
+
 // 所有路由需要 spreadsheet.manage 权限
 router.use(hasPermission('spreadsheet.manage'));
 
@@ -132,12 +182,14 @@ router.post('/spreadsheets/batch-preview', batchImportUpload.single('file'), (re
   const sheetNames = workbook.SheetNames;
   if (sheetNames.length === 0) return res.status(400).json({ error: 'Excel 文件中没有工作表' });
 
-  const sheets = sheetNames.map(name => {
+  const sheets = sheetNames.map(function(name) {
     const worksheet = workbook.Sheets[name];
-    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-    const headers = rows.length > 0 ? rows[0].map(h => String(h).trim()).filter(h => h) : [];
-    const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim() !== ''));
-    // 检测是否有图片（xlsx社区版不支持直接提取，但可以检测图片关系）
+    const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
+    const headerRowIdx = detectHeaderRow(rawRows);
+    const headers = rawRows.length > headerRowIdx ? rawRows[headerRowIdx].map(function(h) { return processCellValue(h).trim(); }).filter(function(h) { return h; }) : [];
+    const dataRows = rawRows.slice(headerRowIdx + 1).filter(function(r) {
+      return r.some(function(c) { return processCellValue(c).trim() !== ''; });
+    });
     const hasImages = !!(worksheet['!images'] || (worksheet['!merges'] && worksheet['!merges'].length > 0));
     return {
       name: name,
@@ -145,7 +197,10 @@ router.post('/spreadsheets/batch-preview', batchImportUpload.single('file'), (re
       rows: dataRows.length,
       headers: headers.slice(0, 10),
       hasImages: hasImages,
-      sampleData: dataRows.slice(0, 3).map(r => r.slice(0, 5).map(c => String(c).substring(0, 50)))
+      headerRow: headerRowIdx + 1,
+      sampleData: dataRows.slice(0, 3).map(function(r) {
+        return r.slice(0, 5).map(function(c) { return processCellValue(c).substring(0, 50); });
+      })
     };
   });
 
@@ -193,14 +248,18 @@ router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req
   try {
     sheetNames.forEach(function(sheetName, sheetIdx) {
       const worksheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-      if (rows.length < 2) {
+      const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
+      if (rawRows.length < 2) {
         results.push({ name: sheetName, success: false, error: '没有数据行' });
         return;
       }
 
-      const headers = rows[0].map(function(h) { return String(h).trim(); });
-      const dataRows = rows.slice(1).filter(function(r) { return r.some(function(c) { return String(c).trim() !== ''; }); });
+      // 自动检测表头行
+      const headerRowIdx = detectHeaderRow(rawRows);
+      const headers = rawRows[headerRowIdx].map(function(h) { return processCellValue(h).trim(); });
+      const dataRows = rawRows.slice(headerRowIdx + 1).filter(function(r) {
+        return r.some(function(c) { return processCellValue(c).trim() !== ''; });
+      });
       if (dataRows.length === 0) {
         results.push({ name: sheetName, success: false, error: '没有有效数据' });
         return;
@@ -240,8 +299,9 @@ router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req
         const rowData = {};
         headers.forEach(function(header, idx) {
           const fieldKey = colFieldKeys[idx];
-          if (fieldKey && row[idx] !== undefined && String(row[idx]).trim() !== '') {
-            rowData[fieldKey] = String(row[idx]);
+          const cellValue = processCellValue(row[idx]);
+          if (fieldKey && cellValue.trim() !== '') {
+            rowData[fieldKey] = cellValue;
           }
         });
         if (Object.keys(rowData).length > 0) {
