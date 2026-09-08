@@ -21,7 +21,7 @@
   <% } else { %>
   <div class="sheet-grid">
     <% sheets.forEach(function(sheet) { %>
-    <a href="/spreadsheet/<%= sheet.id %>/editor" class="sheet-card">
+    <a href="/spreadsheet/<%= sheet.id %>" class="sheet-card">
       <div class="sheet-card-icon">📊</div>
       <div class="sheet-card-body">
         <h3 class="sheet-card-title"><%= sheet.name %></h3>
