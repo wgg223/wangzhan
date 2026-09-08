@@ -153,7 +153,7 @@ app.use((req, res, next) => {
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net static.cloudflareinsights.com blob: data:",
     "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net",
     "img-src 'self' data: blob: https:",
-    "font-src 'self' data: cdnjs.cloudflare.com cdn.jsdelivr.net unpkg.com",
+    "font-src 'self' data: cdnjs.cloudflare.com cdn.jsdelivr.net unpkg.com at.alicdn.com",
     "connect-src 'self' https: ws: wss:",
     "worker-src 'self' blob: data:",
     "frame-src 'self' https:",
