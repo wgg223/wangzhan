@@ -1,9 +1,9 @@
 <%# ===== 页面模板：admin/spreadsheets.ejs =====%>
-<%# 说明：后台在线表格管理列表页 %>
+<%# 说明：后台在线表格管理列表页（Luckysheet 模式） %>
 <div class="admin-page-header">
   <h2>📊 在线表格管理</h2>
   <div style="display:flex;gap:10px;">
-    <button class="btn btn-outline" onclick="openBatchImport()">📥 批量导入</button>
+    <button class="btn btn-outline" onclick="openBatchImport()">📥 批量导入Excel</button>
     <a href="/admin/spreadsheets/create" class="btn btn-primary">➕ 创建表格</a>
   </div>
 </div>
@@ -11,7 +11,7 @@
 <div class="admin-card">
   <% if (sheets.length === 0) { %>
   <div class="empty-state">
-    <p>暂无表格，点击右上角"创建表格"开始</p>
+    <p>暂无表格，点击右上角"创建表格"或"批量导入Excel"开始</p>
   </div>
   <% } else { %>
   <table class="admin-table">
@@ -20,8 +20,6 @@
         <th>ID</th>
         <th>表格名称</th>
         <th>描述</th>
-        <th>列数</th>
-        <th>行数</th>
         <th>创建者</th>
         <th>创建时间</th>
         <th>状态</th>
@@ -34,8 +32,6 @@
         <td><%= sheet.id %></td>
         <td><strong><%= sheet.name %></strong></td>
         <td><%= sheet.description || '-' %></td>
-        <td><%= sheet.col_count %></td>
-        <td><%= sheet.row_count %></td>
         <td><%= sheet.creator_name || '-' %></td>
         <td><%= new Date(sheet.created_at).toLocaleString('zh-CN') %></td>
         <td>
@@ -44,9 +40,8 @@
           </span>
         </td>
         <td class="table-actions">
-          <a href="/spreadsheet/<%= sheet.id %>" class="action-link" target="_blank">查看</a>
+          <a href="/spreadsheet/<%= sheet.id %>" class="action-link" target="_blank">打开</a>
           <a href="/admin/spreadsheets/<%= sheet.id %>/edit" class="action-link">编辑</a>
-          <a href="/admin/spreadsheets/<%= sheet.id %>/columns" class="action-link">列管理</a>
           <button class="action-link danger" onclick="deleteSheet(<%= sheet.id %>, '<%= sheet.name.replace(/'/g, "\\'") %>')">删除</button>
         </td>
       </tr>
@@ -60,7 +55,7 @@
 <div class="modal-overlay" id="batchImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
   <div class="modal" style="background:#fff;border-radius:8px;max-width:700px;width:90%;max-height:85vh;overflow-y:auto;">
     <div class="modal-header" style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
-      <h3 style="margin:0;">📥 批量导入表格</h3>
+      <h3 style="margin:0;">📥 批量导入 Excel</h3>
       <button onclick="closeBatchImport()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#999;">&times;</button>
     </div>
     <div class="modal-body" style="padding:20px;">
@@ -72,10 +67,10 @@
         </div>
         <div style="background:#f0f4ff;padding:12px 16px;border-radius:6px;font-size:13px;color:#555;line-height:1.8;">
           <strong>说明：</strong><br>
-          • 系统会自动读取 Excel 文件中的所有工作表（Sheet）<br>
-          • 可预览每个工作表的列数、行数、表头和图片信息<br>
-          • 可勾选要导入的工作表，每个工作表自动创建为一个新表格<br>
-          • 工作表第一行作为表头，自动创建对应列
+          • 自动读取 Excel 中的所有工作表（Sheet）<br>
+          • 每个工作表自动创建为一个独立的在线表格<br>
+          • 自动检测表头行，支持合并单元格和日期格式<br>
+          • 导入后可直接在 Luckysheet 中编辑
         </div>
       </div>
       <!-- 第二步：预览并选择Sheet -->
@@ -102,7 +97,7 @@
 
 <script>
 function deleteSheet(id, name) {
-  if (!confirm('确定要删除表格「' + name + '」吗？此操作不可恢复，所有列和行数据将被删除。')) return;
+  if (!confirm('确定要删除表格「' + name + '」吗？此操作不可恢复。')) return;
   fetch('/admin/spreadsheets/' + id, { method: 'DELETE' })
     .then(r => r.json())
     .then(data => {
@@ -152,15 +147,10 @@ function previewBatchFile() {
           listHtml += '<div style="padding:12px;border-bottom:1px solid #eee;display:flex;gap:12px;align-items:flex-start;">';
           listHtml += '<input type="checkbox" class="sheet-checkbox" data-sheet-name="' + sheet.name.replace(/"/g, '&quot;') + '" checked style="margin-top:3px;">';
           listHtml += '<div style="flex:1;">';
-          listHtml += '<div style="font-weight:500;margin-bottom:4px;">' + sheet.name + 
-            (sheet.hasImages ? ' <span style="color:#e67e22;font-size:12px;">🖼️ 含图片</span>' : '') + '</div>';
-          listHtml += '<div style="font-size:12px;color:#666;margin-bottom:4px;">' + sheet.columns + ' 列 · ' + sheet.rows + ' 行</div>';
+          listHtml += '<div style="font-weight:500;margin-bottom:4px;">' + sheet.name + '</div>';
+          listHtml += '<div style="font-size:12px;color:#666;margin-bottom:4px;">' + sheet.columns + ' 列 · ' + sheet.rows + ' 行' + (sheet.headerRow ? '（表头第' + sheet.headerRow + '行）' : '') + '</div>';
           if (sheet.headers && sheet.headers.length > 0) {
-            listHtml += '<div style="font-size:12px;color:#999;">表头：' + sheet.headers.join('、') + '</div>';
-          }
-          if (sheet.sampleData && sheet.sampleData.length > 0) {
-            listHtml += '<div style="font-size:11px;color:#bbb;margin-top:2px;">示例：' + 
-              sheet.sampleData[0].join(' | ') + '</div>';
+            listHtml += '<div style="font-size:12px;color:#999;">表头：' + sheet.headers.slice(0,6).join('、') + (sheet.headers.length > 6 ? '...' : '') + '</div>';
           }
           listHtml += '</div></div>';
         });
@@ -207,7 +197,7 @@ function confirmBatchImport() {
       if (res.success) {
         var resultDiv = document.getElementById('batchImportResult');
         var listDiv = document.getElementById('batchImportResultList');
-        var html = '<p style="margin:0 0 10px 0;color:#28a745;"><strong>导入完成！</strong> 共 ' + res.data.importedSheets + '/' + res.data.totalSheets + ' 个表格，' + res.data.totalRows + ' 行数据</p>';
+        var html = '<p style="margin:0 0 10px 0;color:#28a745;"><strong>导入完成！</strong> 共 ' + res.data.importedSheets + '/' + res.data.totalSheets + ' 个表格</p>';
         html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
         html += '<thead><tr style="background:#f5f5f5;"><th style="padding:8px;text-align:left;border:1px solid #ddd;">工作表</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">状态</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">列数</th><th style="padding:8px;text-align:left;border:1px solid #ddd;">行数</th></tr></thead><tbody>';
         res.data.results.forEach(function(r) {
