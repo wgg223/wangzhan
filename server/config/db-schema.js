@@ -1037,6 +1037,37 @@ function createTables(db) {
     FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_ss_rows_sheet ON spreadsheet_rows(spreadsheet_id, sort_order)');
+  // 文档级用户权限表（每个表格独立权限）
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_user_permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spreadsheet_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    perm_type TEXT NOT NULL DEFAULT 'view',
+    granted_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(spreadsheet_id, user_id, perm_type)
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_perm_sheet ON spreadsheet_user_permissions(spreadsheet_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_perm_user ON spreadsheet_user_permissions(user_id)');
+
+  // 文档权限申请表
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_permission_applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spreadsheet_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    perm_type TEXT NOT NULL,
+    reason TEXT,
+    status TEXT DEFAULT 'pending',
+    handled_by INTEGER,
+    handled_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_app_sheet ON spreadsheet_permission_applications(spreadsheet_id, status)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_app_user ON spreadsheet_permission_applications(user_id, status)');
 }
 
 module.exports = { createTables };
