@@ -15,6 +15,7 @@ const router = express.Router();
 const { isAuthenticated, hasFrontendPermission, hasPermission } = require('../middlewares/auth');
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
+const { createNotification } = require('./community');
 
 // 辅助：检查用户是否有表格管理权限
 function canManageSpreadsheet(req) {
@@ -57,6 +58,7 @@ router.get('/spreadsheet/:id', isAuthenticated, hasFrontendPermission('spreadshe
   }
   const canManage = canManageSpreadsheet(req);
   res.render('frontend/spreadsheet-editor', {
+    layout: false,
     user: req.session.user,
     sheet: sheet,
     canManage: canManage,
@@ -754,6 +756,212 @@ router.post('/api/spreadsheet/:id/lock', isAuthenticated, (req, res, next) => {
       ip: req.ip
     });
     res.json({ success: true, locked: locked === 1 });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+// ============ 文档级权限管理 ============
+
+// 权限类型说明
+const PERM_TYPES = ['view', 'edit', 'download', 'copy'];
+const PERM_NAMES = { view: '查看', edit: '编辑', download: '下载', copy: '创建副本' };
+
+// 辅助：检查用户是否有某个文档的特定权限
+function hasDocPermission(db, sheetId, userId, permType) {
+  if (permType === 'view') return true; // 查看权限默认所有有访问权的用户都有
+  const perm = queryOne(db,
+    'SELECT id FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ?',
+    [sheetId, userId, permType]
+  );
+  return !!perm;
+}
+
+// 获取我的权限
+router.get('/api/spreadsheet/:id/permission/my', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const userId = req.session.user.id;
+  const perms = queryAll(db,
+    'SELECT perm_type FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ?',
+    [sheetId, userId]
+  );
+  const permList = perms.map(p => p.perm_type);
+  permList.push('view'); // 查看默认有
+  res.json({ success: true, permissions: permList, isAdmin: canManageSpreadsheet(req) });
+});
+
+// 申请权限
+router.post('/api/spreadsheet/:id/permission/apply', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res, next) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const userId = req.session.user.id;
+  const { perm_type, reason } = req.body;
+
+  if (!perm_type || !PERM_TYPES.includes(perm_type)) {
+    return res.status(400).json({ success: false, error: '无效的权限类型' });
+  }
+  if (perm_type === 'view') {
+    return res.status(400).json({ success: false, error: '查看权限无需申请' });
+  }
+
+  const sheet = queryOne(db, 'SELECT id, name, created_by FROM spreadsheets WHERE id = ?', [sheetId]);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+
+  // 检查是否已有该权限
+  if (hasDocPermission(db, sheetId, userId, perm_type)) {
+    return res.status(400).json({ success: false, error: '您已拥有该权限' });
+  }
+
+  // 检查是否已有待处理的申请
+  const existing = queryOne(db,
+    'SELECT id FROM spreadsheet_permission_applications WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ? AND status = ?',
+    [sheetId, userId, perm_type, 'pending']
+  );
+  if (existing) {
+    return res.status(400).json({ success: false, error: '已有待处理的申请，请等待审批' });
+  }
+
+  try {
+    db.run(
+      'INSERT INTO spreadsheet_permission_applications (spreadsheet_id, user_id, perm_type, reason) VALUES (?, ?, ?, ?)',
+      [sheetId, userId, perm_type, reason || '']
+    );
+    saveDatabase(db);
+
+    // 通知表格创建者和所有管理员
+    const admins = queryAll(db, `
+      SELECT DISTINCT u.id, u.username FROM users u
+      WHERE u.role = 'super_admin'
+      OR u.id IN (SELECT user_id FROM user_permissions WHERE perm_key IN ('spreadsheet.manage', 'spreadsheet.*'))
+    `);
+    admins.forEach(admin => {
+      createNotification(db, {
+        userId: admin.id,
+        type: 'permission_apply',
+        title: '表格权限申请',
+        content: `${req.session.user.username} 申请表格「${sheet.name}」的${PERM_NAMES[perm_type]}权限${reason ? '：' + reason : ''}`,
+        fromUserId: userId,
+        targetType: 'spreadsheet',
+        targetId: String(sheetId)
+      });
+    });
+
+    res.json({ success: true, message: '申请已提交，等待审批' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 获取权限列表（管理员）
+router.get('/api/spreadsheet/:id/permissions', isAuthenticated, (req, res) => {
+  if (!canManageSpreadsheet(req)) {
+    return res.status(403).json({ success: false, error: '没有权限' });
+  }
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const perms = queryAll(db, `
+    SELECT p.*, u.username, u.email
+    FROM spreadsheet_user_permissions p
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE p.spreadsheet_id = ?
+    ORDER BY p.created_at DESC
+  `, [sheetId]);
+  res.json({ success: true, permissions: perms });
+});
+
+// 获取申请列表（管理员）
+router.get('/api/spreadsheet/:id/permission/applications', isAuthenticated, (req, res) => {
+  if (!canManageSpreadsheet(req)) {
+    return res.status(403).json({ success: false, error: '没有权限' });
+  }
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const apps = queryAll(db, `
+    SELECT a.*, u.username, u.email
+    FROM spreadsheet_permission_applications a
+    LEFT JOIN users u ON a.user_id = u.id
+    WHERE a.spreadsheet_id = ?
+    ORDER BY a.created_at DESC
+    LIMIT 50
+  `, [sheetId]);
+  res.json({ success: true, applications: apps });
+});
+
+// 审批申请
+router.post('/api/spreadsheet/:id/permission/approve', isAuthenticated, (req, res, next) => {
+  if (!canManageSpreadsheet(req)) {
+    return res.status(403).json({ success: false, error: '没有权限' });
+  }
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const { application_id, approved, perm_type } = req.body;
+
+  const app = queryOne(db, 'SELECT * FROM spreadsheet_permission_applications WHERE id = ? AND spreadsheet_id = ?', [application_id, sheetId]);
+  if (!app) return res.status(404).json({ success: false, error: '申请不存在' });
+  if (app.status !== 'pending') return res.status(400).json({ success: false, error: '申请已处理' });
+
+  const sheet = queryOne(db, 'SELECT name FROM spreadsheets WHERE id = ?', [sheetId]);
+  const actualPermType = perm_type || app.perm_type;
+
+  try {
+    // 更新申请状态
+    db.run(
+      'UPDATE spreadsheet_permission_applications SET status = ?, handled_by = ?, handled_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [approved ? 'approved' : 'rejected', req.session.user.id, application_id]
+    );
+
+    if (approved) {
+      // 授予权限（忽略重复）
+      db.run(
+        'INSERT OR IGNORE INTO spreadsheet_user_permissions (spreadsheet_id, user_id, perm_type, granted_by) VALUES (?, ?, ?, ?)',
+        [sheetId, app.user_id, actualPermType, req.session.user.id]
+      );
+    }
+    saveDatabase(db);
+
+    // 通知申请人
+    createNotification(db, {
+      userId: app.user_id,
+      type: 'permission_result',
+      title: approved ? '权限申请已通过' : '权限申请被拒绝',
+      content: `您申请的表格「${sheet ? sheet.name : ''}」的${PERM_NAMES[actualPermType]}权限${approved ? '已通过' : '被拒绝'}`,
+      fromUserId: req.session.user.id,
+      targetType: 'spreadsheet',
+      targetId: String(sheetId)
+    });
+
+    res.json({ success: true, message: approved ? '已通过申请' : '已拒绝申请' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 撤销用户权限
+router.delete('/api/spreadsheet/:id/permission/:userId', isAuthenticated, (req, res, next) => {
+  if (!canManageSpreadsheet(req)) {
+    return res.status(403).json({ success: false, error: '没有权限' });
+  }
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const userId = parseInt(req.params.userId, 10);
+  const { perm_type } = req.body;
+
+  try {
+    if (perm_type) {
+      db.run(
+        'DELETE FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ?',
+        [sheetId, userId, perm_type]
+      );
+    } else {
+      db.run(
+        'DELETE FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ?',
+        [sheetId, userId]
+      );
+    }
+    saveDatabase(db);
+    res.json({ success: true, message: '权限已撤销' });
   } catch (err) {
     next(err);
   }
