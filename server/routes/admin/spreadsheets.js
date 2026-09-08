@@ -95,9 +95,7 @@ router.use(hasPermission('spreadsheet.manage'));
 router.get('/spreadsheets', (req, res) => {
   const db = req.db;
   const sheets = queryAll(db,
-    `SELECT s.*, u.username AS creator_name,
-      (SELECT COUNT(*) FROM spreadsheet_columns c WHERE c.spreadsheet_id = s.id) AS col_count,
-      (SELECT COUNT(*) FROM spreadsheet_rows r WHERE r.spreadsheet_id = s.id) AS row_count
+    `SELECT s.*, u.username AS creator_name
      FROM spreadsheets s LEFT JOIN users u ON s.created_by = u.id
      ORDER BY s.created_at DESC`
   );
@@ -113,7 +111,6 @@ router.get('/spreadsheets/create', (req, res) => {
   res.render('admin/spreadsheet-form', {
     user: req.session.user,
     sheet: null,
-    columns: [],
     settings: res.locals.settings || {}
   });
 });
@@ -121,36 +118,37 @@ router.get('/spreadsheets/create', (req, res) => {
 // 保存创建
 router.post('/spreadsheets', (req, res) => {
   const db = req.db;
-  const { name, description, page_size, columns } = req.body;
+  const { name, description } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ error: '表格名称不能为空' });
   }
 
+  // 创建空的 Luckysheet 表格数据
+  const emptyData = JSON.stringify([{
+    name: name.trim().substring(0, 31),
+    index: 0,
+    status: 1,
+    order: 0,
+    row: 36,
+    column: 18,
+    celldata: [],
+    config: {},
+    scrollLeft: 0,
+    scrollTop: 0,
+    zoomRatio: 1,
+    showGridLines: 1,
+    defaultRowHeight: 28,
+    defaultColWidth: 100,
+    visibledatarow: 36,
+    visibledatacolumn: 18
+  }]);
+
   const result = db.run(
-    'INSERT INTO spreadsheets (name, description, created_by, page_size) VALUES (?, ?, ?, ?)',
-    [name.trim(), description || '', req.session.user.id, parseInt(page_size, 10) || 20]
+    'INSERT INTO spreadsheets (name, description, created_by, luckysheet_data, is_luckysheet) VALUES (?, ?, ?, ?, 1)',
+    [name.trim(), description || '', req.session.user.id, emptyData]
   );
   const sheetId = result.lastInsertRowid;
-
-  // 添加默认列或用户指定的列
-  let colList = [];
-  if (Array.isArray(columns) && columns.length > 0) {
-    colList = columns;
-  } else {
-    colList = [
-      { name: '名称', field_key: 'name', type: 'text', width: 200 },
-      { name: '描述', field_key: 'description', type: 'text', width: 300 },
-      { name: '状态', field_key: 'status', type: 'text', width: 100 }
-    ];
-  }
-
-  colList.forEach((col, idx) => {
-    db.run(
-      'INSERT INTO spreadsheet_columns (spreadsheet_id, name, field_key, type, width, sort_order, is_visible) VALUES (?, ?, ?, ?, ?, ?, 1)',
-      [sheetId, col.name || '列' + (idx + 1), col.field_key || ('col_' + idx), col.type || 'text', col.width || 150, idx]
-    );
-  });
 
   saveDatabase();
 
@@ -161,7 +159,7 @@ router.post('/spreadsheets', (req, res) => {
     target_type: 'spreadsheet',
     target_id: sheetId,
     target_title: name.trim(),
-    detail: '创建在线表格: ' + name.trim(),
+    detail: '创建在线表格（Luckysheet）: ' + name.trim(),
     ip: req.ip
   });
 
@@ -249,29 +247,57 @@ router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req
     sheetNames.forEach(function(sheetName, sheetIdx) {
       const worksheet = workbook.Sheets[sheetName];
       const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
-      if (rawRows.length < 2) {
-        results.push({ name: sheetName, success: false, error: '没有数据行' });
+      if (rawRows.length === 0) {
+        results.push({ name: sheetName, success: false, error: '没有数据' });
         return;
       }
 
-      // 自动检测表头行
-      const headerRowIdx = detectHeaderRow(rawRows);
-      const headers = rawRows[headerRowIdx].map(function(h) { return processCellValue(h).trim(); });
-      const dataRows = rawRows.slice(headerRowIdx + 1).filter(function(r) {
-        return r.some(function(c) { return processCellValue(c).trim() !== ''; });
+      // 转换为 Luckysheet celldata 格式
+      const celldata = [];
+      let maxCol = 0;
+      rawRows.forEach(function(row, r) {
+        row.forEach(function(cell, c) {
+          const value = processCellValue(cell);
+          if (value !== '' && value != null) {
+            celldata.push({
+              r: r,
+              c: c,
+              v: { v: value, m: value, ct: { fa: 'General', t: 'g' } }
+            });
+            if (c > maxCol) maxCol = c;
+          }
+        });
       });
-      if (dataRows.length === 0) {
-        results.push({ name: sheetName, success: false, error: '没有有效数据' });
-        return;
-      }
 
       const tableName = (sheetName || 'Sheet' + (sheetIdx + 1)).substring(0, 100);
       const description = '从 ' + req.file.originalname + ' 批量导入';
 
+      // 构建 Luckysheet 数据
+      const luckysheetData = [{
+        name: tableName,
+        index: 0,
+        status: 1,
+        order: 0,
+        row: Math.max(rawRows.length, 36),
+        column: Math.max(maxCol + 1, 18),
+        celldata: celldata,
+        config: {},
+        scrollLeft: 0,
+        scrollTop: 0,
+        zoomRatio: 1,
+        showGridLines: 1,
+        defaultRowHeight: 28,
+        defaultColWidth: 100,
+        visibledatarow: Math.max(rawRows.length, 36),
+        visibledatacolumn: Math.max(maxCol + 1, 18)
+      }];
+
+      const dataJson = JSON.stringify(luckysheetData);
+
       // 创建表格并获取新ID
       const insertResult = db.run(
-        'INSERT INTO spreadsheets (name, description, created_by) VALUES (?, ?, ?)',
-        [tableName, description, req.session.user.id]
+        'INSERT INTO spreadsheets (name, description, created_by, luckysheet_data, is_luckysheet) VALUES (?, ?, ?, ?, 1)',
+        [tableName, description, req.session.user.id, dataJson]
       );
       const newSheetId = insertResult.lastInsertRowid;
       if (!newSheetId) {
@@ -279,53 +305,19 @@ router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req
         return;
       }
 
-      // 创建列
-      const existingKeys = new Set();
-      const colFieldKeys = [];
-      headers.forEach(function(header, idx) {
-        if (!header) { colFieldKeys.push(null); return; }
-        const fieldKey = toFieldKey(header, existingKeys, idx);
-        const colName = header.substring(0, 50);
-        db.run(
-          'INSERT INTO spreadsheet_columns (spreadsheet_id, name, field_key, type, width, is_visible, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [newSheetId, colName, fieldKey, 'text', 150, 1, idx]
-        );
-        colFieldKeys.push(fieldKey);
-      });
-
-      // 导入行数据
-      let imported = 0;
-      dataRows.forEach(function(row, rowIdx) {
-        const rowData = {};
-        headers.forEach(function(header, idx) {
-          const fieldKey = colFieldKeys[idx];
-          const cellValue = processCellValue(row[idx]);
-          if (fieldKey && cellValue.trim() !== '') {
-            rowData[fieldKey] = cellValue;
-          }
-        });
-        if (Object.keys(rowData).length > 0) {
-          db.run(
-            'INSERT INTO spreadsheet_rows (spreadsheet_id, row_data, sort_order) VALUES (?, ?, ?)',
-            [newSheetId, JSON.stringify(rowData), rowIdx]
-          );
-          imported++;
-        }
-      });
-
-      totalRows += imported;
+      const rowCount = rawRows.filter(function(r) { return r.some(function(c) { return processCellValue(c).trim() !== ''; }); }).length;
+      totalRows += rowCount;
       results.push({
         id: newSheetId,
         name: tableName,
         success: true,
-        columns: colFieldKeys.filter(function(k) { return k; }).length,
-        rows: imported
+        columns: maxCol + 1,
+        rows: rowCount
       });
     });
 
     saveDatabase();
 
-    // 记录活动日志（不影响主流程）
     try {
       logActivity(db, {
         user_id: req.session.user.id,
@@ -334,7 +326,7 @@ router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req
         target_type: 'spreadsheet',
         target_id: 0,
         target_title: '批量导入表格',
-        detail: '从 ' + req.file.originalname + ' 批量导入 ' + results.filter(function(r) { return r.success; }).length + ' 个表格，共 ' + totalRows + ' 行数据',
+        detail: '从 ' + req.file.originalname + ' 批量导入 ' + results.filter(function(r) { return r.success; }).length + ' 个表格，共 ' + totalRows + ' 行数据（Luckysheet格式）',
         ip: req.ip
       });
     } catch (logErr) {
@@ -364,123 +356,38 @@ router.get('/spreadsheets/:id/edit', (req, res) => {
   if (!sheet) {
     return res.status(404).render('admin/error', { message: '表格不存在', user: req.session.user });
   }
-  const columns = queryAll(db, 'SELECT * FROM spreadsheet_columns WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC', [sheetId]);
   res.render('admin/spreadsheet-form', {
     user: req.session.user,
     sheet: sheet,
-    columns: columns,
     settings: res.locals.settings || {}
   });
 });
 
-// 保存编辑
+// 更新表格
 router.post('/spreadsheets/:id', (req, res) => {
   const db = req.db;
   const sheetId = parseInt(req.params.id, 10);
-  const { name, description, page_size, status } = req.body;
+  const { name, description, status } = req.body;
 
-  const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ?', [sheetId]);
-  if (!sheet) return res.status(404).json({ error: '表格不存在' });
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: '表格名称不能为空' });
+  }
 
   db.run(
-    'UPDATE spreadsheets SET name = ?, description = ?, page_size = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [name.trim(), description || '', parseInt(page_size, 10) || 20, status || 'active', sheetId]
+    'UPDATE spreadsheets SET name = ?, description = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [name.trim(), description || '', status || 'active', sheetId]
   );
   saveDatabase();
-
-  logActivity(db, {
-    user_id: req.session.user.id,
-    username: req.session.user.username,
-    action: 'update',
-    target_type: 'spreadsheet',
-    target_id: sheetId,
-    target_title: name.trim(),
-    detail: '编辑在线表格设置: ' + name.trim(),
-    ip: req.ip
-  });
-
-  res.json({ success: true, redirect: '/admin/spreadsheets' });
+  res.json({ success: true });
 });
 
 // 删除表格
 router.delete('/spreadsheets/:id', (req, res) => {
   const db = req.db;
   const sheetId = parseInt(req.params.id, 10);
-
-  const sheet = queryOne(db, 'SELECT name FROM spreadsheets WHERE id = ?', [sheetId]);
-  if (!sheet) return res.status(404).json({ error: '表格不存在' });
-
   db.run('DELETE FROM spreadsheets WHERE id = ?', [sheetId]);
-  saveDatabase();
-
-  logActivity(db, {
-    user_id: req.session.user.id,
-    username: req.session.user.username,
-    action: 'delete',
-    target_type: 'spreadsheet',
-    target_id: sheetId,
-    target_title: sheet.name,
-    detail: '删除在线表格: ' + sheet.name,
-    ip: req.ip
-  });
-
-  res.json({ success: true });
-});
-
-// 列管理页
-router.get('/spreadsheets/:id/columns', (req, res) => {
-  const db = req.db;
-  const sheetId = parseInt(req.params.id, 10);
-  const sheet = queryOne(db, 'SELECT * FROM spreadsheets WHERE id = ?', [sheetId]);
-  if (!sheet) {
-    return res.status(404).render('admin/error', { message: '表格不存在', user: req.session.user });
-  }
-  const columns = queryAll(db, 'SELECT * FROM spreadsheet_columns WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC', [sheetId]);
-  res.render('admin/spreadsheet-columns', {
-    user: req.session.user,
-    sheet: sheet,
-    columns: columns,
-    settings: res.locals.settings || {}
-  });
-});
-
-// 批量保存列配置
-router.post('/spreadsheets/:id/columns', (req, res) => {
-  const db = req.db;
-  const sheetId = parseInt(req.params.id, 10);
-  const { columns } = req.body;
-
-  if (!Array.isArray(columns)) {
-    return res.status(400).json({ error: '列数据格式错误' });
-  }
-
-  columns.forEach((col, idx) => {
-    if (col.id) {
-      // 更新已有列
-      db.run(
-        'UPDATE spreadsheet_columns SET name = ?, field_key = ?, type = ?, width = ?, sort_order = ?, is_visible = ? WHERE id = ? AND spreadsheet_id = ?',
-        [col.name, col.field_key, col.type || 'text', col.width || 150, idx, col.is_visible ? 1 : 0, col.id, sheetId]
-      );
-    } else {
-      // 新增列
-      db.run(
-        'INSERT INTO spreadsheet_columns (spreadsheet_id, name, field_key, type, width, sort_order, is_visible) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [sheetId, col.name, col.field_key, col.type || 'text', col.width || 150, idx, col.is_visible ? 1 : 0]
-      );
-    }
-  });
-
-  saveDatabase();
-  res.json({ success: true });
-});
-
-// 删除列
-router.delete('/spreadsheets/:id/columns/:colId', (req, res) => {
-  const db = req.db;
-  const sheetId = parseInt(req.params.id, 10);
-  const colId = parseInt(req.params.colId, 10);
-
-  db.run('DELETE FROM spreadsheet_columns WHERE id = ? AND spreadsheet_id = ?', [colId, sheetId]);
+  db.run('DELETE FROM spreadsheet_columns WHERE spreadsheet_id = ?', [sheetId]);
+  db.run('DELETE FROM spreadsheet_rows WHERE spreadsheet_id = ?', [sheetId]);
   saveDatabase();
   res.json({ success: true });
 });
