@@ -133,6 +133,15 @@
         if (luckysheetInited) return;
         luckysheetInited = true;
         
+        // 只读用户：使用工作表保护代替 allowEdit:false，允许选择和复制
+        if (!editable) {
+          data = data.map(function(sheet) {
+            if (!sheet.config) sheet.config = {};
+            sheet.config.protection = true; // 保护工作表：可选择复制，不可编辑
+            return sheet;
+          });
+        }
+        
         const options = {
           container: 'luckysheet',
           lang: 'zh',
@@ -141,7 +150,7 @@
           showinfobar: false,
           showsheetbar: true,
           showstatisticBar: true,
-          allowEdit: editable,
+          allowEdit: true, // 始终允许交互（只读用户通过工作表保护限制编辑）
           allowCopy: true,
           enableAddRow: editable,
           enableAddCol: editable,
@@ -152,6 +161,12 @@
           hook: {
             workbookCreateAfter: function() {
               document.getElementById('loadingMask').style.display = 'none';
+              // 只读用户：确保工作表被保护
+              if (!editable) {
+                try {
+                  luckysheet.setSheetProtection(true);
+                } catch(e) {}
+              }
             },
             cellUpdated: function(r, c, oldValue, newValue, isRefresh) {
               if (editable && !isLocked) {
