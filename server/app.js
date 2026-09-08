@@ -81,15 +81,15 @@ app.use((req, res, next) => {
 // ============ 基础解析中间件 ============
 app.use(cookieParser()); // 解析 Cookie
 
-// JSON 请求体解析：上限 5MB，strict 模式（只接受对象/数组顶层）
+// JSON 请求体解析：上限 50MB（支持 Luckysheet 大表格保存），strict 模式（只接受对象/数组顶层）
 app.use(express.json({
-  limit: '5mb',
+  limit: '50mb',
   strict: true
 }));
-// 表单（x-www-form-urlencoded）解析：上限 5MB、最多 1000 个参数（防参数洪泛）
+// 表单（x-www-form-urlencoded）解析：上限 50MB（支持 Luckysheet 大表格保存）、最多 1000 个参数（防参数洪泛）
 app.use(express.urlencoded({
   extended: true,
-  limit: '5mb',
+  limit: '50mb',
   parameterLimit: 1000
 }));
 
