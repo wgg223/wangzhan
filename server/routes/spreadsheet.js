@@ -624,8 +624,13 @@ router.post('/api/spreadsheet/:id/luckysheet/save', isAuthenticated, (req, res, 
     return res.status(403).json({ success: false, error: '没有编辑权限' });
   }
 
-  const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
+  const sheet = queryOne(db, 'SELECT id, is_locked FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
   if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+
+  // 锁定检查
+  if (sheet.is_locked === 1) {
+    return res.status(403).json({ success: false, error: '表格已锁定，无法保存' });
+  }
 
   const luckysheetData = req.body.data;
   if (typeof luckysheetData !== 'string') {
@@ -661,6 +666,94 @@ router.post('/api/spreadsheet/:id/luckysheet/save', isAuthenticated, (req, res, 
       ip: req.ip
     });
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============ 在线用户追踪 ============
+const onlineUsers = new Map(); // sheetId -> Map(userId -> { username, lastSeen })
+
+// 定时清理离线用户（每30秒清理一次，超过30秒未上报的视为离线）
+setInterval(function() {
+  const now = Date.now();
+  onlineUsers.forEach(function(userMap, sheetId) {
+    userMap.forEach(function(info, userId) {
+      if (now - info.lastSeen > 30000) {
+        userMap.delete(userId);
+      }
+    });
+    if (userMap.size === 0) {
+      onlineUsers.delete(sheetId);
+    }
+  });
+}, 30000);
+
+// 上报在线状态并获取在线用户列表
+router.post('/api/spreadsheet/:id/online', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  const sheetId = parseInt(req.params.id, 10);
+  const userId = req.session.user.id;
+  const username = req.session.user.username;
+
+  if (!onlineUsers.has(sheetId)) {
+    onlineUsers.set(sheetId, new Map());
+  }
+  const userMap = onlineUsers.get(sheetId);
+  userMap.set(userId, { username: username, lastSeen: Date.now() });
+
+  // 返回在线用户列表
+  const users = [];
+  userMap.forEach(function(info, uid) {
+    users.push({ id: uid, username: info.username });
+  });
+
+  res.json({ success: true, users: users });
+});
+
+// ============ 表格锁定功能 ============
+
+// 获取锁定状态
+router.get('/api/spreadsheet/:id/lock', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const sheet = queryOne(db, 'SELECT is_locked, locked_by FROM spreadsheets WHERE id = ?', [sheetId]);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+  res.json({ success: true, locked: sheet.is_locked === 1, locked_by: sheet.locked_by });
+});
+
+// 设置锁定状态
+router.post('/api/spreadsheet/:id/lock', isAuthenticated, (req, res, next) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+
+  // 只有管理员可以锁定/解锁
+  if (!canManageSpreadsheet(req)) {
+    return res.status(403).json({ success: false, error: '没有权限操作' });
+  }
+
+  const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ?', [sheetId]);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+
+  const locked = req.body.locked ? 1 : 0;
+  const lockedBy = locked ? req.session.user.id : null;
+
+  try {
+    db.run(
+      'UPDATE spreadsheets SET is_locked = ?, locked_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [locked, lockedBy, sheetId]
+    );
+    saveDatabase(db);
+    logActivity(db, {
+      user_id: req.session.user.id,
+      username: req.session.user.username,
+      action: locked ? 'lock' : 'unlock',
+      target_type: 'spreadsheet',
+      target_id: sheetId,
+      target_title: locked ? '锁定表格' : '解锁表格',
+      detail: locked ? '锁定在线表格' : '解锁在线表格',
+      ip: req.ip
+    });
+    res.json({ success: true, locked: locked === 1 });
   } catch (err) {
     next(err);
   }
