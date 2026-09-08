@@ -1,5 +1,5 @@
 <%# ===== 页面模板：frontend/spreadsheet-editor.ejs =====%>
-<%# 说明：Luckysheet 在线表格编辑页（功能接近 Excel） %>
+<%# 说明：Luckysheet 在线表格编辑页（飞书风格，含在线用户、锁定功能） %>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -14,60 +14,103 @@
   <script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/luckysheet.umd.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-    #luckysheet { margin: 0; padding: 0; width: 100%; height: calc(100vh - 0px); left: 0; top: 0; bottom: 0; position: absolute; }
-    .editor-header {
-      position: fixed; top: 0; left: 0; right: 0; height: 48px;
-      background: #fff; border-bottom: 1px solid #e0e0e0; z-index: 1000;
-      display: flex; align-items: center; padding: 0 16px; gap: 12px;
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    
+    .top-bar {
+      position: fixed; top: 0; left: 0; right: 0; height: 40px;
+      background: #fff; border-bottom: 1px solid #e8e8e8; z-index: 1000;
+      display: flex; align-items: center; padding: 0 12px; gap: 10px;
     }
-    .editor-header .back-link {
-      color: #1a73e8; text-decoration: none; font-size: 14px; cursor: pointer;
+    .top-bar .back-link {
+      color: #1a73e8; text-decoration: none; font-size: 13px; cursor: pointer;
+      white-space: nowrap;
     }
-    .editor-header .back-link:hover { text-decoration: underline; }
-    .editor-header .title {
-      font-size: 16px; font-weight: 600; color: #333; flex: 1;
+    .top-bar .back-link:hover { text-decoration: underline; }
+    .top-bar .title {
+      font-size: 14px; font-weight: 600; color: #333; flex: 1;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .editor-header .role-badge {
-      padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+    .top-bar .online-users {
+      display: flex; align-items: center; gap: 4px; margin-right: 8px;
     }
-    .editor-header .admin-badge { background: #e8f5e9; color: #2e7d32; }
-    .editor-header .viewer-badge { background: #fff3e0; color: #e65100; }
-    .editor-header .save-status {
-      font-size: 12px; color: #999; margin-right: 8px;
+    .top-bar .online-user {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff; font-size: 11px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid #fff; margin-left: -6px;
     }
-    .editor-header .btn {
-      padding: 6px 14px; border: 1px solid #ddd; border-radius: 4px;
-      background: #fff; cursor: pointer; font-size: 13px; color: #333;
+    .top-bar .online-user:first-child { margin-left: 0; }
+    .top-bar .online-count {
+      font-size: 12px; color: #666; margin-left: 4px;
     }
-    .editor-header .btn:hover { background: #f5f5f5; }
-    .editor-header .btn-primary {
+    .top-bar .lock-status {
+      font-size: 12px; padding: 2px 8px; border-radius: 10px;
+      background: #fff3e0; color: #e65100; cursor: pointer;
+    }
+    .top-bar .lock-status.unlocked {
+      background: #e8f5e9; color: #2e7d32;
+    }
+    .top-bar .save-status {
+      font-size: 12px; color: #999;
+    }
+    .top-bar .btn {
+      padding: 4px 12px; border: 1px solid #ddd; border-radius: 4px;
+      background: #fff; cursor: pointer; font-size: 12px; color: #333;
+      white-space: nowrap;
+    }
+    .top-bar .btn:hover { background: #f5f5f5; }
+    .top-bar .btn-primary {
       background: #1a73e8; color: #fff; border-color: #1a73e8;
     }
-    .editor-header .btn-primary:hover { background: #1557b0; }
-    #luckysheet-container {
-      position: absolute; top: 48px; left: 0; right: 0; bottom: 0;
+    .top-bar .btn-primary:hover { background: #1557b0; }
+    .top-bar .btn-warning {
+      background: #ff9800; color: #fff; border-color: #ff9800;
     }
+    
+    #luckysheet-container {
+      position: absolute; top: 40px; left: 0; right: 0; bottom: 0;
+      overflow: hidden;
+    }
+    #luckysheet {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      left: 0; top: 0; position: relative;
+    }
+    
     .loading-mask {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       background: #fff; display: flex; align-items: center; justify-content: center;
-      z-index: 2000; font-size: 16px; color: #666;
+      z-index: 2000; font-size: 14px; color: #666;
+    }
+    
+    .user-tooltip {
+      position: absolute; background: #333; color: #fff; padding: 4px 8px;
+      border-radius: 4px; font-size: 12px; z-index: 2000; pointer-events: none;
+      white-space: nowrap;
     }
   </style>
 </head>
 <body>
-  <div class="editor-header">
-    <a href="/spreadsheet" class="back-link">← 返回列表</a>
+  <div class="top-bar">
+    <a href="/spreadsheet" class="back-link">← 返回</a>
     <span class="title"><%= sheet.name %></span>
+    
+    <div class="online-users" id="onlineUsers" title="在线用户">
+      <span class="online-count" id="onlineCount">0人在线</span>
+    </div>
+    
+    <% if (canManage) { %>
+    <span class="lock-status unlocked" id="lockStatus" onclick="toggleLock()">🔓 未锁定</span>
+    <% } else { %>
+    <span class="lock-status" id="lockStatus">🔒 只读</span>
+    <% } %>
+    
     <span class="save-status" id="saveStatus">已保存</span>
     <% if (canManage) { %>
-    <span class="role-badge admin-badge">编辑模式</span>
     <button class="btn btn-primary" id="btnSave">💾 保存</button>
-    <% } else { %>
-    <span class="role-badge viewer-badge">只读模式</span>
     <% } %>
   </div>
+  
   <div id="luckysheet-container">
     <div id="luckysheet"></div>
   </div>
@@ -77,47 +120,41 @@
     (function() {
       const sheetId = <%= sheet.id %>;
       const canManage = <%= canManage ? 'true' : 'false' %>;
+      const currentUser = <%- JSON.stringify(user) %>;
       let saveTimer = null;
       let isDirty = false;
+      let isLocked = false;
+      let luckysheetInited = false;
 
       // 生成默认空表格
       function createEmptySheet() {
         return [{
-          name: 'Sheet1',
-          color: '',
-          status: 1,
-          order: 0,
-          data: [],
-          config: {},
-          index: 0,
-          luckysheet_select_save: [],
-          scrollLeft: 0,
-          scrollTop: 0,
-          zoomRatio: 1,
-          showGridLines: 1,
-          defaultRowHeight: 28,
-          defaultColWidth: 100,
-          row: 36,
-          column: 18,
-          visibledatacolumn: 18,
-          visibledatarow: 36
+          name: 'Sheet1', color: '', status: 1, order: 0,
+          data: [], config: {}, index: 0,
+          luckysheet_select_save: [], scrollLeft: 0, scrollTop: 0,
+          zoomRatio: 1, showGridLines: 1,
+          defaultRowHeight: 28, defaultColWidth: 100,
+          row: 36, column: 18, visibledatacolumn: 18, visibledatarow: 36
         }];
       }
 
       // 初始化 Luckysheet
-      function initLuckysheet(data) {
+      function initLuckysheet(data, editable) {
+        if (luckysheetInited) return;
+        luckysheetInited = true;
+        
         const options = {
           container: 'luckysheet',
           lang: 'zh',
           data: data,
-          title: '<%= sheet.name %>',
+          title: '',
           showinfobar: false,
           showsheetbar: true,
           showstatisticBar: true,
-          allowEdit: canManage,
+          allowEdit: editable,
           allowCopy: true,
-          enableAddRow: canManage,
-          enableAddCol: canManage,
+          enableAddRow: editable,
+          enableAddCol: editable,
           enableAddBackTop: true,
           userInfo: false,
           showConfigWindowResize: true,
@@ -127,20 +164,13 @@
               document.getElementById('loadingMask').style.display = 'none';
             },
             cellUpdated: function(r, c, oldValue, newValue, isRefresh) {
-              if (canManage) {
-                isDirty = true;
-                document.getElementById('saveStatus').textContent = '未保存';
-                // 自动保存（防抖3秒）
-                clearTimeout(saveTimer);
-                saveTimer = setTimeout(autoSave, 3000);
+              if (editable && !isLocked) {
+                markDirty();
               }
             },
             sheetActivate: function(index) {
-              if (canManage) {
-                isDirty = true;
-                document.getElementById('saveStatus').textContent = '未保存';
-                clearTimeout(saveTimer);
-                saveTimer = setTimeout(autoSave, 3000);
+              if (editable && !isLocked) {
+                markDirty();
               }
             }
           }
@@ -148,9 +178,15 @@
         luckysheet.create(options);
       }
 
-      // 自动保存
+      function markDirty() {
+        isDirty = true;
+        document.getElementById('saveStatus').textContent = '未保存';
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(autoSave, 3000);
+      }
+
       function autoSave() {
-        if (!canManage || !isDirty) return;
+        if (!canManage || !isDirty || isLocked) return;
         saveData(function(success) {
           if (success) {
             isDirty = false;
@@ -159,36 +195,21 @@
         });
       }
 
-      // 保存数据到后端
       function saveData(callback) {
         try {
           const allSheets = luckysheet.getAllSheets();
-          // 清理不需要的字段，减小数据量
           const cleanData = allSheets.map(function(s) {
             return {
-              name: s.name,
-              color: s.color || '',
-              status: s.status,
-              order: s.order,
-              data: s.data || [],
-              config: s.config || {},
-              index: s.index,
-              scrollLeft: s.scrollLeft || 0,
-              scrollTop: s.scrollTop || 0,
-              zoomRatio: s.zoomRatio || 1,
-              showGridLines: s.showGridLines != null ? s.showGridLines : 1,
-              defaultRowHeight: s.defaultRowHeight || 28,
-              defaultColWidth: s.defaultColWidth || 100,
-              row: s.row || 36,
-              column: s.column || 18,
-              visibledatacolumn: s.visibledatacolumn || 18,
-              visibledatarow: s.visibledatarow || 36,
-              celldata: s.celldata || null,
-              chart: s.chart || null,
-              image: s.image || null,
-              dataVerification: s.dataVerification || null,
-              conditionFormat: s.conditionFormat || null,
-              pivotTable: s.pivotTable || null
+              name: s.name, color: s.color || '', status: s.status, order: s.order,
+              data: s.data || [], config: s.config || {}, index: s.index,
+              scrollLeft: s.scrollLeft || 0, scrollTop: s.scrollTop || 0,
+              zoomRatio: s.zoomRatio || 1, showGridLines: s.showGridLines != null ? s.showGridLines : 1,
+              defaultRowHeight: s.defaultRowHeight || 28, defaultColWidth: s.defaultColWidth || 100,
+              row: s.row || 36, column: s.column || 18,
+              visibledatacolumn: s.visibledatacolumn || 18, visibledatarow: s.visibledatarow || 36,
+              celldata: s.celldata || null, chart: s.chart || null,
+              image: s.image || null, dataVerification: s.dataVerification || null,
+              conditionFormat: s.conditionFormat || null, pivotTable: s.pivotTable || null
             };
           });
 
@@ -205,16 +226,16 @@
             if (result.success) {
               if (callback) callback(true);
             } else {
-              document.getElementById('saveStatus').textContent = '保存失败: ' + (result.error || '未知错误');
+              document.getElementById('saveStatus').textContent = '保存失败';
               if (callback) callback(false);
             }
           })
           .catch(function(err) {
-            document.getElementById('saveStatus').textContent = '保存失败: 网络错误';
+            document.getElementById('saveStatus').textContent = '保存失败';
             if (callback) callback(false);
           });
         } catch (e) {
-          document.getElementById('saveStatus').textContent = '保存失败: ' + e.message;
+          document.getElementById('saveStatus').textContent = '保存失败';
           if (callback) callback(false);
         }
       }
@@ -228,22 +249,109 @@
               try {
                 const parsed = JSON.parse(result.data);
                 if (parsed && parsed.length > 0) {
-                  initLuckysheet(parsed);
+                  initLuckysheet(parsed, canManage && !isLocked);
                   return;
                 }
               } catch (e) {
-                console.error('解析表格数据失败，使用空表格', e);
+                console.error('解析表格数据失败', e);
               }
             }
-            // 没有数据或解析失败，使用空表格
-            initLuckysheet(createEmptySheet());
+            initLuckysheet(createEmptySheet(), canManage && !isLocked);
           })
           .catch(function() {
-            initLuckysheet(createEmptySheet());
+            initLuckysheet(createEmptySheet(), canManage && !isLocked);
           });
       }
 
-      // 手动保存按钮
+      // 在线用户功能
+      function updateOnlineUsers() {
+        fetch('/api/spreadsheet/' + sheetId + '/online', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(result) {
+          if (result.success && result.users) {
+            renderOnlineUsers(result.users);
+          }
+        })
+        .catch(function() {});
+      }
+
+      function renderOnlineUsers(users) {
+        const container = document.getElementById('onlineUsers');
+        const countEl = document.getElementById('onlineCount');
+        countEl.textContent = users.length + '人在线';
+        
+        // 移除旧的头像
+        var oldAvatars = container.querySelectorAll('.online-user');
+        oldAvatars.forEach(function(el) { el.remove(); });
+        
+        // 最多显示5个头像
+        var showUsers = users.slice(0, 5);
+        showUsers.forEach(function(u) {
+          var avatar = document.createElement('div');
+          avatar.className = 'online-user';
+          avatar.textContent = (u.username || '?').charAt(0).toUpperCase();
+          avatar.title = u.username;
+          avatar.style.background = getColorForUser(u.id);
+          container.insertBefore(avatar, countEl);
+        });
+      }
+
+      function getColorForUser(id) {
+        var colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#30cfd0', '#a8edea'];
+        return colors[id % colors.length];
+      }
+
+      // 锁定功能
+      window.toggleLock = function() {
+        if (!canManage) return;
+        var newState = !isLocked;
+        fetch('/api/spreadsheet/' + sheetId + '/lock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locked: newState })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(result) {
+          if (result.success) {
+            isLocked = newState;
+            updateLockUI();
+            if (isLocked) {
+              alert('表格已锁定，其他用户将无法编辑');
+            } else {
+              alert('表格已解锁，可以正常编辑');
+            }
+          }
+        })
+        .catch(function() {});
+      };
+
+      function updateLockUI() {
+        var el = document.getElementById('lockStatus');
+        if (isLocked) {
+          el.textContent = '🔒 已锁定';
+          el.className = 'lock-status';
+        } else {
+          el.textContent = '🔓 未锁定';
+          el.className = 'lock-status unlocked';
+        }
+      }
+
+      function checkLockStatus() {
+        fetch('/api/spreadsheet/' + sheetId + '/lock')
+          .then(function(res) { return res.json(); })
+          .then(function(result) {
+            if (result.success) {
+              isLocked = result.locked;
+              updateLockUI();
+            }
+          })
+          .catch(function() {});
+      }
+
+      // 保存按钮
       document.getElementById('btnSave').addEventListener('click', function() {
         saveData(function(success) {
           if (success) {
@@ -265,7 +373,7 @@
       document.addEventListener('keydown', function(e) {
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
           e.preventDefault();
-          if (canManage) {
+          if (canManage && !isLocked) {
             saveData(function(success) {
               if (success) {
                 isDirty = false;
@@ -277,7 +385,10 @@
       });
 
       // 启动
+      checkLockStatus();
       loadData();
+      updateOnlineUsers();
+      setInterval(updateOnlineUsers, 15000); // 每15秒更新在线用户
     })();
   </script>
 </body>
