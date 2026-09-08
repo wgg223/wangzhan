@@ -44,44 +44,21 @@ router.get('/spreadsheet', isAuthenticated, hasFrontendPermission('spreadsheet.a
   });
 });
 
-// Luckysheet 在线表格编辑页（功能接近 Excel）
-router.get('/spreadsheet/:id/editor', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
-  const db = req.db;
-  const sheetId = parseInt(req.params.id, 10);
-  const sheet = queryOne(db, 'SELECT * FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
-  if (!sheet) return res.status(404).send('表格不存在');
-  const canManage = canManageSpreadsheet(req);
-  res.render('frontend/spreadsheet-editor', {
-    user: req.session.user,
-    sheet: sheet,
-    canManage: canManage,
-    settings: res.locals.settings || {}
-  });
-});
-
-// 表格查看/编辑页
+// 在线表格编辑页（Luckysheet，功能接近 Excel）
 router.get('/spreadsheet/:id', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const db = req.db;
   const sheetId = parseInt(req.params.id, 10);
   if (!sheetId) {
     return res.status(400).render('frontend/error', { message: '请求错误', error: '表格ID无效', user: req.session.user, settings: res.locals.settings || {} });
   }
-
   const sheet = queryOne(db, 'SELECT * FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
   if (!sheet) {
     return res.status(404).render('frontend/error', { message: '页面未找到', error: '表格不存在或已被删除', user: req.session.user, settings: res.locals.settings || {} });
   }
-
-  const columns = queryAll(db,
-    'SELECT * FROM spreadsheet_columns WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC',
-    [sheetId]
-  );
   const canManage = canManageSpreadsheet(req);
-
-  res.render('frontend/spreadsheet', {
+  res.render('frontend/spreadsheet-editor', {
     user: req.session.user,
     sheet: sheet,
-    columns: columns,
     canManage: canManage,
     settings: res.locals.settings || {}
   });
