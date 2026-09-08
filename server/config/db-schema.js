@@ -1000,6 +1000,12 @@ function createTables(db) {
     if (existingCols.indexOf('is_luckysheet') === -1) {
       db.run(`ALTER TABLE spreadsheets ADD COLUMN is_luckysheet INTEGER DEFAULT 0`);
     }
+    if (existingCols.indexOf('is_locked') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN is_locked INTEGER DEFAULT 0`);
+    }
+    if (existingCols.indexOf('locked_by') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN locked_by INTEGER`);
+    }
   } catch (e) {
     console.error('迁移 spreadsheets 表字段失败:', e.message);
   }
