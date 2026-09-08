@@ -57,11 +57,19 @@ router.get('/spreadsheet/:id', isAuthenticated, hasFrontendPermission('spreadshe
     return res.status(404).render('frontend/error', { message: '页面未找到', error: '表格不存在或已被删除', user: req.session.user, settings: res.locals.settings || {} });
   }
   const canManage = canManageSpreadsheet(req);
+  // 检查文档级编辑权限
+  const userId = req.session.user.id;
+  const docEditPerm = queryOne(db,
+    'SELECT id FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ?',
+    [sheetId, userId, 'edit']
+  );
+  const canEdit = canManage || !!docEditPerm;
   res.render('frontend/spreadsheet-editor', {
     layout: false,
     user: req.session.user,
     sheet: sheet,
     canManage: canManage,
+    canEdit: canEdit,
     settings: res.locals.settings || {}
   });
 });
@@ -621,8 +629,13 @@ router.post('/api/spreadsheet/:id/luckysheet/save', isAuthenticated, (req, res, 
   const db = req.db;
   const sheetId = parseInt(req.params.id, 10);
 
-  // 权限检查
-  if (!canManageSpreadsheet(req)) {
+  // 权限检查：全局管理权限 或 文档级编辑权限
+  const userId = req.session.user.id;
+  const hasDocEdit = queryOne(db,
+    'SELECT id FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ?',
+    [sheetId, userId, 'edit']
+  );
+  if (!canManageSpreadsheet(req) && !hasDocEdit) {
     return res.status(403).json({ success: false, error: '没有编辑权限' });
   }
 
