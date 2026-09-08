@@ -80,6 +80,44 @@
       background: #fff; display: flex; align-items: center; justify-content: center;
       z-index: 20000; font-size: 14px; color: #666;
     }
+    .modal-mask {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 30000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-box {
+      background: #fff; border-radius: 8px; width: 400px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .modal-title {
+      padding: 16px 20px; font-size: 16px; font-weight: 600;
+      border-bottom: 1px solid #eee;
+    }
+    .modal-body { padding: 20px; }
+    .modal-footer {
+      padding: 12px 20px; border-top: 1px solid #eee;
+      display: flex; justify-content: flex-end; gap: 8px;
+    }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 6px; font-size: 13px; color: #666; }
+    .form-input {
+      width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+      border-radius: 4px; font-size: 14px; box-sizing: border-box;
+    }
+    .perm-section { margin-bottom: 20px; }
+    .perm-section h4 { margin: 0 0 10px 0; font-size: 14px; color: #333; }
+    .perm-list { font-size: 13px; }
+    .perm-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0; border-bottom: 1px solid #f5f5f5;
+    }
+    .perm-item .info { flex: 1; }
+    .perm-item .username { font-weight: 500; color: #333; }
+    .perm-item .perm-type { color: #999; font-size: 12px; margin-left: 8px; }
+    .perm-item .reason { color: #666; font-size: 12px; margin-top: 2px; }
+    .perm-item .actions { display: flex; gap: 6px; }
+    .perm-item .actions .btn { padding: 2px 8px; font-size: 12px; }
+    .perm-empty { color: #999; padding: 10px 0; text-align: center; }
   </style>
 </head>
 <body>
@@ -103,8 +141,56 @@
     
     <span class="save-status" id="saveStatus">已保存</span>
     <% if (canManage) { %>
+    <button class="btn" id="btnPermManage" onclick="openPermManage()">👥 权限</button>
     <button class="btn btn-primary" id="btnSave">💾 保存</button>
+    <% } else { %>
+    <button class="btn" id="btnPermApply" onclick="openPermApply()">🔑 申请权限</button>
     <% } %>
+  </div>
+
+  <!-- 权限申请弹窗 -->
+  <div class="modal-mask" id="applyModal" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-title">申请表格权限</div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>申请权限类型</label>
+          <select id="applyPermType" class="form-input">
+            <option value="edit">编辑权限</option>
+            <option value="download">下载权限</option>
+            <option value="copy">创建副本权限</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>申请理由（选填）</label>
+          <textarea id="applyReason" class="form-input" rows="3" placeholder="请说明申请理由"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closePermApply()">取消</button>
+        <button class="btn btn-primary" onclick="submitPermApply()">提交申请</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 权限管理弹窗 -->
+  <div class="modal-mask" id="permManageModal" style="display:none;">
+    <div class="modal-box" style="width:600px;max-height:80vh;">
+      <div class="modal-title">权限管理</div>
+      <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
+        <div class="perm-section">
+          <h4>待处理申请</h4>
+          <div id="pendingApplications" class="perm-list">加载中...</div>
+        </div>
+        <div class="perm-section">
+          <h4>已授权用户</h4>
+          <div id="grantedPermissions" class="perm-list">加载中...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closePermManage()">关闭</button>
+      </div>
+    </div>
   </div>
   
   <div class="loading-mask" id="loadingMask">正在加载表格...</div>
@@ -370,6 +456,151 @@
           }
         }
       });
+
+      // ============ 权限申请和管理 ============
+      const PERM_NAMES = { view: '查看', edit: '编辑', download: '下载', copy: '创建副本' };
+
+      window.openPermApply = function() {
+        document.getElementById('applyModal').style.display = 'flex';
+      };
+      window.closePermApply = function() {
+        document.getElementById('applyModal').style.display = 'none';
+      };
+      window.submitPermApply = function() {
+        const permType = document.getElementById('applyPermType').value;
+        const reason = document.getElementById('applyReason').value;
+        fetch('/api/spreadsheet/' + sheetId + '/permission/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ perm_type: permType, reason: reason })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(result) {
+          if (result.success) {
+            alert('申请已提交，等待管理员审批');
+            closePermApply();
+          } else {
+            alert(result.error || '提交失败');
+          }
+        })
+        .catch(function() { alert('提交失败，请稍后重试'); });
+      };
+
+      window.openPermManage = function() {
+        document.getElementById('permManageModal').style.display = 'flex';
+        loadPermissions();
+        loadApplications();
+      };
+      window.closePermManage = function() {
+        document.getElementById('permManageModal').style.display = 'none';
+      };
+
+      function loadApplications() {
+        fetch('/api/spreadsheet/' + sheetId + '/permission/applications')
+          .then(function(res) { return res.json(); })
+          .then(function(result) {
+            if (result.success) {
+              renderApplications(result.applications);
+            }
+          })
+          .catch(function() {});
+      }
+
+      function renderApplications(apps) {
+        const container = document.getElementById('pendingApplications');
+        const pending = apps.filter(function(a) { return a.status === 'pending'; });
+        if (pending.length === 0) {
+          container.innerHTML = '<div class="perm-empty">暂无待处理申请</div>';
+          return;
+        }
+        container.innerHTML = pending.map(function(a) {
+          return '<div class="perm-item">' +
+            '<div class="info">' +
+              '<span class="username">' + (a.username || '未知用户') + '</span>' +
+              '<span class="perm-type">' + PERM_NAMES[a.perm_type] + '权限</span>' +
+              (a.reason ? '<div class="reason">理由：' + a.reason + '</div>' : '') +
+            '</div>' +
+            '<div class="actions">' +
+              '<button class="btn btn-primary" onclick="approveApply(' + a.id + ', true)">通过</button>' +
+              '<button class="btn" onclick="approveApply(' + a.id + ', false)">拒绝</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      window.approveApply = function(appId, approved) {
+        fetch('/api/spreadsheet/' + sheetId + '/permission/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ application_id: appId, approved: approved })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(result) {
+          if (result.success) {
+            loadApplications();
+            loadPermissions();
+          } else {
+            alert(result.error || '操作失败');
+          }
+        })
+        .catch(function() { alert('操作失败'); });
+      };
+
+      function loadPermissions() {
+        fetch('/api/spreadsheet/' + sheetId + '/permissions')
+          .then(function(res) { return res.json(); })
+          .then(function(result) {
+            if (result.success) {
+              renderPermissions(result.permissions);
+            }
+          })
+          .catch(function() {});
+      }
+
+      function renderPermissions(perms) {
+        const container = document.getElementById('grantedPermissions');
+        if (perms.length === 0) {
+          container.innerHTML = '<div class="perm-empty">暂无授权用户</div>';
+          return;
+        }
+        // 按用户分组
+        const userMap = {};
+        perms.forEach(function(p) {
+          if (!userMap[p.user_id]) {
+            userMap[p.user_id] = { username: p.username, perms: [] };
+          }
+          userMap[p.user_id].perms.push(p.perm_type);
+        });
+        container.innerHTML = Object.keys(userMap).map(function(userId) {
+          const u = userMap[userId];
+          return '<div class="perm-item">' +
+            '<div class="info">' +
+              '<span class="username">' + (u.username || '未知用户') + '</span>' +
+              '<span class="perm-type">' + u.perms.map(function(p) { return PERM_NAMES[p]; }).join('、') + '</span>' +
+            '</div>' +
+            '<div class="actions">' +
+              '<button class="btn" onclick="revokePerm(' + userId + ')">撤销全部</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      window.revokePerm = function(userId) {
+        if (!confirm('确定要撤销该用户的所有权限吗？')) return;
+        fetch('/api/spreadsheet/' + sheetId + '/permission/' + userId, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(result) {
+          if (result.success) {
+            loadPermissions();
+          } else {
+            alert(result.error || '撤销失败');
+          }
+        })
+        .catch(function() { alert('撤销失败'); });
+      };
 
       // 启动
       checkLockStatus();
