@@ -144,6 +144,8 @@
     
     <% if (canManage) { %>
     <span class="lock-status unlocked" id="lockStatus" onclick="toggleLock()">🔓 未锁定</span>
+    <% } else if (canEdit) { %>
+    <span class="lock-status unlocked">✏️ 可编辑</span>
     <% } else { %>
     <span class="lock-status">🔒 只读</span>
     <% } %>
@@ -151,6 +153,8 @@
     <span class="save-status" id="saveStatus">已保存</span>
     <% if (canManage) { %>
     <button class="btn" id="btnPermManage" onclick="openPermManage()">👥 权限</button>
+    <% } %>
+    <% if (canEdit) { %>
     <button class="btn btn-primary" id="btnSave">💾 保存</button>
     <% } else { %>
     <button class="btn" id="btnPermApply" onclick="openPermApply()">🔑 申请权限</button>
@@ -208,6 +212,7 @@
     (function() {
       const sheetId = <%= sheet.id %>;
       const canManage = <%= canManage ? 'true' : 'false' %>;
+      const canEdit = <%= canEdit ? 'true' : 'false' %>;
       let saveTimer = null;
       let isDirty = false;
       let isLocked = false;
@@ -333,17 +338,17 @@
               try {
                 const parsed = JSON.parse(result.data);
                 if (parsed && parsed.length > 0) {
-                  initLuckysheet(parsed, canManage && !isLocked);
+                  initLuckysheet(parsed, canEdit && !isLocked);
                   return;
                 }
               } catch (e) {
                 console.error('解析表格数据失败', e);
               }
             }
-            initLuckysheet(createEmptySheet(), canManage && !isLocked);
+            initLuckysheet(createEmptySheet(), canEdit && !isLocked);
           })
           .catch(function() {
-            initLuckysheet(createEmptySheet(), canManage && !isLocked);
+            initLuckysheet(createEmptySheet(), canEdit && !isLocked);
           });
       }
 
@@ -662,6 +667,24 @@
       // 锁定状态每10秒轮询更新
       setInterval(checkLockStatus, 10000);
       // 在线用户每15秒更新（已有）
+      // 权限状态每15秒检查，获得编辑权限后提示刷新
+      let hasEditPermission = canEdit;
+      setInterval(function() {
+        fetch('/api/spreadsheet/' + sheetId + '/permission/my')
+          .then(function(res) { return res.json(); })
+          .then(function(result) {
+            if (result.success && result.permissions) {
+              const nowCanEdit = result.permissions.indexOf('edit') >= 0 || result.isAdmin;
+              if (nowCanEdit && !hasEditPermission) {
+                hasEditPermission = true;
+                if (confirm('您已获得该表格的编辑权限，是否刷新页面以开始编辑？')) {
+                  location.reload();
+                }
+              }
+            }
+          })
+          .catch(function() {});
+      }, 15000);
 
       // 启动
       checkLockStatus();
