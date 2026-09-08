@@ -655,37 +655,38 @@ router.post('/api/spreadsheet/:id/luckysheet/save', isAuthenticated, (req, res, 
     return res.status(400).json({ success: false, error: '数据格式错误' });
   }
 
-  // 验证 JSON 格式
+  // 限制数据大小（50MB）
+  if (luckysheetData.length > 50 * 1024 * 1024) {
+    return res.status(400).json({ success: false, error: '数据过大，超过50MB限制' });
+  }
+
+  // 验证 JSON 格式（大数据量时用 try-catch 保护）
   try {
     JSON.parse(luckysheetData);
   } catch (e) {
     return res.status(400).json({ success: false, error: '数据格式不是有效的JSON' });
   }
 
-  // 限制数据大小（20MB）
-  if (luckysheetData.length > 20 * 1024 * 1024) {
-    return res.status(400).json({ success: false, error: '数据过大，超过20MB限制' });
+  try {
+    db.run(
+      'UPDATE spreadsheets SET luckysheet_data = ?, is_luckysheet = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [luckysheetData, sheetId]
+    );
+    saveDatabase(db);
+    logActivity(db, {
+      user_id: req.session.user.id,
+      username: req.session.user.username,
+      action: 'update',
+      target_type: 'spreadsheet',
+      target_id: sheetId,
+      target_title: 'Luckysheet表格保存',
+      detail: `保存在线表格数据（${(luckysheetData.length / 1024).toFixed(1)}KB）`,
+      ip: req.ip
+    });
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
   }
-
-  db.run(
-    'UPDATE spreadsheets SET luckysheet_data = ?, is_luckysheet = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [luckysheetData, sheetId],
-    function(err) {
-      if (err) return next(err);
-      saveDatabase(db);
-      logActivity(db, {
-        user_id: req.session.user.id,
-        username: req.session.user.username,
-        action: 'update',
-        target_type: 'spreadsheet',
-        target_id: sheetId,
-        target_title: 'Luckysheet表格保存',
-        detail: `保存在线表格数据（${(luckysheetData.length / 1024).toFixed(1)}KB）`,
-        ip: req.ip
-      });
-      res.json({ success: true });
-    }
-  );
 });
 
 module.exports = router;
