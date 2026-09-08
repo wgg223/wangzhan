@@ -20,7 +20,8 @@ const { createNotification } = require('./community');
 // 辅助：检查用户是否有表格管理权限
 function canManageSpreadsheet(req) {
   if (!req.session || !req.session.user) return false;
-  if (req.session.user.role === 'super_admin') return true;
+  // super_admin 和 admin 角色都有管理权限
+  if (req.session.user.role === 'super_admin' || req.session.user.role === 'admin') return true;
   const db = req.db;
   if (!db) return false;
   const userPerms = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [req.session.user.id]);
