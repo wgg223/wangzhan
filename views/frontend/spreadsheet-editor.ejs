@@ -351,15 +351,18 @@
           .catch(function() {});
       }
 
-      // 保存按钮
-      document.getElementById('btnSave').addEventListener('click', function() {
-        saveData(function(success) {
-          if (success) {
-            isDirty = false;
-            document.getElementById('saveStatus').textContent = '已保存 ' + new Date().toLocaleTimeString();
-          }
+      // 保存按钮（仅管理员有此按钮）
+      var btnSave = document.getElementById('btnSave');
+      if (btnSave) {
+        btnSave.addEventListener('click', function() {
+          saveData(function(success) {
+            if (success) {
+              isDirty = false;
+              document.getElementById('saveStatus').textContent = '已保存 ' + new Date().toLocaleTimeString();
+            }
+          });
         });
-      });
+      }
 
       // 离开页面前提示保存
       window.addEventListener('beforeunload', function(e) {
