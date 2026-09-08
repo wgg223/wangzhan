@@ -130,13 +130,24 @@ function previewBatchFile() {
     alert('请选择 Excel 文件');
     return;
   }
+  var file = fileInput.files[0];
+  var maxSize = 200 * 1024 * 1024; // 200MB
+  if (file.size > maxSize) {
+    alert('文件大小超过 200MB 限制，请压缩后再上传');
+    return;
+  }
   var btn = document.getElementById('batchPreviewBtn');
   btn.disabled = true;
   btn.textContent = '解析中...';
   var formData = new FormData();
-  formData.append('file', fileInput.files[0]);
+  formData.append('file', file);
   fetch('/admin/spreadsheets/batch-preview', { method: 'POST', body: formData })
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (r.status === 413) {
+        throw new Error('文件过大，服务器拒绝接收（413）。如果使用了 Nginx 反向代理，请在 nginx.conf 的 http 或 server 块中添加 client_max_body_size 200m;');
+      }
+      return r.json();
+    })
     .then(function(res) {
       if (res.success) {
         batchPreviewData = res.data;
@@ -192,7 +203,12 @@ function confirmBatchImport() {
   formData.append('file', fileInput.files[0]);
   formData.append('selectedSheets', JSON.stringify(selectedSheets));
   fetch('/admin/spreadsheets/batch-import', { method: 'POST', body: formData })
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (r.status === 413) {
+        throw new Error('文件过大，服务器拒绝接收（413）。如果使用了 Nginx 反向代理，请在 nginx.conf 的 http 或 server 块中添加 client_max_body_size 200m;');
+      }
+      return r.json();
+    })
     .then(function(res) {
       if (res.success) {
         var resultDiv = document.getElementById('batchImportResult');
