@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ============================================================
  * 服务入口文件 server/app.js（npm start 实际启动的入口）
  * ============================================================
@@ -148,14 +148,21 @@ app.use((req, res, next) => {
   res.setHeader('X-Download-Options', 'noopen');      // IE 下载窗口不自动打开文件
 
   // CSP 内容安全策略：白名单式限制资源加载来源
-    res.setHeader('Content-Security-Policy', [
+  // CDN 启用且为自定义域名时，动态注入到 script/style/font/worker 白名单，
+  // 否则启用 CDN 后自定义子域名（如 cdn.example.com）的 JS/CSS/字体会被浏览器拦截
+  var cdnCspSrc = '';
+  if (cdnConfig.enabled) {
+    var cdnOrigin = cdnConfig.getOrigin();
+    if (cdnOrigin) cdnCspSrc = ' ' + cdnOrigin;
+  }
+  res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net static.cloudflareinsights.com blob: data:",
-    "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net registry.npmmirror.com static.cloudflareinsights.com blob: data:" + cdnCspSrc,
+    "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net registry.npmmirror.com" + cdnCspSrc,
     "img-src 'self' data: blob: https:",
-    "font-src 'self' data: cdnjs.cloudflare.com cdn.jsdelivr.net unpkg.com at.alicdn.com",
+    "font-src 'self' data: cdnjs.cloudflare.com cdn.jsdelivr.net unpkg.com at.alicdn.com" + cdnCspSrc,
     "connect-src 'self' https: ws: wss:",
-    "worker-src 'self' blob: data:",
+    "worker-src 'self' blob: data:" + cdnCspSrc,
     "frame-src 'self' https:",
     "frame-ancestors 'self'",
     "form-action 'self'",
@@ -180,6 +187,13 @@ app.use(express.static(path.join(__dirname, '../public'), {
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
+    // 用户上传的动态内容（public/uploads/*）：URL 无版本指纹，禁止长缓存，
+    // 否则头像/动态图/分享图更新后，浏览器与 CDN 边缘仍展示旧文件（immutable 30 天）
+    const normPath = filePath.split(path.sep).join('/');
+    if (normPath.includes('/uploads/')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      return;
+    }
     // 按文件类型设置 Content-Type 与更激进的缓存策略（指纹化文件名可 immutable）
     if (filePath.endsWith('.css')) {
       res.setHeader('Content-Type', 'text/css; charset=utf-8');

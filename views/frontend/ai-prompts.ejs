@@ -8,7 +8,7 @@
   <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
   <meta name="color-scheme" content="dark">
   <title>AI提示词 - <%= settings.site_name || '我的网站' %></title>
-  <link rel="stylesheet" href="/css/ai-prompts.css">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-prompts.css') : '/css/ai-prompts.css' %>">
 </head>
 <body>
   <div class="ap-app">
@@ -101,7 +101,7 @@
   </div>
 
   <script type="application/json" id="ai-prompts-data"><%- JSON.stringify({ tree: tree, stats: stats, user: user ? { id: user.id, username: user.username, role: user.role } : null }).replace(/</g, '\\u003c') %></script>
-  <script src="/js/utils.js"></script>
-  <script src="/js/ai-prompts.js"></script>
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/utils.js') : '/js/utils.js' %>"></script>
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-prompts.js') : '/js/ai-prompts.js' %>"></script>
 </body>
 </html>

@@ -240,7 +240,9 @@
       <div class="form-group">
         <label for="cdn_version">资源版本号</label>
         <input type="text" id="cdn_version" name="cdn_version" value="<%= settings.cdn_version || '1.0.0' %>" placeholder="1.0.0">
-        <p class="field-hint">修改版本号可强制更新CDN缓存</p>
+        <p class="field-hint">修改版本号可强制更新CDN缓存；留空或为 1.0.0 时自动跟随应用版本（发版自动换版本号）</p>
+        <p class="field-hint" id="cdn-effective-version">当前生效版本：<strong><%= typeof cdn !== 'undefined' ? cdn.getEffectiveVersion() : (settings.cdn_version || '1.0.0') %></strong>（应用版本 <%= typeof cdn !== 'undefined' ? cdn.getConfig().appVersion : '' %>）</p>
+        <button type="button" class="btn" onclick="refreshCdnVersion()" id="refresh-cdn-btn" style="margin-top:6px;">一键刷新缓存版本</button>
       </div>
 
       <div class="form-row">
@@ -474,6 +476,40 @@ function onProviderChange() {
 document.addEventListener('DOMContentLoaded', function() {
   onProviderChange();
 });
+
+// 一键刷新CDN缓存版本：把版本号更新为时间戳，所有静态资源 URL 立即换版本，强制 CDN/浏览器回源拉新
+function refreshCdnVersion() {
+  const btn = document.getElementById('refresh-cdn-btn');
+  const result = document.getElementById('cdn-test-result');
+  btn.disabled = true;
+  btn.textContent = '刷新中...';
+  result.className = 'cdn-test-result info';
+  result.textContent = '正在刷新CDN缓存版本...';
+
+  fetch('/admin/settings/cdn-refresh-version', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': getCsrfToken() }
+  })
+  .then(response => response.json())
+  .then(data => {
+    btn.disabled = false;
+    btn.textContent = '一键刷新缓存版本';
+    if (data.success) {
+      document.getElementById('cdn_version').value = data.version;
+      result.className = 'cdn-test-result success';
+      result.innerHTML = '✓ ' + data.message + '，新版本号已生效，页面刷新后静态资源将按新 URL 加载';
+    } else {
+      result.className = 'cdn-test-result error';
+      result.textContent = '✗ ' + (data.error || '刷新失败');
+    }
+  })
+  .catch(err => {
+    btn.disabled = false;
+    btn.textContent = '一键刷新缓存版本';
+    result.className = 'cdn-test-result error';
+    result.textContent = '✗ 刷新失败，请重试';
+  });
+}
 
 // 测试CDN连接
 function testCDN() {

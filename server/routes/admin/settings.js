@@ -126,7 +126,8 @@ router.post('/settings/test-smtp', isAuthenticated, isSuperAdmin, async (req, re
 
 // ============ CDN 配置测试 ============
 
-// 测试CDN连接：请求 {cdn_base_url}/css/style.css 检查响应头（识别 Cloudflare 与缓存状态）
+// 测试CDN连接：请求 {cdn_base_url}/css/style.css?v={版本} 检查响应头（识别 Cloudflare 与缓存状态）
+// 增强：带上版本参数模拟真实资源请求；测响应耗时；区分资源不可用/超时/DNS失败等错误并给出排查提示
 router.post('/settings/test-cdn', isAuthenticated, isSuperAdmin, async (req, res) => {
   const { cdn_base_url } = req.body;
 
@@ -136,23 +137,25 @@ router.post('/settings/test-cdn', isAuthenticated, isSuperAdmin, async (req, res
 
   const https = require('https');
   const http = require('http');
-  const url = require('url');
 
   try {
     const parsedUrl = new URL(cdn_base_url);
     const protocol = parsedUrl.protocol === 'https:' ? https : http;
 
-    const testUrl = `${cdn_base_url}/css/style.css`;
+    // 带上版本参数模拟真实资源请求，校验 CDN 是否回源可拿到静态文件
+    const testUrl = `${cdn_base_url}/css/style.css?v=${Date.now()}`;
+    const startTime = Date.now();
 
     const result = await new Promise((resolve, reject) => {
       const req = protocol.get(testUrl, { timeout: 10000 }, (response) => {
-        let data = '';
-        response.on('data', (chunk) => { data += chunk; });
+        response.resume(); // 丢弃响应体，仅读取响应头（连接建立、状态码、缓存标记）
         response.on('end', () => {
           resolve({
             statusCode: response.statusCode,
             headers: response.headers,
-            cacheStatus: response.headers['cf-cache-status'] || response.headers['x-cache-status'] || 'N/A',
+            timeMs: Date.now() - startTime,
+            cacheStatus: response.headers['cf-cache-status'] || response.headers['x-cache'] || response.headers['x-cache-status'] || 'N/A',
+            cacheControl: response.headers['cache-control'] || 'N/A',
             server: response.headers['server'] || 'N/A'
           });
         });
@@ -168,13 +171,59 @@ router.post('/settings/test-cdn', isAuthenticated, isSuperAdmin, async (req, res
       });
     });
 
-    const isCloudflare = result.server === 'cloudflare';
-    const message = `CDN连接成功${isCloudflare ? '（Cloudflare）' : ''}，状态码: ${result.statusCode}，缓存状态: ${result.cacheStatus}`;
+    // 资源不可用（404/403/5xx 等）时给出可操作提示
+    if (result.statusCode >= 400) {
+      const statusHint = result.statusCode === 404
+        ? '未找到 /css/style.css，请确认静态文件已同步到CDN源站'
+        : result.statusCode === 403
+          ? '被CDN拒绝访问，请检查防盗链/鉴权/HTTPS证书配置'
+          : '请检查CDN回源配置';
+      return res.status(200).json({ success: false, error: `CDN可连接但资源不可用，状态码: ${result.statusCode}（${statusHint}）`, detail: result });
+    }
 
-    res.json({ success: true, message: message });
+    const isCloudflare = String(result.server).toLowerCase() === 'cloudflare';
+    const cacheHint = result.cacheControl && result.cacheControl.includes('immutable')
+      ? '，缓存策略正确（immutable）'
+      : '，注意：未检测到长缓存头（建议CDN缓存配置 max-age >= 30天）';
+    const message = `CDN连接成功${isCloudflare ? '（Cloudflare）' : ''}，状态码: ${result.statusCode}，耗时: ${result.timeMs}ms，缓存状态: ${result.cacheStatus}${cacheHint}`;
+
+    res.json({ success: true, message: message, detail: { ...result, isCloudflare } });
   } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    // 区分常见错误类型，给出可操作的排查建议
+    const msg = err.message || '';
+    let hint = '';
+    if (msg.includes('ENOTFOUND') || msg.includes('EAI_AGAIN')) hint = '（DNS解析失败，请检查CDN域名解析是否已生效）';
+    else if (msg.includes('ECONNREFUSED')) hint = '（连接被拒绝，请确认CDN域名可正常访问）';
+    else if (msg.includes('CERT') || msg.includes('certificate')) hint = '（HTTPS证书异常，请检查CDN证书配置）';
+    res.status(400).json({ success: false, error: msg + hint });
   }
+});
+
+// ============ CDN 缓存版本刷新 ============
+
+// 一键刷新CDN缓存版本：将 cdn_version 更新为时间戳，所有静态资源 URL 立即换版本号，强制 CDN/浏览器回源拉新
+router.post('/settings/cdn-refresh-version', isAuthenticated, isSuperAdmin, (req, res) => {
+  const db = req.db;
+  // yyyyMMddHHmmss 时间戳版本号（如 20260920153000）
+  const newVersion = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+
+  db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [newVersion, 'cdn_version']);
+  saveDatabase();
+  settingsCache.delete('settings:all');
+  cdnConfig.loadFromDatabase(db); // 内存态即时生效，无需重启
+
+  logActivity(db, {
+    user_id: req.session.user.id,
+    username: req.session.user.username,
+    action: 'update',
+    target_type: 'settings',
+    target_id: null,
+    target_title: '网站设置',
+    detail: '一键刷新CDN缓存版本: ' + newVersion,
+    ip: req.ip
+  });
+
+  res.json({ success: true, version: newVersion, message: 'CDN 缓存版本已刷新为 ' + newVersion });
 });
 
 // 上传背景图（写入 settings.background_image）

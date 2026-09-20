@@ -119,8 +119,8 @@
 </div>
 
 <!-- 引入 Quill 编辑器 - 使用本地版本，备用 CDN -->
-<link href="/vendor/quill/quill.snow.css" rel="stylesheet">
-<script src="/vendor/quill/quill.js"></script>
+<link href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/quill/quill.snow.css') : '/vendor/quill/quill.snow.css' %>" rel="stylesheet">
+<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/quill/quill.js') : '/vendor/quill/quill.js' %>"></script>
 
 <script>
 var quill = null;
