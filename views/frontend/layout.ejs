@@ -113,7 +113,7 @@
           
           <div class="user-menu">
             <button class="user-menu-btn">
-              <img src="<%= user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="user-avatar-small">
+              <img src="<%- user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="user-avatar-small">
               <span class="user-name"><%= user.nickname || user.username %></span>
               <span class="dropdown-arrow">▾</span>
             </button>
@@ -469,7 +469,7 @@
             container.innerHTML = messages.map(function(msg) {
               var isSent = msg.sender_id === <%= user.id %>;
               return '<div class="chat-modal-msg ' + (isSent ? 'sent' : 'received') + '">' +
-                '<img src="' + (isSent ? '<%= user.avatar || "/assets/images/default-avatar.png" %>' : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="msg-avatar">' +
+                '<img src="' + (isSent ? '<%- user.avatar || "/assets/images/default-avatar.png" %>' : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="msg-avatar">' +
                 '<div>' +
                   '<div class="msg-content">' + escapeHtml(msg.content) + '</div>' +
                   '<div class="msg-time">' + formatTime(msg.created_at) + '</div>' +
@@ -518,7 +518,7 @@
           if (emptyMsg) emptyMsg.remove();
           
           var msgHtml = '<div class="chat-modal-msg sent">' +
-            '<img src="<%= user.avatar || "/assets/images/default-avatar.png" %>" alt="" class="msg-avatar">' +
+            '<img src="<%- user.avatar || "/assets/images/default-avatar.png" %>" alt="" class="msg-avatar">' +
             '<div>' +
               '<div class="msg-content">' + escapeHtml(content) + '</div>' +
               '<div class="msg-time">刚刚</div>' +

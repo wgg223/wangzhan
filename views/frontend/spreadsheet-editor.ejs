@@ -51,6 +51,23 @@
           ] }
       ];
 
+      // jQuery 是 Luckysheet 及其插件（sparkline 迷你图等）的硬依赖，必须先于 luckysheet 加载
+      var JQUERY_SOURCES = [
+        '/vendor/luckysheet/jquery.min.js',
+        'https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js',
+        'https://registry.npmmirror.com/jquery/3.6.0/files/dist/jquery.min.js',
+        'https://unpkg.com/jquery@3.6.0/dist/jquery.min.js'
+      ];
+      function loadJQuery(idx, done) {
+        if (window.jQuery && typeof window.$ === 'function') { done(); return; }
+        if (idx >= JQUERY_SOURCES.length) { done(); return; }
+        var s = document.createElement('script');
+        s.src = JQUERY_SOURCES[idx];
+        s.onload = function () { if (window.jQuery && typeof window.$ === 'function') done(); else loadJQuery(idx + 1, done); };
+        s.onerror = function () { loadJQuery(idx + 1, done); };
+        document.head.appendChild(s);
+      }
+
       var sourceIdx = 0;
       var finished = false;
 
@@ -100,7 +117,7 @@
           document.head.appendChild(s);
         });
       }
-      loadSource();
+      loadJQuery(0, function () { loadSource(); });
     })();
   </script>
   <style>
@@ -379,8 +396,8 @@
           enableAddBackTop: true,
           userInfo: false,
           fontList: [
-            { fontName: '子燕是动漫二次元', url: '/fonts/zysdmycy/FontsLab-DongManErCiYuan.woff2' },
-            { fontName: '宝灿谋会停手写体2.0', url: '/fonts/bcmhtt/bcmhuitingsxt.woff2' }
+            { fontName: 'FontsLab-DongManErCiYuan', url: '/fonts/zysdmycy/FontsLab-DongManErCiYuan.woff2' },
+            { fontName: 'bcmhuitingsxt', url: '/fonts/bcmhtt/bcmhuitingsxt.woff2' }
           ],
           showConfigWindowResize: true,
           forceCalculation: true,

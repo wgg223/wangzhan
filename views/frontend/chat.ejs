@@ -258,7 +258,7 @@ var currentUserId = <%= user.id %>;
 var conversationId = <%= conversation.id %>;
 var otherUser = {
   id: <%= otherUser.id %>,
-  avatar: '<%= otherUser.avatar || "/assets/images/default-avatar.png" %>'
+  avatar: <%- JSON.stringify(otherUser.avatar || "/assets/images/default-avatar.png") %>
 };
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -310,7 +310,7 @@ async function loadMessages() {
         container.innerHTML = messages.map(function(msg) {
           var isSent = msg.sender_id === currentUserId;
           return '<div class="message-bubble ' + (isSent ? 'sent' : 'received') + '">' +
-            '<img src="' + (isSent ? '<%= user.avatar || "/assets/images/default-avatar.png" %>' : otherUser.avatar) + '" alt="" class="message-avatar">' +
+            '<img src="' + (isSent ? '<%- user.avatar || "/assets/images/default-avatar.png" %>' : otherUser.avatar) + '" alt="" class="message-avatar">' +
             '<div>' +
               '<div class="message-content">' + escapeHtml(msg.content) + '</div>' +
               '<div class="message-time">' + formatTime(msg.created_at) + '</div>' +
@@ -332,7 +332,7 @@ function appendMessage(msg) {
   
   var isSent = msg.sender_id === currentUserId;
   var html = '<div class="message-bubble ' + (isSent ? 'sent' : 'received') + '">' +
-    '<img src="' + (isSent ? '<%= user.avatar || "/assets/images/default-avatar.png" %>' : otherUser.avatar) + '" alt="" class="message-avatar">' +
+    '<img src="' + (isSent ? '<%- user.avatar || "/assets/images/default-avatar.png" %>' : otherUser.avatar) + '" alt="" class="message-avatar">' +
     '<div>' +
       '<div class="message-content">' + escapeHtml(msg.content) + '</div>' +
       '<div class="message-time">' + formatTime(msg.created_at) + '</div>' +

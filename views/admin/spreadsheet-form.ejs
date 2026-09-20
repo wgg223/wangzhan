@@ -53,7 +53,7 @@ function submitForm(e) {
     status: document.getElementById('sheetStatus').value
   };
 
-  var url = <%= sheet ? "'/admin/spreadsheets/" + sheet.id + "'" : "'/admin/spreadsheets'" %>;
+  var url = <%- JSON.stringify(sheet ? '/admin/spreadsheets/' + sheet.id : '/admin/spreadsheets') %>;
   var method = 'POST';
 
   fetch(url, {
