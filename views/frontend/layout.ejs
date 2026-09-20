@@ -12,6 +12,8 @@
   <link rel="apple-touch-icon" href="/pwa/icon-192.png">
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/style.css') : '/css/style.css' %>">
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/community.css') : '/css/community.css' %>">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/fonts.css') : '/css/fonts.css' %>">
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/font-switcher.js') : '/js/font-switcher.js' %>"></script>
   <style>
     body {
       <% if (settings.background_image) { %>
@@ -21,6 +23,15 @@
         background-position: center;
       <% } %>
     }
+    .nav-font-switch select {
+      font-size: 12px; padding: 4px 6px; border-radius: 6px;
+      border: 1px solid var(--border-color, #e2e8f0);
+      background: var(--bg-primary, #fff); color: var(--text-primary, #1e293b);
+      cursor: pointer; max-width: 150px; outline: none;
+    }
+    .nav-font-switch select:hover { border-color: #6366f1; }
+    @media (max-width: 900px) { .nav-font-switch { display: none; } }
+    
     @media (max-width: 480px) {
       .nav-icon-btn {
         width: 36px;
@@ -60,6 +71,14 @@
       
       <div class="nav-right">
         <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="菜单">☰</button>
+
+        <div class="nav-font-switch" title="切换字体">
+          <select class="site-font-select" onchange="setSiteFont(this.value)">
+            <option value="default">🅰️ 默认</option>
+            <option value="zysdmycy">子燕是动漫二次元</option>
+            <option value="bcmhtt">宝灿谋会停手写体2.0</option>
+          </select>
+        </div>
         
         <% if (typeof user !== 'undefined' && user) { %>
           <div class="nav-icons">

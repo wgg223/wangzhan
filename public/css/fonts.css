@@ -1,0 +1,18 @@
+/* ===== 站点自定义字体 ===== */
+/* 子燕是动漫二次元（FontsLab-DongManErCiYuan） */
+@font-face {
+  font-family: '子燕是动漫二次元';
+  src: url('/fonts/zysdmycy/FontsLab-DongManErCiYuan.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 宝灿谋会停手写体2.0（bcmhuitingsxt） */
+@font-face {
+  font-family: '宝灿谋会停手写体2.0';
+  src: url('/fonts/bcmhtt/bcmhuitingsxt.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
