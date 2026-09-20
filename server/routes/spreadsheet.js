@@ -612,7 +612,8 @@ const onlineUsers = new Map(); // sheetId -> Map(userId -> { username, lastSeen 
 const cellPresence = new Map();
 // 变更队列：sheetId -> [{ seq, userId, username, sheet, row, col, value, ts }]（保留最近 500 条）
 const cellChanges = new Map();
-let cellChangeSeq = 0;
+// seq 从当前毫秒时间戳起步：跨进程重启后单调递增，避免前端"上次序号"大于新队列序号导致拉不到变更
+let cellChangeSeq = Date.now();
 
 // 定时清理超时（8 秒无心跳）的编辑状态
 setInterval(function() {
@@ -1065,14 +1066,18 @@ router.post('/api/spreadsheet/:id/cell-edit', isAuthenticated, (req, res, next) 
   }
 });
 
-// 拉取其他用户的单元格变更（增量轮询）
+// 拉取其他用户的单元格变更（增量轮询，基于 seq 序号而非时间戳，规避前后端时钟偏差）
 router.get('/api/spreadsheet/:id/cell-changes', isAuthenticated, (req, res) => {
   const sheetId = parseInt(req.params.id, 10);
   const since = parseInt(req.query.since, 10) || 0;
   const userId = req.session.user.id;
   const queue = cellChanges.get(sheetId) || [];
+  const nowTs = Date.now();
   const changes = queue
-    .filter(function(change) { return change.ts > since; })
+    .filter(function(change) {
+      // seq 严格增量过滤 + 只返回最近 5 分钟的变更（首次拉取 since=0 时不会拿几天前的旧值覆盖）
+      return change.seq > since && change.ts > nowTs - 5 * 60 * 1000;
+    })
     .map(function(change) {
       return {
         seq: change.seq,
@@ -1085,8 +1090,8 @@ router.get('/api/spreadsheet/:id/cell-changes', isAuthenticated, (req, res) => {
         ts: change.ts
       };
     });
-  const maxTs = queue.length > 0 ? queue[queue.length - 1].ts : since;
-  res.json({ success: true, since: maxTs, changes: changes });
+  const maxSeq = queue.length > 0 ? queue[queue.length - 1].seq : since;
+  res.json({ success: true, since: maxSeq, changes: changes });
 });
 
 // 查询单元格编辑历史

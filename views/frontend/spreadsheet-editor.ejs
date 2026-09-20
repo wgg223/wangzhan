@@ -416,10 +416,10 @@
               }
             },
             cellUpdated: function(r, c, oldValue, newValue, isRefresh) {
-              // 仅在真实单元格变更时标记未保存（切换 Sheet 不触发，避免无谓自动保存）
-              if (editable && !isLocked) {
+              // 仅在真实单元格变更时标记未保存（远端同步的变更 isRefresh=true 不触发保存，避免整表覆盖他人编辑）
+              if (!isRefresh && editable && !isLocked) {
                 markDirty();
-                if (!isRefresh && canEdit) {
+                if (canEdit) {
                   // 实时协同：上报编辑状态 + 单格保存（记历史并广播给其他用户）
                   reportActive(r, c);
                   submitCellEdit(r, c);
@@ -440,11 +440,14 @@
 
       function autoSave() {
         if (!canEdit || !isDirty || isLocked) return;
-        saveData(function(success) {
-          if (success) {
-            isDirty = false;
-            document.getElementById('saveStatus').textContent = '已保存 ' + new Date().toLocaleTimeString();
-          }
+        // 保存前先同步一次远端变更到本地内存，避免旧整表覆盖其他用户刚编辑的内容
+        fetchChanges().then(function() {
+          saveData(function(success) {
+            if (success) {
+              isDirty = false;
+              document.getElementById('saveStatus').textContent = '已保存 ' + new Date().toLocaleTimeString();
+            }
+          });
         });
       }
 
@@ -517,7 +520,7 @@
 
       // ========== 实时协同：编辑者角标 / 变更同步 / 编辑历史 ==========
       let lastEditedCell = null;
-      let lastChangeTs = 0;
+      let lastSeq = 0;
       let collTimer = null;
       let presenceTimer = null;
 
@@ -558,13 +561,13 @@
           .catch(function() {});
       }
 
-      // 每 2 秒轮询：应用其他用户的单元格变更
+      // 每 2 秒轮询：应用其他用户的单元格变更（基于 seq 增量，返回 Promise 供保存前预同步）
       function fetchChanges() {
-        fetch('/api/spreadsheet/' + sheetId + '/cell-changes?since=' + lastChangeTs)
+        return fetch('/api/spreadsheet/' + sheetId + '/cell-changes?since=' + lastSeq)
           .then(function(r) { return r.json(); })
           .then(function(res) {
             if (!res.success) return;
-            if (res.since) lastChangeTs = res.since;
+            if (res.since) lastSeq = res.since;
             (res.changes || []).forEach(function(ch) {
               if (ch.isMine) return;
               try {
@@ -630,7 +633,6 @@
 
       function startCollaboration() {
         if (!canEdit) return;
-        lastChangeTs = Date.now();
         if (collTimer) clearInterval(collTimer);
         if (presenceTimer) clearInterval(presenceTimer);
         collTimer = setInterval(fetchChanges, 2000);
