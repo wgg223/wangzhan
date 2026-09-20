@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 后台管理路由聚合入口
  * 职责：
  *   1. 全局鉴权链：isAuthenticated（必须登录）→ canAccessAdmin（必须可进后台）

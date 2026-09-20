@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 在线表格前台路由
  * 页面/接口：
  *   GET  /spreadsheet              —— 表格列表页（需 spreadsheet.access）
