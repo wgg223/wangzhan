@@ -1068,6 +1068,23 @@ function createTables(db) {
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_ss_app_sheet ON spreadsheet_permission_applications(spreadsheet_id, status)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ss_app_user ON spreadsheet_permission_applications(user_id, status)');
+
+  // 单元格编辑历史表（实时协同 + 历史追溯）
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_cell_edits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spreadsheet_id INTEGER NOT NULL,
+    sheet_index INTEGER NOT NULL DEFAULT 0,
+    row INTEGER NOT NULL,
+    col INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_edits_sheet_cell ON spreadsheet_cell_edits(spreadsheet_id, sheet_index, row, col, id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_edits_sheet_time ON spreadsheet_cell_edits(spreadsheet_id, id)');
 }
 
 module.exports = { createTables };

@@ -607,6 +607,28 @@ router.post('/api/spreadsheet/:id/luckysheet/save', isAuthenticated, (req, res, 
 // ============ 在线用户追踪 ============
 const onlineUsers = new Map(); // sheetId -> Map(userId -> { username, lastSeen })
 
+// ============ 实时协同（单元格编辑状态 / 变更广播） ============
+// 活跃编辑：sheetId -> Map(userId -> { username, sheet, row, col, ts })
+const cellPresence = new Map();
+// 变更队列：sheetId -> [{ seq, userId, username, sheet, row, col, value, ts }]（保留最近 500 条）
+const cellChanges = new Map();
+let cellChangeSeq = 0;
+
+// 定时清理超时（8 秒无心跳）的编辑状态
+setInterval(function() {
+  const now = Date.now();
+  cellPresence.forEach(function(userMap, sheetId) {
+    userMap.forEach(function(info, userId) {
+      if (now - info.ts > 8000) {
+        userMap.delete(userId);
+      }
+    });
+    if (userMap.size === 0) {
+      cellPresence.delete(sheetId);
+    }
+  });
+}, 5000);
+
 // 定时清理离线用户（每30秒清理一次，超过30秒未上报的视为离线）
 setInterval(function() {
   const now = Date.now();
@@ -896,6 +918,195 @@ router.delete('/api/spreadsheet/:id/permission/:userId', isAuthenticated, (req, 
   } catch (err) {
     next(err);
   }
+});
+
+// ============ 实时协同 API ============
+
+// 上报/结束单元格编辑状态（用于在对应单元格显示"谁在编辑"）
+router.post('/api/spreadsheet/:id/cell-active', isAuthenticated, (req, res) => {
+  const sheetId = parseInt(req.params.id, 10);
+  const userId = req.session.user.id;
+  const { sheet, row, col, action } = req.body || {};
+  const sheetIdx = parseInt(sheet, 10) || 0;
+  const r = parseInt(row, 10);
+  const c = parseInt(col, 10);
+
+  if (!cellPresence.has(sheetId)) cellPresence.set(sheetId, new Map());
+  const userMap = cellPresence.get(sheetId);
+
+  if (action === 'end') {
+    userMap.delete(userId);
+  } else if (!isNaN(r) && !isNaN(c)) {
+    userMap.set(userId, {
+      username: req.session.user.username || '用户',
+      sheet: sheetIdx,
+      row: r,
+      col: c,
+      ts: Date.now()
+    });
+  }
+  res.json({ success: true });
+});
+
+// 获取当前正在编辑的用户（用于前端叠加"编辑者"角标）
+router.get('/api/spreadsheet/:id/cell-presence', isAuthenticated, (req, res) => {
+  const sheetId = parseInt(req.params.id, 10);
+  const userMap = cellPresence.get(sheetId);
+  const list = [];
+  if (userMap) {
+    const now = Date.now();
+    userMap.forEach(function(info, uid) {
+      if (now - info.ts <= 8000 && uid !== req.session.user.id) {
+        list.push({ username: info.username, sheet: info.sheet, row: info.row, col: info.col });
+      }
+    });
+  }
+  res.json({ success: true, users: list });
+});
+
+// 单格编辑保存：更新 luckysheet_data 中对应单元格 + 记历史 + 广播给其他用户
+router.post('/api/spreadsheet/:id/cell-edit', isAuthenticated, (req, res, next) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const userId = req.session.user.id;
+  const { sheet, row, col, value } = req.body || {};
+
+  // 权限检查：全局管理权限 或 文档级编辑权限
+  const hasDocEdit = queryOne(db,
+    'SELECT id FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ?',
+    [sheetId, userId, 'edit']
+  );
+  if (!canManageSpreadsheet(req) && !hasDocEdit) {
+    return res.status(403).json({ success: false, error: '没有编辑权限' });
+  }
+
+  const sheetRow = queryOne(db, 'SELECT id, is_locked, luckysheet_data FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
+  if (!sheetRow) return res.status(404).json({ success: false, error: '表格不存在' });
+  if (sheetRow.is_locked === 1) return res.status(403).json({ success: false, error: '表格已锁定，无法编辑' });
+
+  const sheetIdx = parseInt(sheet, 10);
+  const r = parseInt(row, 10);
+  const c = parseInt(col, 10);
+  if (isNaN(sheetIdx) || isNaN(r) || isNaN(c) || r < 0 || c < 0) {
+    return res.status(400).json({ success: false, error: '单元格坐标无效' });
+  }
+
+  let parsed = null;
+  try {
+    parsed = sheetRow.luckysheet_data ? JSON.parse(sheetRow.luckysheet_data) : null;
+  } catch (e) {
+    return res.status(500).json({ success: false, error: '表格数据损坏，请刷新后重试' });
+  }
+  if (!Array.isArray(parsed) || !parsed[sheetIdx]) {
+    return res.status(400).json({ success: false, error: '表格 Sheet 不存在' });
+  }
+
+  const target = parsed[sheetIdx];
+  let oldValue;
+  const newValue = JSON.parse(JSON.stringify(value)); // 深拷贝，避免引用污染
+
+  try {
+    // 二维 data 格式（Luckysheet 内部 flowdata）
+    if (Array.isArray(target.data)) {
+      if (target.data[r] === undefined) target.data[r] = [];
+      oldValue = target.data[r][c];
+      target.data[r][c] = newValue;
+    }
+    // celldata 扁平格式（若存在）
+    if (Array.isArray(target.celldata)) {
+      const cell = target.celldata.find(function(x) { return x.r === r && x.c === c; });
+      if (cell) {
+        if (oldValue === undefined) oldValue = cell.v;
+        cell.v = newValue;
+      } else {
+        target.celldata.push({ r: r, c: c, v: newValue });
+      }
+    }
+    // 同时同步到 config 内的 dataVerification 无关，不处理
+  } catch (e) {
+    return res.status(500).json({ success: false, error: '更新单元格失败' });
+  }
+
+  const oldText = oldValue === undefined ? null : JSON.stringify(oldValue);
+  const newText = newValue === undefined ? null : JSON.stringify(newValue);
+
+  try {
+    db.run(
+      'UPDATE spreadsheets SET luckysheet_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [JSON.stringify(parsed), sheetId]
+    );
+    saveDatabase(db);
+
+    // 记录编辑历史
+    db.run(
+      'INSERT INTO spreadsheet_cell_edits (spreadsheet_id, sheet_index, row, col, user_id, username, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [sheetId, sheetIdx, r, c, userId, req.session.user.username || '用户', oldText, newText]
+    );
+
+    // 广播变更给其他在线用户
+    if (!cellChanges.has(sheetId)) cellChanges.set(sheetId, []);
+    const queue = cellChanges.get(sheetId);
+    cellChangeSeq++;
+    queue.push({
+      seq: cellChangeSeq,
+      userId: userId,
+      username: req.session.user.username || '用户',
+      sheet: sheetIdx,
+      row: r,
+      col: c,
+      value: newValue,
+      ts: Date.now()
+    });
+    if (queue.length > 500) queue.splice(0, queue.length - 500);
+
+    res.json({ success: true, old_value: oldText });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 拉取其他用户的单元格变更（增量轮询）
+router.get('/api/spreadsheet/:id/cell-changes', isAuthenticated, (req, res) => {
+  const sheetId = parseInt(req.params.id, 10);
+  const since = parseInt(req.query.since, 10) || 0;
+  const userId = req.session.user.id;
+  const queue = cellChanges.get(sheetId) || [];
+  const changes = queue
+    .filter(function(change) { return change.ts > since; })
+    .map(function(change) {
+      return {
+        seq: change.seq,
+        isMine: change.userId === userId,
+        username: change.username,
+        sheet: change.sheet,
+        row: change.row,
+        col: change.col,
+        value: change.value,
+        ts: change.ts
+      };
+    });
+  const maxTs = queue.length > 0 ? queue[queue.length - 1].ts : since;
+  res.json({ success: true, since: maxTs, changes: changes });
+});
+
+// 查询单元格编辑历史
+router.get('/api/spreadsheet/:id/cell-history', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const sheetIdx = parseInt(req.query.sheet, 10) || 0;
+  const r = parseInt(req.query.row, 10);
+  const c = parseInt(req.query.col, 10);
+  if (isNaN(r) || isNaN(c) || r < 0 || c < 0) {
+    return res.status(400).json({ success: false, error: '单元格坐标无效' });
+  }
+  const history = queryAll(db,
+    `SELECT id, sheet_index, row, col, user_id, username, old_value, new_value, created_at
+     FROM spreadsheet_cell_edits
+     WHERE spreadsheet_id = ? AND sheet_index = ? AND row = ? AND col = ?
+     ORDER BY id DESC LIMIT 50`,
+    [sheetId, sheetIdx, r, c]
+  );
+  res.json({ success: true, history: history });
 });
 
 module.exports = router;

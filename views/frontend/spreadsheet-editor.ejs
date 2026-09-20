@@ -204,6 +204,21 @@
     .perm-item .reason { color: #666; font-size: 12px; margin-top: 2px; }
     .perm-item .actions { display: flex; gap: 6px; }
     .perm-item .actions .btn { padding: 2px 8px; font-size: 12px; }
+    
+    /* 编辑者角标 */
+    .presence-badge {
+      position: fixed;
+      z-index: 50000;
+      background: #1a73e8;
+      color: #fff;
+      font-size: 11px;
+      line-height: 1.5;
+      padding: 1px 6px;
+      border-radius: 8px;
+      pointer-events: none;
+      white-space: nowrap;
+      box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    }
     .perm-empty { color: #999; padding: 10px 0; text-align: center; }
   </style>
 </head>
@@ -234,6 +249,7 @@
     <button class="btn" id="btnPermManage" onclick="openPermManage()">👥 权限</button>
     <% } %>
     <% if (canEdit) { %>
+    <button class="btn" id="btnCellHistory" onclick="openCellHistory()">📜 编辑历史</button>
     <button class="btn btn-primary" id="btnSave">💾 保存</button>
     <% } else { %>
     <button class="btn" id="btnPermApply" onclick="openPermApply()">🔑 申请权限</button>
@@ -285,6 +301,20 @@
     </div>
   </div>
   
+  <!-- 单元格编辑历史弹窗 -->
+  <div class="modal-mask" id="cellHistoryModal" style="display:none;">
+    <div class="modal-box" style="width:520px;max-height:80vh;">
+      <div class="modal-title" id="cellHistoryTitle">单元格编辑历史</div>
+      <div class="modal-body" style="max-height:60vh;overflow-y:auto;" id="cellHistoryList">加载中...</div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeCellHistory()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑者角标层 -->
+  <div id="presenceLayer" style="position:fixed;left:0;top:0;width:0;height:0;z-index:50000;pointer-events:none;"></div>
+
   <div class="loading-mask" id="loadingMask">正在加载表格...</div>
 
   <script>
@@ -336,11 +366,26 @@
           hook: {
             workbookCreateAfter: function() {
               document.getElementById('loadingMask').style.display = 'none';
+              startCollaboration();
+              bindPresenceScroll();
+            },
+            cellEditBefore: function(sel) {
+              // 进入编辑时上报"正在编辑"，用于其他用户显示角标
+              if (!editable || isLocked) return;
+              var s = Array.isArray(sel) ? sel[0] : sel;
+              if (s && s.row_focus != null && s.column_focus != null) {
+                reportActive(s.row_focus, s.column_focus);
+              }
             },
             cellUpdated: function(r, c, oldValue, newValue, isRefresh) {
               // 仅在真实单元格变更时标记未保存（切换 Sheet 不触发，避免无谓自动保存）
               if (editable && !isLocked) {
                 markDirty();
+                if (!isRefresh && canEdit) {
+                  // 实时协同：上报编辑状态 + 单格保存（记历史并广播给其他用户）
+                  reportActive(r, c);
+                  submitCellEdit(r, c);
+                }
               }
             }
           }
@@ -378,7 +423,7 @@
               row: s.row || 36, column: s.column || 18,
               visibledatacolumn: s.visibledatacolumn || 18, visibledatarow: s.visibledatarow || 36,
               celldata: s.celldata || null, chart: s.chart || null,
-              image: s.image || null, dataVerification: s.dataVerification || null,
+              images: s.images || null, image: s.image || null, dataVerification: s.dataVerification || null,
               conditionFormat: s.conditionFormat || null, pivotTable: s.pivotTable || null
             };
           });
@@ -430,6 +475,210 @@
           .catch(function() {
             initLuckysheet(createEmptySheet(), canEdit && !isLocked);
           });
+      }
+
+      // ========== 实时协同：编辑者角标 / 变更同步 / 编辑历史 ==========
+      let lastEditedCell = null;
+      let lastChangeTs = 0;
+      let collTimer = null;
+      let presenceTimer = null;
+
+      function activeSheetIndex() {
+        try {
+          var sheets = luckysheet.getAllSheets();
+          for (var i = 0; i < sheets.length; i++) {
+            if (sheets[i].status === 1) return i;
+          }
+          return 0;
+        } catch (e) { return 0; }
+      }
+
+      // 上报"我正在编辑 row,col"
+      function reportActive(row, col) {
+        if (!canEdit || isLocked) return;
+        lastEditedCell = { sheet: activeSheetIndex(), row: row, col: col };
+        fetch('/api/spreadsheet/' + sheetId + '/cell-active', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sheet: lastEditedCell.sheet, row: row, col: col, action: 'start' })
+        }).catch(function() {});
+      }
+
+      // 单格保存：更新服务端数据 + 记编辑历史 + 广播给其他用户
+      function submitCellEdit(row, col) {
+        if (!canEdit || isLocked) return;
+        var value = null;
+        try { value = luckysheet.getCellValue(row, col); } catch (e) { return; }
+        fetch('/api/spreadsheet/' + sheetId + '/cell-edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sheet: activeSheetIndex(), row: row, col: col, value: value })
+        }).then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (!res.success && res.error) console.error('单元格同步失败:', res.error);
+          })
+          .catch(function() {});
+      }
+
+      // 每 2 秒轮询：应用其他用户的单元格变更
+      function fetchChanges() {
+        fetch('/api/spreadsheet/' + sheetId + '/cell-changes?since=' + lastChangeTs)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (!res.success) return;
+            if (res.since) lastChangeTs = res.since;
+            (res.changes || []).forEach(function(ch) {
+              if (ch.isMine) return;
+              try {
+                luckysheet.setCellValue(ch.row, ch.col, ch.value, { isRefresh: true });
+              } catch (e) {}
+            });
+          })
+          .catch(function() {});
+      }
+
+      // 由行列坐标换算单元格在表格中的内容位置（依赖 visibledatacolumn/visibledatarow 边界数组）
+      function cellXY(sheetIdx, row, col) {
+        try {
+          var sheets = luckysheet.getAllSheets();
+          var s = sheets[sheetIdx];
+          if (!s) return null;
+          var zoom = s.zoomRatio || 1;
+          var left, top;
+          if (Array.isArray(s.visibledatacolumn)) {
+            left = (col === 0 ? 0 : (s.visibledatacolumn[col - 1] || 0)) * zoom;
+          } else {
+            left = col * (s.defaultColWidth || 100) * zoom;
+          }
+          if (Array.isArray(s.visibledatarow)) {
+            top = (row === 0 ? 0 : (s.visibledatarow[row - 1] || 0)) * zoom;
+          } else {
+            top = row * (s.defaultRowHeight || 28) * zoom;
+          }
+          return { left: left, top: top };
+        } catch (e) { return null; }
+      }
+
+      // 在对应单元格上叠加"XX 正在编辑"角标
+      function renderPresence(users) {
+        var layer = document.getElementById('presenceLayer');
+        if (!layer) return;
+        layer.innerHTML = '';
+        var cellMain = document.getElementById('luckysheet-cell-main');
+        if (!cellMain) return;
+        var rect = cellMain.getBoundingClientRect();
+        var curSheet = activeSheetIndex();
+        users.forEach(function(u) {
+          if (u.sheet !== curSheet) return;
+          var xy = cellXY(u.sheet, u.row, u.col);
+          if (!xy) return;
+          var x = rect.left + xy.left - cellMain.scrollLeft;
+          var y = rect.top + xy.top - cellMain.scrollTop;
+          var badge = document.createElement('div');
+          badge.className = 'presence-badge';
+          badge.textContent = u.username + ' 正在编辑';
+          badge.style.left = Math.round(x) + 'px';
+          badge.style.top = Math.max(4, Math.round(y - 22)) + 'px';
+          layer.appendChild(badge);
+        });
+      }
+
+      function fetchPresence() {
+        fetch('/api/spreadsheet/' + sheetId + '/cell-presence')
+          .then(function(r) { return r.json(); })
+          .then(function(res) { if (res.success) renderPresence(res.users || []); })
+          .catch(function() {});
+      }
+
+      function startCollaboration() {
+        if (!canEdit) return;
+        lastChangeTs = Date.now();
+        if (collTimer) clearInterval(collTimer);
+        if (presenceTimer) clearInterval(presenceTimer);
+        collTimer = setInterval(fetchChanges, 2000);
+        presenceTimer = setInterval(fetchPresence, 2000);
+        window.addEventListener('pagehide', function() {
+          if (collTimer) clearInterval(collTimer);
+          if (presenceTimer) clearInterval(presenceTimer);
+        });
+      }
+
+      // 表格滚动时刷新角标位置
+      function bindPresenceScroll() {
+        var cellMain = document.getElementById('luckysheet-cell-main');
+        if (cellMain) {
+          cellMain.addEventListener('scroll', function() {
+            fetchPresence();
+          }, { passive: true });
+        }
+      }
+
+      // 打开编辑历史弹窗（查询最近编辑的单元格）
+      function openCellHistory() {
+        var target = lastEditedCell;
+        if (!target) {
+          alert('请先编辑一个单元格，再点击"编辑历史"查看它的修改记录');
+          return;
+        }
+        var listEl = document.getElementById('cellHistoryList');
+        var titleEl = document.getElementById('cellHistoryTitle');
+        if (!listEl || !titleEl) return;
+        titleEl.textContent = '单元格 ' + colName(target.col) + (target.row + 1) + ' 的编辑历史';
+        listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">加载中...</div>';
+        document.getElementById('cellHistoryModal').style.display = 'flex';
+
+        fetch('/api/spreadsheet/' + sheetId + '/cell-history?sheet=' + target.sheet + '&row=' + target.row + '&col=' + target.col)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (!res.success) {
+              listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#d9534f;">' + (res.error || '查询失败') + '</div>';
+              return;
+            }
+            if (!res.history || res.history.length === 0) {
+              listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">该单元格暂无编辑记录</div>';
+              return;
+            }
+            var html = '';
+            res.history.forEach(function(h) {
+              html += '<div style="padding:10px 12px;border-bottom:1px solid #eee;">' +
+                '<div style="display:flex;justify-content:space-between;font-size:12px;color:#888;">' +
+                '<span>' + escapeHtml(h.username || '未知用户') + '</span><span>' + escapeHtml(h.created_at || '') + '</span></div>' +
+                '<div style="font-size:13px;margin-top:4px;word-break:break-all;"><span style="color:#999;">旧值：</span>' + fmtHistoryValue(h.old_value) + '</div>' +
+                '<div style="font-size:13px;margin-top:2px;word-break:break-all;"><span style="color:#1a73e8;">新值：</span>' + fmtHistoryValue(h.new_value) + '</div>' +
+                '</div>';
+            });
+            listEl.innerHTML = html;
+          })
+          .catch(function() {
+            listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#d9534f;">查询失败，请重试</div>';
+          });
+      }
+
+      function closeCellHistory() {
+        var modal = document.getElementById('cellHistoryModal');
+        if (modal) modal.style.display = 'none';
+      }
+
+      function colName(c) {
+        var s = '';
+        c = c + 1;
+        while (c > 0) {
+          var rem = (c - 1) % 26;
+          s = String.fromCharCode(65 + rem) + s;
+          c = Math.floor((c - 1) / 26);
+        }
+        return s;
+      }
+
+      function fmtHistoryValue(v) {
+        if (v == null || v === '') return '<span style="color:#ccc;">（空）</span>';
+        var text = String(v);
+        if (text.length > 300) text = text.slice(0, 300) + '...';
+        return escapeHtml(text);
+      }
+
+      function escapeHtml(str) {
+        return String(str == null ? '' : str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       }
 
       // 在线用户
