@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 在线表格前端交互逻辑
  * 功能：分页、搜索、排序、行内编辑、添加/删除行、列显示/隐藏、添加列
  */
@@ -105,7 +105,7 @@
       if (value.bold) style += 'font-weight:bold;';
       if (value.italic) style += 'font-style:italic;';
       if (value.underline) style += 'text-decoration:underline;';
-      if (value.color) style += 'color:' + value.color + ';';
+      if (value.color && /^#[0-9a-fA-F]{3,8}$/.test(value.color)) style += 'color:' + value.color + ';';
       var html = '<span style="' + style + '">' + text + '</span>';
       if (value.link) {
         html = '<a href="' + escapeAttr(value.link) + '" target="_blank" rel="noopener">' + html + '</a>';

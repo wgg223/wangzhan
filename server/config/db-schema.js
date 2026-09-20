@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 数据库表结构定义（DDL 与迁移）
  * 作用：集中定义全站 40+ 张业务表的 CREATE TABLE IF NOT EXISTS，
  *       以及存量数据库的 ALTER TABLE 增量迁移。

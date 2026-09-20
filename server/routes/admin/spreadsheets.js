@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 后台在线表格管理路由
  * 页面/接口：
  *   GET  /admin/spreadsheets              —— 表格管理列表
@@ -23,70 +23,7 @@ const batchImportUpload = multer({
   limits: { fileSize: 200 * 1024 * 1024 }
 });
 
-// 将表头转换为合法的 field_key
-function toFieldKey(header, existingKeys, idx) {
-  let key = String(header).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
-  if (!/^[a-z_][a-z0-9_]*$/.test(key)) {
-    key = 'col_' + (idx + 1);
-  }
-  let finalKey = key;
-  let counter = 1;
-  while (existingKeys.has(finalKey)) {
-    finalKey = key + '_' + counter++;
-  }
-  existingKeys.add(finalKey);
-  return finalKey;
-}
-
-// Excel日期序列号转日期字符串（1900日期系统）
-function excelDateToString(value) {
-  if (typeof value !== 'number' || value < 20000 || value > 80000) return null;
-  try {
-    // Excel日期序列号，1900-01-01对应1（有1900年闰年bug，实际从1899-12-30开始）
-    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
-    if (isNaN(date.getTime())) return null;
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return y + '-' + m + '-' + d;
-  } catch (e) {
-    return null;
-  }
-}
-
-// 自动检测表头行：如果第一行非空列太少，认为是标题行，使用第二行
-function detectHeaderRow(rows) {
-  if (rows.length === 0) return 0;
-  const firstRow = rows[0];
-  const totalCols = firstRow.length;
-  const nonEmptyCols = firstRow.filter(function(c) { return String(c).trim() !== ''; }).length;
-  
-  // 条件1：第一行非空列比例很低（<40%），认为是标题行
-  if (totalCols >= 2 && nonEmptyCols / totalCols < 0.4 && rows.length > 1) {
-    return 1;
-  }
-  
-  // 条件2：第一行只有1列有值，且第二行有更多列有值，认为是标题行
-  if (nonEmptyCols <= 1 && rows.length > 1) {
-    const secondRowNonEmpty = rows[1].filter(function(c) { return String(c).trim() !== ''; }).length;
-    if (secondRowNonEmpty > nonEmptyCols) {
-      return 1;
-    }
-  }
-  
-  return 0;
-}
-
-// 处理单元格值：转换日期、数字转字符串
-function processCellValue(value) {
-  if (value === null || value === undefined) return '';
-  // 尝试转换Excel日期
-  if (typeof value === 'number') {
-    const dateStr = excelDateToString(value);
-    if (dateStr) return dateStr;
-  }
-  return String(value);
-}
+const { toFieldKey, detectHeaderRow, processCellValue } = require('../../utils/spreadsheet-import');
 
 // 所有路由需要 spreadsheet.manage 权限
 router.use(hasPermission('spreadsheet.manage'));
@@ -344,7 +281,7 @@ router.post('/spreadsheets/batch-import', batchImportUpload.single('file'), (req
     });
   } catch (err) {
     console.error('批量导入失败:', err);
-    res.status(500).json({ error: '导入失败: ' + err.message, stack: err.stack });
+    res.status(500).json({ error: '导入失败: ' + err.message });
   }
 });
 

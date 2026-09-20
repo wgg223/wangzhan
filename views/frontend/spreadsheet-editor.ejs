@@ -1,4 +1,4 @@
-<%# ===== 页面模板：frontend/spreadsheet-editor.ejs =====%>
+﻿<%# ===== 页面模板：frontend/spreadsheet-editor.ejs =====%>
 <%# 说明：Luckysheet 在线表格编辑页（全屏显示，浮动信息栏） %>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -6,12 +6,91 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= sheet.name %> - 在线表格</title>
-  <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/css/pluginsCss.css' />
-  <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/plugins.css' />
-  <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/css/luckysheet.css' />
-  <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css' />
-  <script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/js/plugin.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/luckysheet.umd.js"></script>
+  <script>
+    // Luckysheet 多源加载：jsdelivr（主）→ npmmirror（国内）→ unpkg（国际备选），全部失败时给出提示
+    (function loadLuckysheetLib() {
+      var CDN_SOURCES = [
+        { name: 'jsdelivr', css: [
+            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/css/pluginsCss.css',
+            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/plugins.css',
+            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/css/luckysheet.css',
+            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css'
+          ], js: [
+            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/js/plugin.js',
+            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/luckysheet.umd.js'
+          ] },
+        { name: 'npmmirror', css: [
+            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/plugins/css/pluginsCss.css',
+            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/plugins/plugins.css',
+            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/css/luckysheet.css',
+            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/assets/iconfont/iconfont.css'
+          ], js: [
+            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/plugins/js/plugin.js',
+            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/luckysheet.umd.js'
+          ] },
+        { name: 'unpkg', css: [
+            'https://unpkg.com/luckysheet@2.1.13/dist/plugins/css/pluginsCss.css',
+            'https://unpkg.com/luckysheet@2.1.13/dist/plugins/plugins.css',
+            'https://unpkg.com/luckysheet@2.1.13/dist/css/luckysheet.css',
+            'https://unpkg.com/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css'
+          ], js: [
+            'https://unpkg.com/luckysheet@2.1.13/dist/plugins/js/plugin.js',
+            'https://unpkg.com/luckysheet@2.1.13/dist/luckysheet.umd.js'
+          ] }
+      ];
+
+      var sourceIdx = 0;
+      var finished = false;
+
+      function finishLoad() {
+        if (finished) return;
+        finished = true;
+        window.__luckysheetReady = true;
+        if (window.__luckysheetOnReady) window.__luckysheetOnReady();
+      }
+
+      function failAll() {
+        if (finished) return;
+        finished = true;
+        var mask = document.getElementById('loadingMask');
+        if (mask) mask.innerHTML = '<div style="text-align:center;line-height:1.8;">在线表格编辑器组件加载失败<br/><span style="font-size:12px;color:#999;">请检查网络连接后刷新页面重试</span></div>';
+      }
+
+      function loadSource() {
+        if (sourceIdx >= CDN_SOURCES.length) { failAll(); return; }
+        var src = CDN_SOURCES[sourceIdx];
+        var remaining = src.css.length + src.js.length;
+        var failed = false;
+        function onDone() {
+          if (failed) return;
+          remaining--;
+          if (remaining <= 0) finishLoad();
+        }
+        function onError() {
+          if (failed) return;
+          failed = true;
+          sourceIdx++;
+          setTimeout(loadSource, 0);
+        }
+        src.css.forEach(function(href) {
+          var link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = href;
+          link.onload = onDone;
+          link.onerror = onError;
+          document.head.appendChild(link);
+        });
+        src.js.forEach(function(url) {
+          var s = document.createElement('script');
+          s.src = url;
+          s.onload = onDone;
+          s.onerror = onError;
+          document.head.appendChild(s);
+        });
+      }
+      loadSource();
+    })();
+  </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -232,6 +311,11 @@
       function initLuckysheet(data, editable) {
         if (luckysheetInited) return;
         luckysheetInited = true;
+
+        if (typeof luckysheet === 'undefined' || typeof luckysheet.create !== 'function') {
+          document.getElementById('loadingMask').innerHTML = '<div style="text-align:center;line-height:1.8;">在线表格编辑器组件加载失败<br/><span style="font-size:12px;color:#999;">请检查网络连接后刷新页面重试</span></div>';
+          return;
+        }
         
         const options = {
           container: 'luckysheet',
@@ -254,11 +338,7 @@
               document.getElementById('loadingMask').style.display = 'none';
             },
             cellUpdated: function(r, c, oldValue, newValue, isRefresh) {
-              if (editable && !isLocked) {
-                markDirty();
-              }
-            },
-            sheetActivate: function(index) {
+              // 仅在真实单元格变更时标记未保存（切换 Sheet 不触发，避免无谓自动保存）
               if (editable && !isLocked) {
                 markDirty();
               }
@@ -276,7 +356,7 @@
       }
 
       function autoSave() {
-        if (!canManage || !isDirty || isLocked) return;
+        if (!canEdit || !isDirty || isLocked) return;
         saveData(function(success) {
           if (success) {
             isDirty = false;
@@ -450,7 +530,7 @@
 
       // 离开页面前提示保存
       window.addEventListener('beforeunload', function(e) {
-        if (canManage && isDirty) {
+        if (canEdit && isDirty) {
           e.preventDefault();
           e.returnValue = '表格有未保存的更改，确定要离开吗？';
         }
@@ -460,7 +540,7 @@
       document.addEventListener('keydown', function(e) {
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
           e.preventDefault();
-          if (canManage && !isLocked) {
+          if (canEdit && !isLocked) {
             saveData(function(success) {
               if (success) {
                 isDirty = false;
@@ -473,6 +553,16 @@
 
       // ============ 权限申请和管理 ============
       const PERM_NAMES = { view: '查看', edit: '编辑', download: '下载', copy: '创建副本' };
+
+      // 转义用户可控文本，防止拼入 innerHTML 造成 XSS
+      function escapeHtml(str) {
+        return String(str == null ? '' : str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
 
       window.openPermApply = function() {
         document.getElementById('applyModal').style.display = 'flex';
@@ -530,9 +620,9 @@
         container.innerHTML = pending.map(function(a) {
           return '<div class="perm-item">' +
             '<div class="info">' +
-              '<span class="username">' + (a.username || '未知用户') + '</span>' +
-              '<span class="perm-type">' + PERM_NAMES[a.perm_type] + '权限</span>' +
-              (a.reason ? '<div class="reason">理由：' + a.reason + '</div>' : '') +
+              '<span class="username">' + escapeHtml(a.username || '未知用户') + '</span>' +
+              '<span class="perm-type">' + (PERM_NAMES[a.perm_type] || escapeHtml(a.perm_type || '')) + '权限</span>' +
+              (a.reason ? '<div class="reason">理由：' + escapeHtml(a.reason) + '</div>' : '') +
             '</div>' +
             '<div class="actions">' +
               '<button class="btn btn-primary" onclick="approveApply(' + a.id + ', true)">通过</button>' +
@@ -589,8 +679,8 @@
           const u = userMap[userId];
           return '<div class="perm-item">' +
             '<div class="info">' +
-              '<span class="username">' + (u.username || '未知用户') + '</span>' +
-              '<span class="perm-type">' + u.perms.map(function(p) { return PERM_NAMES[p]; }).join('、') + '</span>' +
+              '<span class="username">' + escapeHtml(u.username || '未知用户') + '</span>' +
+              '<span class="perm-type">' + u.perms.map(function(p) { return PERM_NAMES[p] || escapeHtml(p || ''); }).join('、') + '</span>' +
             '</div>' +
             '<div class="actions">' +
               '<button class="btn" onclick="revokePerm(' + userId + ')">撤销全部</button>' +
@@ -686,11 +776,18 @@
           .catch(function() {});
       }, 15000);
 
-      // 启动
-      checkLockStatus();
-      loadData();
-      updateOnlineUsers();
-      setInterval(updateOnlineUsers, 15000);
+      // 启动（等待 Luckysheet 组件加载完成后初始化）
+      function boot() {
+        checkLockStatus();
+        loadData();
+        updateOnlineUsers();
+        setInterval(updateOnlineUsers, 15000);
+      }
+      if (window.__luckysheetReady) {
+        boot();
+      } else {
+        window.__luckysheetOnReady = boot;
+      }
     })();
   </script>
 </body>

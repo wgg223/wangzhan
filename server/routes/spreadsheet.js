@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 在线表格前台路由
  * 页面/接口：
  *   GET  /spreadsheet              —— 表格列表页（需 spreadsheet.access）
@@ -101,13 +101,50 @@ router.get('/api/spreadsheet/:id/data', isAuthenticated, hasFrontendPermission('
     [sheetId]
   );
 
-  // 获取所有行（SQLite 中用 LIKE 做搜索）
-  let rows = queryAll(db,
-    'SELECT * FROM spreadsheet_rows WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC',
-    [sheetId]
-  );
+  // 无搜索、无排序时走 SQL 分页快路径（避免全表加载与逐行 JSON.parse，适合大数据量表）
+  if (!search && !sortField) {
+    const countRow = queryOne(db, 'SELECT COUNT(*) AS total FROM spreadsheet_rows WHERE spreadsheet_id = ?', [sheetId]);
+    const total = countRow ? countRow.total : 0;
+    const totalPages = Math.ceil(total / pageSize);
+    const offset = (page - 1) * pageSize;
+    const rows = queryAll(db,
+      'SELECT * FROM spreadsheet_rows WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC LIMIT ? OFFSET ?',
+      [sheetId, pageSize, offset]
+    );
+    const pagedRows = rows.map(r => {
+      let data = {};
+      try { data = JSON.parse(r.row_data || '{}'); } catch (e) { data = {}; }
+      return { ...r, data: data };
+    });
+    return res.json({
+      success: true,
+      data: {
+        sheet: { id: sheet.id, name: sheet.name, description: sheet.description },
+        columns: columns,
+        rows: pagedRows,
+        pagination: {
+          page: page,
+          pageSize: pageSize,
+          total: total,
+          totalPages: totalPages
+        }
+      }
+    });
+  }
 
-  // 解析 row_data 并搜索
+  // 搜索/排序路径：先按 row_data LIKE 粗筛（SQLite 端），再做精确匹配
+  let rows;
+  if (search) {
+    const like = '%' + search.replace(/[\\%_]/g, function(m) { return '\\' + m; }) + '%';
+    rows = queryAll(db, "SELECT * FROM spreadsheet_rows WHERE spreadsheet_id = ? AND row_data LIKE ? ESCAPE '\\' ORDER BY sort_order ASC, id ASC", [sheetId, like]);
+  } else {
+    rows = queryAll(db,
+      'SELECT * FROM spreadsheet_rows WHERE spreadsheet_id = ? ORDER BY sort_order ASC, id ASC',
+      [sheetId]
+    );
+  }
+
+  // 解析 row_data 并精确搜索
   let parsedRows = rows.map(r => {
     let data = {};
     try { data = JSON.parse(r.row_data || '{}'); } catch (e) { data = {}; }
@@ -312,6 +349,10 @@ router.post('/api/spreadsheet/:id/column', isAuthenticated, (req, res, next) => 
   const { name, field_key, type, width } = req.body;
 
   if (!sheetId || !name || !field_key) return res.status(400).json({ error: '列名和字段标识不能为空' });
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field_key)) {
+    return res.status(400).json({ error: '字段标识只能包含字母、数字和下划线，且必须以字母或下划线开头' });
+  }
+  if (String(name).length > 50) return res.status(400).json({ error: '列名不能超过50个字符' });
 
   const sheet = queryOne(db, 'SELECT id FROM spreadsheets WHERE id = ?', [sheetId]);
   if (!sheet) return res.status(404).json({ error: '表格不存在' });
@@ -333,121 +374,12 @@ router.post('/api/spreadsheet/:id/column', isAuthenticated, (req, res, next) => 
 });
 
 // ============ 文件导入功能（CSV / XLSX） ============
+const { parseImportFile, processCellValue, toFieldKey } = require('../utils/spreadsheet-import');
 const multer = require('multer');
-const XLSX = require('xlsx');
 const importUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 } // 最大50MB
 });
-
-// Excel日期序列号转日期字符串
-function excelDateToString(value) {
-  if (typeof value !== 'number' || value < 20000 || value > 80000) return null;
-  try {
-    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
-    if (isNaN(date.getTime())) return null;
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return y + '-' + m + '-' + d;
-  } catch (e) {
-    return null;
-  }
-}
-
-// 处理单元格值
-function processCellValue(value) {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'number') {
-    const dateStr = excelDateToString(value);
-    if (dateStr) return dateStr;
-  }
-  return String(value);
-}
-
-// 自动检测表头行
-function detectHeaderRow(rows) {
-  if (rows.length === 0) return 0;
-  const firstRow = rows[0];
-  const totalCols = firstRow.length;
-  const nonEmptyCols = firstRow.filter(function(c) { return String(c).trim() !== ''; }).length;
-  
-  // 条件1：第一行非空列比例很低（<40%），认为是标题行
-  if (totalCols >= 2 && nonEmptyCols / totalCols < 0.4 && rows.length > 1) {
-    return 1;
-  }
-  
-  // 条件2：第一行只有1列有值，且第二行有更多列有值，认为是标题行
-  if (nonEmptyCols <= 1 && rows.length > 1) {
-    const secondRowNonEmpty = rows[1].filter(function(c) { return String(c).trim() !== ''; }).length;
-    if (secondRowNonEmpty > nonEmptyCols) {
-      return 1;
-    }
-  }
-  
-  return 0;
-}
-
-// 统一解析导入文件，返回 { headers, dataRows }
-function parseImportFile(file) {
-  const ext = (file.originalname.split('.').pop() || '').toLowerCase();
-  let rawRows;
-  if (ext === 'csv') {
-    const text = file.buffer.toString('utf-8');
-    rawRows = parseCSV(text);
-  } else if (ext === 'xlsx' || ext === 'xls') {
-    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) throw new Error('Excel 文件中没有工作表');
-    const worksheet = workbook.Sheets[firstSheetName];
-    rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
-  } else {
-    throw new Error('不支持的文件格式，请上传 CSV 或 XLSX 文件');
-  }
-
-  if (rawRows.length === 0) throw new Error('文件为空');
-
-  // 自动检测表头行
-  const headerRowIdx = detectHeaderRow(rawRows);
-  const headers = rawRows[headerRowIdx].map(function(h) { return processCellValue(h).trim(); });
-  const dataRows = rawRows.slice(headerRowIdx + 1).filter(function(r) {
-    return r.some(function(c) { return processCellValue(c).trim() !== ''; });
-  });
-
-  return { headers: headers, dataRows: dataRows, headerRowIdx: headerRowIdx };
-}
-
-// 简易 CSV 解析器（支持引号包裹、逗号、换行）
-function parseCSV(text) {
-  // 移除 BOM
-  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-  const rows = [];
-  let cur = [];
-  let field = '';
-  let inQuotes = false;
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
-        inQuotes = false; i++; continue;
-      }
-      field += c; i++; continue;
-    }
-    if (c === '"') { inQuotes = true; i++; continue; }
-    if (c === ',') { cur.push(field); field = ''; i++; continue; }
-    if (c === '\r') {
-      if (text[i + 1] === '\n') i++;
-      cur.push(field); rows.push(cur); cur = []; field = ''; i++; continue;
-    }
-    if (c === '\n') { cur.push(field); rows.push(cur); cur = []; field = ''; i++; continue; }
-    field += c; i++;
-  }
-  if (field.length > 0 || cur.length > 0) { cur.push(field); rows.push(cur); }
-  // 移除空行
-  return rows.filter(r => r.some(c => c.trim() !== ''));
-}
 
 // 预览导入文件（解析前几行，返回列名和示例数据）
 router.post('/api/spreadsheet/:id/import/preview', isAuthenticated, (req, res, next) => {
@@ -479,30 +411,15 @@ router.post('/api/spreadsheet/:id/import/preview', isAuthenticated, (req, res, n
     success: true,
     data: {
       filename: req.file.originalname,
-      totalRows: rows.length - 1, // 减去表头
+      totalRows: parsed.dataRows.length, // 数据行数（已排除表头）
+      encoding: parsed.encoding,
+      delimiter: parsed.delimiter,
       headers: headers,
       sampleRows: sampleRows,
       tableColumns: columns.map(c => ({ id: c.id, name: c.name, field_key: c.field_key }))
     }
   });
 });
-
-// 将表头转换为合法的 field_key
-function toFieldKey(header, existingKeys, idx) {
-  // 先尝试直接用表头（如果是合法的英文标识符）
-  let key = String(header).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
-  if (!/^[a-z_][a-z0-9_]*$/.test(key)) {
-    key = 'col_' + (idx + 1);
-  }
-  // 避免重复
-  let finalKey = key;
-  let counter = 1;
-  while (existingKeys.has(finalKey)) {
-    finalKey = key + '_' + counter++;
-  }
-  existingKeys.add(finalKey);
-  return finalKey;
-}
 
 // 执行导入（自动匹配表头，无对应列自动创建）
 router.post('/api/spreadsheet/:id/import', isAuthenticated, (req, res, next) => {
