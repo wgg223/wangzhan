@@ -6,10 +6,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= sheet.name %> - 在线表格</title>
+  <link rel="stylesheet" href="/css/fonts.css">
+  <script src="/js/font-switcher.js"></script>
+
   <script>
-    // Luckysheet 多源加载：jsdelivr（主）→ npmmirror（国内）→ unpkg（国际备选），全部失败时给出提示
+    // Luckysheet 多源加载：本地（主，同源免 Tracking Prevention / 离线可用）→ jsdelivr → npmmirror → unpkg，全部失败时给出提示
     (function loadLuckysheetLib() {
       var CDN_SOURCES = [
+        { name: 'local', css: [
+            '/vendor/luckysheet/plugins/css/pluginsCss.css',
+            '/vendor/luckysheet/plugins/plugins.css',
+            '/vendor/luckysheet/css/luckysheet.css',
+            '/vendor/luckysheet/assets/iconfont/iconfont.css'
+          ], js: [
+            '/vendor/luckysheet/plugins/js/plugin.js',
+            '/vendor/luckysheet/luckysheet.umd.js'
+          ] },
         { name: 'jsdelivr', css: [
             'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/css/pluginsCss.css',
             'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/plugins.css',
@@ -93,7 +105,7 @@
   </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif); }
     
     /* Luckysheet 全屏容器 */
     #luckysheet {
@@ -245,6 +257,11 @@
     <% } %>
     
     <span class="save-status" id="saveStatus">已保存</span>
+    <select class="site-font-select" onchange="setSiteFont(this.value)" title="切换界面字体" style="font-size:12px;padding:3px 5px;border-radius:6px;border:1px solid #ddd;max-width:132px;background:#fff;color:#333;outline:none;">
+      <option value="default">🅰️ 默认字体</option>
+      <option value="zysdmycy">子燕是动漫二次元</option>
+      <option value="bcmhtt">宝灿谋会停手写体2.0</option>
+    </select>
     <% if (canManage) { %>
     <button class="btn" id="btnPermManage" onclick="openPermManage()">👥 权限</button>
     <% } %>
@@ -361,6 +378,10 @@
           enableAddCol: editable,
           enableAddBackTop: true,
           userInfo: false,
+          fontList: [
+            { fontName: '子燕是动漫二次元', url: '/fonts/zysdmycy/FontsLab-DongManErCiYuan.woff2' },
+            { fontName: '宝灿谋会停手写体2.0', url: '/fonts/bcmhtt/bcmhuitingsxt.woff2' }
+          ],
           showConfigWindowResize: true,
           forceCalculation: true,
           hook: {
@@ -614,7 +635,7 @@
       }
 
       // 打开编辑历史弹窗（查询最近编辑的单元格）
-      function openCellHistory() {
+      window.openCellHistory = function() {
         var target = lastEditedCell;
         if (!target) {
           alert('请先编辑一个单元格，再点击"编辑历史"查看它的修改记录');
@@ -654,7 +675,7 @@
           });
       }
 
-      function closeCellHistory() {
+      window.closeCellHistory = function() {
         var modal = document.getElementById('cellHistoryModal');
         if (modal) modal.style.display = 'none';
       }
