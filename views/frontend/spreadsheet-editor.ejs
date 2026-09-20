@@ -8,6 +8,25 @@
   <title><%= sheet.name %> - 在线表格</title>
   <link rel="stylesheet" href="/css/fonts.css">
   <script src="/js/font-switcher.js"></script>
+  <script>
+    // 预加载表格自定义字体（与 Luckysheet fontList 的 fontName 一致），切换时即时生效
+    (function preloadSheetFonts() {
+      try {
+        if (!window.FontFace || !document.fonts) return;
+        var list = [
+          { name: 'FontsLab-DongManErCiYuan', url: '/fonts/zysdmycy/FontsLab-DongManErCiYuan.woff2' },
+          { name: 'bcmhuitingsxt', url: '/fonts/bcmhtt/bcmhuitingsxt.woff2' }
+        ];
+        list.forEach(function(f) {
+          if (document.fonts.check('12px ' + f.name)) return;
+          var ff = new FontFace(f.name, 'url(' + f.url + ')');
+          ff.load().then(function() {
+            try { document.fonts.add(ff); } catch (e) {}
+          }).catch(function() {});
+        });
+      } catch (e) {}
+    })();
+  </script>
 
   <script>
     // Luckysheet 多源加载：本地（主，同源免 Tracking Prevention / 离线可用）→ jsdelivr → npmmirror → unpkg，全部失败时给出提示
