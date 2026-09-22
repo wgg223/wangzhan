@@ -1,46 +1,6 @@
 // 前端主要JavaScript文件
 // 注意: escapeHtml, getCsrfToken, showToast 等工具函数已移至 utils.js
 
-// ============ 暗色模式切换 ============
-function initThemeToggle() {
-  const toggleBtn = document.getElementById('themeToggle');
-  if (!toggleBtn) return;
-
-  // 从 localStorage 读取主题偏好
-  function getTheme() {
-    try {
-      return localStorage.getItem('theme') || 'light';
-    } catch (e) {
-      return 'light';
-    }
-  }
-
-  // 应用主题
-  function setTheme(theme) {
-    if (theme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-      toggleBtn.textContent = '☀️';
-      toggleBtn.title = '切换到亮色模式';
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-      toggleBtn.textContent = '🌙';
-      toggleBtn.title = '切换到暗色模式';
-    }
-    try {
-      localStorage.setItem('theme', theme);
-    } catch (e) { /* ignore */ }
-  }
-
-  // 初始化
-  setTheme(getTheme());
-
-  // 切换事件
-  toggleBtn.addEventListener('click', function() {
-    const current = getTheme();
-    setTheme(current === 'dark' ? 'light' : 'dark');
-  });
-}
-
 // ============ 移动端菜单 ============
 function initMobileMenu() {
   const menuBtn = document.getElementById('mobileMenuBtn');
@@ -158,10 +118,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // 初始化暗色模式
-  initThemeToggle();
-
-  // 初始化移动端菜单
+  // 初始化移动端菜单（主题/语言由 site-settings.js 统一管理）
   initMobileMenu();
 
   // 初始化图片懒加载

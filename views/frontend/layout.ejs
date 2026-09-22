@@ -14,6 +14,8 @@
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/community.css') : '/css/community.css' %>">
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/fonts.css') : '/css/fonts.css' %>">
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/font-switcher.js') : '/js/font-switcher.js' %>"></script>
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/site-settings.css') : '/css/site-settings.css' %>">
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/site-settings.js') : '/js/site-settings.js' %>"></script>
   <style>
     body {
       <% if (settings.background_image) { %>
@@ -56,16 +58,16 @@
         </div>
         
         <ul class="nav-main" id="navMain">
-          <li><a href="/home">首页</a></li>
-          <li><a href="/articles">文章</a></li>
-          <li><a href="/community">社区</a></li>
-          <li><a href="/novels">小说</a></li>
-          <li><a href="/image-share">图片</a></li>
-          <li><a href="/ai-prompts">AI提示词</a></li>
-          <li><a href="/ai-image">AI生图</a></li>
-          <li><a href="/ai-chat">AI聊天</a></li>
-          <li><a href="/spreadsheet">表格</a></li>
-          <li><a href="/search">搜索</a></li>
+          <li><a href="/home" data-i18n="nav.home">首页</a></li>
+          <li><a href="/articles" data-i18n="nav.articles">文章</a></li>
+          <li><a href="/community" data-i18n="nav.community">社区</a></li>
+          <li><a href="/novels" data-i18n="nav.novels">小说</a></li>
+          <li><a href="/image-share" data-i18n="nav.images">图片</a></li>
+          <li><a href="/ai-prompts" data-i18n="nav.aiPrompts">AI提示词</a></li>
+          <li><a href="/ai-image" data-i18n="nav.aiImage">AI生图</a></li>
+          <li><a href="/ai-chat" data-i18n="nav.aiChat">AI聊天</a></li>
+          <li><a href="/spreadsheet" data-i18n="nav.spreadsheet">表格</a></li>
+          <li><a href="/search" data-i18n="nav.search">搜索</a></li>
         </ul>
       </div>
       
@@ -75,31 +77,53 @@
         <div class="nav-font-switch" title="切换字体">
           <select class="site-font-select" onchange="setSiteFont(this.value)" aria-label="切换字体"></select>
         </div>
+
+        <div class="nav-settings">
+          <button class="nav-icon-btn" data-settings-btn data-i18n-title="settings.title" aria-label="设置">⚙️</button>
+          <div id="settingsPanel" class="settings-panel" hidden>
+            <div class="settings-header" data-i18n="settings.title">设置</div>
+            <div class="settings-section">
+              <div class="settings-label" data-i18n="settings.themeMode">主题模式</div>
+              <div class="settings-options">
+                <button type="button" class="settings-option" data-theme-option="system" data-i18n="settings.themeSystem">跟随系统</button>
+                <button type="button" class="settings-option" data-theme-option="light" data-i18n="settings.themeLight">浅色</button>
+                <button type="button" class="settings-option" data-theme-option="dark" data-i18n="settings.themeDark">深色</button>
+              </div>
+            </div>
+            <div class="settings-section">
+              <div class="settings-label" data-i18n="settings.language">语言 / Language</div>
+              <div class="settings-options">
+                <button type="button" class="settings-option" data-lang-option="zh" data-i18n="settings.zh">简体中文</button>
+                <button type="button" class="settings-option" data-lang-option="en" data-i18n="settings.en">English</button>
+              </div>
+            </div>
+          </div>
+        </div>
         
         <% if (typeof user !== 'undefined' && user) { %>
           <div class="nav-icons">
             <div class="nav-icon-item" style="position: relative;">
-              <button class="nav-icon-btn" id="notification-toggle" title="通知">
+              <button class="nav-icon-btn" id="notification-toggle" title="通知" data-i18n-title="menu.notifications">
                 🔔
                 <span id="notify-unread-badge" class="msg-badge" style="display: none;">0</span>
               </button>
               <div id="notification-dropdown" class="notification-dropdown" style="display: none;">
                 <div class="notification-header">
-                  <h4>通知</h4>
-                  <a href="javascript:void(0)" id="mark-all-read">全部已读</a>
+                  <h4 data-i18n="menu.notifications">通知</h4>
+                  <a href="javascript:void(0)" id="mark-all-read" data-i18n="menu.markAllRead">全部已读</a>
                 </div>
                 <div id="notification-list" class="notification-list">
-                  <div class="notification-empty">暂无通知</div>
+                  <div class="notification-empty" data-i18n="menu.noNotifications">暂无通知</div>
                 </div>
               </div>
             </div>
             
-            <a href="/chat" class="nav-icon-btn" title="私信">
+            <a href="/chat" class="nav-icon-btn" title="私信" data-i18n-title="menu.dm">
               💬
               <span id="dm-unread-badge" class="msg-badge" style="display: none;">0</span>
             </a>
             
-            <a href="/messages" class="nav-icon-btn" title="站内信">
+            <a href="/messages" class="nav-icon-btn" title="站内信" data-i18n-title="menu.messages">
               📧
               <span id="msg-unread-badge" class="msg-badge" style="display: none;">0</span>
             </a>
@@ -114,21 +138,21 @@
               <span class="dropdown-arrow">▾</span>
             </button>
             <div class="dropdown-menu">
-              <a href="/user/<%= user.uid || user.id %>">👤 我的主页</a>
-              <a href="/account">⚙️ 账号管理</a>
-              <a href="/account/shares">🔗 我的分享</a>
-              <a href="/chat">💬 私信</a>
-              <a href="/permissions/apply">🔐 权限申请</a>
+              <a href="/user/<%= user.uid || user.id %>" data-i18n="menu.myProfile">👤 我的主页</a>
+              <a href="/account" data-i18n="menu.account">⚙️ 账号管理</a>
+              <a href="/account/shares" data-i18n="menu.myShares">🔗 我的分享</a>
+              <a href="/chat" data-i18n="menu.chat">💬 私信</a>
+              <a href="/permissions/apply" data-i18n="menu.permission">🔐 权限申请</a>
               <div class="dropdown-divider"></div>
-              <a href="/admin">🔧 后台管理</a>
-              <a href="/auth/change-password">🔑 修改密码</a>
+              <a href="/admin" data-i18n="menu.admin">🔧 后台管理</a>
+              <a href="/auth/change-password" data-i18n="menu.changePassword">🔑 修改密码</a>
               <div class="dropdown-divider"></div>
-              <a href="/auth/logout" class="danger">🚪 退出登录</a>
+              <a href="/auth/logout" class="danger" data-i18n="menu.logout">🚪 退出登录</a>
             </div>
           </div>
         <% } else { %>
-          <a href="/auth/login" class="btn btn-primary" style="padding: 8px 20px; font-size: 14px;">登录</a>
-          <a href="/auth/register" class="btn" style="padding: 8px 20px; font-size: 14px;">注册</a>
+          <a href="/auth/login" class="btn btn-primary" style="padding: 8px 20px; font-size: 14px;" data-i18n="menu.login">登录</a>
+          <a href="/auth/register" class="btn" style="padding: 8px 20px; font-size: 14px;" data-i18n="menu.register">注册</a>
         <% } %>
       </div>
     </div>
@@ -158,12 +182,12 @@
   <div id="message-popup" style="display:none;position:fixed;z-index:99999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
     <div style="position:relative;background:#fff;margin:10% auto;padding:0;width:500px;max-width:90%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
       <div style="background:#007bff;color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="margin:0;font-size:18px;" id="popup-title">站内信</h3>
+        <h3 style="margin:0;font-size:18px;" id="popup-title" data-i18n="popup.messageTitle">站内信</h3>
         <button type="button" onclick="closeMessagePopup()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
       </div>
       <div style="padding:24px;max-height:350px;overflow-y:auto;" id="popup-content"></div>
       <div style="padding:16px 24px;border-top:1px solid #eee;text-align:right;">
-        <a href="/messages" class="btn" style="background:#007bff;color:#fff;text-decoration:none;padding:8px 20px;border-radius:5px;">查看所有站内信</a>
+        <a href="/messages" class="btn" style="background:#007bff;color:#fff;text-decoration:none;padding:8px 20px;border-radius:5px;" data-i18n="popup.viewAllMessages">查看所有站内信</a>
       </div>
     </div>
   </div>
@@ -180,7 +204,7 @@
         <%- settings.welcome_popup_content || '<p>欢迎来到本站！</p>' %>
       </div>
       <div style="padding:16px 24px;border-top:1px solid #eee;text-align:right;">
-        <button type="button" onclick="closeWelcomePopup()" class="btn" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;">我知道了</button>
+        <button type="button" onclick="closeWelcomePopup()" class="btn" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.gotIt">我知道了</button>
       </div>
     </div>
   </div>
@@ -191,17 +215,17 @@
   <div id="privacy-popup" style="display:none;position:fixed;z-index:999999;inset:0;background:rgba(0,0,0,0.65);">
     <div style="background:#fff;margin:5% auto;width:560px;max-width:92%;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
       <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:16px 24px;text-align:center;">
-        <h3 style="margin:0;font-size:19px;">用户协议与隐私政策</h3>
+        <h3 style="margin:0;font-size:19px;" data-i18n="popup.privacyTitle">用户协议与隐私政策</h3>
       </div>
       <div style="padding:24px;max-height:50vh;overflow-y:auto;line-height:1.8;color:#555;" id="privacy-popup-content">
-        <h4>用户协议</h4>
+        <h4 data-i18n="popup.privacyTerms">用户协议</h4>
         <div><%- settings.user_agreement || '<p>（未填写用户协议）</p>' %></div>
-        <h4>隐私政策</h4>
+        <h4 data-i18n="popup.privacyPolicy">隐私政策</h4>
         <div><%- settings.privacy_policy || '<p>（未填写隐私政策）</p>' %></div>
       </div>
       <div style="padding:16px 24px;border-top:1px solid #eee;text-align:center;">
-        <button type="button" id="privacy-reject" class="btn" style="background:#eee;color:#555;margin-right:12px;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;">不同意</button>
-        <button type="button" id="privacy-accept" class="btn" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;">同意并继续</button>
+        <button type="button" id="privacy-reject" class="btn" style="background:#eee;color:#555;margin-right:12px;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.disagree">不同意</button>
+        <button type="button" id="privacy-accept" class="btn" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.agree">同意并继续</button>
       </div>
     </div>
   </div>
@@ -214,16 +238,16 @@
       <div class="chat-modal-header">
         <div class="chat-modal-user">
           <img id="chatModalAvatar" src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/assets/images/default-avatar.png') : '/assets/images/default-avatar.png' %>" alt="" class="chat-modal-avatar">
-          <span id="chatModalUsername" class="chat-modal-username">私信</span>
+          <span id="chatModalUsername" class="chat-modal-username" data-i18n="menu.dm">私信</span>
         </div>
         <button class="chat-modal-close" onclick="closeChatModal()">&times;</button>
       </div>
       <div class="chat-modal-messages" id="chatModalMessages">
-        <div class="chat-modal-empty">暂无消息</div>
+        <div class="chat-modal-empty" data-i18n="chat.noMessages">暂无消息</div>
       </div>
       <form class="chat-modal-input" id="chatModalForm">
-        <input type="text" id="chatModalInput" placeholder="输入消息..." maxlength="2000" autocomplete="off">
-        <button type="submit">发送</button>
+        <input type="text" id="chatModalInput" placeholder="输入消息..." maxlength="2000" autocomplete="off" data-i18n-placeholder="chat.placeholder">
+        <button type="submit" data-i18n="chat.send">发送</button>
       </form>
     </div>
   </div>

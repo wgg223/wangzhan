@@ -8,19 +8,45 @@
   <title><%= modeTitle %> - <%= siteName %></title>
   <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
   <script>
-    // 暗色模式引导：与 main.js 使用同一 localStorage key，保证认证页与主站主题一致
+    // 主题引导（三态：浅色/深色/跟随系统），与主站 site-settings.js 使用同一 localStorage key
     (function() {
       try {
-        if (localStorage.getItem('theme') === 'dark') {
-          document.documentElement.setAttribute('data-theme', 'dark');
+        var t = localStorage.getItem('site_theme');
+        if (!t || (t !== 'light' && t !== 'dark' && t !== 'system')) {
+          var legacy = localStorage.getItem('theme');
+          t = (legacy === 'light' || legacy === 'dark') ? legacy : 'system';
         }
+        var dark = t === 'dark' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
       } catch (e) {}
     })();
   </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/auth.css') : '/css/auth.css' %>">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/site-settings.css') : '/css/site-settings.css' %>">
 </head>
 <body class="auth-page <%= source %>-theme" data-mode="<%= mode %>">
+  <div class="auth-settings-wrap" style="position:fixed;top:16px;right:16px;z-index:300;">
+    <button class="auth-settings-fab" data-settings-btn data-i18n-title="settings.title" aria-label="设置">⚙️</button>
+    <div id="settingsPanel" class="settings-panel" hidden>
+      <div class="settings-header" data-i18n="settings.title">设置</div>
+      <div class="settings-section">
+        <div class="settings-label" data-i18n="settings.themeMode">主题模式</div>
+        <div class="settings-options">
+          <button type="button" class="settings-option" data-theme-option="system" data-i18n="settings.themeSystem">跟随系统</button>
+          <button type="button" class="settings-option" data-theme-option="light" data-i18n="settings.themeLight">浅色</button>
+          <button type="button" class="settings-option" data-theme-option="dark" data-i18n="settings.themeDark">深色</button>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-label" data-i18n="settings.language">语言 / Language</div>
+        <div class="settings-options">
+          <button type="button" class="settings-option" data-lang-option="zh" data-i18n="settings.zh">简体中文</button>
+          <button type="button" class="settings-option" data-lang-option="en" data-i18n="settings.en">English</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="auth-shell">
     <!-- 品牌面板 -->
     <aside class="auth-brand">
@@ -37,8 +63,8 @@
     <!-- 表单卡片 -->
     <main class="auth-card">
       <header class="auth-card-header">
-        <h2><%= modeTitle %></h2>
-        <p><%= modeSubtitle %></p>
+        <h2 data-i18n="<%= mode === 'login' ? 'auth.loginTitle' : (step === 'oauth-choice' ? 'auth.choiceTitle' : 'auth.registerTitle') %>"><%= modeTitle %></h2>
+        <p data-i18n="<%= mode === 'login' ? 'auth.loginSubtitle' : (step === 'oauth-choice' ? 'auth.choiceSubtitle' : 'auth.registerSubtitle') %>"><%= modeSubtitle %></p>
       </header>
     
     <% if (error) { %>
@@ -67,15 +93,15 @@
           <input type="hidden" name="returnTo" value="<%= returnTo %>">
         <% } %>
         <div class="form-group" id="group-username">
-          <label for="username">用户名</label>
-          <input type="text" id="username" name="username" class="auth-input" placeholder="请输入用户名" required value="<%= typeof username !== 'undefined' ? username : '' %>" autocomplete="username">
+          <label for="username"><span data-i18n="auth.username">用户名</span></label>
+          <input type="text" id="username" name="username" class="auth-input" placeholder="请输入用户名" required value="<%= typeof username !== 'undefined' ? username : '' %>" autocomplete="username" data-i18n-placeholder="auth.usernamePlaceholder">
           <div class="field-error" id="err-username"></div>
         </div>
         
         <div class="form-group" id="group-password">
-          <label for="password">密码</label>
+          <label for="password"><span data-i18n="auth.password">密码</span></label>
           <div class="password-field">
-            <input type="password" id="password" name="password" class="auth-input" placeholder="请输入密码" required autocomplete="current-password">
+            <input type="password" id="password" name="password" class="auth-input" placeholder="请输入密码" required autocomplete="current-password" data-i18n-placeholder="auth.passwordPlaceholder">
             <button type="button" class="toggle-password" onclick="togglePassword('password')" aria-label="显示密码">
               <i class="fas fa-eye"></i>
             </button>
@@ -101,13 +127,13 @@
         </div>
 
         <label class="remember-me">
-          <input type="checkbox" name="remember" id="remember" value="1"> 记住登录（30 天内免登录）
+          <input type="checkbox" name="remember" id="remember" value="1"> <span data-i18n="auth.remember">记住登录（30 天内免登录）</span>
         </label>
 
         <!-- 登录失败达到阈值后显示图形验证码 -->
         <% if (typeof captchaRequired !== 'undefined' && captchaRequired) { %>
         <div class="form-group captcha-group" id="loginCaptchaGroup">
-          <label for="loginCaptcha">图形验证码 <span class="required">*</span></label>
+          <label for="loginCaptcha"><span data-i18n="auth.captcha">图形验证码</span> <span class="required">*</span></label>
           <div class="captcha-container">
             <div class="captcha-image-wrapper" id="loginCaptchaWrapper" onclick="refreshCaptchaCommon('loginCaptchaWrapper')" title="点击刷新验证码">
               <%- captchaSvg %>
@@ -116,7 +142,7 @@
               <i class="fas fa-sync-alt"></i>
             </button>
           </div>
-          <input type="text" id="loginCaptcha" name="captcha" class="auth-input" placeholder="请输入验证码" required maxlength="10" autocomplete="off">
+          <input type="text" id="loginCaptcha" name="captcha" class="auth-input" placeholder="请输入验证码" required maxlength="10" autocomplete="off" data-i18n-placeholder="auth.captchaPlaceholder">
           <div class="field-error" id="err-captcha"></div>
         </div>
         <% } %>
@@ -131,7 +157,7 @@
         <% } %>
         
         <button type="submit" class="auth-btn auth-btn-primary" id="loginSubmitBtn">
-          <i class="fas fa-sign-in-alt"></i> 登录
+          <i class="fas fa-sign-in-alt"></i> <span data-i18n="auth.loginBtn">登录</span>
         </button>
       </form>
 
@@ -170,12 +196,12 @@
       <% } %>
       
       <div class="auth-links">
-        <p>还没有账号？<a href="/auth/<%= source %>/register">立即注册</a></p>
-        <p><a href="/auth/<%= source %>/forgot-password">忘记密码？</a></p>
+        <p><span data-i18n="auth.noAccount">还没有账号？</span><a href="/auth/<%= source %>/register" data-i18n="auth.registerNow">立即注册</a></p>
+        <p><a href="/auth/<%= source %>/forgot-password" data-i18n="auth.forgotPassword">忘记密码？</a></p>
         <% if (source === 'image-share') { %>
-          <p><a href="/image-share">返回图片分享</a></p>
+          <p><a href="/image-share" data-i18n="auth.backToImageShare">返回图片分享</a></p>
         <% } else { %>
-          <p><a href="/">返回首页</a></p>
+          <p><a href="/" data-i18n="auth.backToHome">返回首页</a></p>
         <% } %>
       </div>
 
@@ -208,15 +234,15 @@
           <form action="/oauth/direct-login" method="POST" style="margin-top:14px;">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button type="submit" class="auth-btn auth-btn-primary" style="width:100%;">
-              <i class="fas fa-sign-in-alt"></i> 直接登录（自动创建账号）
+              <i class="fas fa-sign-in-alt"></i> <span data-i18n="auth.directLogin">直接登录（自动创建账号）</span>
             </button>
           </form>
           <p style="text-align:center;margin:14px 0 10px;color:#cbd5e1;font-size:13px;">— 或 —</p>
           <a href="/auth/<%= source %>/register?choice=register" class="auth-btn" style="width:100%;display:inline-block;text-align:center;box-sizing:border-box;text-decoration:none;background:#f0f0f0;color:#475569;">
-            <i class="fas fa-user-plus"></i> 注册新账号（填写注册信息）
+            <i class="fas fa-user-plus"></i> <span data-i18n="auth.registerNew">注册新账号（填写注册信息）</span>
           </a>
           <div class="auth-links" style="margin-top:14px;">
-            <p><a href="/auth/<%= source %>/login">返回登录</a></p>
+            <p><a href="/auth/<%= source %>/login" data-i18n="auth.backToLogin">返回登录</a></p>
           </div>
         </div>
       <% } %>
@@ -232,30 +258,30 @@
       <form action="/auth/<%= source %>/register" method="POST" class="auth-form" id="registerForm">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <div class="form-group">
-          <label for="username">用户名 <span class="required">*</span></label>
-          <input type="text" id="username" name="username" class="auth-input" placeholder="3-20个字符" required minlength="3" maxlength="20" value="<%= typeof username !== 'undefined' ? username : '' %>">
+          <label for="username"><span data-i18n="auth.username">用户名</span> <span class="required">*</span></label>
+          <input type="text" id="username" name="username" class="auth-input" placeholder="3-20个字符" required minlength="3" maxlength="20" value="<%= typeof username !== 'undefined' ? username : '' %>" data-i18n-placeholder="auth.usernameRule">
         </div>
 
         <% if (source === 'image-share') { %>
           <div class="form-group">
-            <label for="nickname">昵称</label>
-            <input type="text" id="nickname" name="nickname" class="auth-input" placeholder="选填">
+            <label for="nickname"><span data-i18n="auth.nickname">昵称</span></label>
+            <input type="text" id="nickname" name="nickname" class="auth-input" placeholder="选填" data-i18n-placeholder="auth.nicknameOptional">
           </div>
         <% } %>
         
         <div class="form-group">
-          <label for="email">邮箱 <span class="required">*</span></label>
+          <label for="email"><span data-i18n="auth.email">邮箱</span> <span class="required">*</span></label>
           <% if (typeof oauthPending !== 'undefined' && oauthPending && oauthPending.userInfo.email) { %>
             <input type="text" id="email" name="email" class="auth-input" required value="<%= email %>" readonly style="background:#f5f5f5;cursor:not-allowed;">
             <small class="form-text" style="color:#999;font-size:12px;display:block;margin-top:4px;">邮箱来自第三方账号，不可修改</small>
           <% } else { %>
-            <input type="text" id="email" name="email" class="auth-input" placeholder="请输入邮箱地址（格式如：username@domain.com）" required value="<%= typeof email !== 'undefined' ? email : '' %>" oninput="validateEmailFormat(this)">
+            <input type="text" id="email" name="email" class="auth-input" placeholder="请输入邮箱地址（格式如：username@domain.com）" required value="<%= typeof email !== 'undefined' ? email : '' %>" oninput="validateEmailFormat(this)" data-i18n-placeholder="auth.emailPlaceholder">
             <small id="emailHelp" class="form-text" style="color:#999;font-size:12px;display:block;margin-top:4px;">邮箱格式：用户名@域名（如：username@example.com）</small>
           <% } %>
         </div>
         
         <div class="form-group">
-          <label for="password">密码 <% if (typeof oauthPending === 'undefined' || !oauthPending) { %><span class="required">*</span><% } else { %><small style="color:#999;font-weight:normal;">（选填，设置后可用密码登录）</small><% } %></label>
+          <label for="password"><span data-i18n="auth.password">密码</span> <% if (typeof oauthPending === 'undefined' || !oauthPending) { %><span class="required">*</span><% } else { %><small style="color:#999;font-weight:normal;">（选填，设置后可用密码登录）</small><% } %></label>
           <div class="password-field">
             <input type="password" id="password" name="password" class="auth-input" placeholder="<%= (typeof oauthPending !== 'undefined' && oauthPending) ? '可选，至少6位' : '至少6个字符' %>" <%= (typeof oauthPending === 'undefined' || !oauthPending) ? 'required' : '' %> minlength="6">
             <button type="button" class="toggle-password" onclick="togglePassword('password')">
@@ -265,9 +291,9 @@
         </div>
         
         <div class="form-group">
-          <label for="confirm_password">确认密码 <% if (typeof oauthPending === 'undefined' || !oauthPending) { %><span class="required">*</span><% } %></label>
+          <label for="confirm_password"><span data-i18n="auth.confirmPassword">确认密码</span> <% if (typeof oauthPending === 'undefined' || !oauthPending) { %><span class="required">*</span><% } %></label>
           <div class="password-field">
-            <input type="password" id="confirm_password" name="confirm_password" class="auth-input" placeholder="请再次输入密码" <%= (typeof oauthPending === 'undefined' || !oauthPending) ? 'required' : '' %> minlength="6">
+            <input type="password" id="confirm_password" name="confirm_password" class="auth-input" placeholder="请再次输入密码" <%= (typeof oauthPending === 'undefined' || !oauthPending) ? 'required' : '' %> minlength="6" data-i18n-placeholder="auth.confirmPasswordPlaceholder">
             <button type="button" class="toggle-password" onclick="togglePassword('confirm_password')">
               <i class="fas fa-eye"></i>
             </button>
@@ -283,7 +309,7 @@
         
         <!-- 图形验证码 -->
         <div class="form-group captcha-group">
-          <label for="registerCaptcha">图形验证码 <span class="required">*</span></label>
+          <label for="registerCaptcha"><span data-i18n="auth.captcha">图形验证码</span> <span class="required">*</span></label>
           <div class="captcha-container">
             <div class="captcha-image-wrapper" id="registerCaptchaWrapper" onclick="refreshRegisterCaptcha()">
               <%- captchaSvg %>
@@ -293,7 +319,7 @@
             </button>
           </div>
           <input type="text" id="registerCaptcha" name="captcha" class="auth-input" 
-                 placeholder="请输入验证码" required maxlength="10" autocomplete="off">
+                 placeholder="请输入验证码" required maxlength="10" autocomplete="off" data-i18n-placeholder="auth.captchaPlaceholder">
         </div>
 
         <!-- 用户协议 -->
@@ -313,16 +339,16 @@
         </div>
         
         <button type="submit" class="auth-btn auth-btn-primary" id="registerBtn">
-          <i class="fas fa-user-plus"></i> 注册
+          <i class="fas fa-user-plus"></i> <span data-i18n="auth.registerBtn">注册</span>
         </button>
       </form>
       
       <div class="auth-links">
-        <p>已有账号？<a href="/auth/<%= source %>/login">立即登录</a></p>
+        <p><span data-i18n="auth.hasAccount">已有账号？</span><a href="/auth/<%= source %>/login" data-i18n="auth.loginNow">立即登录</a></p>
         <% if (source === 'image-share') { %>
-          <p><a href="/image-share">返回图片分享</a></p>
+          <p><a href="/image-share" data-i18n="auth.backToImageShare">返回图片分享</a></p>
         <% } else { %>
-          <p><a href="/">返回首页</a></p>
+          <p><a href="/" data-i18n="auth.backToHome">返回首页</a></p>
         <% } %>
       </div>
 
@@ -332,14 +358,14 @@
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <input type="hidden" name="step" value="verify">
         <div class="form-group">
-          <label>邮箱地址</label>
+          <label data-i18n="auth.email">邮箱地址</label>
           <input type="text" class="auth-input" value="<%= email %>" disabled style="background:#f5f5f5;">
           <input type="hidden" name="email" value="<%= email %>">
         </div>
         
         <div class="form-group">
-          <label for="code">验证码 <span class="required">*</span></label>
-          <input type="text" id="code" name="code" class="auth-input auth-input-code" placeholder="请输入验证码" required maxlength="8" pattern="[0-9a-fA-F]{8}" autocomplete="off" style="text-align:center;font-size:24px;letter-spacing:4px;">
+          <label for="code"><span data-i18n="auth.captcha">验证码</span> <span class="required">*</span></label>
+          <input type="text" id="code" name="code" class="auth-input auth-input-code" placeholder="请输入验证码" required maxlength="8" pattern="[0-9a-fA-F]{8}" autocomplete="off" style="text-align:center;font-size:24px;letter-spacing:4px;" data-i18n-placeholder="auth.captchaPlaceholder">
         </div>
         
         <div class="form-group">
@@ -349,13 +375,13 @@
         </div>
         
         <button type="submit" class="auth-btn auth-btn-primary" id="verifyBtn">
-          <i class="fas fa-check-circle"></i> 验证并注册
+          <i class="fas fa-check-circle"></i> <span data-i18n="auth.verifyAndRegister">验证并注册</span>
         </button>
       </form>
       
       <div class="auth-links">
-        <p><a href="/auth/<%= source %>/register">返回上一步</a></p>
-        <p>已有账号？<a href="/auth/<%= source %>/login">立即登录</a></p>
+        <p><a href="/auth/<%= source %>/register" data-i18n="auth.backStep">返回上一步</a></p>
+        <p><span data-i18n="auth.hasAccount">已有账号？</span><a href="/auth/<%= source %>/login" data-i18n="auth.loginNow">立即登录</a></p>
         <% if (source === 'frontend') { %>
           <p><a href="/">返回首页</a></p>
         <% } %>
