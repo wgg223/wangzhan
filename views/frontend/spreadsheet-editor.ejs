@@ -293,11 +293,7 @@
     <% } %>
     
     <span class="save-status" id="saveStatus">已保存</span>
-    <select class="site-font-select" onchange="setSiteFont(this.value)" title="切换界面字体" style="font-size:12px;padding:3px 5px;border-radius:6px;border:1px solid #ddd;max-width:132px;background:#fff;color:#333;outline:none;">
-      <option value="default">🅰️ 默认字体</option>
-      <option value="zysdmycy">子燕是动漫二次元</option>
-      <option value="bcmhtt">宝灿谋会停手写体2.0</option>
-    </select>
+    <select class="site-font-select" onchange="setSiteFont(this.value)" title="切换界面字体" style="font-size:12px;padding:3px 5px;border-radius:6px;border:1px solid #ddd;max-width:150px;background:#fff;color:#333;outline:none;"></select>
     <% if (canManage) { %>
     <button class="btn" id="btnPermManage" onclick="openPermManage()">👥 权限</button>
     <% } %>

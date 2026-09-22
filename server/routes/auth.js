@@ -306,6 +306,32 @@ router.get('/:source/register', (req, res) => {
   // 检查是否有待完成的OAuth注册
   const oauthPending = req.session.oauthPending || null;
 
+  // 第三方登录未绑定账号：默认进入「直接登录 / 注册」选择页（用户选择注册后再进入注册表单）
+  const choice = req.query.choice || '';
+  if (oauthPending && choice !== 'register') {
+    return res.render('auth/auth-page', { layout: false,
+      source,
+      mode: 'register',
+      modeTitle: '选择登录方式',
+      modeSubtitle: '第三方账号尚未绑定本站账号',
+      siteName,
+      siteDescription,
+      icpNumber,
+      error: null,
+      success: null,
+      user: req.session.user || null,
+      username: '',
+      step: 'oauth-choice',
+      email: '',
+      userAgreement,
+      privacyPolicy,
+      smtpConfigured: isSmtpConfigured(db),
+      captchaSvg: '',
+      oauthPending,
+      csrfToken: req.session.doubleSubmitToken || ''
+    });
+  }
+
   // 判断是否是验证码步骤（从注册信息提交后跳转）
   const step = req.query.step || null;
   const tempUsername = req.session.tempRegister ? req.session.tempRegister.username : (oauthPending ? (oauthPending.userInfo.nickname || '') : '');

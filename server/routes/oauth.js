@@ -10,8 +10,10 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { queryOne, queryAll, saveDatabase } = require('../config/database');
+const { queryOne, queryAll, saveDatabase, generateUid } = require('../config/database');
 const { logActivity } = require('../config/activity');
+const { grantDefaultPermissions } = require('../config/db-helpers');
+const bcrypt = require('bcryptjs');
 
 // OAuth 配置
 const OAUTH_CONFIGS = {
@@ -521,7 +523,7 @@ router.get('/callback/:provider', async (req, res) => {
     return res.redirect(errorRedirect + '?error=' + encodeURIComponent('该第三方账号未绑定任何用户，请先退出登录后使用第三方账号登录'));
   }
 
-  // 存储OAuth信息到session，跳转注册流程
+  // 存储OAuth信息到session，跳转选择页（未绑定账号时：直接登录 or 注册）
   req.session.oauthPending = {
     provider: provider,
     providerName: OAUTH_CONFIGS[provider]?.name || provider,
@@ -553,6 +555,102 @@ function establishSession(req, res, user, redirectBase) {
     req.session.save(() => res.redirect(redirectBase));
   });
 }
+
+/**
+ * 根据第三方昵称生成唯一用户名（仅保留中文/字母/数字/下划线，3-20 位，冲突自动加后缀）
+ */
+function generateOAuthUsername(db, nickname) {
+  let base = String(nickname || '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9_]/g, '').trim();
+  if (!base) base = '用户';
+  if (base.length < 3) base = (base + '用户').slice(0, 20);
+  if (base.length > 20) base = base.slice(0, 20);
+  if (!/^[\u4e00-\u9fa5a-zA-Z0-9_]{3,20}$/.test(base)) base = ('用户' + base).slice(0, 20);
+  let candidate = base;
+  let suffix = 2;
+  while (queryOne(db, 'SELECT id FROM users WHERE username = ?', [candidate])) {
+    const suffixStr = '_' + suffix;
+    candidate = base.slice(0, 20 - suffixStr.length) + suffixStr;
+    suffix++;
+    if (suffix > 9999) {
+      candidate = '用户' + crypto.randomBytes(3).toString('hex');
+      if (!queryOne(db, 'SELECT id FROM users WHERE username = ?', [candidate])) break;
+    }
+  }
+  return candidate;
+}
+
+// 第三方登录未绑定账号时的「直接登录」：自动创建账号并绑定（使用第三方邮箱作为账号邮箱）
+router.post('/direct-login', (req, res) => {
+  const db = req.db;
+  const oauthPending = req.session.oauthPending || null;
+  if (!oauthPending || !oauthPending.userInfo || !oauthPending.userInfo.open_id) {
+    const fallbackSource = oauthPending && oauthPending.source ? oauthPending.source : 'frontend';
+    return res.redirect('/auth/' + fallbackSource + '/login?error=' + encodeURIComponent('登录状态已失效，请重新使用第三方登录'));
+  }
+
+  const { provider, providerName, userInfo, accessToken, source } = oauthPending;
+  const redirectBase = source === 'image-share' ? '/image-share' : '/';
+
+  // 再次确认该第三方账号未被绑定（防止重复创建账号）
+  const existingBinding = queryOne(db, 'SELECT * FROM user_oauth_bindings WHERE provider = ? AND open_id = ?', [provider, userInfo.open_id]);
+  if (existingBinding) {
+    const existingUser = queryOne(db, 'SELECT * FROM users WHERE id = ?', [existingBinding.user_id]);
+    if (existingUser && existingUser.status === 'active') {
+      delete req.session.oauthPending;
+      return establishSession(req, res, existingUser, redirectBase);
+    }
+    delete req.session.oauthPending;
+    return res.redirect('/auth/' + source + '/login?error=' + encodeURIComponent('该账号状态异常，请联系管理员'));
+  }
+
+  // 生成唯一用户名
+  const username = generateOAuthUsername(db, userInfo.nickname);
+
+  // 邮箱处理：仅采用第三方平台已验证的邮箱；若已被其他账号占用则留空（避免冲突，不覆盖原账号）
+  let email = '';
+  if (userInfo.email && (provider === 'github' || (provider === 'google' && userInfo.verified_email === true))) {
+    const emailTaken = queryOne(db, 'SELECT id FROM users WHERE email = ?', [userInfo.email]);
+    if (!emailTaken) email = userInfo.email;
+  }
+
+  // 创建账号：随机密码（无密码可登录，通过 OAuth 绑定登录），状态直接激活
+  const hashedPassword = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+  const uid = generateUid(db);
+  db.run("INSERT INTO users (uid, username, password, email, nickname, role, status, avatar) VALUES (?, ?, ?, ?, ?, 'user', 'active', '/assets/images/default-avatar.png')",
+    [uid, username, hashedPassword, email, userInfo.nickname || username]);
+  saveDatabase();
+
+  const newUser = queryOne(db, 'SELECT * FROM users WHERE username = ?', [username]);
+  if (!newUser) {
+    return res.redirect('/auth/' + source + '/register?choice=register&error=' + encodeURIComponent('账号创建失败，请重试'));
+  }
+
+  // 绑定 OAuth 并同步头像/昵称
+  db.run('INSERT INTO user_oauth_bindings (user_id, provider, open_id, access_token, nickname, avatar) VALUES (?, ?, ?, ?, ?, ?)',
+    [newUser.id, provider, userInfo.open_id, accessToken, userInfo.nickname || '', userInfo.avatar || '']);
+  if (userInfo.avatar) {
+    db.run('UPDATE users SET avatar = ? WHERE id = ?', [userInfo.avatar, newUser.id]);
+  }
+  grantDefaultPermissions(db, newUser.id, newUser.id);
+  saveDatabase();
+
+  // 记录日志
+  try {
+    logActivity(db, {
+      user_id: newUser.id,
+      username: username,
+      action: 'oauth_register',
+      target_type: 'auth',
+      target_title: providerName,
+      detail: `用户 ${username} 通过 ${providerName} 直接登录创建账号${email ? '（邮箱 ' + email + '）' : ''}`,
+      ip: req.ip
+    });
+  } catch (e) { /* 日志记录失败不影响登录 */ }
+
+  // 清除暂存并建立会话
+  delete req.session.oauthPending;
+  return establishSession(req, res, newUser, redirectBase);
+});
 
 // 获取OAuth登录URL (AJAX接口)
 router.get('/auth-url/:provider', (req, res) => {

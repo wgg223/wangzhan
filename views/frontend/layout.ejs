@@ -73,11 +73,7 @@
         <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="菜单">☰</button>
 
         <div class="nav-font-switch" title="切换字体">
-          <select class="site-font-select" onchange="setSiteFont(this.value)">
-            <option value="default">🅰️ 默认</option>
-            <option value="zysdmycy">子燕是动漫二次元</option>
-            <option value="bcmhtt">宝灿谋会停手写体2.0</option>
-          </select>
+          <select class="site-font-select" onchange="setSiteFont(this.value)" aria-label="切换字体"></select>
         </div>
         
         <% if (typeof user !== 'undefined' && user) { %>

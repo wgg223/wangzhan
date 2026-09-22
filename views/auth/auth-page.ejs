@@ -179,6 +179,48 @@
         <% } %>
       </div>
 
+    <!-- 注册 - 第三方登录选择步骤（未绑定账号时：直接登录 or 注册） -->
+    <% } else if (mode === 'register' && step === 'oauth-choice') { %>
+      <% if (typeof oauthPending !== 'undefined' && oauthPending) { %>
+        <div class="auth-alert auth-alert-success" style="margin-bottom:16px;">
+          <i class="fas fa-link"></i>
+          <span>您正在使用 <strong><%= oauthPending.providerName %></strong> 账号登录，该第三方账号尚未绑定本站账号。</span>
+        </div>
+        <div class="oauth-choice-box" style="border:1px solid #e5e7eb;border-radius:12px;padding:20px 18px;background:#fafafa;">
+          <div class="oauth-choice-user" style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+            <% if (oauthPending.userInfo.avatar) { %>
+              <img src="<%= oauthPending.userInfo.avatar %>" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:1px solid #e5e7eb;">
+            <% } else { %>
+              <div style="width:48px;height:48px;border-radius:50%;background:#eef2ff;color:#6366f1;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:bold;"><%= (oauthPending.userInfo.nickname || oauthPending.providerName).charAt(0) %></div>
+            <% } %>
+            <div>
+              <p style="margin:0;font-size:15px;font-weight:600;color:#1e293b;"><%= oauthPending.userInfo.nickname || '第三方用户' %></p>
+              <p style="margin:4px 0 0;font-size:12px;color:#94a3b8;"><%= oauthPending.providerName %> 账号 · 未绑定</p>
+            </div>
+          </div>
+          <p style="margin:0 0 6px;font-size:13px;color:#475569;line-height:1.7;">
+            <% if (oauthPending.userInfo.email) { %>
+              选择「直接登录」将自动创建本站账号，并使用第三方邮箱 <strong style="color:#2563eb;"><%= oauthPending.userInfo.email %></strong> 作为账号邮箱，无需填写注册信息。
+            <% } else { %>
+              选择「直接登录」将自动创建本站账号并绑定该 <strong><%= oauthPending.providerName %></strong> 账号，无需填写注册信息。（该平台未提供邮箱，账号邮箱将留空，之后可在账号管理中补充。）
+            <% } %>
+          </p>
+          <form action="/oauth/direct-login" method="POST" style="margin-top:14px;">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="auth-btn auth-btn-primary" style="width:100%;">
+              <i class="fas fa-sign-in-alt"></i> 直接登录（自动创建账号）
+            </button>
+          </form>
+          <p style="text-align:center;margin:14px 0 10px;color:#cbd5e1;font-size:13px;">— 或 —</p>
+          <a href="/auth/<%= source %>/register?choice=register" class="auth-btn" style="width:100%;display:inline-block;text-align:center;box-sizing:border-box;text-decoration:none;background:#f0f0f0;color:#475569;">
+            <i class="fas fa-user-plus"></i> 注册新账号（填写注册信息）
+          </a>
+          <div class="auth-links" style="margin-top:14px;">
+            <p><a href="/auth/<%= source %>/login">返回登录</a></p>
+          </div>
+        </div>
+      <% } %>
+
     <!-- 注册表单 - 信息填写步骤 -->
     <% } else if (mode === 'register' && step !== 'verify') { %>
       <% if (typeof oauthPending !== 'undefined' && oauthPending) { %>
