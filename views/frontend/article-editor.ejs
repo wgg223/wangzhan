@@ -331,18 +331,29 @@ function loadMediaFiles(targetInputId) {
   fetch('/admin/media/list')
     .then(response => response.json())
     .then(function(media) {
-      var html = '';
-      if (media.length > 0) {
-        media.forEach(function(item) {
-          if (item.file_type && item.file_type.startsWith('image/')) {
-            html += '<div class="media-item" onclick="selectMedia(\'' + item.file_path + '\')">';
-            html += '  <img src="' + item.file_path + '" alt="' + (item.original_name || '') + '">';
-            html += '  <p>' + (item.original_name || item.filename) + '</p>';
-            html += '</div>';
-          }
-        });
+      mediaList.innerHTML = '';
+      var hasImages = false;
+      media.forEach(function(item) {
+        if (item.file_type && item.file_type.startsWith('image/')) {
+          hasImages = true;
+          var mediaItem = document.createElement('div');
+          mediaItem.className = 'media-item';
+          mediaItem.addEventListener('click', function() {
+            selectMedia(item.file_path);
+          });
+          var img = document.createElement('img');
+          img.src = item.file_path;
+          img.alt = item.original_name || '';
+          var name = document.createElement('p');
+          name.textContent = item.original_name || item.filename;
+          mediaItem.appendChild(img);
+          mediaItem.appendChild(name);
+          mediaList.appendChild(mediaItem);
+        }
+      });
+      if (!hasImages) {
+        mediaList.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">没有图片文件</p>';
       }
-      mediaList.innerHTML = html || '<p style="text-align:center;padding:20px;color:#999;">没有图片文件</p>';
     })
     .catch(function(err) {
       mediaList.innerHTML = '<p style="text-align:center;padding:20px;color:#999;">加载失败，请重试</p>';

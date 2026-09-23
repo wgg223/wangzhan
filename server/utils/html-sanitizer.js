@@ -66,5 +66,24 @@ function sanitize(html, options) {
   return sanitizeHtml(html, options || DEFAULT_OPTIONS);
 }
 
-// 导出消毒函数、库本体（供特殊场景自定义调用）与默认配置
-module.exports = { sanitize, sanitizeHtml, DEFAULT_OPTIONS };
+/**
+ * 用户名/昵称等字段会在多个页面被拼进 innerHTML 渲染，若允许携带 HTML
+ * 结构字符（< >）、属性逃逸字符（" ' `）或控制字符，将形成存储型 XSS。
+ * 长度校验由调用方负责，这里只做字符安全校验。
+ */
+// 刻意包含控制字符（剔除 C0 控制符与 DEL），用于拒绝不可见注入字符
+// eslint-disable-next-line no-control-regex
+const UNSAFE_USER_TEXT_RE = /[<>"'`]|[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+
+/**
+ * 校验用户提交的用户名/昵称是否包含危险字符（用于表单拒绝）
+ * @param {*} text - 待校验文本
+ * @returns {boolean} true 表示不安全，应拒绝
+ */
+function isUnsafeUserText(text) {
+  if (typeof text !== 'string') return false;
+  return UNSAFE_USER_TEXT_RE.test(text);
+}
+
+// 导出消毒函数、库本体（供特殊场景自定义调用）、默认配置与用户文本校验
+module.exports = { sanitize, sanitizeHtml, DEFAULT_OPTIONS, isUnsafeUserText };
