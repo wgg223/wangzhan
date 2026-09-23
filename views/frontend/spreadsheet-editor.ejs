@@ -524,13 +524,26 @@
                 }
               } catch (e) {
                 console.error('解析表格数据失败', e);
+                showLoadError('表格数据解析失败，为防止数据被覆盖已停止加载');
+                return;
               }
             }
+            // 服务端确实没有数据（新建表格）：初始化空表
             initLuckysheet(createEmptySheet(), canEdit && !isLocked);
           })
           .catch(function() {
-            initLuckysheet(createEmptySheet(), canEdit && !isLocked);
+            // 加载失败不能回退空表：否则后续自动保存会用空数据覆盖真实数据
+            showLoadError('表格数据加载失败，请检查网络后重试');
           });
+      }
+
+      // 加载失败提示（附重试按钮），避免误初始化空表导致保存时覆盖真实数据
+      function showLoadError(msg) {
+        var mask = document.getElementById('loadingMask');
+        if (!mask) return;
+        mask.style.display = 'flex';
+        mask.innerHTML = '<div style="text-align:center;line-height:1.8;">' + escapeHtml(msg) +
+          '<br/><button style="margin-top:12px;padding:6px 18px;border:1px solid #1a73e8;border-radius:4px;background:#1a73e8;color:#fff;cursor:pointer;font-size:13px;" onclick="location.reload()">刷新重试</button></div>';
       }
 
       // ========== 实时协同：编辑者角标 / 变更同步 / 编辑历史 ==========
@@ -576,6 +589,28 @@
           .catch(function() {});
       }
 
+      // 其他 sheet 的远端变更暂存：等切换到对应 sheet 后再应用（直接 setCellValue 会写进当前活跃 sheet，导致数据错位）
+      var pendingRemoteChanges = {};
+      // 最近一次拉取的编辑者位置（滚动时本地重渲染，不重复发请求）
+      var lastPresenceUsers = [];
+
+      // 应用一条远端单元格变更（isRefresh=true 不触发本地保存）
+      function applyRemoteChange(row, col, value) {
+        try {
+          luckysheet.setCellValue(row, col, value, { isRefresh: true });
+        } catch (e) {}
+      }
+
+      // 当前活跃 sheet 切换后，应用此前缓存的其他 sheet 变更
+      function flushPendingRemoteChanges() {
+        var key = String(activeSheetIndex());
+        var pending = pendingRemoteChanges[key];
+        if (pending && pending.length) {
+          pending.forEach(function(ch) { applyRemoteChange(ch.row, ch.col, ch.value); });
+        }
+        if (pending) delete pendingRemoteChanges[key];
+      }
+
       // 每 2 秒轮询：应用其他用户的单元格变更（基于 seq 增量，返回 Promise 供保存前预同步）
       function fetchChanges() {
         return fetch('/api/spreadsheet/' + sheetId + '/cell-changes?since=' + lastSeq)
@@ -583,11 +618,17 @@
           .then(function(res) {
             if (!res.success) return;
             if (res.since) lastSeq = res.since;
+            flushPendingRemoteChanges();
+            var cur = activeSheetIndex();
             (res.changes || []).forEach(function(ch) {
               if (ch.isMine) return;
-              try {
-                luckysheet.setCellValue(ch.row, ch.col, ch.value, { isRefresh: true });
-              } catch (e) {}
+              if (ch.sheet === cur) {
+                applyRemoteChange(ch.row, ch.col, ch.value);
+              } else {
+                // 变更发生在其他 sheet：先缓存，避免误写入当前 sheet 的同坐标单元格
+                var key = String(ch.sheet);
+                (pendingRemoteChanges[key] = pendingRemoteChanges[key] || []).push({ row: ch.row, col: ch.col, value: ch.value });
+              }
             });
           })
           .catch(function() {});
@@ -642,12 +683,17 @@
       function fetchPresence() {
         fetch('/api/spreadsheet/' + sheetId + '/cell-presence')
           .then(function(r) { return r.json(); })
-          .then(function(res) { if (res.success) renderPresence(res.users || []); })
+          .then(function(res) {
+            if (res.success) {
+              lastPresenceUsers = res.users || [];
+              renderPresence(lastPresenceUsers);
+            }
+          })
           .catch(function() {});
       }
 
       function startCollaboration() {
-        if (!canEdit) return;
+        // 只读用户同样接收其他人的实时变更与编辑位置（submitCellEdit/reportActive 内部有 canEdit 检查，不会提交自己的编辑）
         if (collTimer) clearInterval(collTimer);
         if (presenceTimer) clearInterval(presenceTimer);
         collTimer = setInterval(fetchChanges, 2000);
@@ -655,17 +701,32 @@
         window.addEventListener('pagehide', function() {
           if (collTimer) clearInterval(collTimer);
           if (presenceTimer) clearInterval(presenceTimer);
+          // 离开页面时通知服务端结束编辑状态（keepalive 保证请求发出）
+          if (canEdit) {
+            try {
+              fetch('/api/spreadsheet/' + sheetId + '/cell-active', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'end' }),
+                keepalive: true
+              }).catch(function() {});
+            } catch (e) {}
+          }
         });
       }
 
-      // 表格滚动时刷新角标位置
+      // 表格滚动时刷新角标位置（节流 + 本地重渲染，不重复发请求）
       function bindPresenceScroll() {
         var cellMain = document.getElementById('luckysheet-cell-main');
-        if (cellMain) {
-          cellMain.addEventListener('scroll', function() {
-            fetchPresence();
-          }, { passive: true });
-        }
+        if (!cellMain) return;
+        var scrollTimer = null;
+        cellMain.addEventListener('scroll', function() {
+          if (scrollTimer) return;
+          scrollTimer = setTimeout(function() {
+            scrollTimer = null;
+            renderPresence(lastPresenceUsers);
+          }, 150);
+        }, { passive: true });
       }
 
       // 打开编辑历史弹窗（查询最近编辑的单元格）
@@ -730,10 +791,6 @@
         var text = String(v);
         if (text.length > 300) text = text.slice(0, 300) + '...';
         return escapeHtml(text);
-      }
-
-      function escapeHtml(str) {
-        return String(str == null ? '' : str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       }
 
       // 在线用户

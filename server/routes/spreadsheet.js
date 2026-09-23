@@ -628,6 +628,17 @@ setInterval(function() {
       cellPresence.delete(sheetId);
     }
   });
+  // 顺带清理变更队列中超过 5 分钟的旧变更（与 cell-changes 拉取窗口一致），避免表格删除后内存滞留
+  cellChanges.forEach(function(queue, sid) {
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (now - queue[i].ts > 5 * 60 * 1000) {
+        queue.splice(i, 1);
+      }
+    }
+    if (queue.length === 0) {
+      cellChanges.delete(sid);
+    }
+  });
 }, 5000);
 
 // 定时清理离线用户（每30秒清理一次，超过30秒未上报的视为离线）
@@ -858,6 +869,9 @@ router.post('/api/spreadsheet/:id/permission/approve', isAuthenticated, (req, re
 
   const sheet = queryOne(db, 'SELECT name FROM spreadsheets WHERE id = ?', [sheetId]);
   const actualPermType = perm_type || app.perm_type;
+  if (!PERM_TYPES.includes(actualPermType)) {
+    return res.status(400).json({ success: false, error: '无效的权限类型' });
+  }
 
   try {
     // 更新申请状态
@@ -924,7 +938,7 @@ router.delete('/api/spreadsheet/:id/permission/:userId', isAuthenticated, (req, 
 // ============ 实时协同 API ============
 
 // 上报/结束单元格编辑状态（用于在对应单元格显示"谁在编辑"）
-router.post('/api/spreadsheet/:id/cell-active', isAuthenticated, (req, res) => {
+router.post('/api/spreadsheet/:id/cell-active', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const sheetId = parseInt(req.params.id, 10);
   const userId = req.session.user.id;
   const { sheet, row, col, action } = req.body || {};
@@ -950,7 +964,7 @@ router.post('/api/spreadsheet/:id/cell-active', isAuthenticated, (req, res) => {
 });
 
 // 获取当前正在编辑的用户（用于前端叠加"编辑者"角标）
-router.get('/api/spreadsheet/:id/cell-presence', isAuthenticated, (req, res) => {
+router.get('/api/spreadsheet/:id/cell-presence', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const sheetId = parseInt(req.params.id, 10);
   const userMap = cellPresence.get(sheetId);
   const list = [];
@@ -966,7 +980,7 @@ router.get('/api/spreadsheet/:id/cell-presence', isAuthenticated, (req, res) => 
 });
 
 // 单格编辑保存：更新 luckysheet_data 中对应单元格 + 记历史 + 广播给其他用户
-router.post('/api/spreadsheet/:id/cell-edit', isAuthenticated, (req, res, next) => {
+router.post('/api/spreadsheet/:id/cell-edit', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res, next) => {
   const db = req.db;
   const sheetId = parseInt(req.params.id, 10);
   const userId = req.session.user.id;
@@ -1004,7 +1018,13 @@ router.post('/api/spreadsheet/:id/cell-edit', isAuthenticated, (req, res, next) 
 
   const target = parsed[sheetIdx];
   let oldValue;
-  const newValue = JSON.parse(JSON.stringify(value)); // 深拷贝，避免引用污染
+  // 深拷贝，避免引用污染；undefined 归一化为 null（JSON.stringify(undefined) 会让 JSON.parse 抛异常）
+  let newValue;
+  try {
+    newValue = JSON.parse(JSON.stringify(value === undefined ? null : value));
+  } catch (e) {
+    return res.status(400).json({ success: false, error: '单元格数据无效' });
+  }
 
   try {
     // 二维 data 格式（Luckysheet 内部 flowdata）
@@ -1067,7 +1087,7 @@ router.post('/api/spreadsheet/:id/cell-edit', isAuthenticated, (req, res, next) 
 });
 
 // 拉取其他用户的单元格变更（增量轮询，基于 seq 序号而非时间戳，规避前后端时钟偏差）
-router.get('/api/spreadsheet/:id/cell-changes', isAuthenticated, (req, res) => {
+router.get('/api/spreadsheet/:id/cell-changes', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const sheetId = parseInt(req.params.id, 10);
   const since = parseInt(req.query.since, 10) || 0;
   const userId = req.session.user.id;
