@@ -52,7 +52,7 @@ function saveImageBuffer(buffer, prefix = 'ai') {
     throw err;
   }
   if (buffer.length > MAX_IMAGE_SIZE) {
-    const err = new Error('生成图片超过 15MB 限制');
+    const err = new Error(`生成图片超过 ${MAX_IMAGE_SIZE / 1024 / 1024}MB 限制`);
     err.code = 'IMAGE_TOO_LARGE';
     throw err;
   }

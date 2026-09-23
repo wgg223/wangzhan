@@ -60,7 +60,13 @@ async function callLlm(base, model, apiKey, prompt) {
   });
   const content = resp.data && resp.data.choices && resp.data.choices[0] &&
     resp.data.choices[0].message && resp.data.choices[0].message.content;
-  const text = String(content || '').trim();
+  // 清理模型偶发的包裹符号（代码围栏、首尾引号），保证输出可直接用作提示词
+  const text = String(content || '').trim()
+    .replace(/^```[a-z]*\s*/i, '')
+    .replace(/```\s*$/, '')
+    .replace(/^["'「『]+/, '')
+    .replace(/["'」』]+$/, '')
+    .trim();
   if (!text) {
     const err = new Error('提示词优化服务未返回内容');
     err.code = 'EMPTY_RESPONSE';

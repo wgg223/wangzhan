@@ -80,8 +80,9 @@
       signal: signal
     }).then(function (resp) {
       if (!resp.ok) {
-        return resp.json().then(function (j) {
-          var err = new Error((j && j.error) || '请求失败');
+        // 错误响应可能不是 JSON（如网关 502 HTML 页），兜底显示 HTTP 状态
+        return resp.json().catch(function () { return null; }).then(function (j) {
+          var err = new Error((j && j.error) || '请求失败（HTTP ' + resp.status + '）');
           err.status = resp.status;
           throw err;
         });
@@ -695,7 +696,7 @@
     state.messages.forEach(function (m) {
       appendMessageEl(m, false);
     });
-    scrollToBottom();
+    scrollToBottom(true);
   }
 
   function renderEmptyHint() {
@@ -815,7 +816,9 @@
     container.appendChild(btn);
   }
 
-  function scrollToBottom() {
+  function scrollToBottom(force) {
+    // 流式增量/渲染结束时不强制拉底：用户上滑阅读历史消息时不被打断（距底 80px 内视为贴底）
+    if (!force && els.acMessages.scrollHeight - els.acMessages.scrollTop - els.acMessages.clientHeight > 80) return;
     els.acMessages.scrollTop = els.acMessages.scrollHeight;
   }
 
@@ -860,13 +863,13 @@
       state.messages.push(userMsg);
       els.acEmpty.style.display = 'none';
       appendMessageEl(userMsg, false);
-      scrollToBottom();
+      scrollToBottom(true);
 
       // AI 回复占位气泡：流式增量写入此条，避免 AI 内容追加到用户消息里
       var assistantMsg = { id: 'a' + Date.now(), role: 'assistant', content: '', status: 'streaming', branch_id: conv.current_branch_id || 0 };
       state.messages.push(assistantMsg);
       appendMessageEl(assistantMsg, true);
-      scrollToBottom();
+      scrollToBottom(true);
 
       startStream('/ai-chat/api/send', { conversation_id: conv.id, content: content }, assistantMsg);
     }).catch(function (err) {
@@ -880,7 +883,7 @@
     var placeholder = { id: 'r' + Date.now(), role: 'assistant', content: '', status: 'streaming', branch_id: m.branch_id || 0 };
     state.messages.push(placeholder);
     appendMessageEl(placeholder, true);
-    scrollToBottom();
+    scrollToBottom(true);
     startStream('/ai-chat/api/messages/regenerate', { conversation_id: state.currentConv.id, message_id: m.id }, placeholder);
   }
 
@@ -949,7 +952,7 @@
     dots.className = 'ac-typing-dots';
     dots.innerHTML = '<span></span><span></span><span></span>';
     body.appendChild(dots);
-    scrollToBottom();
+    scrollToBottom(true);
     return dots;
   }
 

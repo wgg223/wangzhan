@@ -119,11 +119,11 @@ function resolveEmbeddings(db) {
  * 调用 OpenAI 兼容 chat/completions
  * @param {Object} modelInfo - resolveModel 返回值
  * @param {Array} messages
- * @param {Object} opts - { stream, signal, onDelta }
+ * @param {Object} opts - { stream, signal, onDelta, timeout }
  * @returns {Promise<{content: string, finishReason: string}>}
  */
 async function callChatCompletion(modelInfo, messages, opts = {}) {
-  const { stream = false, signal, onDelta } = opts;
+  const { stream = false, signal, onDelta, timeout = 90000 } = opts;
   const isPollinations = modelInfo.provider === 'pollinations';
   // Pollinations 免费接口直接 POST 端点本身；其余 OpenAI 兼容端点拼 /chat/completions
   const url = isPollinations
@@ -149,7 +149,7 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
     return streamCompletion(url, headers, body, signal, onDelta);
   }
 
-  const resp = await axios.post(url, body, { headers, timeout: 90000, signal });
+  const resp = await axios.post(url, body, { headers, timeout, signal });
   const content = resp.data && resp.data.choices && resp.data.choices[0] &&
     resp.data.choices[0].message && resp.data.choices[0].message.content;
   return { content: String(content || ''), finishReason: (resp.data.choices[0] && resp.data.choices[0].finish_reason) || 'stop' };

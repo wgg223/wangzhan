@@ -5,8 +5,10 @@ const { queryOne } = require('../../config/database');
 const { getSettings } = require('../../utils/settings');
 const { isAdminRole } = require('../../middlewares/auth');
 
+// 本地时区日期（YYYY-MM-DD）：每日配额按服务器本地零点重置，避免 UTC 日期导致东八区用户早 8 点才重置
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 // 获取配额行（不存在则按设置默认值自动创建）

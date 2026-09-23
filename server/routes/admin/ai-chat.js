@@ -21,7 +21,7 @@ const { logActivity } = require('../../config/activity');
 const { encrypt } = require('../../config/crypto-secure');
 const { getSettings, upsertSettings } = require('../../utils/settings');
 const { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings } = require('../../services/ai-chat/provider');
-const { embedDocument } = require('../../services/ai-chat/rag');
+const { embedDocument, invalidateRagCache } = require('../../services/ai-chat/rag');
 const { normalizeError } = require('../../services/ai-chat/utils');
 
 // ============ AI 聊天管理（模型/角色/设置/知识库/配额） ============
@@ -281,6 +281,7 @@ router.post('/ai-chat/knowledge/delete', isAuthenticated, hasPermission('aichat.
   const row = queryOne(db, 'SELECT id, title FROM ai_knowledge_docs WHERE id = ?', [toInt(first(req.body.id), 0)]);
   if (!row) return res.status(404).json({ error: '文档不存在' });
   db.run('DELETE FROM ai_knowledge_docs WHERE id = ?', [row.id]); // 级联删除分块
+  invalidateRagCache(); // 分块向量缓存失效
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'delete', target_type: 'ai_knowledge', target_title: row.title, detail: `删除知识库文档：${row.title}`, ip: req.ip });
   res.json({ success: true });

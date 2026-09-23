@@ -130,12 +130,63 @@ function deleteBranch(db, conv, branchId) {
 // ============ 发送 ============
 
 /**
+ * 调用模型 + 结果落库 + 配额消耗（sendMessage / regenerateMessage 共用）
+ * 主动停止：保留半截内容，status=stopped，不计配额；失败：status=error，只计次数
+ */
+async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaCheck) {
+  const { stream = true, signal, onDelta } = opts;
+  let full = '';
+  try {
+    const result = await callChatCompletion(modelInfo, messages, {
+      stream,
+      signal,
+      onDelta: stream ? (delta) => { full += delta; if (onDelta) onDelta(delta); } : undefined
+    });
+    full = result.content;
+    if (!full) throw new Error('模型未返回内容，请重试');
+  } catch (err) {
+    // 主动停止：保留半截内容，status=stopped，不计配额
+    if (signal && signal.aborted) {
+      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '');
+      return {
+        messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true,
+        model: modelInfo.model_key, quota: quotaCheck.quota
+      };
+    }
+    const reason = normalizeError(err);
+    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason);
+    consumeQuota(db, user, { tokens: 0, count: true }); // 失败计次数
+    throw Object.assign(new Error(reason), { status: 502, messageId: msgId });
+  }
+
+  const tokens = estimateTokens(full);
+  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '');
+  consumeQuota(db, user, { tokens, count: true });
+  return {
+    messageId: msgId, content: full, tokens, aborted: false,
+    model: modelInfo.model_key, quota: checkQuota(db, user).quota
+  };
+}
+
+/**
+ * 对用户消息计算嵌入（向量记忆/RAG 检索用；配置缺失或不需要时 queryEmbedding 为 null）
+ */
+async function embedUserMessage(db, conv, settings, content) {
+  const embCfg = resolveEmbeddings(db);
+  if (!embCfg) return { embCfg: null, queryEmbedding: null };
+  const needEmbed = String(settings.ai_rag_enabled || '0') === '1' ||
+    (conv.memory_enabled !== 0 && (conv.memory_mode === 'vector' || conv.memory_mode === 'both'));
+  if (!needEmbed) return { embCfg, queryEmbedding: null };
+  const embs = await callEmbeddings(embCfg, [content]);
+  return { embCfg, queryEmbedding: (embs && embs[0]) || null };
+}
+
+/**
  * 发送消息（流式/非流式）
  * @returns {Promise<{messageId, content, tokens, aborted, quota}>}
  * 成功/错误均计配额（错误只计次数）；主动停止不计
  */
 async function sendMessage(db, user, conv, userContent, opts = {}) {
-  const { stream = true, signal, onDelta } = opts;
   const settings = getSettings(db);
   if (String(settings.ai_enabled ?? '1') === '0') {
     throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });
@@ -157,14 +208,7 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
   const userMsg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
 
   // 向量记忆 / RAG 用：对用户消息做嵌入（配置缺失自动跳过）
-  const embCfg = resolveEmbeddings(db);
-  let queryEmbedding = null;
-  const needEmbed = embCfg && (String(settings.ai_rag_enabled || '0') === '1' ||
-    (conv.memory_enabled !== 0 && (conv.memory_mode === 'vector' || conv.memory_mode === 'both')));
-  if (needEmbed) {
-    const embs = await callEmbeddings(embCfg, [content]);
-    if (embs && embs[0]) queryEmbedding = embs[0];
-  }
+  const { embCfg, queryEmbedding } = await embedUserMessage(db, conv, settings, content);
 
   const messages = buildContext(db, conv, content, {
     excludeMsgId: userMsg.id,
@@ -172,39 +216,11 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
     queryEmbedding
   });
 
-  let full = '';
-  try {
-    const result = await callChatCompletion(modelInfo, messages, {
-      stream,
-      signal,
-      onDelta: stream ? (delta) => { full += delta; if (onDelta) onDelta(delta); } : undefined
-    });
-    full = result.content;
-    if (!full) {
-      throw new Error('模型未返回内容，请重试');
-    }
-  } catch (err) {
-    // 主动停止：保留半截内容，status=stopped，不计配额
-    if (signal && signal.aborted) {
-      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '');
-      return {
-        messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true,
-        model: modelInfo.model_key, quota: quotaCheck.quota
-      };
-    }
-    const reason = normalizeError(err);
-    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason);
-    consumeQuota(db, user, { tokens: 0, count: true }); // 失败计次数
-    throw Object.assign(new Error(reason), { status: 502, messageId: msgId });
-  }
-
-  const tokens = estimateTokens(full);
-  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '');
-  consumeQuota(db, user, { tokens, count: true });
+  const result = await runCompletion(db, user, conv, modelInfo, messages, opts, quotaCheck);
 
   // 异步记忆后处理（不阻塞响应）：摘要记忆 + 向量记忆
   const memoryEnabled = conv.memory_enabled !== 0 && String(settings.ai_memory_enabled ?? '1') !== '0';
-  if (memoryEnabled) {
+  if (!result.aborted && memoryEnabled) {
     Promise.resolve()
       .then(() => maybeSummarize(db, conv, modelInfo))
       .catch(err => console.error('[ai-chat] 摘要记忆失败:', err.message));
@@ -215,10 +231,7 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
     }
   }
 
-  return {
-    messageId: msgId, content: full, tokens, aborted: false,
-    model: modelInfo.model_key, quota: checkQuota(db, user).quota
-  };
+  return result;
 }
 
 function saveAssistantMessage(db, conv, content, modelInfo, status, error) {
@@ -236,7 +249,6 @@ function saveAssistantMessage(db, conv, content, modelInfo, status, error) {
  * 重新生成：以目标 assistant 消息的前一条用户消息为输入，追加一条新回复
  */
 async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
-  const { stream = true, signal, onDelta } = opts;
   const settings = getSettings(db);
   if (String(settings.ai_enabled ?? '1') === '0') {
     throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });
@@ -254,40 +266,15 @@ async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
   if (!prevUser) throw Object.assign(new Error('找不到对应的用户消息'), { status: 400 });
 
   const modelInfo = resolveModel(db, user.id, conv.model);
+  // 与 sendMessage 一致：重新生成同样做向量记忆/RAG 检索
+  const { embCfg, queryEmbedding } = await embedUserMessage(db, conv, settings, prevUser.content);
   const messages = buildContext(db, conv, prevUser.content, {
     excludeMsgId: prevUser.id,
-    embCfg: null,
-    queryEmbedding: null
+    embCfg,
+    queryEmbedding
   });
 
-  let full = '';
-  try {
-    const result = await callChatCompletion(modelInfo, messages, {
-      stream,
-      signal,
-      onDelta: stream ? (delta) => { full += delta; if (onDelta) onDelta(delta); } : undefined
-    });
-    full = result.content;
-  } catch (err) {
-    if (signal && signal.aborted) {
-      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '');
-      return {
-        messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true,
-        model: modelInfo.model_key, quota: quotaCheck.quota
-      };
-    }
-    const reason = normalizeError(err);
-    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason);
-    consumeQuota(db, user, { tokens: 0, count: true });
-    throw Object.assign(new Error(reason), { status: 502, messageId: msgId });
-  }
-
-  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '');
-  consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
-  return {
-    messageId: msgId, content: full, tokens: estimateTokens(full), aborted: false,
-    model: modelInfo.model_key, quota: checkQuota(db, user).quota
-  };
+  return runCompletion(db, user, conv, modelInfo, messages, opts, quotaCheck);
 }
 
 module.exports = {
