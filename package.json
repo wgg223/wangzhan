@@ -1,6 +1,6 @@
 {
   "name": "website-with-admin",
-  "version": "8.1.0",
+  "version": "8.2.0",
   "description": "网站前端和后台管理系统 ",
   "main": "server/app.js",
   "scripts": {
@@ -11,6 +11,7 @@
     "pm2:stop": "pm2 stop ecosystem.config.js",
     "pm2:logs": "pm2 logs website-admin",
     "pm2:monit": "pm2 monit",
+    "build:univer": "node scripts/build-univer.mjs",
     "start:prod": "npm run pm2",
     "health": "node -e \"fetch('http://localhost:3000/health').then(r=>r.json()).then(d=>console.log(JSON.stringify(d,null,2))).catch(e=>console.error('健康检查失败:',e.message))\"",
     "lint": "eslint . --ext .js,.mjs",
@@ -24,12 +25,20 @@
     "security:check": "node -e \"const config = require('./security-config.json'); console.log('安全配置验证通过:', Object.keys(config).length, '个配置项');\""
   },
   "dependencies": {
+    "@univerjs/preset-sheets-conditional-formatting": "^1.0.0",
+    "@univerjs/preset-sheets-core": "^1.0.0",
+    "@univerjs/preset-sheets-data-validation": "^1.0.0",
+    "@univerjs/preset-sheets-filter": "^1.0.0",
+    "@univerjs/preset-sheets-find-replace": "^1.0.0",
+    "@univerjs/preset-sheets-hyper-link": "^1.0.0",
+    "@univerjs/presets": "^1.0.0",
     "adm-zip": "^0.6.0",
     "axios": "^1.18.1",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "13.0.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.4.2",
+    "echarts": "^6.1.0",
     "ejs": "^3.1.9",
     "express": "^4.18.2",
     "express-ejs-layouts": "^2.5.1",
@@ -51,6 +60,7 @@
     "better-sqlite3@11.10.0": true
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "eslint": "^8.56.0",
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-promise": "^6.1.1",
