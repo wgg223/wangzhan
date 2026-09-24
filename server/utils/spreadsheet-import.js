@@ -72,8 +72,8 @@ function toFieldKey(header, existingKeys, idx) {
 }
 
 // 简易 CSV 解析器（支持引号包裹、自定义分隔符、\r\n / \n 换行）
-function parseCSV(text, delimiter) {
-  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // 移除 BOM
+function parseCSV(inputText, delimiter) {
+  const text = inputText.charCodeAt(0) === 0xFEFF ? inputText.slice(1) : inputText; // 移除 BOM
   const rows = [];
   let cur = [];
   let field = '';
@@ -167,7 +167,9 @@ function parseImportFile(file) {
     return r.some(function(c) { return processCellValue(c).trim() !== ''; });
   });
 
-  return { headers: headers, dataRows: dataRows, headerRowIdx: headerRowIdx, encoding: encoding, delimiter: delimiter, format: format };
+  return {
+    headers, dataRows, headerRowIdx, encoding, delimiter, format
+  };
 }
 
 module.exports = {

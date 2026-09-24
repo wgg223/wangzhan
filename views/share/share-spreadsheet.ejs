@@ -1,0 +1,255 @@
+<%# ===== 页面模板：share/share-spreadsheet.ejs =====%>
+<%# 说明：分享-在线表格只读页（公开，无需登录；数据经 /share/:token/data 异步加载，Univer 只读渲染，不支持下载）；embed=true 时为 iframe 嵌入视图 %>
+<%
+  // 时间格式化（模板内联 helper）
+  function fmtTime(t) {
+    if (!t) return '-';
+    var d = new Date(t);
+    if (isNaN(d.getTime())) return String(t);
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  // iframe 嵌入代码（仅普通页展示）
+  var embedCode = '<iframe src="' + (baseUrl || '') + (embedUrl || '') + '" width="100%" height="560" frameborder="0" style="border:1px solid #e0e4ea;border-radius:12px;" loading="lazy" allowfullscreen></iframe>';
+%>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= state === 'ok' ? (title || '在线表格分享') : '内容不可用' %></title>
+  <meta name="robots" content="noindex, nofollow">
+  <% if (state === 'ok' && !embed) { %>
+    <meta property="og:title" content="<%= title || '在线表格分享' %>">
+    <meta property="og:description" content="<%= sheet.description ? String(sheet.description).slice(0, 100) : '一份在线表格分享' %>">
+    <meta property="og:type" content="website">
+  <% } %>
+  <link rel="stylesheet" href="/vendor/univer/index.css">
+  <% if (state === 'ok') { %>
+  <link rel="stylesheet" href="/css/ss-content-protect.css">
+  <% } %>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f5f7fa; color: #333; min-height: 100vh; }
+    body.embed { background: #fff; overflow: hidden; }
+
+    /* ---- 嵌入视图：仅画布 ---- */
+    body.embed #univer-container { width: 100vw; height: 100vh; }
+    body.embed #shareLoading, body.embed #shareError { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #fff; z-index: 30; }
+
+    /* ---- 普通视图 ---- */
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.06); overflow: hidden; margin-bottom: 16px; }
+    .head-card { padding: 18px 20px; }
+    .head-card h1 { font-size: 18px; word-break: break-all; }
+    .head-card .meta { font-size: 12px; color: #999; margin-top: 8px; }
+    .head-card .meta span { margin-right: 16px; }
+    .head-card .desc { font-size: 13px; color: #666; line-height: 1.7; margin-top: 10px; word-break: break-all; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .btn { display: inline-block; border: 1px solid #e0e4ea; background: #fff; color: #333; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; transition: background .15s, border-color .15s; }
+    .btn:hover { background: #f3f6fa; border-color: #c8d0dc; }
+    .btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .btn.primary:hover { background: #1d4ed8; }
+
+    .sheet-card { position: relative; }
+    #univer-container { width: 100%; height: 72vh; min-height: 420px; }
+    .sheet-loading, .sheet-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(250, 251, 253, .95); z-index: 5; }
+    .sheet-error p { font-size: 13px; color: #b91c1c; }
+    .spin { width: 28px; height: 28px; border: 3px solid #dbe3ee; border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    [hidden] { display: none !important; }
+
+    .embed-card { padding: 14px 20px; }
+    .embed-card h3 { font-size: 14px; margin-bottom: 8px; }
+    .embed-card textarea { width: 100%; height: 64px; font-size: 12px; font-family: Consolas, Monaco, monospace; color: #666; border: 1px solid #e0e4ea; border-radius: 8px; padding: 8px 10px; resize: none; background: #fafbfc; }
+    .tip { font-size: 12px; color: #aaa; text-align: center; margin-top: 4px; }
+    .footer { text-align: center; color: #aaa; font-size: 12px; padding: 12px 0; }
+
+    @media (max-width: 720px) {
+      #univer-container { height: 60vh; min-height: 360px; }
+    }
+  </style>
+</head>
+<body class="<%= embed ? 'embed' : 'page' %>">
+  <% if (state === 'ok') { %>
+    <% if (!embed) { %>
+    <div class="wrap">
+      <div class="card head-card">
+        <h1><%= sheet.name || '在线表格' %></h1>
+        <div class="meta">
+          <span>👤 <%= ownerName %></span>
+          <% if (stats) { %>
+          <span>🔖 v<%= stats.version || 0 %></span>
+          <span>🕘 更新于 <%= fmtTime(stats.updatedAt) %></span>
+          <span>👁 <%= stats.viewCount || 0 %> 次查看</span>
+          <% } %>
+        </div>
+        <% if (sheet.description) { %><p class="desc"><%= sheet.description %></p><% } %>
+        <div class="actions">
+          <button type="button" class="btn" id="btnShareCopy">🔗 复制链接</button>
+        </div>
+      </div>
+
+      <div class="card sheet-card">
+        <div id="univer-container"></div>
+        <div class="sheet-loading" id="shareLoading">
+          <div class="spin"></div>
+          <p style="font-size:13px;color:#888;">正在加载表格…</p>
+        </div>
+        <div class="sheet-error" id="shareError" hidden>
+          <p>⚠️ 表格加载失败</p>
+          <p id="shareErrorMsg">请稍后刷新重试</p>
+        </div>
+      </div>
+
+      <div class="card embed-card">
+        <h3>嵌入到网页</h3>
+        <textarea id="shareEmbedCode" readonly spellcheck="false" data-ss-copy-ok><%= embedCode %></textarea>
+      </div>
+      <div class="tip">分享自 <%= baseUrl %> · 只读分享（不支持下载），如需编辑请向作者申请权限</div>
+    </div>
+    <% } else { %>
+    <div id="univer-container"></div>
+    <div id="shareLoading">
+      <div class="spin"></div>
+      <p style="font-size:13px;color:#888;">正在加载表格…</p>
+    </div>
+    <div id="shareError" hidden>
+      <p style="font-size:13px;color:#b91c1c;">⚠️ 表格加载失败</p>
+    </div>
+    <% } %>
+
+    <script>
+      // 分享页配置（后端注入）
+      window.__SHARE__ = {
+        dataUrl: <%- JSON.stringify(dataUrl) %>,
+        embed: <%= embed ? 'true' : 'false' %>
+      };
+      // 只读分享内容保护配置（防复制 + 水印）
+      window.__SS_PROTECT__ = {
+        watermark: '只读分享',
+        tip: '只读分享内容受保护，禁止复制或截图'
+      };
+    </script>
+    <script src="/js/ss-content-protect.js" defer></script>
+    <script src="/vendor/univer/univer.min.js"></script>
+    <script>
+      // 只读查看器：加载分享数据 → Univer 渲染 → 设为只读
+      (function () {
+        /* global UniverBundle */
+        var CFG = window.__SHARE__ || {};
+        var BUNDLE = window.UniverBundle;
+        var univerAPI = null;
+        var wb = null;
+
+        var mask = document.getElementById('shareLoading');
+        var errBox = document.getElementById('shareError');
+        var errMsg = document.getElementById('shareErrorMsg');
+
+        function fail(msg) {
+          if (mask) mask.hidden = true;
+          if (errBox) errBox.hidden = false;
+          if (errMsg && msg) errMsg.textContent = msg;
+        }
+
+        function initUniver() {
+          if (!BUNDLE || typeof BUNDLE.createUniver !== 'function') {
+            fail('表格组件加载失败，请刷新重试');
+            return false;
+          }
+          var locale = BUNDLE.LocaleType ? BUNDLE.LocaleType.ZH_CN : undefined;
+          var locales = {};
+          if (locale !== undefined && BUNDLE.zhCN) locales[locale] = BUNDLE.zhCN;
+          var presets = [];
+          if (typeof BUNDLE.UniverSheetsCorePreset === 'function') {
+            presets.push(BUNDLE.UniverSheetsCorePreset({ container: 'univer-container' }));
+          }
+          if (typeof BUNDLE.UniverSheetsFilterPreset === 'function') presets.push(BUNDLE.UniverSheetsFilterPreset());
+          if (typeof BUNDLE.UniverSheetsFindReplacePreset === 'function') presets.push(BUNDLE.UniverSheetsFindReplacePreset());
+          var opts = { presets: presets };
+          if (locale !== undefined) opts.locale = locale;
+          if (Object.keys(locales).length) opts.locales = locales;
+          if (BUNDLE.defaultTheme) opts.theme = BUNDLE.defaultTheme;
+          var inst = BUNDLE.createUniver(opts);
+          if (!inst || !inst.univerAPI) {
+            fail('表格引擎初始化失败');
+            return false;
+          }
+          univerAPI = inst.univerAPI;
+          return true;
+        }
+
+        function loadData() {
+          fetch(CFG.dataUrl).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          }).then(function (json) {
+            if (!json || !json.success || !json.data || !json.data.doc) {
+              throw new Error((json && json.error) || '文档数据为空');
+            }
+            render(json.data.doc);
+          }).catch(function (e) {
+            fail(e.message || '数据加载失败，请刷新重试');
+          });
+        }
+
+        function render(doc) {
+          try {
+            wb = univerAPI.createWorkbook(doc);
+          } catch (e) {
+            fail('表格渲染失败：数据格式可能已损坏');
+            return;
+          }
+          if (wb) {
+            try { wb.setEditable(false); } catch (e) { /* 只读设置失败不影响查看 */ }
+          }
+          if (mask) mask.hidden = true;
+        }
+
+        // 复制链接（分享页仅在线只读查看，不提供下载）
+        var btnCopy = document.getElementById('btnShareCopy');
+        var embedCode = document.getElementById('shareEmbedCode');
+        if (btnCopy) btnCopy.addEventListener('click', function () {
+          var text = location.origin + <%- JSON.stringify(pageUrl) %>;
+          function ok() {
+            btnCopy.textContent = '✅ 已复制';
+            setTimeout(function () { btnCopy.textContent = '🔗 复制链接'; }, 1600);
+          }
+          function fallback() {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); ok(); } catch (e) { /* 忽略 */ }
+            document.body.removeChild(ta);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(ok, fallback);
+          } else fallback();
+        });
+        if (embedCode) embedCode.addEventListener('focus', function () { embedCode.select(); });
+
+        function boot() {
+          if (!initUniver()) return;
+          loadData();
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+        else boot();
+      })();
+    </script>
+    <% if (!embed) { %><div class="footer">在线表格分享</div><% } %>
+  <% } else { %>
+    <div class="wrap">
+      <div class="card">
+        <div style="padding:60px 20px;text-align:center;">
+          <div style="font-size:46px;color:#ccc;margin-bottom:14px;">🔒</div>
+          <h2 style="font-size:18px;color:#666;margin-bottom:8px;">内容已下架或链接失效</h2>
+          <p style="font-size:13px;color:#999;">该分享链接不存在、已被停用，或内容已删除</p>
+        </div>
+      </div>
+    </div>
+  <% } %>
+</body>
+</html>

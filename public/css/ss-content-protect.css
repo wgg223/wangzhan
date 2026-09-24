@@ -1,0 +1,108 @@
+/**
+ * 只读内容保护样式（配合 /js/ss-content-protect.js）
+ * 挂载类：html/body.ss-protect-on
+ */
+
+/* 全局禁选（配合 selectstart 拦截），显式豁免的输入框除外 */
+body.ss-protect-on,
+body.ss-protect-on * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body.ss-protect-on [data-ss-copy-ok] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 隐藏 Univer 自带右键菜单（其中含复制/剪切项） */
+body.ss-protect-on .univer-menu {
+  display: none !important;
+}
+
+/* ============ 平铺水印（SVG 背景，不挡交互） ============ */
+.ss-protect-watermark {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  background-repeat: repeat;
+}
+
+/* ============ 失焦遮罩（窗口失焦/切后台时隐藏内容） ============ */
+.ss-protect-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  color: #fff;
+}
+
+.ss-protect-mask[hidden] {
+  display: none !important;
+}
+
+.ss-protect-mask-box {
+  text-align: center;
+}
+
+.ss-protect-mask-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+}
+
+.ss-protect-mask-title {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.ss-protect-mask-sub {
+  margin-top: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ============ 保护提示（脚本内置 fallback，不依赖 utils.js） ============ */
+.ss-protect-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  max-width: 80vw;
+  padding: 9px 18px;
+  border-radius: 8px;
+  background: #92400e;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+
+.ss-protect-toast.is-out {
+  opacity: 0;
+}
+
+/* ============ 打印拦截：打印输出替换为版权提示 ============ */
+.ss-protect-print-notice {
+  display: none;
+}
+
+@media print {
+  body.ss-protect-on > *:not(.ss-protect-print-notice) {
+    display: none !important;
+  }
+
+  body.ss-protect-on .ss-protect-print-notice {
+    display: block !important;
+    text-align: center;
+    padding-top: 40vh;
+    font-size: 16px;
+    color: #333;
+  }
+}

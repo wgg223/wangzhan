@@ -1,5 +1,5 @@
 <%# ===== 页面模板：admin/spreadsheets.ejs =====%>
-<%# 说明：后台在线表格管理列表页（Luckysheet 模式） %>
+<%# 说明：后台在线表格管理列表页（Univer 模式） %>
 <div class="admin-page-header">
   <h2>📊 在线表格管理</h2>
   <div style="display:flex;gap:10px;">
@@ -14,9 +14,23 @@
     <p>暂无表格，点击右上角"创建表格"或"批量导入Excel"开始</p>
   </div>
   <% } else { %>
+  <!-- 批量管理栏 -->
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #eee;background:#fafbfd;">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin:0;">
+      <input type="checkbox" id="sheetSelectAll" onchange="toggleSelectAllRows()"> 全选
+    </label>
+    <span id="batchSelectedInfo" style="font-size:13px;color:#666;">已选 0 个</span>
+    <span style="flex:1;"></span>
+    <button class="btn btn-outline" onclick="batchAction('restore')" title="恢复软删除的表格">♻️ 批量恢复</button>
+    <button class="btn btn-outline" onclick="batchAction('lock')" title="锁定后禁止在线编辑">🔒 批量锁定</button>
+    <button class="btn btn-outline" onclick="batchAction('unlock')" title="解除锁定">🔓 批量解锁</button>
+    <button class="btn btn-outline" style="color:#dc3545;border-color:#dc3545;" onclick="batchAction('soft-delete')" title="软删除，可恢复">🗑️ 批量删除</button>
+    <button class="btn btn-outline" style="color:#dc3545;border-color:#dc3545;" onclick="batchAction('hard-delete')" title="永久删除，不可恢复">💥 彻底删除</button>
+  </div>
   <table class="admin-table">
     <thead>
       <tr>
+        <th style="width:36px;"></th>
         <th>ID</th>
         <th>表格名称</th>
         <th>描述</th>
@@ -29,6 +43,7 @@
     <tbody>
       <% sheets.forEach(function(sheet) { %>
       <tr>
+        <td><input type="checkbox" class="sheet-row-check" value="<%= sheet.id %>" onchange="updateBatchBar()"></td>
         <td><%= sheet.id %></td>
         <td><strong><%= sheet.name %></strong></td>
         <td><%= sheet.description || '-' %></td>
@@ -38,6 +53,9 @@
           <span class="status-badge <%= sheet.status === 'active' ? 'status-active' : 'status-inactive' %>">
             <%= sheet.status === 'active' ? '正常' : '已停用' %>
           </span>
+          <% if (sheet.is_locked) { %>
+          <span class="status-badge status-inactive" title="已锁定，禁止在线编辑">🔒 已锁定</span>
+          <% } %>
         </td>
         <td class="table-actions">
           <a href="/spreadsheet/<%= sheet.id %>" class="action-link" target="_blank">打开</a>
@@ -62,7 +80,7 @@
       <!-- 第一步：选择文件 -->
       <div id="batchStep1">
         <div style="margin-bottom:16px;">
-          <label style="display:block;margin-bottom:8px;font-weight:500;">选择 Excel 文件（.xlsx/.xls，最大200MB）</label>
+          <label style="display:block;margin-bottom:8px;font-weight:500;">选择 Excel 文件（.xlsx/.xls，最大10MB）</label>
           <input type="file" id="batchImportFile" accept=".xlsx,.xls" style="width:100%;padding:12px;border:2px dashed #ddd;border-radius:6px;cursor:pointer;" />
         </div>
         <div style="background:#f0f4ff;padding:12px 16px;border-radius:6px;font-size:13px;color:#555;line-height:1.8;">
@@ -70,7 +88,7 @@
           • 自动读取 Excel 中的所有工作表（Sheet）<br>
           • 每个工作表自动创建为一个独立的在线表格<br>
           • 自动检测表头行，支持合并单元格和日期格式<br>
-          • 导入后可直接在 Luckysheet 中编辑
+          • 导入后可直接在 Univer 在线编辑器中编辑
         </div>
       </div>
       <!-- 第二步：预览并选择Sheet -->
@@ -97,7 +115,7 @@
 
 <script>
 function deleteSheet(id, name) {
-  if (!confirm('确定要删除表格「' + name + '」吗？此操作不可恢复。')) return;
+  if (!confirm('确定要删除表格「' + name + '」吗？此为软删除，可稍后勾选该行通过"批量恢复"找回。')) return;
   fetch('/admin/spreadsheets/' + id, { method: 'DELETE' })
     .then(r => r.json())
     .then(data => {
@@ -105,6 +123,58 @@ function deleteSheet(id, name) {
       else { alert(data.error || '删除失败'); }
     })
     .catch(err => alert('删除失败: ' + err.message));
+}
+
+// ===== 批量管理 =====
+var BATCH_ACTION_META = {
+  'restore': { label: '批量恢复', confirm: '确定要恢复选中的 {n} 个表格吗？恢复后表格恢复正常访问。' },
+  'lock': { label: '批量锁定', confirm: '确定要锁定选中的 {n} 个表格吗？锁定后将禁止在线编辑（查看不受影响）。' },
+  'unlock': { label: '批量解锁', confirm: '确定要解锁选中的 {n} 个表格吗？' },
+  'soft-delete': { label: '批量删除', confirm: '确定要删除选中的 {n} 个表格吗？\n\n此为软删除（可恢复），已开启的分享链接将同步失效。' },
+  'hard-delete': { label: '彻底删除', confirm: '⚠️ 确定要彻底删除选中的 {n} 个表格吗？\n\n所有工作表、批注、版本、图表、权限与分享记录将被永久删除，不可恢复！' }
+};
+
+function getSelectedSheetIds() {
+  return Array.prototype.map.call(document.querySelectorAll('.sheet-row-check:checked'), function (cb) {
+    return parseInt(cb.value, 10);
+  });
+}
+
+function updateBatchBar() {
+  var all = document.querySelectorAll('.sheet-row-check');
+  var checked = document.querySelectorAll('.sheet-row-check:checked');
+  document.getElementById('batchSelectedInfo').textContent = '已选 ' + checked.length + ' 个';
+  document.getElementById('sheetSelectAll').checked = all.length > 0 && checked.length === all.length;
+}
+
+function toggleSelectAllRows() {
+  var checked = document.getElementById('sheetSelectAll').checked;
+  document.querySelectorAll('.sheet-row-check').forEach(function (cb) { cb.checked = checked; });
+  updateBatchBar();
+}
+
+function batchAction(action) {
+  var ids = getSelectedSheetIds();
+  if (!ids.length) { alert('请先勾选要操作的表格'); return; }
+  var meta = BATCH_ACTION_META[action];
+  if (!confirm(meta.confirm.replace('{n}', ids.length))) return;
+  fetch('/admin/spreadsheets/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: ids, action: action })
+  })
+    .then(r => r.json())
+    .then(res => {
+      if (res.success) {
+        var msg = meta.label + '完成：成功 ' + res.data.ok + '/' + res.data.total;
+        if (res.data.failed) msg += '，失败 ' + res.data.failed;
+        alert(msg);
+        location.reload();
+      } else {
+        alert(res.error || '操作失败');
+      }
+    })
+    .catch(err => alert('操作失败: ' + err.message));
 }
 
 var batchPreviewData = null;
@@ -131,9 +201,9 @@ function previewBatchFile() {
     return;
   }
   var file = fileInput.files[0];
-  var maxSize = 200 * 1024 * 1024; // 200MB
+  var maxSize = 10 * 1024 * 1024; // 10MB
   if (file.size > maxSize) {
-    alert('文件大小超过 200MB 限制，请压缩后再上传');
+    alert('文件大小超过 10MB 限制，请压缩或拆分后再上传');
     return;
   }
   var btn = document.getElementById('batchPreviewBtn');

@@ -1,1155 +1,137 @@
 <%# ===== 页面模板：frontend/spreadsheet-editor.ejs =====%>
-<%# 说明：Luckysheet 在线表格编辑页（全屏显示，浮动信息栏） %>
+<%# 说明：Univer 在线表格编辑器页（独立布局，layout:false）：应用栏 + Univer 容器 + 批注/版本/分享/权限/AI 面板挂载点，交互见 public/js/spreadsheet-editor.js %>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= sheet.name %> - 在线表格</title>
+  <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
   <link rel="stylesheet" href="/css/fonts.css">
   <script src="/js/font-switcher.js"></script>
-  <script>
-    // 预加载表格自定义字体（与 Luckysheet fontList 的 fontName 一致），切换时即时生效
-    (function preloadSheetFonts() {
-      try {
-        if (!window.FontFace || !document.fonts) return;
-        var list = [
-          { name: 'FontsLab-DongManErCiYuan', url: '/fonts/zysdmycy/FontsLab-DongManErCiYuan.woff2' },
-          { name: 'bcmhuitingsxt', url: '/fonts/bcmhtt/bcmhuitingsxt.woff2' }
-        ];
-        list.forEach(function(f) {
-          if (document.fonts.check('12px ' + f.name)) return;
-          var ff = new FontFace(f.name, 'url(' + f.url + ')');
-          ff.load().then(function() {
-            try { document.fonts.add(ff); } catch (e) {}
-          }).catch(function() {});
-        });
-      } catch (e) {}
-    })();
-  </script>
-
-  <script>
-    // Luckysheet 多源加载：本地（主，同源免 Tracking Prevention / 离线可用）→ jsdelivr → npmmirror → unpkg，全部失败时给出提示
-    (function loadLuckysheetLib() {
-      var CDN_SOURCES = [
-        { name: 'local', css: [
-            '/vendor/luckysheet/plugins/css/pluginsCss.css',
-            '/vendor/luckysheet/plugins/plugins.css',
-            '/vendor/luckysheet/css/luckysheet.css',
-            '/vendor/luckysheet/assets/iconfont/iconfont.css'
-          ], js: [
-            '/vendor/luckysheet/plugins/js/plugin.js',
-            '/vendor/luckysheet/luckysheet.umd.js'
-          ] },
-        { name: 'jsdelivr', css: [
-            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/css/pluginsCss.css',
-            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/plugins.css',
-            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/css/luckysheet.css',
-            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css'
-          ], js: [
-            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/js/plugin.js',
-            'https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/luckysheet.umd.js'
-          ] },
-        { name: 'npmmirror', css: [
-            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/plugins/css/pluginsCss.css',
-            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/plugins/plugins.css',
-            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/css/luckysheet.css',
-            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/assets/iconfont/iconfont.css'
-          ], js: [
-            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/plugins/js/plugin.js',
-            'https://registry.npmmirror.com/luckysheet/2.1.13/files/dist/luckysheet.umd.js'
-          ] },
-        { name: 'unpkg', css: [
-            'https://unpkg.com/luckysheet@2.1.13/dist/plugins/css/pluginsCss.css',
-            'https://unpkg.com/luckysheet@2.1.13/dist/plugins/plugins.css',
-            'https://unpkg.com/luckysheet@2.1.13/dist/css/luckysheet.css',
-            'https://unpkg.com/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css'
-          ], js: [
-            'https://unpkg.com/luckysheet@2.1.13/dist/plugins/js/plugin.js',
-            'https://unpkg.com/luckysheet@2.1.13/dist/luckysheet.umd.js'
-          ] }
-      ];
-
-      // jQuery 是 Luckysheet 及其插件（sparkline 迷你图等）的硬依赖，必须先于 luckysheet 加载
-      var JQUERY_SOURCES = [
-        '/vendor/luckysheet/jquery.min.js',
-        'https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js',
-        'https://registry.npmmirror.com/jquery/3.6.0/files/dist/jquery.min.js',
-        'https://unpkg.com/jquery@3.6.0/dist/jquery.min.js'
-      ];
-      function loadJQuery(idx, done) {
-        if (window.jQuery && typeof window.$ === 'function') { done(); return; }
-        if (idx >= JQUERY_SOURCES.length) { done(); return; }
-        var s = document.createElement('script');
-        s.src = JQUERY_SOURCES[idx];
-        s.onload = function () { if (window.jQuery && typeof window.$ === 'function') done(); else loadJQuery(idx + 1, done); };
-        s.onerror = function () { loadJQuery(idx + 1, done); };
-        document.head.appendChild(s);
-      }
-
-      var sourceIdx = 0;
-      var finished = false;
-
-      function finishLoad() {
-        if (finished) return;
-        finished = true;
-        window.__luckysheetReady = true;
-        if (window.__luckysheetOnReady) window.__luckysheetOnReady();
-      }
-
-      function failAll() {
-        if (finished) return;
-        finished = true;
-        var mask = document.getElementById('loadingMask');
-        if (mask) mask.innerHTML = '<div style="text-align:center;line-height:1.8;">在线表格编辑器组件加载失败<br/><span style="font-size:12px;color:#999;">请检查网络连接后刷新页面重试</span></div>';
-      }
-
-      function loadSource() {
-        if (sourceIdx >= CDN_SOURCES.length) { failAll(); return; }
-        var src = CDN_SOURCES[sourceIdx];
-        var remaining = src.css.length + src.js.length;
-        var failed = false;
-        function onDone() {
-          if (failed) return;
-          remaining--;
-          if (remaining <= 0) finishLoad();
-        }
-        function onError() {
-          if (failed) return;
-          failed = true;
-          sourceIdx++;
-          setTimeout(loadSource, 0);
-        }
-        src.css.forEach(function(href) {
-          var link = document.createElement('link');
-          link.rel = 'stylesheet';
-          link.href = href;
-          link.onload = onDone;
-          link.onerror = onError;
-          document.head.appendChild(link);
-        });
-        src.js.forEach(function(url) {
-          var s = document.createElement('script');
-          s.src = url;
-          s.onload = onDone;
-          s.onerror = onError;
-          document.head.appendChild(s);
-        });
-      }
-      loadJQuery(0, function () { loadSource(); });
-    })();
-  </script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif); }
-    
-    /* Luckysheet 全屏容器 */
-    #luckysheet {
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      left: 0; top: 0; position: absolute;
-    }
-    
-    /* 浮动信息栏（右上角） */
-    .floating-bar {
-      position: fixed; top: 8px; right: 8px; z-index: 9999;
-      display: flex; align-items: center; gap: 8px;
-      background: rgba(255,255,255,0.95); backdrop-filter: blur(8px);
-      padding: 6px 12px; border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      font-size: 12px; cursor: move; user-select: none;
-      transition: box-shadow 0.2s;
-    }
-    .floating-bar.dragging {
-      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-      opacity: 0.9;
-    }
-    .floating-bar .drag-handle {
-      cursor: move; padding: 0 4px; color: #ccc; font-size: 14px;
-    }
-    .floating-bar .back-link {
-      color: #1a73e8; text-decoration: none; cursor: pointer;
-      padding: 2px 6px; border-radius: 4px;
-    }
-    .floating-bar .back-link:hover { background: #f0f4ff; }
-    .floating-bar .title {
-      font-weight: 600; color: #333; max-width: 200px;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .floating-bar .online-users {
-      display: flex; align-items: center; gap: 2px;
-    }
-    .floating-bar .online-user {
-      width: 20px; height: 20px; border-radius: 50%;
-      color: #fff; font-size: 10px; font-weight: 600;
-      display: flex; align-items: center; justify-content: center;
-      border: 2px solid #fff; margin-left: -5px;
-    }
-    .floating-bar .online-user:first-child { margin-left: 0; }
-    .floating-bar .online-count {
-      color: #666; margin-left: 2px;
-    }
-    .floating-bar .lock-status {
-      padding: 2px 8px; border-radius: 10px;
-      background: #fff3e0; color: #e65100; cursor: pointer;
-      white-space: nowrap;
-    }
-    .floating-bar .lock-status.unlocked {
-      background: #e8f5e9; color: #2e7d32;
-    }
-    .floating-bar .save-status {
-      color: #999; white-space: nowrap;
-    }
-    .floating-bar .btn {
-      padding: 3px 10px; border: 1px solid #ddd; border-radius: 4px;
-      background: #fff; cursor: pointer; font-size: 12px; color: #333;
-      white-space: nowrap;
-    }
-    .floating-bar .btn:hover { background: #f5f5f5; }
-    .floating-bar .btn-primary {
-      background: #1a73e8; color: #fff; border-color: #1a73e8;
-    }
-    .floating-bar .btn-primary:hover { background: #1557b0; }
-    
-    .loading-mask {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: #fff; display: flex; align-items: center; justify-content: center;
-      z-index: 20000; font-size: 14px; color: #666;
-    }
-    .modal-mask {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.5); z-index: 30000;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .modal-box {
-      background: #fff; border-radius: 8px; width: 400px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-    }
-    .modal-title {
-      padding: 16px 20px; font-size: 16px; font-weight: 600;
-      border-bottom: 1px solid #eee;
-    }
-    .modal-body { padding: 20px; }
-    .modal-footer {
-      padding: 12px 20px; border-top: 1px solid #eee;
-      display: flex; justify-content: flex-end; gap: 8px;
-    }
-    .form-group { margin-bottom: 16px; }
-    .form-group label { display: block; margin-bottom: 6px; font-size: 13px; color: #666; }
-    .form-input {
-      width: 100%; padding: 8px 12px; border: 1px solid #ddd;
-      border-radius: 4px; font-size: 14px; box-sizing: border-box;
-    }
-    .perm-section { margin-bottom: 20px; }
-    .perm-section h4 { margin: 0 0 10px 0; font-size: 14px; color: #333; }
-    .perm-list { font-size: 13px; }
-    .perm-item {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 0; border-bottom: 1px solid #f5f5f5;
-    }
-    .perm-item .info { flex: 1; }
-    .perm-item .username { font-weight: 500; color: #333; }
-    .perm-item .perm-type { color: #999; font-size: 12px; margin-left: 8px; }
-    .perm-item .reason { color: #666; font-size: 12px; margin-top: 2px; }
-    .perm-item .actions { display: flex; gap: 6px; }
-    .perm-item .actions .btn { padding: 2px 8px; font-size: 12px; }
-    
-    /* 编辑者角标 */
-    .presence-badge {
-      position: fixed;
-      z-index: 50000;
-      background: #1a73e8;
-      color: #fff;
-      font-size: 11px;
-      line-height: 1.5;
-      padding: 1px 6px;
-      border-radius: 8px;
-      pointer-events: none;
-      white-space: nowrap;
-      box-shadow: 0 1px 4px rgba(0,0,0,.25);
-    }
-    .perm-empty { color: #999; padding: 10px 0; text-align: center; }
-  </style>
+  <link rel="stylesheet" href="/vendor/univer/index.css">
+  <link rel="stylesheet" href="/css/spreadsheet-editor.css">
+  <% if (permLevel === 1) { %>
+  <link rel="stylesheet" href="/css/ss-content-protect.css">
+  <% } %>
 </head>
 <body>
-  <!-- Luckysheet 全屏容器 -->
-  <div id="luckysheet"></div>
-  
-  <!-- 浮动信息栏 -->
-  <div class="floating-bar" id="floatingBar">
-    <span class="drag-handle" title="拖拽移动">⋮⋮</span>
-    <a href="/spreadsheet" class="back-link">← 返回</a>
-    <span class="title"><%= sheet.name %></span>
-    
-    <div class="online-users" id="onlineUsers" title="在线用户">
-      <span class="online-count" id="onlineCount">0人在线</span>
-    </div>
-    
-    <% if (canManage) { %>
-    <span class="lock-status unlocked" id="lockStatus" onclick="toggleLock()">🔓 未锁定</span>
-    <% } else if (canEdit) { %>
-    <span class="lock-status unlocked">✏️ 可编辑</span>
-    <% } else { %>
-    <span class="lock-status">🔒 只读</span>
-    <% } %>
-    
-    <span class="save-status" id="saveStatus">已保存</span>
-    <select class="site-font-select" onchange="setSiteFont(this.value)" title="切换界面字体" style="font-size:12px;padding:3px 5px;border-radius:6px;border:1px solid #ddd;max-width:150px;background:#fff;color:#333;outline:none;"></select>
-    <% if (canManage) { %>
-    <button class="btn" id="btnPermManage" onclick="openPermManage()">👥 权限</button>
-    <% } %>
-    <% if (canEdit) { %>
-    <button class="btn" id="btnCellHistory" onclick="openCellHistory()">📜 编辑历史</button>
-    <button class="btn btn-primary" id="btnSave">💾 保存</button>
-    <% } else { %>
-    <button class="btn" id="btnPermApply" onclick="openPermApply()">🔑 申请权限</button>
-    <% } %>
-  </div>
-
-  <!-- 权限申请弹窗 -->
-  <div class="modal-mask" id="applyModal" style="display:none;">
-    <div class="modal-box">
-      <div class="modal-title">申请表格权限</div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label>申请权限类型</label>
-          <select id="applyPermType" class="form-input">
-            <option value="edit">编辑权限</option>
-            <option value="download">下载权限</option>
-            <option value="copy">创建副本权限</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>申请理由（选填）</label>
-          <textarea id="applyReason" class="form-input" rows="3" placeholder="请说明申请理由"></textarea>
+  <!-- 应用栏：返回 / 标题 / 状态 / 在线协作者 / 功能入口 -->
+  <header class="ss-appbar">
+    <div class="ss-appbar-left">
+      <a href="/spreadsheet" class="ss-back-btn" title="返回列表">←</a>
+      <div class="ss-title-block">
+        <h1 id="ssDocName" class="ss-doc-name" title="<%= sheet.description || '' %>"><%= sheet.name %></h1>
+        <div class="ss-subinfo">
+          <span id="ssSaveStatus" class="ss-save-status">加载中…</span>
+          <span class="ss-meta">v<%= sheet.doc_version || 0 %></span>
+          <% if (sheet.is_locked) { %><span class="ss-badge ss-badge-locked" title="表格已被锁定，禁止编辑">🔒 已锁定</span><% } %>
+          <% if (permLevel >= 3) { %><span class="ss-badge ss-badge-edit">可编辑</span><% } else if (permLevel >= 2) { %><span class="ss-badge ss-badge-comment">可评论</span><% } else { %><span class="ss-badge ss-badge-view" title="只读查看：内容受保护（禁止复制/截图/导出）">👁️ 只读 · 内容保护</span><% } %>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closePermApply()">取消</button>
-        <button class="btn btn-primary" onclick="submitPermApply()">提交申请</button>
+    </div>
+
+    <div class="ss-appbar-center" id="ssPresenceBar" title="在线协作者"></div>
+
+    <div class="ss-appbar-right">
+      <button type="button" class="ss-btn" id="btnSsSave" hidden>💾 保存</button>
+      <button type="button" class="ss-btn" id="btnSsComments" title="批注 / 评论 / 任务">💬 批注<span class="ss-btn-badge" id="ssCommentCount" hidden>0</span></button>
+      <button type="button" class="ss-btn" id="btnSsCharts" title="图表看板">📈 图表</button>
+      <button type="button" class="ss-btn" id="btnSsVersions" title="历史版本">🕘 版本</button>
+      <% if (canManage) { %>
+      <button type="button" class="ss-btn" id="btnSsShare" title="分享 / 嵌入">🔗 分享</button>
+      <button type="button" class="ss-btn" id="btnSsPerms" title="文档权限管理">🔐 权限</button>
+      <% } else if (permLevel === 1) { %>
+      <button type="button" class="ss-btn" id="btnSsApplyPerm" title="申请更高权限">🔓 申请权限</button>
+      <% } %>
+      <button type="button" class="ss-btn" id="btnSsAi" title="AI 助手：生成 / 公式 / 清洗 / 分析">✨ AI</button>
+      <button type="button" class="ss-btn" id="btnSsExport" title="导出 xlsx / csv">⬇️ 导出</button>
+      <div class="ss-user-chip">
+        <img src="<%- user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="ss-user-avatar">
+        <span class="ss-user-name"><%= user.nickname || user.username %></span>
       </div>
     </div>
-  </div>
+  </header>
 
-  <!-- 权限管理弹窗 -->
-  <div class="modal-mask" id="permManageModal" style="display:none;">
-    <div class="modal-box" style="width:600px;max-height:80vh;">
-      <div class="modal-title">权限管理</div>
-      <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
-        <div class="perm-section">
-          <h4>待处理申请</h4>
-          <div id="pendingApplications" class="perm-list">加载中...</div>
-        </div>
-        <div class="perm-section">
-          <h4>已授权用户</h4>
-          <div id="grantedPermissions" class="perm-list">加载中...</div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closePermManage()">关闭</button>
+  <!-- Univer 编辑器容器 -->
+  <main class="ss-main">
+    <div id="univer-container"></div>
+    <div class="ss-loading-mask" id="ssLoadingMask">
+      <div class="ss-loading-box">
+        <div class="ss-spinner"></div>
+        <p>正在加载表格…</p>
       </div>
     </div>
-  </div>
-  
-  <!-- 单元格编辑历史弹窗 -->
-  <div class="modal-mask" id="cellHistoryModal" style="display:none;">
-    <div class="modal-box" style="width:520px;max-height:80vh;">
-      <div class="modal-title" id="cellHistoryTitle">单元格编辑历史</div>
-      <div class="modal-body" style="max-height:60vh;overflow-y:auto;" id="cellHistoryList">加载中...</div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closeCellHistory()">关闭</button>
-      </div>
+  </main>
+
+  <!-- 批注侧栏（JS 渲染内容） -->
+  <aside class="ss-comment-panel" id="ssCommentPanel" hidden>
+    <div class="ss-comment-panel-head">
+      <h3>💬 批注与任务</h3>
+      <button type="button" class="ss-panel-close" id="ssCommentClose">&times;</button>
     </div>
-  </div>
+    <div class="ss-comment-list" id="ssCommentList"></div>
+    <div class="ss-comment-form" id="ssCommentForm">
+      <input type="text" id="ssCommentInput" class="ss-input" data-ss-copy-ok placeholder="发表评论，@用户 可提醒，输入 /task 可指派任务…" maxlength="1000">
+      <button type="button" class="ss-btn ss-btn-primary" id="ssCommentSend">发送</button>
+    </div>
+  </aside>
 
-  <!-- 编辑者角标层 -->
-  <div id="presenceLayer" style="position:fixed;left:0;top:0;width:0;height:0;z-index:50000;pointer-events:none;"></div>
-
-  <div class="loading-mask" id="loadingMask">正在加载表格...</div>
+  <!-- 面板 / 对话框 / 轻提示挂载点（JS 动态渲染） -->
+  <div id="ssModalRoot"></div>
+  <div id="ssToastRoot"></div>
 
   <script>
-    (function() {
-      const sheetId = <%= sheet.id %>;
-      const canManage = <%= canManage ? 'true' : 'false' %>;
-      const canEdit = <%= canEdit ? 'true' : 'false' %>;
-      let saveTimer = null;
-      let isDirty = false;
-      let isLocked = false;
-      let luckysheetInited = false;
-
-      function createEmptySheet() {
-        return [{
-          name: 'Sheet1', color: '', status: 1, order: 0,
-          data: [], config: {}, index: 0,
-          luckysheet_select_save: [], scrollLeft: 0, scrollTop: 0,
-          zoomRatio: 1, showGridLines: 1,
-          defaultRowHeight: 28, defaultColWidth: 100,
-          row: 36, column: 18, visibledatacolumn: 18, visibledatarow: 36
-        }];
-      }
-
-      function initLuckysheet(data, editable) {
-        if (luckysheetInited) return;
-        luckysheetInited = true;
-
-        if (typeof luckysheet === 'undefined' || typeof luckysheet.create !== 'function') {
-          document.getElementById('loadingMask').innerHTML = '<div style="text-align:center;line-height:1.8;">在线表格编辑器组件加载失败<br/><span style="font-size:12px;color:#999;">请检查网络连接后刷新页面重试</span></div>';
-          return;
-        }
-        
-        const options = {
-          container: 'luckysheet',
-          lang: 'zh',
-          data: data,
-          title: '',
-          showinfobar: false,
-          showsheetbar: true,
-          showstatisticBar: true,
-          allowEdit: editable, // 只读用户完全禁用编辑和复制
-          allowCopy: editable,
-          enableAddRow: editable,
-          enableAddCol: editable,
-          enableAddBackTop: true,
-          userInfo: false,
-          fontList: [
-            { fontName: 'FontsLab-DongManErCiYuan', url: '/fonts/zysdmycy/FontsLab-DongManErCiYuan.woff2' },
-            { fontName: 'bcmhuitingsxt', url: '/fonts/bcmhtt/bcmhuitingsxt.woff2' }
-          ],
-          showConfigWindowResize: true,
-          forceCalculation: true,
-          hook: {
-            workbookCreateAfter: function() {
-              document.getElementById('loadingMask').style.display = 'none';
-              startCollaboration();
-              bindPresenceScroll();
-            },
-            cellEditBefore: function(sel) {
-              // 进入编辑时上报"正在编辑"，用于其他用户显示角标
-              if (!editable || isLocked) return;
-              var s = Array.isArray(sel) ? sel[0] : sel;
-              if (s && s.row_focus != null && s.column_focus != null) {
-                reportActive(s.row_focus, s.column_focus);
-              }
-            },
-            cellUpdated: function(r, c, oldValue, newValue, isRefresh) {
-              // 仅在真实单元格变更时标记未保存（远端同步的变更 isRefresh=true 不触发保存，避免整表覆盖他人编辑）
-              if (!isRefresh && editable && !isLocked) {
-                markDirty();
-                if (canEdit) {
-                  // 实时协同：上报编辑状态 + 单格保存（记历史并广播给其他用户）
-                  reportActive(r, c);
-                  submitCellEdit(r, c);
-                }
-              }
-            }
-          }
-        };
-        luckysheet.create(options);
-      }
-
-      function markDirty() {
-        isDirty = true;
-        document.getElementById('saveStatus').textContent = '未保存';
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(autoSave, 3000);
-      }
-
-      function autoSave() {
-        if (!canEdit || !isDirty || isLocked) return;
-        // 保存前先同步一次远端变更到本地内存，避免旧整表覆盖其他用户刚编辑的内容
-        fetchChanges().then(function() {
-          saveData(function(success) {
-            if (success) {
-              isDirty = false;
-              document.getElementById('saveStatus').textContent = '已保存 ' + new Date().toLocaleTimeString();
-            }
-          });
-        });
-      }
-
-      function saveData(callback) {
-        try {
-          const allSheets = luckysheet.getAllSheets();
-          const cleanData = allSheets.map(function(s) {
-            return {
-              name: s.name, color: s.color || '', status: s.status, order: s.order,
-              data: s.data || [], config: s.config || {}, index: s.index,
-              scrollLeft: s.scrollLeft || 0, scrollTop: s.scrollTop || 0,
-              zoomRatio: s.zoomRatio || 1, showGridLines: s.showGridLines != null ? s.showGridLines : 1,
-              defaultRowHeight: s.defaultRowHeight || 28, defaultColWidth: s.defaultColWidth || 100,
-              row: s.row || 36, column: s.column || 18,
-              visibledatacolumn: s.visibledatacolumn || 18, visibledatarow: s.visibledatarow || 36,
-              celldata: s.celldata || null, chart: s.chart || null,
-              images: s.images || null, image: s.image || null, dataVerification: s.dataVerification || null,
-              conditionFormat: s.conditionFormat || null, pivotTable: s.pivotTable || null
-            };
-          });
-
-          const jsonData = JSON.stringify(cleanData);
-          document.getElementById('saveStatus').textContent = '保存中...';
-
-          fetch('/api/spreadsheet/' + sheetId + '/luckysheet/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: jsonData })
-          })
-          .then(function(res) { return res.json(); })
-          .then(function(result) {
-            if (result.success) {
-              if (callback) callback(true);
-            } else {
-              document.getElementById('saveStatus').textContent = '保存失败';
-              if (callback) callback(false);
-            }
-          })
-          .catch(function(err) {
-            document.getElementById('saveStatus').textContent = '保存失败';
-            if (callback) callback(false);
-          });
-        } catch (e) {
-          document.getElementById('saveStatus').textContent = '保存失败';
-          if (callback) callback(false);
+    // 编辑器配置（后端注入 → spreadsheet-editor.js 读取）
+    window.__SHEET__ = {
+      sheetId: <%= sheet.id %>,
+      name: <%- JSON.stringify(sheet.name || '') %>,
+      description: <%- JSON.stringify(sheet.description || '') %>,
+      version: <%= sheet.doc_version || 0 %>,
+      isLocked: <%= sheet.is_locked ? 'true' : 'false' %>,
+      permLevel: <%= permLevel %>,
+      canEdit: <%= canEdit ? 'true' : 'false' %>,
+      canManage: <%= canManage ? 'true' : 'false' %>,
+      user: <%- JSON.stringify({ id: user.id, username: user.username, nickname: user.nickname || user.username, avatar: user.avatar || '' }) %>,
+      csrf: (document.querySelector('meta[name="csrf-token"]') || {}).content || '',
+      api: {
+        doc: '/api/spreadsheet/<%= sheet.id %>/doc',
+        meta: '/api/spreadsheet/<%= sheet.id %>/meta',
+        export: '/api/spreadsheet/<%= sheet.id %>/export',
+        versions: '/api/spreadsheet/<%= sheet.id %>/versions',
+        comments: '/api/spreadsheet/<%= sheet.id %>/comments',
+        charts: '/api/spreadsheet/<%= sheet.id %>/charts',
+        presence: '/api/spreadsheet/<%= sheet.id %>/presence',
+        changes: '/api/spreadsheet/<%= sheet.id %>/changes',
+        lock: '/api/spreadsheet/<%= sheet.id %>/lock',
+        share: '/api/spreadsheet/<%= sheet.id %>/share',
+        permissions: '/api/spreadsheet/<%= sheet.id %>/permissions',
+        myPerm: '/api/spreadsheet/<%= sheet.id %>/permission/my',
+        revokePerm: '/api/spreadsheet/<%= sheet.id %>/permission',
+        applications: '/api/spreadsheet/<%= sheet.id %>/permission/applications',
+        approve: '/api/spreadsheet/<%= sheet.id %>/permission/approve',
+        apply: '/api/spreadsheet/<%= sheet.id %>/permission/apply',
+        users: '/api/spreadsheet/<%= sheet.id %>/users',
+        ai: {
+          formula: '/api/spreadsheet/<%= sheet.id %>/ai/formula',
+          generate: '/api/spreadsheet/<%= sheet.id %>/ai/generate',
+          analyze: '/api/spreadsheet/<%= sheet.id %>/ai/analyze',
+          chart: '/api/spreadsheet/<%= sheet.id %>/ai/chart'
         }
       }
-
-      function loadData() {
-        fetch('/api/spreadsheet/' + sheetId + '/luckysheet/data')
-          .then(function(res) { return res.json(); })
-          .then(function(result) {
-            if (result.success && result.data) {
-              try {
-                const parsed = JSON.parse(result.data);
-                if (parsed && parsed.length > 0) {
-                  initLuckysheet(parsed, canEdit && !isLocked);
-                  return;
-                }
-              } catch (e) {
-                console.error('解析表格数据失败', e);
-                showLoadError('表格数据解析失败，为防止数据被覆盖已停止加载');
-                return;
-              }
-            }
-            // 服务端确实没有数据（新建表格）：初始化空表
-            initLuckysheet(createEmptySheet(), canEdit && !isLocked);
-          })
-          .catch(function() {
-            // 加载失败不能回退空表：否则后续自动保存会用空数据覆盖真实数据
-            showLoadError('表格数据加载失败，请检查网络后重试');
-          });
-      }
-
-      // 加载失败提示（附重试按钮），避免误初始化空表导致保存时覆盖真实数据
-      function showLoadError(msg) {
-        var mask = document.getElementById('loadingMask');
-        if (!mask) return;
-        mask.style.display = 'flex';
-        mask.innerHTML = '<div style="text-align:center;line-height:1.8;">' + escapeHtml(msg) +
-          '<br/><button style="margin-top:12px;padding:6px 18px;border:1px solid #1a73e8;border-radius:4px;background:#1a73e8;color:#fff;cursor:pointer;font-size:13px;" onclick="location.reload()">刷新重试</button></div>';
-      }
-
-      // ========== 实时协同：编辑者角标 / 变更同步 / 编辑历史 ==========
-      let lastEditedCell = null;
-      let lastSeq = 0;
-      let collTimer = null;
-      let presenceTimer = null;
-
-      function activeSheetIndex() {
-        try {
-          var sheets = luckysheet.getAllSheets();
-          for (var i = 0; i < sheets.length; i++) {
-            if (sheets[i].status === 1) return i;
-          }
-          return 0;
-        } catch (e) { return 0; }
-      }
-
-      // 上报"我正在编辑 row,col"
-      function reportActive(row, col) {
-        if (!canEdit || isLocked) return;
-        lastEditedCell = { sheet: activeSheetIndex(), row: row, col: col };
-        fetch('/api/spreadsheet/' + sheetId + '/cell-active', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sheet: lastEditedCell.sheet, row: row, col: col, action: 'start' })
-        }).catch(function() {});
-      }
-
-      // 单格保存：更新服务端数据 + 记编辑历史 + 广播给其他用户
-      function submitCellEdit(row, col) {
-        if (!canEdit || isLocked) return;
-        var value = null;
-        try { value = luckysheet.getCellValue(row, col); } catch (e) { return; }
-        fetch('/api/spreadsheet/' + sheetId + '/cell-edit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sheet: activeSheetIndex(), row: row, col: col, value: value })
-        }).then(function(r) { return r.json(); })
-          .then(function(res) {
-            if (!res.success && res.error) console.error('单元格同步失败:', res.error);
-          })
-          .catch(function() {});
-      }
-
-      // 其他 sheet 的远端变更暂存：等切换到对应 sheet 后再应用（直接 setCellValue 会写进当前活跃 sheet，导致数据错位）
-      var pendingRemoteChanges = {};
-      // 最近一次拉取的编辑者位置（滚动时本地重渲染，不重复发请求）
-      var lastPresenceUsers = [];
-
-      // 应用一条远端单元格变更（isRefresh=true 不触发本地保存）
-      function applyRemoteChange(row, col, value) {
-        try {
-          luckysheet.setCellValue(row, col, value, { isRefresh: true });
-        } catch (e) {}
-      }
-
-      // 当前活跃 sheet 切换后，应用此前缓存的其他 sheet 变更
-      function flushPendingRemoteChanges() {
-        var key = String(activeSheetIndex());
-        var pending = pendingRemoteChanges[key];
-        if (pending && pending.length) {
-          pending.forEach(function(ch) { applyRemoteChange(ch.row, ch.col, ch.value); });
-        }
-        if (pending) delete pendingRemoteChanges[key];
-      }
-
-      // 每 2 秒轮询：应用其他用户的单元格变更（基于 seq 增量，返回 Promise 供保存前预同步）
-      function fetchChanges() {
-        return fetch('/api/spreadsheet/' + sheetId + '/cell-changes?since=' + lastSeq)
-          .then(function(r) { return r.json(); })
-          .then(function(res) {
-            if (!res.success) return;
-            if (res.since) lastSeq = res.since;
-            flushPendingRemoteChanges();
-            var cur = activeSheetIndex();
-            (res.changes || []).forEach(function(ch) {
-              if (ch.isMine) return;
-              if (ch.sheet === cur) {
-                applyRemoteChange(ch.row, ch.col, ch.value);
-              } else {
-                // 变更发生在其他 sheet：先缓存，避免误写入当前 sheet 的同坐标单元格
-                var key = String(ch.sheet);
-                (pendingRemoteChanges[key] = pendingRemoteChanges[key] || []).push({ row: ch.row, col: ch.col, value: ch.value });
-              }
-            });
-          })
-          .catch(function() {});
-      }
-
-      // 由行列坐标换算单元格在表格中的内容位置（依赖 visibledatacolumn/visibledatarow 边界数组）
-      function cellXY(sheetIdx, row, col) {
-        try {
-          var sheets = luckysheet.getAllSheets();
-          var s = sheets[sheetIdx];
-          if (!s) return null;
-          var zoom = s.zoomRatio || 1;
-          var left, top;
-          if (Array.isArray(s.visibledatacolumn)) {
-            left = (col === 0 ? 0 : (s.visibledatacolumn[col - 1] || 0)) * zoom;
-          } else {
-            left = col * (s.defaultColWidth || 100) * zoom;
-          }
-          if (Array.isArray(s.visibledatarow)) {
-            top = (row === 0 ? 0 : (s.visibledatarow[row - 1] || 0)) * zoom;
-          } else {
-            top = row * (s.defaultRowHeight || 28) * zoom;
-          }
-          return { left: left, top: top };
-        } catch (e) { return null; }
-      }
-
-      // 在对应单元格上叠加"XX 正在编辑"角标
-      function renderPresence(users) {
-        var layer = document.getElementById('presenceLayer');
-        if (!layer) return;
-        layer.innerHTML = '';
-        var cellMain = document.getElementById('luckysheet-cell-main');
-        if (!cellMain) return;
-        var rect = cellMain.getBoundingClientRect();
-        var curSheet = activeSheetIndex();
-        users.forEach(function(u) {
-          if (u.sheet !== curSheet) return;
-          var xy = cellXY(u.sheet, u.row, u.col);
-          if (!xy) return;
-          var x = rect.left + xy.left - cellMain.scrollLeft;
-          var y = rect.top + xy.top - cellMain.scrollTop;
-          var badge = document.createElement('div');
-          badge.className = 'presence-badge';
-          badge.textContent = u.username + ' 正在编辑';
-          badge.style.left = Math.round(x) + 'px';
-          badge.style.top = Math.max(4, Math.round(y - 22)) + 'px';
-          layer.appendChild(badge);
-        });
-      }
-
-      function fetchPresence() {
-        fetch('/api/spreadsheet/' + sheetId + '/cell-presence')
-          .then(function(r) { return r.json(); })
-          .then(function(res) {
-            if (res.success) {
-              lastPresenceUsers = res.users || [];
-              renderPresence(lastPresenceUsers);
-            }
-          })
-          .catch(function() {});
-      }
-
-      function startCollaboration() {
-        // 只读用户同样接收其他人的实时变更与编辑位置（submitCellEdit/reportActive 内部有 canEdit 检查，不会提交自己的编辑）
-        if (collTimer) clearInterval(collTimer);
-        if (presenceTimer) clearInterval(presenceTimer);
-        collTimer = setInterval(fetchChanges, 2000);
-        presenceTimer = setInterval(fetchPresence, 2000);
-        window.addEventListener('pagehide', function() {
-          if (collTimer) clearInterval(collTimer);
-          if (presenceTimer) clearInterval(presenceTimer);
-          // 离开页面时通知服务端结束编辑状态（keepalive 保证请求发出）
-          if (canEdit) {
-            try {
-              fetch('/api/spreadsheet/' + sheetId + '/cell-active', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'end' }),
-                keepalive: true
-              }).catch(function() {});
-            } catch (e) {}
-          }
-        });
-      }
-
-      // 表格滚动时刷新角标位置（节流 + 本地重渲染，不重复发请求）
-      function bindPresenceScroll() {
-        var cellMain = document.getElementById('luckysheet-cell-main');
-        if (!cellMain) return;
-        var scrollTimer = null;
-        cellMain.addEventListener('scroll', function() {
-          if (scrollTimer) return;
-          scrollTimer = setTimeout(function() {
-            scrollTimer = null;
-            renderPresence(lastPresenceUsers);
-          }, 150);
-        }, { passive: true });
-      }
-
-      // 打开编辑历史弹窗（查询最近编辑的单元格）
-      window.openCellHistory = function() {
-        var target = lastEditedCell;
-        if (!target) {
-          alert('请先编辑一个单元格，再点击"编辑历史"查看它的修改记录');
-          return;
-        }
-        var listEl = document.getElementById('cellHistoryList');
-        var titleEl = document.getElementById('cellHistoryTitle');
-        if (!listEl || !titleEl) return;
-        titleEl.textContent = '单元格 ' + colName(target.col) + (target.row + 1) + ' 的编辑历史';
-        listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">加载中...</div>';
-        document.getElementById('cellHistoryModal').style.display = 'flex';
-
-        fetch('/api/spreadsheet/' + sheetId + '/cell-history?sheet=' + target.sheet + '&row=' + target.row + '&col=' + target.col)
-          .then(function(r) { return r.json(); })
-          .then(function(res) {
-            if (!res.success) {
-              listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#d9534f;">' + (res.error || '查询失败') + '</div>';
-              return;
-            }
-            if (!res.history || res.history.length === 0) {
-              listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">该单元格暂无编辑记录</div>';
-              return;
-            }
-            var html = '';
-            res.history.forEach(function(h) {
-              html += '<div style="padding:10px 12px;border-bottom:1px solid #eee;">' +
-                '<div style="display:flex;justify-content:space-between;font-size:12px;color:#888;">' +
-                '<span>' + escapeHtml(h.username || '未知用户') + '</span><span>' + escapeHtml(h.created_at || '') + '</span></div>' +
-                '<div style="font-size:13px;margin-top:4px;word-break:break-all;"><span style="color:#999;">旧值：</span>' + fmtHistoryValue(h.old_value) + '</div>' +
-                '<div style="font-size:13px;margin-top:2px;word-break:break-all;"><span style="color:#1a73e8;">新值：</span>' + fmtHistoryValue(h.new_value) + '</div>' +
-                '</div>';
-            });
-            listEl.innerHTML = html;
-          })
-          .catch(function() {
-            listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#d9534f;">查询失败，请重试</div>';
-          });
-      }
-
-      window.closeCellHistory = function() {
-        var modal = document.getElementById('cellHistoryModal');
-        if (modal) modal.style.display = 'none';
-      }
-
-      function colName(c) {
-        var s = '';
-        c = c + 1;
-        while (c > 0) {
-          var rem = (c - 1) % 26;
-          s = String.fromCharCode(65 + rem) + s;
-          c = Math.floor((c - 1) / 26);
-        }
-        return s;
-      }
-
-      function fmtHistoryValue(v) {
-        if (v == null || v === '') return '<span style="color:#ccc;">（空）</span>';
-        var text = String(v);
-        if (text.length > 300) text = text.slice(0, 300) + '...';
-        return escapeHtml(text);
-      }
-
-      // 在线用户
-      function updateOnlineUsers() {
-        fetch('/api/spreadsheet/' + sheetId + '/online', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        })
-        .then(function(res) { return res.json(); })
-        .then(function(result) {
-          if (result.success && result.users) {
-            renderOnlineUsers(result.users);
-          }
-        })
-        .catch(function() {});
-      }
-
-      function renderOnlineUsers(users) {
-        const container = document.getElementById('onlineUsers');
-        const countEl = document.getElementById('onlineCount');
-        countEl.textContent = users.length + '人在线';
-        
-        var oldAvatars = container.querySelectorAll('.online-user');
-        oldAvatars.forEach(function(el) { el.remove(); });
-        
-        var showUsers = users.slice(0, 5);
-        showUsers.forEach(function(u) {
-          var avatar = document.createElement('div');
-          avatar.className = 'online-user';
-          avatar.textContent = (u.username || '?').charAt(0).toUpperCase();
-          avatar.title = u.username;
-          avatar.style.background = getColorForUser(u.id);
-          container.insertBefore(avatar, countEl);
-        });
-      }
-
-      function getColorForUser(id) {
-        var colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#30cfd0', '#a8edea'];
-        return colors[id % colors.length];
-      }
-
-      // 锁定功能
-      window.toggleLock = function() {
-        if (!canManage) return;
-        var newState = !isLocked;
-        fetch('/api/spreadsheet/' + sheetId + '/lock', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locked: newState })
-        })
-        .then(function(res) { return res.json(); })
-        .then(function(result) {
-          if (result.success) {
-            isLocked = newState;
-            updateLockUI();
-            alert(isLocked ? '表格已锁定' : '表格已解锁');
-          }
-        })
-        .catch(function() {});
-      };
-
-      function updateLockUI() {
-        var el = document.getElementById('lockStatus');
-        if (!el) return;
-        if (isLocked) {
-          el.textContent = '🔒 已锁定';
-          el.className = 'lock-status';
-        } else {
-          el.textContent = '🔓 未锁定';
-          el.className = 'lock-status unlocked';
-        }
-      }
-
-      function checkLockStatus() {
-        fetch('/api/spreadsheet/' + sheetId + '/lock')
-          .then(function(res) { return res.json(); })
-          .then(function(result) {
-            if (result.success) {
-              isLocked = result.locked;
-              updateLockUI();
-            }
-          })
-          .catch(function() {});
-      }
-
-      // 保存按钮（仅管理员有此按钮）
-      var btnSave = document.getElementById('btnSave');
-      if (btnSave) {
-        btnSave.addEventListener('click', function() {
-          saveData(function(success) {
-            if (success) {
-              isDirty = false;
-              document.getElementById('saveStatus').textContent = '已保存 ' + new Date().toLocaleTimeString();
-            }
-          });
-        });
-      }
-
-      // 离开页面前提示保存
-      window.addEventListener('beforeunload', function(e) {
-        if (canEdit && isDirty) {
-          e.preventDefault();
-          e.returnValue = '表格有未保存的更改，确定要离开吗？';
-        }
-      });
-
-      // Ctrl+S 保存
-      document.addEventListener('keydown', function(e) {
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-          e.preventDefault();
-          if (canEdit && !isLocked) {
-            saveData(function(success) {
-              if (success) {
-                isDirty = false;
-                document.getElementById('saveStatus').textContent = '已保存 ' + new Date().toLocaleTimeString();
-              }
-            });
-          }
-        }
-      });
-
-      // ============ 权限申请和管理 ============
-      const PERM_NAMES = { view: '查看', edit: '编辑', download: '下载', copy: '创建副本' };
-
-      // 转义用户可控文本，防止拼入 innerHTML 造成 XSS
-      function escapeHtml(str) {
-        return String(str == null ? '' : str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-      }
-
-      window.openPermApply = function() {
-        document.getElementById('applyModal').style.display = 'flex';
-      };
-      window.closePermApply = function() {
-        document.getElementById('applyModal').style.display = 'none';
-      };
-      window.submitPermApply = function() {
-        const permType = document.getElementById('applyPermType').value;
-        const reason = document.getElementById('applyReason').value;
-        fetch('/api/spreadsheet/' + sheetId + '/permission/apply', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ perm_type: permType, reason: reason })
-        })
-        .then(function(res) { return res.json(); })
-        .then(function(result) {
-          if (result.success) {
-            alert('申请已提交，等待管理员审批');
-            closePermApply();
-          } else {
-            alert(result.error || '提交失败');
-          }
-        })
-        .catch(function() { alert('提交失败，请稍后重试'); });
-      };
-
-      window.openPermManage = function() {
-        document.getElementById('permManageModal').style.display = 'flex';
-        loadPermissions();
-        loadApplications();
-      };
-      window.closePermManage = function() {
-        document.getElementById('permManageModal').style.display = 'none';
-      };
-
-      function loadApplications() {
-        fetch('/api/spreadsheet/' + sheetId + '/permission/applications')
-          .then(function(res) { return res.json(); })
-          .then(function(result) {
-            if (result.success) {
-              renderApplications(result.applications);
-            }
-          })
-          .catch(function() {});
-      }
-
-      function renderApplications(apps) {
-        const container = document.getElementById('pendingApplications');
-        const pending = apps.filter(function(a) { return a.status === 'pending'; });
-        if (pending.length === 0) {
-          container.innerHTML = '<div class="perm-empty">暂无待处理申请</div>';
-          return;
-        }
-        container.innerHTML = pending.map(function(a) {
-          return '<div class="perm-item">' +
-            '<div class="info">' +
-              '<span class="username">' + escapeHtml(a.username || '未知用户') + '</span>' +
-              '<span class="perm-type">' + (PERM_NAMES[a.perm_type] || escapeHtml(a.perm_type || '')) + '权限</span>' +
-              (a.reason ? '<div class="reason">理由：' + escapeHtml(a.reason) + '</div>' : '') +
-            '</div>' +
-            '<div class="actions">' +
-              '<button class="btn btn-primary" onclick="approveApply(' + a.id + ', true)">通过</button>' +
-              '<button class="btn" onclick="approveApply(' + a.id + ', false)">拒绝</button>' +
-            '</div>' +
-          '</div>';
-        }).join('');
-      }
-
-      window.approveApply = function(appId, approved) {
-        fetch('/api/spreadsheet/' + sheetId + '/permission/approve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ application_id: appId, approved: approved })
-        })
-        .then(function(res) { return res.json(); })
-        .then(function(result) {
-          if (result.success) {
-            loadApplications();
-            loadPermissions();
-          } else {
-            alert(result.error || '操作失败');
-          }
-        })
-        .catch(function() { alert('操作失败'); });
-      };
-
-      function loadPermissions() {
-        fetch('/api/spreadsheet/' + sheetId + '/permissions')
-          .then(function(res) { return res.json(); })
-          .then(function(result) {
-            if (result.success) {
-              renderPermissions(result.permissions);
-            }
-          })
-          .catch(function() {});
-      }
-
-      function renderPermissions(perms) {
-        const container = document.getElementById('grantedPermissions');
-        if (perms.length === 0) {
-          container.innerHTML = '<div class="perm-empty">暂无授权用户</div>';
-          return;
-        }
-        // 按用户分组
-        const userMap = {};
-        perms.forEach(function(p) {
-          if (!userMap[p.user_id]) {
-            userMap[p.user_id] = { username: p.username, perms: [] };
-          }
-          userMap[p.user_id].perms.push(p.perm_type);
-        });
-        container.innerHTML = Object.keys(userMap).map(function(userId) {
-          const u = userMap[userId];
-          return '<div class="perm-item">' +
-            '<div class="info">' +
-              '<span class="username">' + escapeHtml(u.username || '未知用户') + '</span>' +
-              '<span class="perm-type">' + u.perms.map(function(p) { return PERM_NAMES[p] || escapeHtml(p || ''); }).join('、') + '</span>' +
-            '</div>' +
-            '<div class="actions">' +
-              '<button class="btn" onclick="revokePerm(' + userId + ')">撤销全部</button>' +
-            '</div>' +
-          '</div>';
-        }).join('');
-      }
-
-      window.revokePerm = function(userId) {
-        if (!confirm('确定要撤销该用户的所有权限吗？')) return;
-        fetch('/api/spreadsheet/' + sheetId + '/permission/' + userId, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' }
-        })
-        .then(function(res) { return res.json(); })
-        .then(function(result) {
-          if (result.success) {
-            loadPermissions();
-          } else {
-            alert(result.error || '撤销失败');
-          }
-        })
-        .catch(function() { alert('撤销失败'); });
-      };
-
-      // ============ 浮动栏拖拽功能 ============
-      (function initDrag() {
-        const bar = document.getElementById('floatingBar');
-        if (!bar) return;
-        let isDragging = false;
-        let startX, startY, startLeft, startTop;
-
-        bar.addEventListener('mousedown', function(e) {
-          // 点击按钮、链接时不触发拖拽
-          if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-          isDragging = true;
-          bar.classList.add('dragging');
-          startX = e.clientX;
-          startY = e.clientY;
-          const rect = bar.getBoundingClientRect();
-          startLeft = rect.left;
-          startTop = rect.top;
-          // 切换到 left/top 定位
-          bar.style.right = 'auto';
-          bar.style.left = startLeft + 'px';
-          bar.style.top = startTop + 'px';
-          e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', function(e) {
-          if (!isDragging) return;
-          const dx = e.clientX - startX;
-          const dy = e.clientY - startY;
-          let newLeft = startLeft + dx;
-          let newTop = startTop + dy;
-          // 限制在视口范围内
-          const maxLeft = window.innerWidth - bar.offsetWidth;
-          const maxTop = window.innerHeight - bar.offsetHeight;
-          newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-          newTop = Math.max(0, Math.min(newTop, maxTop));
-          bar.style.left = newLeft + 'px';
-          bar.style.top = newTop + 'px';
-        });
-
-        document.addEventListener('mouseup', function() {
-          if (isDragging) {
-            isDragging = false;
-            bar.classList.remove('dragging');
-          }
-        });
-      })();
-
-      // ============ 实时更新 ============
-      // 锁定状态每10秒轮询更新
-      setInterval(checkLockStatus, 10000);
-      // 在线用户每15秒更新（已有）
-      // 权限状态每15秒检查，获得编辑权限后提示刷新
-      let hasEditPermission = canEdit;
-      setInterval(function() {
-        fetch('/api/spreadsheet/' + sheetId + '/permission/my')
-          .then(function(res) { return res.json(); })
-          .then(function(result) {
-            if (result.success && result.permissions) {
-              const nowCanEdit = result.permissions.indexOf('edit') >= 0 || result.isAdmin;
-              if (nowCanEdit && !hasEditPermission) {
-                hasEditPermission = true;
-                if (confirm('您已获得该表格的编辑权限，是否刷新页面以开始编辑？')) {
-                  location.reload();
-                }
-              }
-            }
-          })
-          .catch(function() {});
-      }, 15000);
-
-      // 启动（等待 Luckysheet 组件加载完成后初始化）
-      function boot() {
-        checkLockStatus();
-        loadData();
-        updateOnlineUsers();
-        setInterval(updateOnlineUsers, 15000);
-      }
-      if (window.__luckysheetReady) {
-        boot();
-      } else {
-        window.__luckysheetOnReady = boot;
-      }
-    })();
+    };
   </script>
+  <script src="/vendor/univer/univer.min.js"></script>
+  <% if (permLevel === 1) { %>
+  <script>
+    // 只读内容保护配置（permLevel===1 用户：防复制 + 用户名水印溯源）
+    window.__SS_PROTECT__ = {
+      watermark: <%- JSON.stringify((user.nickname || user.username) + ' #' + user.id) %>,
+      tip: '只读内容受保护：禁止复制、截图与导出，如需更高权限请点击「申请权限」'
+    };
+  </script>
+  <script src="/js/ss-content-protect.js" defer></script>
+  <% } %>
+  <script src="/js/spreadsheet-editor.js" defer></script>
 </body>
 </html>

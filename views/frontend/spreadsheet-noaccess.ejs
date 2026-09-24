@@ -1,0 +1,74 @@
+<%# ===== 页面模板：frontend/spreadsheet-noaccess.ejs =====%>
+<%# 说明：表格无权限访问页（私有权限模型）：提示 + 只读权限申请入口，提交走 /api/spreadsheet/:id/permission/apply %>
+<div class="container">
+  <div class="noaccess-card">
+    <div class="noaccess-icon">🔒</div>
+    <h1>无权访问该表格</h1>
+    <p class="noaccess-desc">「<%= sheet.name %>」为私有表格，您尚未获得访问权限，可申请只读访问。</p>
+    <div class="noaccess-meta">
+      <span>👤 创建者：<%= ownerName %></span>
+      <% if (sheet.description) { %><span>📝 <%= sheet.description %></span><% } %>
+    </div>
+
+    <% if (pendingApp) { %>
+    <div class="noaccess-pending">
+      <span class="noaccess-pending-badge">⏳ 权限申请待审批</span>
+      <p>您已提交「只读访问」申请（<%= pendingApp.created_at ? new Date(pendingApp.created_at).toLocaleString('zh-CN') : '' %>），
+        请等待创建者或管理员审批，审批结果将通过站内通知告知。</p>
+    </div>
+    <% } else { %>
+    <div class="noaccess-form">
+      <label for="applyReason">申请理由（选填，将展示给审批人）</label>
+      <input type="text" id="applyReason" maxlength="500" placeholder="请说明您需要查看此表格的原因…">
+      <button type="button" class="btn btn-primary" id="btnApplyView">📩 申请只读访问</button>
+    </div>
+    <% } %>
+
+    <a href="/spreadsheet" class="noaccess-back">← 返回表格列表</a>
+  </div>
+</div>
+
+<style>
+.noaccess-card { max-width: 560px; margin: 64px auto; padding: 40px 36px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+.noaccess-icon { font-size: 48px; margin-bottom: 12px; }
+.noaccess-card h1 { font-size: 22px; margin: 0 0 8px; }
+.noaccess-desc { color: #4b5563; margin: 0 0 14px; line-height: 1.7; }
+.noaccess-meta { display: flex; flex-direction: column; gap: 6px; color: #6b7280; font-size: 13px; margin-bottom: 22px; }
+.noaccess-form { display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.noaccess-form label { font-size: 13px; color: #374151; font-weight: 600; }
+.noaccess-form input { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+.noaccess-pending { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px 16px; text-align: left; }
+.noaccess-pending p { margin: 8px 0 0; font-size: 13px; color: #92400e; line-height: 1.7; }
+.noaccess-pending-badge { display: inline-block; background: #fef3c7; color: #92400e; border-radius: 6px; padding: 4px 10px; font-size: 13px; font-weight: 600; }
+.noaccess-back { display: inline-block; margin-top: 22px; color: #6b7280; font-size: 14px; text-decoration: none; }
+.noaccess-back:hover { color: #111827; }
+</style>
+
+<script>
+  (function () {
+    var btn = document.getElementById('btnApplyView');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      btn.textContent = '提交中…';
+      var reasonInput = document.getElementById('applyReason');
+      csrfFetch('/api/spreadsheet/<%= sheet.id %>/permission/apply', {
+        method: 'POST',
+        body: JSON.stringify({ perm_type: 'view', reason: reasonInput ? reasonInput.value.trim() : '' })
+      }).then(function (json) {
+        if (json && json.success) {
+          showToast(json.message || '申请已提交，等待审批', 'success');
+          setTimeout(function () { location.reload(); }, 1200);
+        } else {
+          showToast((json && json.error) || '提交失败', 'error');
+          btn.disabled = false;
+          btn.textContent = '📩 申请只读访问';
+        }
+      }).catch(function (err) {
+        showToast('网络错误：' + (err && err.message ? err.message : '提交失败'), 'error');
+        btn.disabled = false;
+        btn.textContent = '📩 申请只读访问';
+      });
+    });
+  })();
+</script>

@@ -391,6 +391,25 @@ app.use((err, req, res, next) => {
   console.error('服务器错误:', err);
   monitor.recordError(); // 记录错误到监控
 
+  // 请求体超过 express.json/urlencoded 的 50MB 上限（PayloadTooLargeError）
+  // 注意：不可通过调高 limit 解决 —— 2GB 服务器放行超大 JSON 会直接堆内存溢出（raw-body 缓冲 + JSON.parse 对象膨胀）
+  if (err.type === 'entity.too.large') {
+    const wantJson = req.path.startsWith('/api/') || req.xhr
+      || String(req.headers.accept || '').includes('json');
+    if (wantJson) {
+      return res.status(413).json({
+        error: '请求数据过大：单次提交上限为 50MB。表格文档过大通常因行列/内容过多，请精简表格或拆分后重试；服务器内存有限，无法通过调高上限解决',
+        code: 'PAYLOAD_TOO_LARGE'
+      });
+    }
+    return res.status(413).render('frontend/error', {
+      message: '提交的数据过大',
+      error: '单次提交上限为 50MB，请精简内容后重试',
+      user: req.session ? req.session.user : null,
+      settings: res.locals ? (res.locals.settings || {}) : {}
+    });
+  }
+
   // API 路由：返回 JSON 错误（multer 文件限制映射为 400/413）
   if (req.path.startsWith('/api/')) {
     const status = err.status || (err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE' ? 400 : 500);

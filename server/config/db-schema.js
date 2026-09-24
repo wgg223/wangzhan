@@ -977,7 +977,7 @@ function createTables(db) {
   } catch (e) { /* 新库无表时忽略 */ }
 
 
-  // ============ 在线表格模块表 ============
+  // ============ 在线表格模块表（Univer 重构版） ============
   // 表格元数据表
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -991,9 +991,10 @@ function createTables(db) {
     FOREIGN KEY (created_by) REFERENCES users(id)
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_spreadsheets_status ON spreadsheets(status)');
-  // 新增 luckysheet_data 字段存储完整表格数据（先检查列是否存在，避免重复添加报错）
+  // 字段迁移（先检查列是否存在，避免重复添加报错）
   try {
     const existingCols = db.prepare('PRAGMA table_info(spreadsheets)').all().map(function(c) { return c.name; });
+    // 旧功能遗留列（保留作为迁移数据源，避免破坏性变更）
     if (existingCols.indexOf('luckysheet_data') === -1) {
       db.run(`ALTER TABLE spreadsheets ADD COLUMN luckysheet_data TEXT`);
     }
@@ -1006,11 +1007,73 @@ function createTables(db) {
     if (existingCols.indexOf('locked_by') === -1) {
       db.run(`ALTER TABLE spreadsheets ADD COLUMN locked_by INTEGER`);
     }
+    // 新版 Univer 文档列
+    if (existingCols.indexOf('doc_data') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_data TEXT`);
+    }
+    if (existingCols.indexOf('doc_version') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_version INTEGER DEFAULT 0`);
+    }
   } catch (e) {
     console.error('迁移 spreadsheets 表字段失败:', e.message);
   }
 
-  // 表格列定义表
+  // 版本历史表（历史版本记录与恢复）
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spreadsheet_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    doc_data TEXT,
+    change_desc TEXT DEFAULT '',
+    sheet_count INTEGER DEFAULT 1,
+    size_bytes INTEGER DEFAULT 0,
+    user_id INTEGER,
+    username TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE,
+    UNIQUE(spreadsheet_id, version)
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_versions ON spreadsheet_versions(spreadsheet_id, version)');
+
+  // 批注表（单元格锚定评论、@提及、回复、任务指派）
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spreadsheet_id INTEGER NOT NULL,
+    sheet_id TEXT NOT NULL DEFAULT '',
+    row INTEGER NOT NULL,
+    col INTEGER NOT NULL,
+    parent_id INTEGER,
+    user_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    content TEXT NOT NULL,
+    mentions TEXT DEFAULT '[]',
+    assigned_to INTEGER,
+    task_status TEXT DEFAULT 'none',
+    resolved INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_comments ON spreadsheet_comments(spreadsheet_id, resolved, id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_comments_assign ON spreadsheet_comments(assigned_to, task_status)');
+
+  // 图表配置表（自建 ECharts 图表层：柱状/折线/饼/散点/面积等）
+  db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_charts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spreadsheet_id INTEGER NOT NULL,
+    sheet_id TEXT NOT NULL DEFAULT '',
+    name TEXT DEFAULT '',
+    chart_type TEXT NOT NULL,
+    config TEXT NOT NULL DEFAULT '{}',
+    anchor TEXT DEFAULT '{}',
+    created_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_ss_charts ON spreadsheet_charts(spreadsheet_id)');
+
+  // 旧结构化数据表（保留旧数据作为迁移源，新版不写入）
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_columns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     spreadsheet_id INTEGER NOT NULL,
@@ -1037,6 +1100,15 @@ function createTables(db) {
     FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_ss_rows_sheet ON spreadsheet_rows(spreadsheet_id, sort_order)');
+
+  // 分享表补充 options 列（存嵌入开关等扩展配置）
+  try {
+    const shareCols = db.prepare('PRAGMA table_info(image_shares)').all().map(function(c) { return c.name; });
+    if (shareCols.indexOf('options') === -1) {
+      db.run(`ALTER TABLE image_shares ADD COLUMN options TEXT DEFAULT '{}'`);
+    }
+  } catch (e) { /* 兼容首次建库顺序 */ }
+
   // 文档级用户权限表（每个表格独立权限）
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_user_permissions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

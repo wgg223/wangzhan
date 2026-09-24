@@ -1,66 +1,74 @@
 <%# ===== 页面模板：frontend/spreadsheets.ejs =====%>
-<%# 说明：在线表格列表页（EJS 服务端模板） %>
+<%# 说明：在线表格列表页（Univer 版）：卡片网格 + 搜索 + 创建/导入（EJS 服务端模板，交互见 public/js/spreadsheets.js） %>
 <div class="container">
   <div class="page-header">
     <h1>📊 在线表格</h1>
-    <p class="page-desc">查看和查询共享表格数据</p>
+    <p class="page-desc">协同编辑 · 公式 · 图表 · 批注 · 版本历史 · AI 助手</p>
   </div>
 
-  <% if (canManage) { %>
   <div class="action-bar">
-    <a href="/admin/spreadsheets" class="btn btn-primary">⚙️ 管理表格</a>
+    <input type="search" id="sheetSearch" class="sheet-search-input" placeholder="🔍 搜索表格名称 / 描述 / 创建者…" autocomplete="off">
+    <select id="sheetPermFilter" class="sheet-perm-filter" title="按我的权限筛选">
+      <option value="all">全部权限</option>
+      <option value="0">无权限</option>
+      <option value="1">只读查看</option>
+      <option value="2">可评论</option>
+      <option value="3">可编辑</option>
+      <option value="4">可管理</option>
+    </select>
+    <% if (canManage) { %>
+    <button type="button" class="btn btn-primary" id="btnCreateSheet">＋ 新建表格</button>
+    <button type="button" class="btn btn-outline" id="btnImportSheet">📥 导入文件</button>
+    <a href="/admin/spreadsheets" class="btn btn-outline">⚙️ 后台管理</a>
+    <% } %>
   </div>
-  <% } %>
 
   <% if (sheets.length === 0) { %>
   <div class="empty-state">
     <div class="empty-icon">📋</div>
     <h3>暂无表格</h3>
-    <p>管理员尚未创建任何在线表格</p>
+    <p><% if (canManage) { %>点击「新建表格」创建第一个在线表格，或导入 .xlsx / .csv 文件<% } else { %>还没有任何共享表格，请联系管理员创建<% } %></p>
   </div>
   <% } else { %>
-  <div class="sheet-grid">
+  <div class="sheet-grid" id="sheetGrid">
     <% sheets.forEach(function(sheet) { %>
-    <a href="/spreadsheet/<%= sheet.id %>" class="sheet-card">
-      <div class="sheet-card-icon">📊</div>
+    <a href="/spreadsheet/<%= sheet.id %>" class="sheet-card" data-name="<%= (sheet.name || '').toLowerCase() %>"
+       data-desc="<%= ((sheet.description || '')).toLowerCase() %>" data-creator="<%= ((sheet.creator_name || '')).toLowerCase() %>"
+       data-perm="<%= sheet.permLevel %>">
+      <div class="sheet-card-icon">
+        <% if (sheet.permLevel >= 3) { %>✏️<% } else if (sheet.permLevel >= 2) { %>💬<% } else if (sheet.permLevel >= 1) { %>👁️<% } else { %>🔒<% } %>
+      </div>
       <div class="sheet-card-body">
         <h3 class="sheet-card-title"><%= sheet.name %></h3>
         <p class="sheet-card-desc"><%= sheet.description || '暂无描述' %></p>
         <div class="sheet-card-meta">
-          <span>创建者：<%= sheet.creator_name || '未知' %></span>
-          <span><%= new Date(sheet.created_at).toLocaleDateString('zh-CN') %></span>
+          <span>👤 <%= sheet.creator_name || '未知' %></span>
+          <span>v<%= sheet.doc_version || 0 %></span>
+          <span><%= sheet.updated_at ? new Date(sheet.updated_at).toLocaleDateString('zh-CN') : '' %></span>
+        </div>
+        <div class="sheet-card-tags">
+          <span class="sheet-tag perm-<%= sheet.permLevel %>">
+            <% if (sheet.permLevel >= 4) { %>可管理<% } else if (sheet.permLevel >= 3) { %>可编辑<% } else if (sheet.permLevel >= 2) { %>可评论<% } else if (sheet.permLevel >= 1) { %>只读查看<% } else { %>无权限<% } %>
+          </span>
+          <% if (sheet.permLevel === 0) { %>
+          <button type="button" class="sheet-tag sheet-tag-apply" data-apply="<%= sheet.id %>">📩 申请访问</button>
+          <% } %>
         </div>
       </div>
     </a>
     <% }); %>
   </div>
+  <div class="empty-state" id="noSearchResult" hidden>
+    <div class="empty-icon">🔍</div>
+    <h3>没有匹配的表格</h3>
+    <p>换个关键词试试</p>
+  </div>
   <% } %>
 </div>
 
-<style>
-.container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
-.page-header { margin-bottom: 24px; }
-.page-header h1 { font-size: 28px; color: #1a1a2e; margin: 0 0 8px; }
-.page-desc { color: #666; margin: 0; }
-.action-bar { margin-bottom: 20px; }
-.btn { display: inline-block; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; transition: all 0.2s; }
-.btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; }
-.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
-.empty-state { text-align: center; padding: 80px 20px; }
-.empty-icon { font-size: 64px; margin-bottom: 16px; }
-.empty-state h3 { color: #333; margin: 0 0 8px; }
-.empty-state p { color: #999; margin: 0; }
-.sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-.sheet-card { display: flex; background: #fff; border-radius: 12px; padding: 20px; text-decoration: none; color: inherit; border: 1px solid #eee; transition: all 0.2s; }
-.sheet-card:hover { border-color: #667eea; box-shadow: 0 4px 16px rgba(102,126,234,0.15); transform: translateY(-2px); }
-.sheet-card-icon { font-size: 36px; margin-right: 16px; flex-shrink: 0; }
-.sheet-card-body { flex: 1; min-width: 0; }
-.sheet-card-title { font-size: 18px; color: #1a1a2e; margin: 0 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sheet-card-desc { font-size: 14px; color: #666; margin: 0 0 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.sheet-card-meta { display: flex; justify-content: space-between; font-size: 12px; color: #999; margin-bottom: 12px; }
-.sheet-card-actions { display: flex; gap: 8px; }
-.sheet-btn { display: inline-block; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; border: 1px solid #ddd; color: #666; background: #fff; transition: all 0.2s; }
-.sheet-btn:hover { border-color: #667eea; color: #667eea; }
-.sheet-btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border-color: transparent; }
-.sheet-btn-primary:hover { color: #fff; opacity: 0.9; }
-</style>
+<!-- 新建/导入 对话框挂载点（由 JS 动态渲染） -->
+<div id="sheetModalRoot"></div>
+<div id="toastRoot"></div>
+
+<link rel="stylesheet" href="/css/spreadsheets.css">
+<script src="/js/spreadsheets.js" defer></script>

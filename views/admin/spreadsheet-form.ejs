@@ -1,5 +1,5 @@
 <%# ===== 页面模板：admin/spreadsheet-form.ejs =====%>
-<%# 说明：后台在线表格创建/编辑表单页（Luckysheet 模式） %>
+<%# 说明：后台在线表格创建/编辑表单页（Univer 模式） %>
 <div class="admin-page-header">
   <h2><%= sheet ? '✏️ 编辑表格' : '➕ 创建表格' %></h2>
   <a href="/admin/spreadsheets" class="btn btn-secondary">← 返回列表</a>
@@ -16,8 +16,15 @@
         <label>状态</label>
         <select id="sheetStatus">
           <option value="active" <%= sheet && sheet.status === 'active' ? 'selected' : '' %>>正常</option>
-          <option value="inactive" <%= sheet && sheet.status === 'inactive' ? 'selected' : '' %>>已停用</option>
+          <option value="deleted" <%= sheet && sheet.status === 'deleted' ? 'selected' : '' %>>已停用（软删除）</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label>锁定</label>
+        <label style="display:flex;align-items:center;gap:8px;padding-top:6px;font-weight:400;">
+          <input type="checkbox" id="sheetLocked" <%= sheet && sheet.is_locked ? 'checked' : '' %>>
+          锁定后所有人只能查看，不能编辑
+        </label>
       </div>
     </div>
     <div class="form-group">
@@ -25,7 +32,8 @@
       <textarea id="sheetDesc" rows="3" placeholder="请输入表格描述（可选）"><%= sheet ? sheet.description : '' %></textarea>
     </div>
     <div class="form-hint">
-      创建后点击「打开」进入 Luckysheet 在线表格编辑器，支持 Excel 全部功能。
+      创建后点击「打开」进入 Univer 在线表格编辑器，支持协同编辑、批注、图表与版本历史。
+      <% if (sheet && typeof sheet.versions === 'number') { %><br>当前统计：v<%= sheet.doc_version %> · 历史版本 <%= sheet.versions %> · 批注 <%= sheet.comments %> · 图表 <%= sheet.charts %> · 授权用户 <%= sheet.perms %><% } %>
     </div>
 
     <div class="form-actions">
@@ -50,7 +58,8 @@ function submitForm(e) {
   var data = {
     name: name,
     description: document.getElementById('sheetDesc').value,
-    status: document.getElementById('sheetStatus').value
+    status: document.getElementById('sheetStatus').value,
+    isLocked: document.getElementById('sheetLocked').checked ? 1 : 0
   };
 
   var url = <%- JSON.stringify(sheet ? '/admin/spreadsheets/' + sheet.id : '/admin/spreadsheets') %>;
