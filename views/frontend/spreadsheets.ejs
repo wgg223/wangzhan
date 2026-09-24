@@ -50,6 +50,9 @@
           <span class="sheet-tag perm-<%= sheet.permLevel %>">
             <% if (sheet.permLevel >= 4) { %>可管理<% } else if (sheet.permLevel >= 3) { %>可编辑<% } else if (sheet.permLevel >= 2) { %>可评论<% } else if (sheet.permLevel >= 1) { %>只读查看<% } else { %>无权限<% } %>
           </span>
+          <% if (sheet.is_public_read) { %>
+          <span class="sheet-tag" title="公开只读：所有登录用户可查看">🌐 公开</span>
+          <% } %>
           <% if (sheet.permLevel === 0) { %>
           <button type="button" class="sheet-tag sheet-tag-apply" data-apply="<%= sheet.id %>">📩 申请访问</button>
           <% } %>

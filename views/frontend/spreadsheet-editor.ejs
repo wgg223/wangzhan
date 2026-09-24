@@ -26,6 +26,7 @@
           <span id="ssSaveStatus" class="ss-save-status">加载中…</span>
           <span class="ss-meta">v<%= sheet.doc_version || 0 %></span>
           <% if (sheet.is_locked) { %><span class="ss-badge ss-badge-locked" title="表格已被锁定，禁止编辑">🔒 已锁定</span><% } %>
+          <% if (sheet.is_public_read) { %><span class="ss-badge ss-badge-public" title="公开只读：所有登录用户可查看（内容保护与水印生效）">🌐 公开只读</span><% } %>
           <% if (permLevel >= 3) { %><span class="ss-badge ss-badge-edit">可编辑</span><% } else if (permLevel >= 2) { %><span class="ss-badge ss-badge-comment">可评论</span><% } else { %><span class="ss-badge ss-badge-view" title="只读查看：内容受保护（禁止复制/截图/导出）">👁️ 只读 · 内容保护</span><% } %>
         </div>
       </div>
@@ -89,6 +90,7 @@
       description: <%- JSON.stringify(sheet.description || '') %>,
       version: <%= sheet.doc_version || 0 %>,
       isLocked: <%= sheet.is_locked ? 'true' : 'false' %>,
+      isPublicRead: <%= sheet.is_public_read ? 'true' : 'false' %>,
       permLevel: <%= permLevel %>,
       canEdit: <%= canEdit ? 'true' : 'false' %>,
       canManage: <%= canManage ? 'true' : 'false' %>,
@@ -104,6 +106,7 @@
         presence: '/api/spreadsheet/<%= sheet.id %>/presence',
         changes: '/api/spreadsheet/<%= sheet.id %>/changes',
         lock: '/api/spreadsheet/<%= sheet.id %>/lock',
+        publicRead: '/api/spreadsheet/<%= sheet.id %>/public-read',
         share: '/api/spreadsheet/<%= sheet.id %>/share',
         permissions: '/api/spreadsheet/<%= sheet.id %>/permissions',
         myPerm: '/api/spreadsheet/<%= sheet.id %>/permission/my',

@@ -1014,6 +1014,10 @@ function createTables(db) {
     if (existingCols.indexOf('doc_version') === -1) {
       db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_version INTEGER DEFAULT 0`);
     }
+    // 公开只读开关：1 = 所有登录用户至少拥有只读查看权限
+    if (existingCols.indexOf('is_public_read') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN is_public_read INTEGER DEFAULT 0`);
+    }
   } catch (e) {
     console.error('迁移 spreadsheets 表字段失败:', e.message);
   }

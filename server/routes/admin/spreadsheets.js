@@ -7,7 +7,11 @@
  *   POST   /admin/spreadsheets/import          —— 上传 .xlsx/.csv 创建表格
  *   POST   /admin/spreadsheets/batch-preview   —— 预览 Excel 各 Sheet 结构
  *   POST   /admin/spreadsheets/batch-import    —— 批量导入（每 Sheet 一个表格）
- *   POST   /admin/spreadsheets/batch           —— 批量管理（软删/硬删/恢复/锁定/解锁）
+ *   POST   /admin/spreadsheets/batch           —— 批量管理（软删/硬删/恢复/锁定/解锁/公开只读开关）
+ *   GET    /admin/spreadsheets/:id/permissions  —— 权限数据（公开只读状态 + 授权列表 + 全部用户）
+ *   POST   /admin/spreadsheets/:id/permissions  —— 直接授予用户权限
+ *   DELETE /admin/spreadsheets/:id/permissions/:userId —— 撤销用户权限
+ *   POST   /admin/spreadsheets/:id/public-read —— 公开只读开关（开启后所有登录用户可查看）
  *   GET    /admin/spreadsheets/:id/edit        —— 编辑元数据表单
  *   POST   /admin/spreadsheets/:id             —— 保存元数据（名称/描述/状态/锁定）
  *   GET    /admin/spreadsheets/:id/inspect     —— 文档结构概览（JSON）
@@ -21,6 +25,7 @@ const multer = require('multer');
 const { hasPermission } = require('../../middlewares/auth');
 const { queryAll, queryOne, saveDatabase } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
+const { createNotification } = require('../community');
 const { createEmptyUniverDoc } = require('../../utils/spreadsheet-migrate');
 const { importBufferToUniverDoc } = require('../../utils/spreadsheet-univer-io');
 const docStore = require('../../utils/spreadsheet-doc-store');
@@ -33,6 +38,10 @@ const importUpload = multer({
 // 所有路由需要 spreadsheet.manage 权限
 router.use(hasPermission('spreadsheet.manage'));
 
+// 文档级权限类型（与前台 spreadsheet.js 保持一致）
+const PERM_TYPES = ['view', 'comment', 'edit', 'download', 'copy'];
+const PERM_NAMES = { view: '只读查看', comment: '评论', edit: '编辑', download: '下载', copy: '创建副本' };
+
 // ============ 列表 ============
 
 router.get('/spreadsheets', (req, res) => {
@@ -40,7 +49,7 @@ router.get('/spreadsheets', (req, res) => {
   const status = ['active', 'deleted', 'all'].includes(req.query.status) ? req.query.status : 'all';
   const keyword = String(req.query.q || '').trim();
 
-  let sql = `SELECT s.id, s.name, s.description, s.status, s.doc_version, s.is_luckysheet, s.is_locked,
+  let sql = `SELECT s.id, s.name, s.description, s.status, s.doc_version, s.is_luckysheet, s.is_locked, s.is_public_read,
     s.created_by, s.created_at, s.updated_at, u.username AS creator_name,
     LENGTH(s.doc_data) AS doc_size,
     (SELECT COUNT(*) FROM spreadsheet_versions v WHERE v.spreadsheet_id = s.id) AS version_count,
@@ -264,13 +273,14 @@ function clearLiveState(sheetId) {
   docStore.changeQueues.delete(sheetId);
 }
 
-const BATCH_ACTIONS = ['soft-delete', 'hard-delete', 'restore', 'lock', 'unlock'];
+const BATCH_ACTIONS = ['soft-delete', 'hard-delete', 'restore', 'lock', 'unlock', 'public-read', 'public-read-off'];
 
 /**
  * 批量管理表格
  * body: { ids: [1, 2, ...], action }
  * action：soft-delete 软删除（可恢复）/ hard-delete 彻底删除 /
- *         restore 恢复 / lock 锁定 / unlock 解锁
+ *         restore 恢复 / lock 锁定 / unlock 解锁 /
+ *         public-read 开启公开只读 / public-read-off 关闭公开只读
  */
 router.post('/spreadsheets/batch', (req, res) => {
   const db = req.db;
@@ -309,6 +319,14 @@ router.post('/spreadsheets/batch', (req, res) => {
           db.run('UPDATE spreadsheets SET is_locked = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [t.id]);
           docStore.broadcast(t.id, 'docReload', req.session.user.id, req.session.user.username, { meta: true });
           break;
+        case 'public-read':
+          db.run('UPDATE spreadsheets SET is_public_read = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [t.id]);
+          docStore.broadcast(t.id, 'docReload', req.session.user.id, req.session.user.username, { meta: true, publicRead: true });
+          break;
+        case 'public-read-off':
+          db.run('UPDATE spreadsheets SET is_public_read = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [t.id]);
+          docStore.broadcast(t.id, 'docReload', req.session.user.id, req.session.user.username, { meta: true, publicRead: false });
+          break;
         default:
           break;
       }
@@ -335,6 +353,112 @@ router.post('/spreadsheets/batch', (req, res) => {
     success: okCount > 0,
     data: { action, total: targets.length, ok: okCount, failed: targets.length - okCount, results }
   });
+});
+
+// ============ 文档权限管理 ============
+
+/** 权限弹窗数据：公开只读状态 + 已授权列表 + 全部可选用户（下拉展示用） */
+router.get('/spreadsheets/:id/permissions', (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const sheet = queryOne(db, 'SELECT id, name, is_public_read, created_by FROM spreadsheets WHERE id = ?', [sheetId]);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+  const permissions = queryAll(db, `
+    SELECT p.id, p.user_id, p.perm_type, p.created_at, u.username, u.email, u.nickname
+    FROM spreadsheet_user_permissions p
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE p.spreadsheet_id = ?
+    ORDER BY p.created_at DESC
+  `, [sheetId]);
+  const users = queryAll(db,
+    "SELECT id, username, nickname, avatar, email FROM users WHERE status = 'active' ORDER BY username ASC LIMIT 500");
+  res.json({
+    success: true,
+    data: { id: sheetId, name: sheet.name, isPublicRead: sheet.is_public_read === 1, createdBy: sheet.created_by, permissions, users }
+  });
+});
+
+/** 直接授予用户权限（后台绕过申请流程，与前台 grant 逻辑一致） */
+router.post('/spreadsheets/:id/permissions', (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const sheet = queryOne(db, 'SELECT id, name, created_by FROM spreadsheets WHERE id = ?', [sheetId]);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+  const { user_id, perm_type } = req.body || {};
+  if (!PERM_TYPES.includes(perm_type)) return res.status(400).json({ success: false, error: '无效的权限类型' });
+
+  const target = queryOne(db, 'SELECT id, username, status FROM users WHERE id = ?', [parseInt(user_id, 10)]);
+  if (!target) return res.status(404).json({ success: false, error: '用户不存在' });
+  if (target.status !== 'active') return res.status(400).json({ success: false, error: '该用户已被禁用或注销' });
+  if (target.id === sheet.created_by) return res.status(400).json({ success: false, error: '该用户是文档创建者，无需授权' });
+
+  db.run('INSERT OR IGNORE INTO spreadsheet_user_permissions (spreadsheet_id, user_id, perm_type, granted_by) VALUES (?, ?, ?, ?)',
+    [sheetId, target.id, perm_type, req.session.user.id]);
+  // 该用户如有同类待审批申请，自动置为已通过
+  db.run("UPDATE spreadsheet_permission_applications SET status = 'approved', handled_by = ?, handled_at = CURRENT_TIMESTAMP WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ? AND status = 'pending'",
+    [req.session.user.id, sheetId, target.id, perm_type]);
+  saveDatabase(db);
+  logActivity(db, {
+    user_id: req.session.user.id, username: req.session.user.username,
+    action: 'perm_grant', target_type: 'spreadsheet', target_id: sheetId,
+    target_title: sheet.name,
+    detail: `后台直接授予 ${target.username} ${PERM_NAMES[perm_type]}权限`,
+    ip: req.ip
+  });
+  createNotification(db, {
+    userId: target.id, type: 'permission_result',
+    title: '权限已授予',
+    content: `您获得了表格「${sheet.name}」的${PERM_NAMES[perm_type]}权限`,
+    fromUserId: req.session.user.id, targetType: 'spreadsheet', targetId: String(sheetId)
+  });
+  res.json({ success: true, message: `已授予 ${target.username} ${PERM_NAMES[perm_type]}权限` });
+});
+
+/** 撤销用户权限（perm_type 可选：缺省撤销该用户全部权限） */
+router.delete('/spreadsheets/:id/permissions/:userId', (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const userId = parseInt(req.params.userId, 10);
+  const sheet = queryOne(db, 'SELECT id, name FROM spreadsheets WHERE id = ?', [sheetId]);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+  const { perm_type } = req.body || {};
+  if (perm_type && !PERM_TYPES.includes(perm_type)) return res.status(400).json({ success: false, error: '无效的权限类型' });
+
+  if (perm_type) {
+    db.run('DELETE FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ?', [sheetId, userId, perm_type]);
+  } else {
+    db.run('DELETE FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ?', [sheetId, userId]);
+  }
+  saveDatabase(db);
+  const target = queryOne(db, 'SELECT username FROM users WHERE id = ?', [userId]);
+  logActivity(db, {
+    user_id: req.session.user.id, username: req.session.user.username,
+    action: 'perm_revoke', target_type: 'spreadsheet', target_id: sheetId,
+    target_title: sheet.name,
+    detail: `后台撤销 ${(target && target.username) || ('用户#' + userId)} 的${perm_type ? PERM_NAMES[perm_type] : '全部'}权限`,
+    ip: req.ip
+  });
+  res.json({ success: true, message: '权限已撤销' });
+});
+
+/** 公开只读开关：开启后所有登录用户至少拥有只读查看权限 */
+router.post('/spreadsheets/:id/public-read', (req, res) => {
+  const db = req.db;
+  const sheetId = parseInt(req.params.id, 10);
+  const sheet = queryOne(db, 'SELECT id, name FROM spreadsheets WHERE id = ?', [sheetId]);
+  if (!sheet) return res.status(404).json({ success: false, error: '表格不存在' });
+  const enabled = req.body.enabled ? 1 : 0;
+  db.run('UPDATE spreadsheets SET is_public_read = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [enabled, sheetId]);
+  saveDatabase(db);
+  docStore.broadcast(sheetId, 'docReload', req.session.user.id, req.session.user.username, { meta: true, publicRead: enabled === 1 });
+  logActivity(db, {
+    user_id: req.session.user.id, username: req.session.user.username,
+    action: 'perm_public', target_type: 'spreadsheet', target_id: sheetId,
+    target_title: sheet.name,
+    detail: enabled ? '后台开启公开只读：所有登录用户可查看' : '后台关闭公开只读：恢复私有模型（仅授权用户可访问）',
+    ip: req.ip
+  });
+  res.json({ success: true, data: { enabled: enabled === 1 } });
 });
 
 // ============ 编辑元数据 ============

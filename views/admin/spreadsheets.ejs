@@ -24,6 +24,8 @@
     <button class="btn btn-outline" onclick="batchAction('restore')" title="恢复软删除的表格">♻️ 批量恢复</button>
     <button class="btn btn-outline" onclick="batchAction('lock')" title="锁定后禁止在线编辑">🔒 批量锁定</button>
     <button class="btn btn-outline" onclick="batchAction('unlock')" title="解除锁定">🔓 批量解锁</button>
+    <button class="btn btn-outline" onclick="batchAction('public-read')" title="开启后所有登录用户可查看（只读）">🌐 公开只读</button>
+    <button class="btn btn-outline" onclick="batchAction('public-read-off')" title="恢复私有访问（仅授权用户可查看）">🌐 取消公开</button>
     <button class="btn btn-outline" style="color:#dc3545;border-color:#dc3545;" onclick="batchAction('soft-delete')" title="软删除，可恢复">🗑️ 批量删除</button>
     <button class="btn btn-outline" style="color:#dc3545;border-color:#dc3545;" onclick="batchAction('hard-delete')" title="永久删除，不可恢复">💥 彻底删除</button>
   </div>
@@ -56,10 +58,14 @@
           <% if (sheet.is_locked) { %>
           <span class="status-badge status-inactive" title="已锁定，禁止在线编辑">🔒 已锁定</span>
           <% } %>
+          <% if (sheet.is_public_read) { %>
+          <span class="status-badge" style="background:#f0fdfa;color:#0d9488;" title="公开只读：所有登录用户可查看">🌐 公开只读</span>
+          <% } %>
         </td>
         <td class="table-actions">
           <a href="/spreadsheet/<%= sheet.id %>" class="action-link" target="_blank">打开</a>
           <a href="/admin/spreadsheets/<%= sheet.id %>/edit" class="action-link">编辑</a>
+          <button class="action-link" onclick="openSheetPerms(<%= sheet.id %>)">权限</button>
           <button class="action-link danger" onclick="deleteSheet(<%= sheet.id %>, '<%= sheet.name.replace(/'/g, "\\'") %>')">删除</button>
         </td>
       </tr>
@@ -67,6 +73,19 @@
     </tbody>
   </table>
   <% } %>
+</div>
+
+<!-- 权限管理弹窗 -->
+<div class="modal-overlay" id="sheetPermsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+  <div class="modal" style="background:#fff;border-radius:8px;max-width:640px;width:90%;max-height:85vh;overflow-y:auto;">
+    <div class="modal-header" style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="margin:0;">🔐 权限管理：<span id="permSheetName"></span></h3>
+      <button onclick="closeSheetPerms()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#999;">&times;</button>
+    </div>
+    <div class="modal-body" id="sheetPermsBody" style="padding:20px;">
+      <p style="color:#666;">加载中…</p>
+    </div>
+  </div>
 </div>
 
 <!-- 批量导入弹窗 -->
@@ -130,6 +149,8 @@ var BATCH_ACTION_META = {
   'restore': { label: '批量恢复', confirm: '确定要恢复选中的 {n} 个表格吗？恢复后表格恢复正常访问。' },
   'lock': { label: '批量锁定', confirm: '确定要锁定选中的 {n} 个表格吗？锁定后将禁止在线编辑（查看不受影响）。' },
   'unlock': { label: '批量解锁', confirm: '确定要解锁选中的 {n} 个表格吗？' },
+  'public-read': { label: '批量公开只读', confirm: '确定要开启选中的 {n} 个表格的公开只读吗？\n\n开启后所有登录用户均可只读查看（内容保护与水印仍生效）。' },
+  'public-read-off': { label: '取消公开只读', confirm: '确定要关闭选中的 {n} 个表格的公开只读吗？\n\n关闭后仅创建者与被授权用户可以访问。' },
   'soft-delete': { label: '批量删除', confirm: '确定要删除选中的 {n} 个表格吗？\n\n此为软删除（可恢复），已开启的分享链接将同步失效。' },
   'hard-delete': { label: '彻底删除', confirm: '⚠️ 确定要彻底删除选中的 {n} 个表格吗？\n\n所有工作表、批注、版本、图表、权限与分享记录将被永久删除，不可恢复！' }
 };
@@ -175,6 +196,141 @@ function batchAction(action) {
       }
     })
     .catch(err => alert('操作失败: ' + err.message));
+}
+
+// ===== 权限管理弹窗 =====
+var PERM_NAMES = { view: '只读查看', comment: '评论', edit: '编辑', download: '下载', copy: '创建副本' };
+var permsSheetId = null;
+var permsCreatedBy = 0;
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function openSheetPerms(id) {
+  permsSheetId = id;
+  document.getElementById('permSheetName').textContent = '#' + id;
+  document.getElementById('sheetPermsBody').innerHTML = '<p style="color:#666;">加载中…</p>';
+  document.getElementById('sheetPermsModal').style.display = 'flex';
+  loadSheetPerms();
+}
+
+function closeSheetPerms() {
+  document.getElementById('sheetPermsModal').style.display = 'none';
+  permsSheetId = null;
+}
+
+function loadSheetPerms() {
+  fetch('/admin/spreadsheets/' + permsSheetId + '/permissions')
+    .then(r => r.json())
+    .then(res => {
+      if (!res.success) { alert(res.error || '加载失败'); return; }
+      renderSheetPerms(res.data);
+    })
+    .catch(err => alert('加载失败: ' + err.message));
+}
+
+function renderSheetPerms(data) {
+  permsCreatedBy = data.createdBy;
+  document.getElementById('permSheetName').textContent = data.name || ('#' + data.id);
+  var body = document.getElementById('sheetPermsBody');
+  var html = '';
+
+  // 公开只读开关
+  html += '<div style="padding:6px 0 14px;border-bottom:1px solid #eee;">';
+  html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">';
+  html += '<input type="checkbox" id="permPublicRead"' + (data.isPublicRead ? ' checked' : '') + '> 🌐 公开只读（所有登录用户可查看）</label>';
+  html += '<div style="font-size:12px;color:#999;margin:6px 0 0 24px;">开启后无需逐个授权；只读访客受内容保护与水印约束，不能编辑/导出。</div>';
+  html += '</div>';
+
+  // 添加授权（下拉展示全部用户）
+  html += '<div style="padding:14px 0;">';
+  html += '<h4 style="margin:0 0 10px;">添加授权</h4>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+  html += '<select id="permGrantUser" style="padding:8px;border:1px solid #ddd;border-radius:6px;max-width:240px;">';
+  html += '<option value="">—— 选择用户（共 ' + data.users.length + ' 人） ——</option>';
+  data.users.forEach(function (u) {
+    if (u.id === permsCreatedBy) return; // 创建者无需授权
+    var label = (u.nickname && u.nickname !== u.username) ? (u.username + '（' + u.nickname + '）') : u.username;
+    html += '<option value="' + u.id + '">' + escHtml(label) + '</option>';
+  });
+  html += '</select>';
+  html += '<select id="permGrantType" style="padding:8px;border:1px solid #ddd;border-radius:6px;">';
+  ['view', 'comment', 'edit', 'download', 'copy'].forEach(function (t) {
+    html += '<option value="' + t + '">' + PERM_NAMES[t] + '</option>';
+  });
+  html += '</select>';
+  html += '<button class="btn btn-primary" style="padding:8px 16px;" onclick="grantSheetPerm()">授予</button>';
+  html += '</div></div>';
+
+  // 已授权用户
+  html += '<h4 style="margin:0 0 10px;">已授权用户（' + data.permissions.length + '）</h4>';
+  if (!data.permissions.length) {
+    html += '<p style="color:#999;font-size:13px;">暂无授权记录</p>';
+  } else {
+    html += '<table class="admin-table"><thead><tr><th>用户</th><th>权限</th><th>授权时间</th><th>操作</th></tr></thead><tbody>';
+    data.permissions.forEach(function (p) {
+      html += '<tr><td>' + escHtml(p.username || p.email || ('用户 #' + p.user_id)) + '</td>';
+      html += '<td>' + (PERM_NAMES[p.perm_type] || escHtml(p.perm_type)) + '</td>';
+      html += '<td>' + (p.created_at ? new Date(p.created_at).toLocaleString('zh-CN') : '-') + '</td>';
+      html += '<td><button class="action-link danger" onclick="revokeSheetPerm(' + p.user_id + ',\'' + p.perm_type + '\')">撤销</button></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  body.innerHTML = html;
+
+  // 公开只读开关事件
+  document.getElementById('permPublicRead').addEventListener('change', function () {
+    var to = this.checked;
+    var cb = this;
+    fetch('/admin/spreadsheets/' + permsSheetId + '/public-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: to })
+    })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success) { alert(to ? '已开启公开只读' : '已关闭公开只读'); }
+        else { alert(res.error || '操作失败'); cb.checked = !to; }
+      })
+      .catch(err => { alert('操作失败: ' + err.message); cb.checked = !to; });
+  });
+}
+
+function grantSheetPerm() {
+  var uid = document.getElementById('permGrantUser').value;
+  var permType = document.getElementById('permGrantType').value;
+  if (!uid) { alert('请选择要授权的用户'); return; }
+  fetch('/admin/spreadsheets/' + permsSheetId + '/permissions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: parseInt(uid, 10), perm_type: permType })
+  })
+    .then(r => r.json())
+    .then(res => {
+      if (res.success) { alert(res.message || '已授予'); loadSheetPerms(); }
+      else { alert(res.error || '授予失败'); }
+    })
+    .catch(err => alert('授予失败: ' + err.message));
+}
+
+function revokeSheetPerm(userId, permType) {
+  var target = document.querySelector('#sheetPermsBody option[value="' + userId + '"]');
+  var name = target ? target.textContent : ('用户 #' + userId);
+  if (!confirm('确定撤销「' + name + '」的「' + PERM_NAMES[permType] + '」权限吗？')) return;
+  fetch('/admin/spreadsheets/' + permsSheetId + '/permissions/' + userId, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ perm_type: permType })
+  })
+    .then(r => r.json())
+    .then(res => {
+      if (res.success) { alert(res.message || '已撤销'); loadSheetPerms(); }
+      else { alert(res.error || '撤销失败'); }
+    })
+    .catch(err => alert('撤销失败: ' + err.message));
 }
 
 var batchPreviewData = null;

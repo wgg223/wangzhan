@@ -38,6 +38,7 @@
   var state = {
     version: CFG.version || 0,
     locked: Boolean(CFG.isLocked),
+    publicRead: Boolean(CFG.isPublicRead),
     dirty: false, // 有未保存修改
     structural: false, // 本轮修改含结构性变更
     saving: false,
@@ -605,6 +606,13 @@
   }
 
   function handleDocReload(payload, username) {
+    if (payload.publicRead !== undefined) {
+      state.publicRead = Boolean(payload.publicRead);
+      showToast(payload.publicRead
+        ? '文档已开启公开只读（所有登录用户可查看）'
+        : '文档已关闭公开只读，访问权限将在刷新后重新校验', 'warning');
+      return;
+    }
     if (payload.locked !== undefined) {
       state.locked = Boolean(payload.locked);
       applyEditable();
@@ -2181,16 +2189,20 @@
   }
 
   function loadPerms(body) {
-    Promise.all([csrfFetch(API.permissions), csrfFetch(API.applications)])
+    Promise.all([csrfFetch(API.permissions), csrfFetch(API.applications), csrfFetch(API.publicRead), csrfFetch(API.users)])
       .then(function (rs) {
-        renderPerms(body, (rs[0].data && rs[0].data.permissions) || [], (rs[1].data && rs[1].data.applications) || []);
+        renderPerms(body,
+          (rs[0].data && rs[0].data.permissions) || [],
+          (rs[1].data && rs[1].data.applications) || [],
+          (rs[3].data && rs[3].data.users) || [],
+          Boolean(rs[2].data && rs[2].data.enabled));
       })
       .catch(function (err) {
         body.innerHTML = '<p class="ss-inline-error">' + escapeHtml(err.message || '加载失败') + '</p>';
       });
   }
 
-  function renderPerms(body, perms, apps) {
+  function renderPerms(body, perms, apps, users, publicRead) {
     body.innerHTML = '';
 
     // 锁定开关
@@ -2213,7 +2225,27 @@
     });
     body.appendChild(lockLine);
 
-    // 直接授权（无需走申请流程；可授予只读查看 / 评论 / 编辑 / 下载 / 创建副本）
+    // 公开只读开关：开启后所有登录用户至少可查看（内容保护与水印仍生效）
+    var pubLine = document.createElement('div');
+    pubLine.className = 'ss-perm-lock';
+    pubLine.innerHTML = '<label><input type="checkbox" id="ssPublicReadToggle"' + (publicRead ? ' checked' : '') + '>' +
+      '<span>🌐 公开只读（所有登录用户可查看，无需逐个授权）</span></label>';
+    pubLine.querySelector('#ssPublicReadToggle').addEventListener('change', function () {
+      var to = this.checked;
+      var cb = this;
+      csrfFetch(API.publicRead, { method: 'POST', body: JSON.stringify({ enabled: to }) })
+        .then(function () {
+          state.publicRead = to;
+          showToast(to ? '已开启公开只读：所有登录用户可查看' : '已关闭公开只读：恢复私有访问', 'success');
+        })
+        .catch(function (err) {
+          showToast(err.message, 'error');
+          cb.checked = !to;
+        });
+    });
+    body.appendChild(pubLine);
+
+    // 直接授权（下拉展示全部用户；可授予只读查看 / 评论 / 编辑 / 下载 / 创建副本）
     var grantBox = document.createElement('div');
     grantBox.className = 'ss-perm-grant';
     grantBox.style.margin = '4px 0 14px';
@@ -2222,11 +2254,21 @@
     grantBox.appendChild(grantTitle);
     var grantRow = document.createElement('div');
     grantRow.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
-    var grantUser = document.createElement('input');
-    grantUser.type = 'text';
+    var grantUser = document.createElement('select');
     grantUser.className = 'ss-input';
-    grantUser.placeholder = '用户名或邮箱';
-    grantUser.style.maxWidth = '180px';
+    grantUser.style.maxWidth = '220px';
+    var grantPh = document.createElement('option');
+    grantPh.value = '';
+    grantPh.textContent = '—— 选择用户（共 ' + (users.length || 0) + ' 人） ——';
+    grantUser.appendChild(grantPh);
+    users.forEach(function (u) {
+      var o = document.createElement('option');
+      o.value = u.id;
+      o.textContent = (u.nickname && u.nickname !== u.username)
+        ? (u.username + '（' + u.nickname + '）')
+        : u.username;
+      grantUser.appendChild(o);
+    });
     var grantType = document.createElement('select');
     grantType.className = 'ss-input';
     grantType.style.maxWidth = '120px';
@@ -2241,10 +2283,10 @@
     grantBtn.className = 'ss-mini-btn';
     grantBtn.textContent = '授予';
     grantBtn.addEventListener('click', function () {
-      var kw = grantUser.value.trim();
-      if (!kw) { showToast('请输入用户名或邮箱', 'warning'); return; }
+      var uid = grantUser.value;
+      if (!uid) { showToast('请选择要授权的用户', 'warning'); return; }
       grantBtn.disabled = true;
-      csrfFetch(API.permissions, { method: 'POST', body: JSON.stringify({ username: kw, perm_type: grantType.value }) })
+      csrfFetch(API.permissions, { method: 'POST', body: JSON.stringify({ user_id: parseInt(uid, 10), perm_type: grantType.value }) })
         .then(function (json) {
           showToast(json.message || '已授予', 'success');
           grantUser.value = '';

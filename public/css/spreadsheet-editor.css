@@ -99,6 +99,7 @@ html, body {
 }
 
 .ss-badge-locked { background: #fef2f2; color: #dc2626; }
+.ss-badge-public { background: #f0fdfa; color: #0d9488; }
 .ss-badge-edit { background: #ecfdf5; color: #059669; }
 .ss-badge-comment { background: #fffbeb; color: #d97706; }
 .ss-badge-view { background: #eff6ff; color: #2563eb; }

@@ -101,6 +101,7 @@ function canManageSpreadsheet(req) {
  * 获取用户对某文档的权限等级（0 无权限；1 查看；2 评论；3 编辑；4 管理）
  * - 管理员 / spreadsheet.manage 持有者 / 创建者 = 4
  * - 文档级授权取最高值；默认 0（私有模型：无授权即不可访问，需经申请/授权获得查看权限）
+ * - 公开只读（is_public_read=1）：所有登录用户至少拥有等级 1（只读查看，不可编辑）
  */
 function getDocPermLevel(req, sheetId, sheetRow) {
   const user = req.session && req.session.user;
@@ -108,12 +109,13 @@ function getDocPermLevel(req, sheetId, sheetRow) {
   if (canManageSpreadsheet(req)) return 4;
   const db = req.db;
   if (!db) return 0;
-  const row = sheetRow || queryOne(db, 'SELECT id, created_by FROM spreadsheets WHERE id = ?', [sheetId]);
+  const row = sheetRow || queryOne(db, 'SELECT id, created_by, is_public_read FROM spreadsheets WHERE id = ?', [sheetId]);
   if (!row) return 0;
   if (row.created_by === user.id) return 4; // 创建者可管理自己的文档
   const perms = queryAll(db, 'SELECT perm_type FROM spreadsheet_user_permissions WHERE spreadsheet_id = ? AND user_id = ?', [sheetId, user.id]);
   let level = 0;
   perms.forEach(p => { level = Math.max(level, PERM_LEVEL[p.perm_type] || 0); });
+  if (level < 1 && row.is_public_read === 1) level = 1; // 公开只读兜底
   return level;
 }
 
@@ -176,7 +178,7 @@ function validateUniverDoc(doc) {
 router.get('/spreadsheet', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const db = req.db;
   const sheets = queryAll(db,
-    "SELECT s.id, s.name, s.description, s.created_by, s.status, s.doc_version, s.updated_at, s.created_at, u.username AS creator_name FROM spreadsheets s LEFT JOIN users u ON s.created_by = u.id WHERE s.status = 'active' ORDER BY s.updated_at DESC"
+    "SELECT s.id, s.name, s.description, s.created_by, s.status, s.doc_version, s.updated_at, s.created_at, s.is_public_read, u.username AS creator_name FROM spreadsheets s LEFT JOIN users u ON s.created_by = u.id WHERE s.status = 'active' ORDER BY s.updated_at DESC"
   );
   const rows = sheets.map(s => ({ ...s, permLevel: getDocPermLevel(req, s.id, s) }));
   res.render('frontend/spreadsheets', {
@@ -191,7 +193,7 @@ router.get('/spreadsheet', isAuthenticated, hasFrontendPermission('spreadsheet.a
 router.get('/spreadsheet/:id(\\d+)', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const db = req.db;
   const sheetId = parseInt(req.params.id, 10);
-  const sheet = queryOne(db, 'SELECT id, name, description, is_locked, doc_version, updated_at, created_by FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
+  const sheet = queryOne(db, 'SELECT id, name, description, is_locked, is_public_read, doc_version, updated_at, created_by FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
   if (!sheet) {
     return res.status(404).render('frontend/error', { message: '页面未找到', error: '表格不存在或已被删除', user: req.session.user, settings: res.locals.settings || {} });
   }
@@ -921,6 +923,27 @@ router.post('/api/spreadsheet/:id(\\d+)/lock', isAuthenticated, hasFrontendPermi
   res.json({ success: true, data: { locked: locked === 1 } });
 });
 
+// 公开只读开关：开启后所有登录用户至少拥有只读查看权限（等级 1，内容保护与水印仍生效）
+router.get('/api/spreadsheet/:id(\\d+)/public-read', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(4), (req, res) => {
+  res.json({ success: true, data: { enabled: req.spreadsheet.is_public_read === 1 } });
+});
+router.post('/api/spreadsheet/:id(\\d+)/public-read', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(4), (req, res) => {
+  const db = req.db;
+  const enabled = req.body.enabled ? 1 : 0;
+  db.run('UPDATE spreadsheets SET is_public_read = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [enabled, req.spreadsheet.id]);
+  saveDatabase(db);
+  // 通知在线编辑端刷新（元数据 + 权限态变化）
+  broadcast(req.spreadsheet.id, 'docReload', req.session.user.id, req.session.user.username, { meta: true, publicRead: enabled === 1 });
+  logActivity(db, {
+    user_id: req.session.user.id, username: req.session.user.username,
+    action: 'perm_public', target_type: 'spreadsheet', target_id: req.spreadsheet.id,
+    target_title: req.spreadsheet.name,
+    detail: enabled ? '开启公开只读：所有登录用户可查看' : '关闭公开只读：恢复私有模型（仅授权用户可访问）',
+    ip: getClientIp(req)
+  });
+  res.json({ success: true, data: { enabled: enabled === 1 } });
+});
+
 // ============ 文档级权限管理 ============
 
 // 我的权限（无权限用户也可查询，返回等级 0 与待审批申请状态）
@@ -1083,13 +1106,20 @@ router.delete('/api/spreadsheet/:id(\\d+)/permission/:userId(\\d+)', isAuthentic
 router.post('/api/spreadsheet/:id(\\d+)/permissions', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(4), (req, res) => {
   const db = req.db;
   const sheetId = req.spreadsheet.id;
-  const { username, perm_type } = req.body || {};
+  const { username, user_id, perm_type } = req.body || {};
   if (!PERM_TYPES.includes(perm_type)) return res.status(400).json({ success: false, error: '无效的权限类型' });
-  const kw = String(username || '').trim();
-  if (!kw) return res.status(400).json({ success: false, error: '请输入用户名或邮箱' });
 
-  const target = queryOne(db, 'SELECT id, username, status FROM users WHERE username = ? OR email = ?', [kw, kw]);
-  if (!target) return res.status(404).json({ success: false, error: '用户不存在' });
+  // 支持按用户 ID（下拉选择）或用户名/邮箱（手动输入）定位用户
+  let target = null;
+  if (user_id) {
+    target = queryOne(db, 'SELECT id, username, status FROM users WHERE id = ?', [parseInt(user_id, 10)]);
+    if (!target) return res.status(404).json({ success: false, error: '用户不存在' });
+  } else {
+    const kw = String(username || '').trim();
+    if (!kw) return res.status(400).json({ success: false, error: '请选择或输入用户' });
+    target = queryOne(db, 'SELECT id, username, status FROM users WHERE username = ? OR email = ?', [kw, kw]);
+    if (!target) return res.status(404).json({ success: false, error: '用户不存在' });
+  }
   if (target.status !== 'active') return res.status(400).json({ success: false, error: '该用户已被禁用或注销' });
   if (target.id === req.spreadsheet.created_by) return res.status(400).json({ success: false, error: '该用户是文档创建者，无需授权' });
 
