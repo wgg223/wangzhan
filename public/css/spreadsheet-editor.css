@@ -974,3 +974,97 @@ html, body {
 .ss-input[hidden] {
   display: none;
 }
+
+/* ============ @ 提及用户选择面板 ============ */
+
+.ss-mention-panel {
+  position: fixed;
+  z-index: 1100;
+  width: min(320px, calc(100vw - 16px));
+  max-height: 280px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+  box-sizing: border-box;
+  padding: 4px;
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.ss-mention-head {
+  padding: 6px 10px 4px;
+  color: #94a3b8;
+  font-size: 11px;
+  user-select: none;
+}
+
+.ss-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.ss-mention-item:hover,
+.ss-mention-item.is-active {
+  background: #f1f5f9;
+}
+
+.ss-mention-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.ss-mention-avatar-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ss-mention-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-mention-nick {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+.ss-mention-empty {
+  padding: 14px 10px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+/* 窄屏（手机）自适应：面板贴左右边缘铺开，昵称换行空间 */
+@media (max-width: 640px) {
+  .ss-mention-panel {
+    left: 8px !important;
+    right: 8px;
+    width: auto;
+    max-height: 42vh;
+  }
+  .ss-mention-nick {
+    flex-shrink: 0;
+    max-width: 40%;
+  }
+}

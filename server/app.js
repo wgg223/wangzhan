@@ -194,13 +194,15 @@ app.use(express.static(path.join(__dirname, '../public'), {
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
       return;
     }
-    // 按文件类型设置 Content-Type 与更激进的缓存策略（指纹化文件名可 immutable）
+    // JS/CSS 的 URL 无版本指纹：长缓存 + immutable 会让逻辑修复在 30 天内无法触达老访客
+    // （浏览器完全跳过 revalidate），改为 no-cache 每次经 ETag 协商（未变更返回 304，开销极小）。
+    // 图片/字体为内容型资源，维持长缓存。
     if (filePath.endsWith('.css')) {
       res.setHeader('Content-Type', 'text/css; charset=utf-8');
-      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else if (filePath.endsWith('.js')) {
       res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else if (filePath.match(/\.(jpg|jpeg|png|gif|ico|svg|webp)$/)) {
       res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
     } else if (filePath.match(/\.(woff|woff2|ttf|eot)$/)) {

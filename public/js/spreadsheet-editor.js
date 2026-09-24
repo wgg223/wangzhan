@@ -672,6 +672,169 @@
     }).catch(function () { return []; });
   }
 
+  // ============ @ 提及用户选择 ============
+  // 在批注输入区（主输入框 / 回复框）输入 "@" 激活：↑↓ 键盘选择、Enter / 点击插入用户名，
+  // ESC / 点击空白处关闭；用户列表每次激活按需刷新（5 秒内复用缓存），新注册用户可及时出现。
+
+  var MENTION_TTL = 5000;
+  var mention = { active: false, users: [], highlight: 0, inputEl: null, atPos: -1, panel: null, lastFetch: 0 };
+
+  function fetchMentionUsers() {
+    if (state.usersCache.length && Date.now() - mention.lastFetch < MENTION_TTL) {
+      return Promise.resolve(state.usersCache);
+    }
+    return csrfFetch(API.users).then(function (json) {
+      state.usersCache = (json.data && json.data.users) || [];
+      mention.lastFetch = Date.now();
+      return state.usersCache;
+    }).catch(function () { return state.usersCache || []; });
+  }
+
+  function closeMention() {
+    if (mention.panel && mention.panel.parentNode) mention.panel.parentNode.removeChild(mention.panel);
+    mention.panel = null;
+    mention.active = false;
+    mention.inputEl = null;
+  }
+
+  function mentionAvatarHtml(u) {
+    var name = u.nickname || u.username || '?';
+    if (u.avatar) {
+      return '<img class="ss-mention-avatar" src="' + escapeHtml(u.avatar) + '" alt="">';
+    }
+    return '<span class="ss-mention-avatar ss-mention-avatar-letter" style="background:' + hashColor(name) + '">' +
+      escapeHtml(name.charAt(0).toUpperCase()) + '</span>';
+  }
+
+  function renderMentionList(keyword) {
+    var panel = mention.panel;
+    if (!panel) return;
+    var kw = String(keyword || '').toLowerCase();
+    var users = (state.usersCache || []).filter(function (u) {
+      if (!kw) return true;
+      return (u.username || '').toLowerCase().indexOf(kw) !== -1 ||
+        (u.nickname || '').toLowerCase().indexOf(kw) !== -1;
+    });
+    mention.users = users;
+    mention.highlight = 0;
+    if (!users.length) {
+      panel.innerHTML = '<div class="ss-mention-empty">' + (kw ? '未找到匹配的用户' : '暂无可选用户') + '</div>';
+      return;
+    }
+    var html = '<div class="ss-mention-head">选择要提醒的用户（↑↓ 选择 · Enter 确认 · Esc 关闭）</div>';
+    for (var i = 0; i < users.length; i++) {
+      var u = users[i];
+      html += '<div class="ss-mention-item' + (i === 0 ? ' is-active' : '') + '" data-mi="' + i + '">' +
+        mentionAvatarHtml(u) +
+        '<span class="ss-mention-name">' + escapeHtml(u.username) + '</span>' +
+        (u.nickname && u.nickname !== u.username
+          ? '<span class="ss-mention-nick">' + escapeHtml(u.nickname) + '</span>' : '') +
+        '</div>';
+    }
+    panel.innerHTML = html;
+  }
+
+  function positionMention() {
+    var el = mention.inputEl;
+    var panel = mention.panel;
+    if (!el || !panel) return;
+    var rect = el.getBoundingClientRect();
+    var w = Math.min(320, window.innerWidth - 16);
+    panel.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
+    var ph = panel.offsetHeight;
+    if (rect.top - ph - 6 >= 8) {
+      panel.style.top = (rect.top - ph - 6) + 'px';
+    } else {
+      panel.style.top = Math.min(rect.bottom + 6, Math.max(8, window.innerHeight - ph - 8)) + 'px';
+    }
+  }
+
+  function moveMentionHighlight(delta) {
+    var n = mention.users.length;
+    if (!n) return;
+    mention.highlight = (mention.highlight + delta + n) % n;
+    var items = mention.panel.querySelectorAll('.ss-mention-item');
+    for (var i = 0; i < items.length; i++) items[i].classList.toggle('is-active', i === mention.highlight);
+    var cur = items[mention.highlight];
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  }
+
+  function selectMentionUser(u) {
+    var el = mention.inputEl;
+    if (!el || !u) { closeMention(); return; }
+    var pos = el.selectionStart == null ? el.value.length : el.selectionStart;
+    var insert = '@' + u.username + ' ';
+    el.value = el.value.slice(0, mention.atPos) + insert + el.value.slice(pos);
+    var newPos = mention.atPos + insert.length;
+    closeMention();
+    el.focus();
+    try { el.setSelectionRange(newPos, newPos); } catch (e) { /* ignore */ }
+  }
+
+  function handleMentionInput(e) {
+    var el = e.target;
+    if (!el || !el.closest) return;
+    if (!el.closest('.ss-comment-form') && !el.closest('.ss-reply-form')) { closeMention(); return; }
+    var pos = el.selectionStart == null ? -1 : el.selectionStart;
+    if (pos < 0) { closeMention(); return; }
+    var before = el.value.slice(0, pos);
+    // 光标前存在未完结的「@关键词」才激活（@ 前不能紧跟普通字符，避免误触邮箱等场景）
+    var m = before.match(/(?:^|[^A-Za-z0-9_\u4e00-\u9fa5@])@([A-Za-z0-9_\u4e00-\u9fa5.-]*)$/);
+    if (!m) { closeMention(); return; }
+    var el2 = el; // 异步刷新后仍需比对的触发元素
+    mention.inputEl = el;
+    mention.atPos = pos - m[1].length - 1;
+    if (!mention.panel) {
+      mention.panel = document.createElement('div');
+      mention.panel.className = 'ss-mention-panel';
+      mention.panel.addEventListener('mousedown', function (ev) { ev.preventDefault(); }); // 阻止输入框失焦
+      mention.panel.addEventListener('click', function (ev) {
+        var item = ev.target && ev.target.closest ? ev.target.closest('.ss-mention-item') : null;
+        if (item) selectMentionUser(mention.users[parseInt(item.getAttribute('data-mi'), 10)]);
+      });
+      document.body.appendChild(mention.panel);
+    }
+    mention.active = true;
+    renderMentionList(m[1]);
+    positionMention();
+    // 激活时按需刷新用户列表，保证服务器用户动态变化可及时呈现
+    fetchMentionUsers().then(function () {
+      if (mention.active && mention.inputEl === el2) renderMentionList(m[1]);
+    });
+  }
+
+  function handleMentionKeydown(e) {
+    if (!mention.active) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault(); e.stopPropagation();
+      moveMentionHighlight(e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      if (mention.users.length) {
+        e.preventDefault(); e.stopPropagation();
+        selectMentionUser(mention.users[mention.highlight]);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation();
+      closeMention();
+    }
+  }
+
+  function initMention() {
+    var panel = $('ssCommentPanel');
+    if (!panel) return;
+    panel.addEventListener('input', handleMentionInput);
+    // 捕获阶段拦截：优先于「Enter 发送评论」等按键逻辑
+    panel.addEventListener('keydown', handleMentionKeydown, true);
+    document.addEventListener('mousedown', function (e) {
+      if (!mention.active) return;
+      var t = e.target;
+      if (t && t.closest && (t.closest('.ss-mention-panel') || t === mention.inputEl)) return;
+      closeMention();
+    }, true);
+    window.addEventListener('resize', function () { if (mention.active) positionMention(); });
+    $('ssCommentClose').addEventListener('click', closeMention);
+  }
+
   function loadComments() {
     return csrfFetch(API.comments).then(function (json) {
       state.comments = (json.data && json.data.comments) || [];
@@ -765,7 +928,9 @@
     if (!panel || !list) return;
 
     $('btnSsComments').addEventListener('click', function () {
-      state.commentOpen = !panel.hidden;
+      // 切换开合：以 state.commentOpen 为准做翻转（此前误写成读取 panel.hidden 再写回，
+      // 导致点击永远是无操作、面板无法打开）
+      state.commentOpen = !state.commentOpen;
       panel.hidden = !state.commentOpen;
       if (state.commentOpen) {
         ensureUsers().then(loadComments);
@@ -807,6 +972,9 @@
         if (e.key === 'Enter') { e.preventDefault(); sendComment(null); }
       });
     }
+
+    // @ 提及用户选择（批注输入区通用）
+    initMention();
 
     // 列表事件委托
     list.addEventListener('click', function (e) {
@@ -2045,6 +2213,52 @@
     });
     body.appendChild(lockLine);
 
+    // 直接授权（无需走申请流程；可授予只读查看 / 评论 / 编辑 / 下载 / 创建副本）
+    var grantBox = document.createElement('div');
+    grantBox.className = 'ss-perm-grant';
+    grantBox.style.margin = '4px 0 14px';
+    var grantTitle = document.createElement('h4');
+    grantTitle.textContent = '添加授权';
+    grantBox.appendChild(grantTitle);
+    var grantRow = document.createElement('div');
+    grantRow.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+    var grantUser = document.createElement('input');
+    grantUser.type = 'text';
+    grantUser.className = 'ss-input';
+    grantUser.placeholder = '用户名或邮箱';
+    grantUser.style.maxWidth = '180px';
+    var grantType = document.createElement('select');
+    grantType.className = 'ss-input';
+    grantType.style.maxWidth = '120px';
+    [['view', '只读查看'], ['comment', '评论'], ['edit', '编辑'], ['download', '下载'], ['copy', '创建副本']].forEach(function (opt) {
+      var o = document.createElement('option');
+      o.value = opt[0];
+      o.textContent = opt[1];
+      grantType.appendChild(o);
+    });
+    var grantBtn = document.createElement('button');
+    grantBtn.type = 'button';
+    grantBtn.className = 'ss-mini-btn';
+    grantBtn.textContent = '授予';
+    grantBtn.addEventListener('click', function () {
+      var kw = grantUser.value.trim();
+      if (!kw) { showToast('请输入用户名或邮箱', 'warning'); return; }
+      grantBtn.disabled = true;
+      csrfFetch(API.permissions, { method: 'POST', body: JSON.stringify({ username: kw, perm_type: grantType.value }) })
+        .then(function (json) {
+          showToast(json.message || '已授予', 'success');
+          grantUser.value = '';
+          loadPerms(body);
+        })
+        .catch(function (err) { showToast(err.message, 'error'); })
+        .finally(function () { grantBtn.disabled = false; });
+    });
+    grantRow.appendChild(grantUser);
+    grantRow.appendChild(grantType);
+    grantRow.appendChild(grantBtn);
+    grantBox.appendChild(grantRow);
+    body.appendChild(grantBox);
+
     // 待审批申请
     var pending = apps.filter(function (a) { return a.status === 'pending'; });
     var h1 = document.createElement('h4');
@@ -2300,7 +2514,11 @@
     if (aiBtn) aiBtn.addEventListener('click', openAi);
 
     var exportBtn = $('btnSsExport');
-    if (exportBtn) exportBtn.addEventListener('click', openExport);
+    if (exportBtn) {
+      // 只读用户（permLevel<2）隐藏导出入口（服务端导出 API 本就返回 403，双保险）
+      if (CFG.permLevel < 2) exportBtn.hidden = true;
+      else exportBtn.addEventListener('click', openExport);
+    }
 
     var nameEl = $('ssDocName');
     if (nameEl && CFG.canManage) {

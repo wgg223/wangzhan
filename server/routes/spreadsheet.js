@@ -68,6 +68,7 @@ const { resolveModel, callChatCompletion } = require('../services/ai-chat/provid
 const { createEmptyUniverDoc } = require('../utils/spreadsheet-migrate');
 const { importBufferToUniverDoc, exportUniverDoc } = require('../utils/spreadsheet-univer-io');
 const docStore = require('../utils/spreadsheet-doc-store');
+const { getClientIp } = require('../utils/client-ip');
 const {
   PRESENCE_TTL_MS, CHANGE_TTL_MS, KEEP_VERSIONS,
   loadDoc, persistDocEntry, schedulePersist, writeSnapshot, shouldAutoSnapshot, broadcast, evictDoc,
@@ -130,7 +131,7 @@ function requireDocPerm(level) {
         user_id: denyUser ? denyUser.id : null, username: denyUser ? denyUser.username : '',
         action: 'access_denied', target_type: 'spreadsheet', target_id: sheetId,
         target_title: sheet.name,
-        detail: `访问被拒绝：需要权限等级 ${level}，实际 ${lvl}`, ip: req.ip
+        detail: `访问被拒绝：需要权限等级 ${level}，实际 ${lvl}`, ip: getClientIp(req)
       });
       return res.status(403).json({ success: false, error: '您没有执行此操作的权限' });
     }
@@ -205,7 +206,7 @@ router.get('/spreadsheet/:id(\\d+)', isAuthenticated, hasFrontendPermission('spr
       user_id: req.session.user.id, username: req.session.user.username,
       action: 'access_denied', target_type: 'spreadsheet', target_id: sheetId,
       target_title: sheet.name,
-      detail: '无访问权限用户尝试打开表格（已引导至申请页）', ip: req.ip
+      detail: '无访问权限用户尝试打开表格（已引导至申请页）', ip: getClientIp(req)
     });
     return res.render('frontend/spreadsheet-noaccess', {
       user: req.session.user,
@@ -222,6 +223,7 @@ router.get('/spreadsheet/:id(\\d+)', isAuthenticated, hasFrontendPermission('spr
     permLevel,
     canManage: permLevel >= 4,
     canEdit: permLevel >= 3,
+    clientIp: getClientIp(req),
     settings: res.locals.settings || {}
   });
 });
@@ -250,7 +252,7 @@ router.post('/api/spreadsheet', isAuthenticated, hasFrontendPermission('spreadsh
     target_id: result.lastInsertRowid,
     target_title: name,
     detail: '新建在线表格',
-    ip: req.ip
+    ip: getClientIp(req)
   });
   res.json({ success: true, data: { id: result.lastInsertRowid } });
 });
@@ -325,7 +327,7 @@ router.put('/api/spreadsheet/:id(\\d+)/meta', isAuthenticated, hasFrontendPermis
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
     action: 'update', target_type: 'spreadsheet', target_id: sheetId,
-    target_title: req.spreadsheet.name, detail: '更新表格信息', ip: req.ip
+    target_title: req.spreadsheet.name, detail: '更新表格信息', ip: getClientIp(req)
   });
   res.json({ success: true });
 });
@@ -352,7 +354,7 @@ router.post('/api/spreadsheet/:id(\\d+)/duplicate', isAuthenticated, hasFrontend
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
     action: 'create', target_type: 'spreadsheet', target_id: result.lastInsertRowid,
-    target_title: newName, detail: `复制自表格 #${sheetId}`, ip: req.ip
+    target_title: newName, detail: `复制自表格 #${sheetId}`, ip: getClientIp(req)
   });
   res.json({ success: true, data: { id: result.lastInsertRowid } });
 });
@@ -369,7 +371,7 @@ router.delete('/api/spreadsheet/:id(\\d+)', isAuthenticated, hasFrontendPermissi
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
     action: 'delete', target_type: 'spreadsheet', target_id: sheetId,
-    target_title: req.spreadsheet.name, detail: '删除在线表格', ip: req.ip
+    target_title: req.spreadsheet.name, detail: '删除在线表格', ip: getClientIp(req)
   });
   res.json({ success: true });
 });
@@ -404,7 +406,7 @@ router.post('/api/spreadsheet/import', isAuthenticated, hasFrontendPermission('s
     action: 'import', target_type: 'spreadsheet', target_id: result.lastInsertRowid,
     target_title: docName,
     detail: `导入 ${req.file.originalname}（${imported.stats.sheets} 个工作表，${imported.stats.cells} 个单元格）`,
-    ip: req.ip
+    ip: getClientIp(req)
   });
   res.json({ success: true, data: { id: result.lastInsertRowid, stats: imported.stats } });
 });
@@ -453,7 +455,7 @@ router.post('/api/spreadsheet/:id(\\d+)/versions', isAuthenticated, hasFrontendP
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
     action: 'create', target_type: 'spreadsheet_version', target_id: sheetId,
-    target_title: req.spreadsheet.name, detail: `创建版本 v${version}`, ip: req.ip
+    target_title: req.spreadsheet.name, detail: `创建版本 v${version}`, ip: getClientIp(req)
   });
   res.json({ success: true, data: { version } });
 });
@@ -496,7 +498,7 @@ router.post('/api/spreadsheet/:id(\\d+)/versions/:version(\\d+)/restore', isAuth
     logActivity(db, {
       user_id: req.session.user.id, username: req.session.user.username,
       action: 'update', target_type: 'spreadsheet', target_id: sheetId,
-      target_title: req.spreadsheet.name, detail: `恢复到版本 v${v.version}`, ip: req.ip
+      target_title: req.spreadsheet.name, detail: `恢复到版本 v${v.version}`, ip: getClientIp(req)
     });
     res.json({ success: true, data: { version: entry.version } });
   } catch (e) {
@@ -914,7 +916,7 @@ router.post('/api/spreadsheet/:id(\\d+)/lock', isAuthenticated, hasFrontendPermi
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
     action: locked ? 'lock' : 'unlock', target_type: 'spreadsheet', target_id: req.spreadsheet.id,
-    target_title: req.spreadsheet.name, detail: locked ? '锁定在线表格' : '解锁在线表格', ip: req.ip
+    target_title: req.spreadsheet.name, detail: locked ? '锁定在线表格' : '解锁在线表格', ip: getClientIp(req)
   });
   res.json({ success: true, data: { locked: locked === 1 } });
 });
@@ -967,7 +969,7 @@ router.post('/api/spreadsheet/:id(\\d+)/permission/apply', isAuthenticated, hasF
     user_id: userId, username: req.session.user.username,
     action: 'perm_apply', target_type: 'spreadsheet', target_id: sheetId,
     target_title: req.spreadsheet.name,
-    detail: `申请${PERM_NAMES[perm_type]}权限${reason ? '：' + String(reason).slice(0, 100) : ''}`, ip: req.ip
+    detail: `申请${PERM_NAMES[perm_type]}权限${reason ? '：' + String(reason).slice(0, 100) : ''}`, ip: getClientIp(req)
   });
 
   // 通知管理员与创建者
@@ -999,9 +1001,9 @@ router.get('/api/spreadsheet/:id(\\d+)/permissions', isAuthenticated, hasFronten
   res.json({ success: true, data: { permissions: perms } });
 });
 
-// 可选用户列表（用于指派/授权选择）
+// 可选用户列表（用于指派/授权选择/@提及）
 router.get('/api/spreadsheet/:id(\\d+)/users', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(2), (req, res) => {
-  const users = queryAll(req.db, 'SELECT id, username, email FROM users WHERE status = 1 ORDER BY username ASC LIMIT 500');
+  const users = queryAll(req.db, "SELECT id, username, nickname, avatar, email FROM users WHERE status = 'active' ORDER BY username ASC LIMIT 500");
   res.json({ success: true, data: { users } });
 });
 
@@ -1042,7 +1044,7 @@ router.post('/api/spreadsheet/:id(\\d+)/permission/approve', isAuthenticated, ha
     action: approved ? 'perm_approve' : 'perm_reject', target_type: 'spreadsheet', target_id: sheetId,
     target_title: req.spreadsheet.name,
     detail: `${approved ? '通过' : '拒绝'} ${(applicant && applicant.username) || ('用户#' + app.user_id)} 的${PERM_NAMES[app.perm_type]}权限申请`,
-    ip: req.ip
+    ip: getClientIp(req)
   });
   createNotification(db, {
     userId: app.user_id, type: 'permission_result',
@@ -1072,9 +1074,47 @@ router.delete('/api/spreadsheet/:id(\\d+)/permission/:userId(\\d+)', isAuthentic
     action: 'perm_revoke', target_type: 'spreadsheet', target_id: req.spreadsheet.id,
     target_title: req.spreadsheet.name,
     detail: `撤销 ${(target && target.username) || ('用户#' + userId)} 的${perm_type ? PERM_NAMES[perm_type] : '全部'}权限`,
-    ip: req.ip
+    ip: getClientIp(req)
   });
   res.json({ success: true, message: '权限已撤销' });
+});
+
+// 直接授予用户权限（管理员/创建者绕过申请流程；可授予只读查看等全部权限类型）
+router.post('/api/spreadsheet/:id(\\d+)/permissions', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(4), (req, res) => {
+  const db = req.db;
+  const sheetId = req.spreadsheet.id;
+  const { username, perm_type } = req.body || {};
+  if (!PERM_TYPES.includes(perm_type)) return res.status(400).json({ success: false, error: '无效的权限类型' });
+  const kw = String(username || '').trim();
+  if (!kw) return res.status(400).json({ success: false, error: '请输入用户名或邮箱' });
+
+  const target = queryOne(db, 'SELECT id, username, status FROM users WHERE username = ? OR email = ?', [kw, kw]);
+  if (!target) return res.status(404).json({ success: false, error: '用户不存在' });
+  if (target.status !== 'active') return res.status(400).json({ success: false, error: '该用户已被禁用或注销' });
+  if (target.id === req.spreadsheet.created_by) return res.status(400).json({ success: false, error: '该用户是文档创建者，无需授权' });
+
+  db.run('INSERT OR IGNORE INTO spreadsheet_user_permissions (spreadsheet_id, user_id, perm_type, granted_by) VALUES (?, ?, ?, ?)',
+    [sheetId, target.id, perm_type, req.session.user.id]);
+  // 该用户如有同类待审批申请，自动置为已通过
+  db.run("UPDATE spreadsheet_permission_applications SET status = 'approved', handled_by = ?, handled_at = CURRENT_TIMESTAMP WHERE spreadsheet_id = ? AND user_id = ? AND perm_type = ? AND status = 'pending'",
+    [req.session.user.id, sheetId, target.id, perm_type]);
+  saveDatabase(db);
+
+  // 审计：记录直接授予
+  logActivity(db, {
+    user_id: req.session.user.id, username: req.session.user.username,
+    action: 'perm_grant', target_type: 'spreadsheet', target_id: sheetId,
+    target_title: req.spreadsheet.name,
+    detail: `直接授予 ${target.username} ${PERM_NAMES[perm_type]}权限`,
+    ip: getClientIp(req)
+  });
+  createNotification(db, {
+    userId: target.id, type: 'permission_result',
+    title: '权限已授予',
+    content: `您获得了表格「${req.spreadsheet.name}」的${PERM_NAMES[perm_type]}权限`,
+    fromUserId: req.session.user.id, targetType: 'spreadsheet', targetId: String(sheetId)
+  });
+  res.json({ success: true, message: `已授予 ${target.username} ${PERM_NAMES[perm_type]}权限` });
 });
 
 // ============ AI 智能功能 ============
@@ -1329,7 +1369,7 @@ router.post('/api/spreadsheet/:id(\\d+)/share', isAuthenticated, hasFrontendPerm
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
     action: 'create', target_type: 'spreadsheet', target_id: sheetId,
-    target_title: req.spreadsheet.name, detail: share ? '启用分享链接' : '创建分享链接', ip: req.ip
+    target_title: req.spreadsheet.name, detail: share ? '启用分享链接' : '创建分享链接', ip: getClientIp(req)
   });
   const row = queryOne(db, 'SELECT share_token FROM image_shares WHERE source_type = ? AND source_id = ?', ['spreadsheet', sheetId]);
   res.json({
@@ -1353,7 +1393,7 @@ router.delete('/api/spreadsheet/:id(\\d+)/share', isAuthenticated, hasFrontendPe
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
     action: 'delete', target_type: 'spreadsheet', target_id: sheetId,
-    target_title: req.spreadsheet.name, detail: '取消分享链接', ip: req.ip
+    target_title: req.spreadsheet.name, detail: '取消分享链接', ip: getClientIp(req)
   });
   res.json({ success: true, data: { shared: false } });
 });

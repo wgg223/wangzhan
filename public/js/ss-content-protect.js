@@ -159,9 +159,9 @@
   }
 
   var svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="170">' +
-    '<text x="160" y="92" text-anchor="middle" font-family="-apple-system, sans-serif" ' +
-    'font-size="14" fill="rgba(0,0,0,0.10)" transform="rotate(-22 160 92)">' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="170">' +
+    '<text x="200" y="92" text-anchor="middle" font-family="-apple-system, sans-serif" ' +
+    'font-size="13" fill="rgba(0,0,0,0.12)" transform="rotate(-22 200 92)">' +
     escapeXml(WATERMARK) +
     '</text></svg>';
 

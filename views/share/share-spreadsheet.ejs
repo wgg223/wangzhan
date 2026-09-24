@@ -125,9 +125,9 @@
         dataUrl: <%- JSON.stringify(dataUrl) %>,
         embed: <%= embed ? 'true' : 'false' %>
       };
-      // 只读分享内容保护配置（防复制 + 水印）
+      // 只读分享内容保护配置（防复制 + 访客 IP 水印溯源）
       window.__SS_PROTECT__ = {
-        watermark: '只读分享',
+        watermark: <%- JSON.stringify('只读分享' + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')) %>,
         tip: '只读分享内容受保护，禁止复制或截图'
       };
     </script>

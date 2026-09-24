@@ -26,6 +26,7 @@ const { queryOne, queryAll, saveDatabase } = require('../config/database');
 const { isAdminRole, hasFrontendPermission } = require('../middlewares/auth');
 const { publicDir } = require('../config/app-root');
 const docStore = require('../utils/spreadsheet-doc-store');
+const { getClientIp } = require('../utils/client-ip');
 
 // 生成随机分享令牌
 function createShareToken() {
@@ -253,6 +254,7 @@ router.get('/:token', (req, res) => {
       ownerName,
       stats,
       embed: false,
+      clientIp: getClientIp(req),
       dataUrl: '/share/' + token + '/data',
       embedUrl: '/share/' + token + '/embed',
       pageUrl: '/share/' + token,
@@ -309,6 +311,7 @@ router.get('/:token/embed', (req, res) => {
     ownerName: '',
     stats: null,
     embed: true,
+    clientIp: getClientIp(req),
     dataUrl: '/share/' + req.params.token + '/data',
     embedUrl: '',
     pageUrl: '/share/' + req.params.token,

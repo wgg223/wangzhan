@@ -124,14 +124,15 @@
   <script src="/vendor/univer/univer.min.js"></script>
   <% if (permLevel === 1) { %>
   <script>
-    // 只读内容保护配置（permLevel===1 用户：防复制 + 用户名水印溯源）
+    // 只读内容保护配置（permLevel===1 用户：防复制 + 用户名/IP 水印溯源）
     window.__SS_PROTECT__ = {
-      watermark: <%- JSON.stringify((user.nickname || user.username) + ' #' + user.id) %>,
+      watermark: <%- JSON.stringify((user.nickname || user.username) + ' #' + user.id + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')) %>,
       tip: '只读内容受保护：禁止复制、截图与导出，如需更高权限请点击「申请权限」'
     };
   </script>
   <script src="/js/ss-content-protect.js" defer></script>
   <% } %>
-  <script src="/js/spreadsheet-editor.js" defer></script>
+  <%# v=20260925：一次性缓存击穿参数——修复 immutable 长缓存期间老访客浏览器内旧版 JS 的送达问题（此后 JS 已改 no-cache 协商缓存，可不再变更） %>
+  <script src="/js/spreadsheet-editor.js?v=20260925" defer></script>
 </body>
 </html>
