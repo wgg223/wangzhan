@@ -530,6 +530,55 @@ html, body {
   border-top: 1px solid #e2e8f0;
 }
 
+/* 站外链接安全确认弹窗 */
+.ss-link-warn {
+  text-align: center;
+  padding: 4px 0 8px;
+}
+
+.ss-link-warn-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 48px;
+  border: 2px solid #fecaca;
+}
+
+.ss-link-warn-text {
+  margin: 14px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.ss-link-warn-host {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.ss-link-warn-host b {
+  color: #dc2626;
+  word-break: break-all;
+}
+
+.ss-link-warn-url {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: Consolas, Monaco, monospace;
+  color: #64748b;
+  word-break: break-all;
+  user-select: text;
+}
+
 /* 表单字段 */
 .ss-field {
   margin-bottom: 14px;

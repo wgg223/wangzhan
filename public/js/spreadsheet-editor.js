@@ -264,7 +264,12 @@
     if (typeof BUNDLE.UniverSheetsDataValidationPreset === 'function') presets.push(BUNDLE.UniverSheetsDataValidationPreset());
     if (typeof BUNDLE.UniverSheetsFindReplacePreset === 'function') presets.push(BUNDLE.UniverSheetsFindReplacePreset());
     if (typeof BUNDLE.UniverSheetsConditionalFormattingPreset === 'function') presets.push(BUNDLE.UniverSheetsConditionalFormattingPreset());
-    if (typeof BUNDLE.UniverSheetsHyperLinkPreset === 'function') presets.push(BUNDLE.UniverSheetsHyperLinkPreset());
+    if (typeof BUNDLE.UniverSheetsHyperLinkPreset === 'function') {
+      // 链接安全跳转：接管 Univer 外链导航（http/https/mailto），站内直开、站外弹安全确认
+      presets.push(BUNDLE.UniverSheetsHyperLinkPreset({
+        urlHandler: { navigateToOtherWebsite: function (url) { handleSheetLinkNavigate(url); } }
+      }));
+    }
 
     var opts = { presets: presets };
     if (locale !== undefined) opts.locale = locale;
@@ -312,6 +317,10 @@
     cacheSheetNames();
     wireWorkbook();
     applyEditable();
+    // 自动链接识别：初始全量扫描 + 包装链接解析服务（覆盖 ftp:// 等协议）
+    scanWorkbookLinks(doc);
+    wrapHyperLinkResolver();
+    if (!hyperLinkResolverWrapped) setTimeout(wrapHyperLinkResolver, 2000);
   }
 
   function cacheSheetNames() {
@@ -337,6 +346,10 @@
         markDirty(structural);
         if (id === 'sheet.mutation.set-range-values' && cmd.params && cmd.params.cellValue && !state.locked && CFG.canEdit) {
           queueCells(cmd.params.subUnitId, cmd.params.cellValue);
+        }
+        // 链接自动识别：数据动态更新（AI 写入 / 程序化赋值 / 撤销重做）后对新值重新识别
+        if (id === 'sheet.mutation.set-range-values' && cmd.params && cmd.params.cellValue) {
+          scanCellValuesForLinks(cmd.params.subUnitId, cmd.params.cellValue);
         }
       });
     }
@@ -408,8 +421,9 @@
           break;
         }
       }
-      wb.syncExecuteCommand('sheet.command.set-selection', {
-        unitId: typeof wb.getId === 'function' ? wb.getId() : undefined,
+      // 注意：FWorkbook 门面没有 syncExecuteCommand；此版本选区命令为 operation.set-selections
+      univerAPI.syncExecuteCommand('sheet.operation.set-selections', {
+        unitId: typeof wb.getId === 'function' ? wb.getId() : wb.id,
         subUnitId: sheetId,
         selections: [{ range: { startRow: row, startColumn: col, endRow: row, endColumn: col } }]
       });
@@ -531,6 +545,176 @@
     });
   }
 
+  // ============ 自动链接识别与安全跳转 ============
+
+  var CELL_URL_RE = /^(https?|ftp):\/\/[^\s]+$/i;
+  // Univer 单元格富文本内部文档 ID（与其原生「输入 URL 自动转链接」结构保持一致）
+  var LINK_DOC_ID = '__INTERNAL_EDITOR__DOCS_NORMAL';
+  var linkIdSeq = 0;
+  var hyperLinkResolverWrapped = false;
+  var hyperLinkResolverSvc = null; // 被包装的 Univer 链接解析服务实例（#debug 测试钩子用）
+
+  /**
+   * 严格识别整格 URL 文本（http://、https://、ftp:// 前缀）：
+   * 全格匹配、不允许空白，防止把普通文本误识别为链接
+   */
+  function matchCellUrl(text) {
+    if (typeof text !== 'string') return null;
+    var t = text;
+    if (t.length < 8 || t.length > 2048) return null;
+    if (t.charAt(t.length - 1) === ' ') return null; // Univer 原生同款规则：结尾空格不转
+    if (!CELL_URL_RE.test(t)) return null;
+    try {
+      var u = new URL(t);
+      if (!/^(https?|ftp):$/i.test(u.protocol) || !u.hostname) return null;
+      return t;
+    } catch (e) { return null; }
+  }
+
+  function genLinkId(prefix) {
+    linkIdSeq += 1;
+    return prefix + Date.now().toString(36) + '-' + linkIdSeq.toString(36) +
+      Math.floor(Math.random() * 46656).toString(36);
+  }
+
+  /** 构造富文本超链接单元格（结构与 Univer 原生输入转换一致：customRanges HYPERLINK） */
+  function buildLinkCell(cell, url) {
+    var text = String(cell.v);
+    var linkCell = {};
+    Object.keys(cell).forEach(function (k) { if (k !== 'p') linkCell[k] = cell[k]; });
+    linkCell.p = {
+      id: LINK_DOC_ID,
+      body: {
+        dataStream: text + '\r\n',
+        paragraphs: [{ startIndex: text.length, paragraphId: genLinkId('lp') }],
+        customRanges: [{
+          startIndex: 0,
+          endIndex: text.length - 1,
+          rangeId: genLinkId('lr'),
+          rangeType: 0, // CustomRangeType.HYPERLINK
+          properties: { url: url, tooltip: url }
+        }]
+      },
+      documentStyle: { pageSize: { width: Infinity, height: Infinity } }
+    };
+    return linkCell;
+  }
+
+  /**
+   * 扫描 cellValue 中的纯文本 URL 单元格并转换为可点击超链接。
+   * 幂等：已有富文本(p)/公式(f)/非 URL 文本一律跳过；自身触发的 mutation 再入时自动空转。
+   * persist=true（可编辑用户初始/本地变更）：正常标脏并入实时同步通道，随保存持久化；
+   * persist=false（只读用户、远端派生）：包在 applyingRemote 中仅本地生效。
+   */
+  function scanCellValuesForLinks(subUnitId, cellValue, persist) {
+    if (!wb || !univerAPI || !subUnitId || !cellValue) return;
+    if (persist === undefined) persist = Boolean(CFG.canEdit && !state.locked);
+    var patch = null;
+    Object.keys(cellValue).forEach(function (r) {
+      var row = cellValue[r] || {};
+      Object.keys(row).forEach(function (c) {
+        var cell = row[c];
+        if (!cell || typeof cell !== 'object' || cell.p || cell.f) return;
+        var url = matchCellUrl(cell.v);
+        if (!url) return;
+        if (!patch) patch = {};
+        if (!patch[r]) patch[r] = {};
+        patch[r][c] = buildLinkCell(cell, url);
+      });
+    });
+    if (!patch) return;
+    if (!persist) state.applyingRemote = true;
+    try {
+      // 注意：必须走 mutation 而非 command —— 此版本 SetRangeValues 命令
+      // 依赖当前选区（{value, range}），cellValue 参数会被静默忽略
+      univerAPI.syncExecuteCommand('sheet.mutation.set-range-values', {
+        unitId: wb.id,
+        subUnitId: subUnitId,
+        cellValue: patch
+      });
+    } catch (e) { /* 异常结构变化等：静默放弃本次转换 */ }
+    if (!persist) state.applyingRemote = false;
+  }
+
+  /** 初始扫描：整份文档所有工作表的存量纯文本 URL 一次性升级为超链接 */
+  function scanWorkbookLinks(doc) {
+    if (!wb || !doc || !doc.sheets) return;
+    // Univer 快照的 sheets 为以 sheetId 为键的对象（兼容数组形态）
+    if (Array.isArray(doc.sheets)) {
+      doc.sheets.forEach(function (sh) {
+        if (sh && sh.id && sh.cellData) scanCellValuesForLinks(sh.id, sh.cellData);
+      });
+    } else {
+      Object.keys(doc.sheets).forEach(function (sid) {
+        var sh = doc.sheets[sid];
+        if (sh && sh.cellData) scanCellValuesForLinks(sid, sh.cellData);
+      });
+    }
+  }
+
+  /**
+   * 包装 Univer 链接解析服务实例的 navigateToOtherWebsite，
+   * 让包括 ftp://（被其内置协议白名单 http/https/mailto 拦截）在内的所有链接点击
+   * 统一走 handleSheetLinkNavigate；找不到实例时退回 preset urlHandler 钩子。
+   */
+  function wrapHyperLinkResolver() {
+    if (hyperLinkResolverWrapped || !univerAPI) return;
+    try {
+      var inj = univerAPI._injector;
+      if (!inj || !inj.resolvedDependencyCollection || !inj.resolvedDependencyCollection.resolvedDependencies) return;
+      var found = null;
+      inj.resolvedDependencyCollection.resolvedDependencies.forEach(function (arr) {
+        (arr || []).forEach(function (o) {
+          if (o && !o.__ssLinkWrapped && typeof o.navigate === 'function' &&
+              typeof o.navigateToOtherWebsite === 'function' && typeof o.navigateToDefineName === 'function') {
+            found = o;
+          }
+        });
+      });
+      if (found) {
+        found.navigateToOtherWebsite = function (url) { return handleSheetLinkNavigate(url); };
+        found.__ssLinkWrapped = true;
+        hyperLinkResolverSvc = found;
+        hyperLinkResolverWrapped = true;
+      }
+    } catch (e) { /* 注入器内部结构变化：忽略，退回 urlHandler 配置钩子 */ }
+  }
+
+  /**
+   * 链接点击跳转：站内链接（域名一致）直接新窗口打开；
+   * 站外链接弹出安全提示对话框，用户确认后才跳转
+   */
+  function handleSheetLinkNavigate(url) {
+    var target = String(url || '');
+    if (!target) return;
+    var host = '';
+    try { host = new URL(target).hostname; } catch (e) { host = ''; }
+    if (host && host === location.hostname) {
+      window.open(target, '_blank', 'noopener');
+      return;
+    }
+    confirmOpenExternalLink(target, host);
+  }
+
+  /** 站外链接安全确认弹窗：醒目图标 + 风险提示 + 目标地址 + 确定/取消 */
+  function confirmOpenExternalLink(url, host) {
+    var box = document.createElement('div');
+    box.className = 'ss-link-warn';
+    box.innerHTML =
+      '<div class="ss-link-warn-icon" aria-hidden="true">⚠</div>' +
+      '<p class="ss-link-warn-text">这是外部链接，可能存在安全风险，是否继续访问？</p>' +
+      (host ? '<p class="ss-link-warn-host">目标域名：<b>' + escapeHtml(host) + '</b></p>' : '') +
+      '<p class="ss-link-warn-url">' + escapeHtml(url) + '</p>';
+    openModal({
+      title: '安全提示',
+      body: box,
+      actions: [
+        { label: '取消' },
+        { label: '确定', className: 'ss-btn-danger', onClick: function () { window.open(url, '_blank', 'noopener,noreferrer'); } }
+      ]
+    });
+  }
+
   // ============ 远端变更接收与文档重载 ============
 
   function applyRemoteCells(payload) {
@@ -542,8 +726,10 @@
     });
     state.applyingRemote = true;
     try {
-      wb.syncExecuteCommand('sheet.command.set-range-values', {
-        unitId: typeof wb.getId === 'function' ? wb.getId() : undefined,
+      // 注意：FWorkbook 门面没有 syncExecuteCommand，须用 univerAPI；
+      // 且 SetRangeValues 命令依赖选区会忽略 cellValue，须走 mutation
+      univerAPI.syncExecuteCommand('sheet.mutation.set-range-values', {
+        unitId: typeof wb.getId === 'function' ? wb.getId() : wb.id,
         subUnitId: payload.sheetId,
         cellValue: cellValue
       });
@@ -554,6 +740,8 @@
     }
     state.applyingRemote = false;
     cacheSheetNames();
+    // 远端写入的纯文本 URL 本地即时转链接（仅本地展示不标脏，随后续保存自然持久化）
+    scanCellValuesForLinks(payload.sheetId, cellValue, false);
   }
 
   function reloadDoc(reason) {
@@ -1805,7 +1993,8 @@
       var cellValue = {};
       cellValue[row] = {};
       cellValue[row][col] = { f: f };
-      univerAPI.syncExecuteCommand('sheet.command.set-range-values', {
+      // 同 scanCellValuesForLinks：SetRangeValues 命令依赖选区会忽略 cellValue，须走 mutation
+      univerAPI.syncExecuteCommand('sheet.mutation.set-range-values', {
         unitId: wb.id,
         subUnitId: sheetId,
         cellValue: cellValue
@@ -2587,6 +2776,20 @@
 
   function boot() {
     bindUi();
+    // 调试/自动化测试钩子：仅在 URL 带 #debug 时暴露内部实例与工具（正常访问不可见）
+    if (location.hash === '#debug') {
+      window.__SS_DEBUG__ = {
+        get univerAPI() { return univerAPI; },
+        get wb() { return wb; },
+        get state() { return state; },
+        get cfg() { return CFG; },
+        get resolverWrapped() { return hyperLinkResolverWrapped; },
+        get resolver() { return hyperLinkResolverSvc; },
+        matchCellUrl: matchCellUrl,
+        scanCellValuesForLinks: scanCellValuesForLinks,
+        handleSheetLinkNavigate: handleSheetLinkNavigate
+      };
+    }
     if (!initUniver()) return;
     setLoading(true, '正在加载表格…');
     loadDoc();
