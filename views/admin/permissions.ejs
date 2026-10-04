@@ -1,903 +1,903 @@
-<%# ===== 页面模板：admin/permissions.ejs =====%>
-<%# 说明：后台-权限管理页：角色权限矩阵、申请审核（EJS 服务端模板，由 Express 渲染，变量与部分逻辑见对应路由） %>
-<% var active = 'permissions' %>
-<div class="admin-page">
-  <div class="page-header">
-    <h1>🔐 权限管理</h1>
-  </div>
-  
-  <div class="alert alert-info">
-    <span>💡</span> 权限管理说明：管理员可直接授予/撤销基础权限；高危权限（🔴）仅超级管理员可授予；超高危权限（☣，账号/权限/设置/数据核心治理类）仅超级管理员可授予，权限申请需三级审批（对应管理员→上级→超管）。所有权限变更均留审计日志。
-  </div>
-
-  <!-- 权限申请审核 -->
-  <div class="section-card accent-warning">
-    <div class="section-header bg-gradient-warning">
-      <h2>📋 待审核的权限申请 <span class="badge badge-warning"><%= pendingApplications.length %></span></h2>
-    </div>
-    <div class="section-body">
-      <% if (pendingApplications.length > 0) { %>
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>申请人</th>
-              <th>申请权限</th>
-              <th>类型</th>
-              <th>当前阶段</th>
-              <th>申请理由</th>
-              <th>申请时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <% pendingApplications.forEach(function(app) { %>
-              <tr>
-                <td>
-                  <strong><%= app.username %></strong>
-                  <a href="/admin/users?keyword=<%= encodeURIComponent(app.username) %>" class="link-user" title="在用户管理中查看该用户">👤</a>
-                  <div style="font-size:var(--text-xs);color:var(--gray-400);"><%= app.email || '未填写邮箱' %></div>
-                </td>
-                <td><span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span></td>
-                <td>
-                  <% if (app.perm_ultra_high_risk == 1) { %>
-                    <span class="risk-badge risk-ultra">☣ 超高危</span>
-                  <% } else if (app.high_risk) { %>
-                    <span class="risk-badge risk-high">🔴 高危</span>
-                  <% } else { %>
-                    <span class="risk-badge risk-basic">🟢 基础</span>
-                  <% } %>
-                </td>
-                <td>
-                  <% if ((app.approval_stage || 1) === 1) { %>
-                    <span class="stage-badge stage-1">一级 · 对应管理员审批</span>
-                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
-                      <%= app.superior_name ? '审批人：' + app.superior_name : '未指定 → 超管兜底' %>
-                    </div>
-                  <% } else if ((app.approval_stage || 1) === 3) { %>
-                    <span class="stage-badge stage-3">三级 · 超级管理员终审</span>
-                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
-                      一二级已过：<%= app.admin_approver_name || '-' %> → <%= app.superior_approver_name || '-' %>
-                    </div>
-                  <% } else { %>
-                    <span class="stage-badge stage-2">二级 · 上级终审</span>
-                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
-                      一级已过：<%= app.admin_approver_name || '-' %>
-                    </div>
-                  <% } %>
-                </td>
-                <td><%= app.reason || '无' %></td>
-                <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
-                <td class="actions">
-                  <% if (app.canApprove) { %>
-                    <button class="btn btn-small btn-success" onclick="approveApplication(<%= app.id %>)">✓ 批准</button>
-                    <button class="btn btn-small btn-danger" onclick="rejectApplication(<%= app.id %>)">✗ 拒绝</button>
-                  <% } else { %>
-                    <span class="cannot-approve" title="<%= app.canApproveReason %>"><%= app.canApproveReason %></span>
-                  <% } %>
-                </td>
-              </tr>
-            <% }) %>
-          </tbody>
-        </table>
-      <% } else { %>
-        <div class="empty-state">
-          <span class="empty-state-icon">✅</span>
-          <p class="empty-state-text">暂无待审核的权限申请</p>
-        </div>
-      <% } %>
-    </div>
-  </div>
-
-  <!-- 用户权限管理 -->
-  <div class="section-card accent-primary">
-    <div class="section-header bg-gradient-primary">
-      <h2>👥 用户权限管理</h2>
-    </div>
-    <div class="section-body">
-      <div class="alert alert-warning">
-        <span>⚠️</span> 提示：高危权限（🔴）仅超级管理员可授予/撤销；超高危权限（☣）同样仅超管可操作且申请需三级审批；普通管理员仅可授予/撤销基础权限。授予的权限立即生效并写入审计日志。
-      </div>
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>用户</th>
-            <th>邮箱</th>
-            <th>角色</th>
-            <th>状态</th>
-            <th>已分配权限</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <% if (users.length > 0) { %>
-            <% users.forEach(u => { %>
-              <tr data-uid="<%= u.id %>">
-                <td>
-                  <strong><%= u.username %></strong>
-                  <a href="/admin/users?keyword=<%= encodeURIComponent(u.username) %>" class="link-user" title="在用户管理中查看该用户">👤</a>
-                </td>
-                <td><%= u.email || '未填写' %></td>
-                <td>
-                  <span class="role-badge role-<%= u.role %>">
-                    <% if (u.role === 'super_admin') { %>👑 超级管理员<% } %>
-                    <% if (u.role === 'admin') { %>🛡️ 管理员<% } %>
-                    <% if (u.role === 'user') { %>👤 普通用户<% } %>
-                    <% if (u.role === 'visitor') { %>👁️ 访客<% } %>
-                  </span>
-                </td>
-                <td>
-                  <span class="status-badge status-<%= u.status %>">
-                    <% if (u.status === 'active') { %>✅ 已激活<% } %>
-                    <% if (u.status === 'pending') { %>⏳ 待审核<% } %>
-                    <% if (u.status === 'disabled') { %>🚫 已禁用<% } %>
-                  </span>
-                </td>
-                <td>
-                  <% if (u.role === 'super_admin') { %>
-                    <span style="color: var(--success); font-weight: 500;">🔑 所有权限（超级管理员）</span>
-                  <% } else { %>
-                    <% var _pMap = typeof userPerms !== 'undefined' ? userPerms : {}; var _perms = _pMap[u.id] || [] %>
-                    <% if (_perms.length > 0) { %>
-                      <div class="perms-list">
-                        <% _perms.forEach(function(pk) { %>
-                          <% var permInfo = permissions.find(function(p) { return p.perm_key === pk; }); %>
-                          <% var permCls = 'perm-default';
-                             if (pk.startsWith('articles.') || pk.startsWith('novels.')) permCls = 'perm-article';
-                             else if (pk.startsWith('image-share.')) permCls = 'perm-image';
-                             else if (pk.startsWith('community.') || pk.startsWith('messages.')) permCls = 'perm-community';
-                             else if (pk.startsWith('users.') || pk.startsWith('permissions.')) permCls = 'perm-admin';
-                             else if (pk.startsWith('pages.') || pk.startsWith('settings.')) permCls = 'perm-system';
-                             else if (pk.endsWith('.access') || pk.endsWith('.read')) permCls = 'perm-basic';
-                          %>
-                          <span class="perm-tag <%= permCls %>" title="<%= pk %>"><%= permInfo ? permInfo.perm_name : pk %><% if (permInfo && permInfo.ultra_high_risk == 1) { %> ☣<% } else if (permInfo && permInfo.high_risk == 1) { %> 🔴<% } %></span>
-                        <% }) %>
-                      </div>
-                    <% } else { %>
-                      <span style="color: var(--gray-400); font-size: var(--text-sm);">无特殊权限</span>
-                    <% } %>
-                  <% } %>
-                </td>
-                <td class="actions">
-                  <% if (u.role !== 'super_admin') { %>
-                    <% var _pMap2 = typeof userPerms !== 'undefined' ? userPerms : {}; var _perms2 = _pMap2[u.id] || [] %>
-                    <button class="btn btn-small btn-primary" onclick="showGrantModal(<%= u.id %>, this)"
-                      data-username="<%= u.username %>"
-                      data-owned="<%- encodeURIComponent(JSON.stringify(_perms2)) %>">授予权限</button>
-                    <% if (_perms2.length > 0) { %>
-                      <% 
-                        var permNamesMap = {};
-                        _perms2.forEach(function(pk) {
-                          var pInfo = permissions.find(function(p) { return p.perm_key === pk; });
-                          permNamesMap[pk] = pInfo ? pInfo.perm_name : pk;
-                        });
-                      %>
-                      <button class="btn btn-small btn-danger" onclick="showRevokeModal(<%= u.id %>, this)" 
-                        data-username="<%= u.username %>" 
-                        data-perms="<%- encodeURIComponent(JSON.stringify(_perms2)) %>"
-                        data-perm-names="<%- encodeURIComponent(JSON.stringify(permNamesMap)) %>">撤销权限</button>
-                    <% } else { %>
-                      <span style="color: var(--gray-400); font-size: var(--text-xs);">无权限可撤销</span>
-                    <% } %>
-                  <% } else { %>
-                    <span style="color: var(--gray-400); font-size: var(--text-xs);">超级管理员</span>
-                  <% } %>
-                </td>
-              </tr>
-            <% }) %>
-          <% } else { %>
-            <tr>
-              <td colspan="6" class="empty-row">暂无用户</td>
-            </tr>
-          <% } %>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- 权限列表（按分类分组，高危标记） -->
-  <div class="section-card accent-info">
-    <div class="section-header bg-gradient-info">
-      <h2>🗂️ 系统权限列表
-        <span class="badge badge-info"><%= permissions.length %> 项</span>
-        <span class="badge badge-danger"><%= permissions.filter(function(p) { return p.high_risk == 1; }).length %> 高危</span> <span class="badge badge-dark"><%= permissions.filter(function(p) { return p.ultra_high_risk == 1; }).length %> 超高危</span>
-      </h2>
-    </div>
-    <div class="section-body">
-      <%# 分类元数据：key → 名称/图标/说明；旧库无 category 列时按 perm_key 推断 %>
-      <%
-        var CATEGORY_META = [
-          { key: 'basic',       icon: '📌', name: '前端访问权限', desc: '登录用户访问各模块的入口权限（申请门槛最低）' },
-          { key: 'content',     icon: '📝', name: '内容管理权限', desc: '文章/小说等内容的查看、创作、编辑、发布、删除' },
-          { key: 'community',   icon: '💬', name: '社区互动权限', desc: '评论、消息等社区功能权限' },
-          { key: 'image',       icon: '🖼️', name: '图片分享权限', desc: '图片上传、审核、分类、评论管理及分享' },
-          { key: 'ai',          icon: '🤖', name: 'AI 能力权限',  desc: 'AI 对话、配图、创作类功能权限' },
-          { key: 'spreadsheet', icon: '📊', name: '表格协作权限', desc: '在线表格相关功能权限' },
-          { key: 'system',      icon: '⚙️', name: '系统管理权限', desc: '用户/权限/设置/数据等后台管理（高危集中区）' }
-        ];
-        function permCategory(p) {
-          if (p.category) return p.category;
-          var k = p.perm_key;
-          if (k.endsWith('.access') || k.endsWith('.read')) return 'basic';
-          if (k.indexOf('articles.') === 0 || k.indexOf('novels.') === 0) return 'content';
-          if (k.indexOf('image-share.') === 0) return 'image';
-          if (k.indexOf('community.') === 0 || k.indexOf('messages.') === 0) return 'community';
-          if (k.indexOf('spreadsheet.') === 0) return 'spreadsheet';
-          return 'system';
-        }
-      %>
-      <% CATEGORY_META.forEach(function(cat) { %>
-        <%
-          var catPerms = permissions.filter(function(p) { return permCategory(p) === cat.key; })
-                                    .sort(function(a, b) { return (a.sort_order || 999) - (b.sort_order || 999); });
-          var catHigh = catPerms.filter(function(p) { return p.high_risk == 1; }).length;
-          var catUltra = catPerms.filter(function(p) { return p.ultra_high_risk == 1; }).length;
-        %>
-        <% if (catPerms.length > 0) { %>
-          <div class="perm-group perm-group-<%= cat.key %>">
-            <h3><%= cat.icon %> <%= cat.name %>
-              <span class="perm-count"><%= catPerms.length %> 项</span>
-              <% if (catHigh > 0) { %><span class="risk-badge risk-high">🔴 高危 <%= catHigh %></span><% } %><% if (catUltra > 0) { %><span class="risk-badge risk-ultra">☣ 超高危 <%= catUltra %></span><% } %>
-            </h3>
-            <div class="perm-group-desc"><%= cat.desc %></div>
-            <div class="perm-group-items">
-              <% catPerms.forEach(function(perm) { %>
-                <div class="perm-tree-item">
-                  <span class="perm-key"><%= perm.perm_key %></span>
-                  <span class="perm-name"><%= perm.perm_name %></span>
-                  <span class="perm-desc"><%= perm.description %></span>
-                                    <% if (perm.ultra_high_risk == 1) { %>
-                    <span class="risk-badge risk-ultra" title="超高危权限：需三级审批（对应管理员→上级→超管），授予与变更应谨慎">☣ 超高危</span>
-                  <% } else if (perm.high_risk == 1) { %>
-                    <span class="risk-badge risk-high" title="高危权限：需二级审批，授予与变更应谨慎">高危</span>
-                  <% } else { %>
-                    <span class="risk-badge risk-basic">基础</span>
-                  <% } %>
-                </div>
-              <% }); %>
-            </div>
-          </div>
-        <% } %>
-      <% }); %>
-    </div>
-  </div>
-
-  <!-- 历史申请记录 -->
-  <div class="section-card accent-purple">
-    <div class="section-header bg-gradient-purple">
-      <h2>📜 申请历史记录</h2>
-    </div>
-    <div class="section-body">
-      <% if (allApplications.length > 0) { %>
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>申请人</th>
-              <th>申请权限</th>
-              <th>申请理由</th>
-              <th>申请时间</th>
-              <th>状态</th>
-              <th>审批链</th>
-              <th>拒绝原因</th>
-            </tr>
-          </thead>
-          <tbody>
-            <% allApplications.forEach(function(app) { %>
-              <tr>
-                <td><strong><%= app.username %></strong></td>
-                <td>
-                  <span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span>
-                  <% if (app.high_risk) { %><span class="risk-badge risk-high">🔴 高危</span><% } %>
-                </td>
-                <td><%= app.reason || '无' %></td>
-                <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
-                <td>
-                  <span class="status-badge status-<%= app.status %>">
-                    <% if (app.status === 'pending') { %>⏳ 待审核<% } %>
-                    <% if (app.status === 'approved') { %>✅ 已批准<% } %>
-                    <% if (app.status === 'rejected') { %>❌ 已拒绝<% } %>
-                  </span>
-                </td>
-                <td class="approval-chain">
-                  <% if (app.status === 'pending') { %>
-                    <% if ((app.approval_stage || 1) === 1) { %>
-                      <span class="stage-badge stage-1">一级待审</span>
-                    <% } else if ((app.approval_stage || 1) === 3) { %>
-                      <span class="stage-badge stage-3">三级待审</span>
-                    <% } else { %>
-                      <span class="stage-badge stage-2">二级待审</span>
-                    <% } %>
-                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
-                      一级：<%= app.admin_approver_name || (app.superior_name || '超管兜底') %>
-                    </div>
-                  <% } else if (app.status === 'approved') { %>
-                    <div style="font-size:var(--text-sm);">一级：<%= app.admin_approver_name || '-' %></div>
-                    <% if (app.high_risk) { %>
-                      <div style="font-size:var(--text-sm);">二级：<%= app.superior_approver_name || '-' %></div>
-                    <% } %>
-                    <% if (app.perm_ultra_high_risk == 1) { %>
-                      <div style="font-size:var(--text-sm);">三级终审：<%= app.reviewer_name || '-' %></div>
-                    <% } %>
-                    <% if (app.system_confirmed_at) { %>
-                      <div style="font-size:var(--text-xs);color:var(--success);">✅ 系统已确认生效</div>
-                    <% } %>
-                  <% } else { %>
-                    <div style="font-size:var(--text-sm);">驳回人：<%= app.reviewer_name || '-' %></div>
-                  <% } %>
-                </td>
-                <td><% if (app.status === 'rejected') { %><span style="color: var(--danger); font-size: var(--text-sm);"><%= app.reject_reason || '未填写' %></span><% } else { %><span style="color: var(--gray-300);">-</span><% } %></td>
-              </tr>
-            <% }) %>
-          </tbody>
-        </table>
-      <% } else { %>
-        <div class="empty-state">
-          <span class="empty-state-icon">📭</span>
-          <p class="empty-state-text">暂无申请记录</p>
-        </div>
-      <% } %>
-    </div>
-  </div>
-</div>
-
-<!-- 授予权限弹窗 -->
-<div id="grantModal" class="modal-overlay" style="display: none;">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h3>授予用户权限 - <span id="grantUsername"></span></h3>
-      <button class="modal-close" onclick="closeGrantModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="grantUserId">
-      <p>请选择要授予的权限（高危🔴 / 超高危☣ 权限仅超级管理员可授予）：</p>
-      <div id="grantPermList" class="perm-checkboxes"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-success" onclick="confirmGrant()">确认授予</button>
-      <button class="btn" onclick="closeGrantModal()">取消</button>
-    </div>
-  </div>
-</div>
-
-<!-- 撤销权限弹窗 -->
-<div id="revokeModal" class="modal-overlay" style="display: none;">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h3>撤销用户权限 - <span id="revokeUsername"></span></h3>
-      <button class="modal-close" onclick="closeRevokeModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="revokeUserId">
-      <p>请选择要撤销的权限：</p>
-      <div id="revokePermList" class="perm-checkboxes"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-danger" onclick="confirmRevoke()">确认撤销</button>
-      <button class="btn" onclick="closeRevokeModal()">取消</button>
-    </div>
-  </div>
-</div>
-
-<!-- 拒绝申请弹窗 -->
-<div id="rejectModal" class="modal-overlay" style="display: none;">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h3>拒绝权限申请</h3>
-      <button class="modal-close" onclick="closeRejectModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="rejectApplicationId">
-      <div class="form-group">
-        <label>拒绝原因（可选）</label>
-        <textarea id="rejectReasonInput" rows="4" placeholder="请输入拒绝原因，将展示给申请人..." style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);resize:vertical;font-family:inherit;"></textarea>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-danger" onclick="confirmReject()">确认拒绝</button>
-      <button class="btn" onclick="closeRejectModal()">取消</button>
-    </div>
-  </div>
-</div>
-
-<script>
-// 全量权限点（服务端渲染注入）与当前操作者角色（用于高危权限分级展示）
-var ALL_PERMS = <%- JSON.stringify(permissions) %>;
-var CURRENT_USER_ROLE = '<%= user.role %>';
-
-function getCsrfToken() {
-  var meta = document.querySelector('meta[name="csrf-token"]');
-  return meta ? meta.getAttribute('content') : '';
-}
-
-// 显示授予权限弹窗：按分类分组；高危权限非超管禁用（仅超管可授）
-function showGrantModal(userId, btn) {
-  var username = btn.getAttribute('data-username');
-  var ownedEncoded = btn.getAttribute('data-owned');
-  var owned = ownedEncoded ? JSON.parse(decodeURIComponent(ownedEncoded)) : [];
-  var isSuperAdmin = CURRENT_USER_ROLE === 'super_admin';
-
-  document.getElementById('grantUserId').value = userId;
-  document.getElementById('grantUsername').textContent = username;
-
-  var CAT_ICONS = { basic: '📌', content: '📝', community: '💬', image: '🖼️', media: '🖼️', ai: '🤖', spreadsheet: '📊', admin: '⚙️', system: '⚙️' };
-  var groups = {};
-  ALL_PERMS.forEach(function(p) {
-    var cat = p.category || 'system';
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(p);
-  });
-
-  var html = '';
-  Object.keys(groups).forEach(function(cat) {
-    var perms = groups[cat].slice().sort(function(a, b) { return (a.sort_order || 999) - (b.sort_order || 999); });
-    if (perms.length === 0) return;
-    html += '<div class="perm-category"><strong>' + (CAT_ICONS[cat] || '📦') + ' ' + (cat === 'basic' ? '前端访问' : cat === 'content' ? '内容管理' : cat === 'community' ? '社区互动' : cat === 'image' ? '图片分享' : cat === 'ai' ? 'AI 能力' : cat === 'spreadsheet' ? '表格协作' : '系统管理') + '</strong></div>';
-    perms.forEach(function(p) {
-      var ownedFlag = owned.indexOf(p.perm_key) !== -1;
-      var highRisk = p.high_risk == 1;
-      var disabled = ownedFlag || (highRisk && !isSuperAdmin);
-      var tip = ownedFlag ? '该用户已拥有此权限' : (highRisk && !isSuperAdmin ? '高危权限，仅超级管理员可授予' : '');
-      html += '<div class="perm-item">' +
-        '<label title="' + tip + '">' +
-        '<input type="checkbox" name="grant_perms" value="' + p.perm_key + '"' + (disabled ? ' disabled' : '') + '> ' +
-        p.perm_name +
-        (highRisk ? ' <span class="risk-badge risk-high">🔴 高危' + (isSuperAdmin ? '' : ' · 仅超管') + '</span>' : ' <span class="risk-badge risk-basic">基础</span>') +
-        (ownedFlag ? ' <span class="risk-badge" style="background:#e9ecef;color:#6c757d;">已拥有</span>' : '') +
-        ' <span class="perm-key">(' + p.perm_key + ')</span>' +
-        '</label></div>';
-    });
-  });
-
-  document.getElementById('grantPermList').innerHTML = html;
-  document.getElementById('grantModal').style.display = 'flex';
-}
-
-function closeGrantModal() {
-  document.getElementById('grantModal').style.display = 'none';
-}
-
-function confirmGrant() {
-  var userId = document.getElementById('grantUserId').value;
-  var checkboxes = document.querySelectorAll('input[name="grant_perms"]:checked');
-
-  if (checkboxes.length === 0) {
-    alert('请选择要授予的权限');
-    return;
-  }
-
-  if (!confirm('确定授予选中的 ' + checkboxes.length + ' 个权限吗？\n（高危权限仅超级管理员可授予，授予后立即生效）')) {
-    return;
-  }
-
-  var requests = [];
-  checkboxes.forEach(function(cb) {
-    requests.push(
-      fetch('/admin/permissions/grant', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': getCsrfToken()
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          perm_key: cb.value,
-          _csrf: getCsrfToken()
-        })
-      })
-    );
-  });
-
-  Promise.all(requests).then(function(responses) {
-    var denied = responses.filter(function(r) { return r.status === 403 || r.status === 400; });
-    if (denied.length > 0) {
-      alert('部分权限授予被拒绝（可能为高危权限或参数错误），请刷新后重试');
-    }
-    location.reload();
-  }).catch(function(err) {
-    alert('授予权限失败: ' + err.message);
-  });
-}
-
-// 显示撤销权限弹窗
-function showRevokeModal(userId, btn) {
-  var username = btn.getAttribute('data-username');
-  var permsEncoded = btn.getAttribute('data-perms');
-  var perms = JSON.parse(decodeURIComponent(permsEncoded));
-  var permNamesEncoded = btn.getAttribute('data-perm-names');
-  var permNames = permNamesEncoded ? JSON.parse(decodeURIComponent(permNamesEncoded)) : {};
-  
-  document.getElementById('revokeUserId').value = userId;
-  document.getElementById('revokeUsername').textContent = username;
-  
-  var categories = {
-    '访问权限': [],
-    '用户功能': [],
-    '后台管理': []
-  };
-  
-  perms.forEach(function(permKey) {
-    var displayName = permNames[permKey] || permKey;
-    var item = { key: permKey, name: displayName };
-    
-    if (permKey.endsWith('.access')) {
-      categories['访问权限'].push(item);
-    } else if (permKey.includes('.manage') || permKey.includes('.review') || 
-               permKey.includes('.categories') || permKey.includes('.users') ||
-               permKey.includes('.role') || permKey.includes('.view') ||
-               permKey.includes('.backup') || permKey.includes('.export') ||
-               permKey.includes('.seo') || permKey.includes('.settings')) {
-      categories['后台管理'].push(item);
-    } else {
-      categories['用户功能'].push(item);
-    }
-  });
-  
-  var permListHtml = '';
-  Object.keys(categories).forEach(function(catName) {
-    if (categories[catName].length > 0) {
-      permListHtml += '<div class="perm-category"><strong>' + catName + '</strong></div>';
-      categories[catName].forEach(function(perm) {
-        permListHtml += '<div class="perm-item"><label><input type="checkbox" name="revoke_perms" value="' + perm.key + '"> ' + perm.name + ' <span class="perm-key">(' + perm.key + ')</span></label></div>';
-      });
-    }
-  });
-  
-  document.getElementById('revokePermList').innerHTML = permListHtml;
-  document.getElementById('revokeModal').style.display = 'flex';
-}
-
-function closeRevokeModal() {
-  document.getElementById('revokeModal').style.display = 'none';
-}
-
-function confirmRevoke() {
-  var userId = document.getElementById('revokeUserId').value;
-  var checkboxes = document.querySelectorAll('input[name="revoke_perms"]:checked');
-  
-  if (checkboxes.length === 0) {
-    alert('请选择要撤销的权限');
-    return;
-  }
-  
-  if (!confirm('确定要撤销选中的 ' + checkboxes.length + ' 个权限吗？')) {
-    return;
-  }
-  
-  var requests = [];
-  checkboxes.forEach(function(cb) {
-    requests.push(
-      fetch('/admin/permissions/revoke', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': getCsrfToken()
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          perm_key: cb.value,
-          _csrf: getCsrfToken()
-        })
-      })
-    );
-  });
-  
-  Promise.all(requests).then(function() {
-    location.reload();
-  }).catch(function(err) {
-    alert('撤销权限失败: ' + err.message);
-  });
-}
-
-document.getElementById('grantModal').addEventListener('click', function(e) {
-  if (e.target === this) closeGrantModal();
-});
-document.getElementById('revokeModal').addEventListener('click', function(e) {
-  if (e.target === this) closeRevokeModal();
-});
-document.getElementById('rejectModal').addEventListener('click', function(e) {
-  if (e.target === this) closeRejectModal();
-});
-
-function approveApplication(applicationId) {
-  if (!confirm('确定批准此权限申请吗？\n（高危申请一级批准后将转交您的上级管理员终审）')) return;
-
-  fetch('/admin/permissions/approve', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Token': getCsrfToken()
-    },
-    body: JSON.stringify({ application_id: applicationId, _csrf: getCsrfToken() })
-  })
-  .then(function(response) { return response.json(); })
-  .then(function(data) {
-    if (data.success) {
-      showToast(data.message || '已批准', 'success');
-      setTimeout(function() { location.reload(); }, 900);
-    } else {
-      alert(data.error || '操作失败');
-    }
-  })
-  .catch(function(err) {
-    alert('操作失败: ' + err.message);
-  });
-}
-
-// 联动高亮：从用户管理页「查看权限」跳转过来时，高亮并滚动到对应用户行
-(function() {
-  var uid = <%= typeof highlightUserId !== 'undefined' ? (highlightUserId || 0) : 0 %>;
-  if (!uid) return;
-  var tr = document.querySelector('tr[data-uid="' + uid + '"]');
-  if (tr) {
-    tr.classList.add('highlight-user-row');
-    tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-})();
-
-function rejectApplication(applicationId) {
-  document.getElementById('rejectApplicationId').value = applicationId;
-  document.getElementById('rejectReasonInput').value = '';
-  document.getElementById('rejectModal').style.display = 'flex';
-}
-
-function closeRejectModal() {
-  document.getElementById('rejectModal').style.display = 'none';
-}
-
-function confirmReject() {
-  var applicationId = document.getElementById('rejectApplicationId').value;
-  var reason = document.getElementById('rejectReasonInput').value.trim();
-
-  fetch('/admin/permissions/reject', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Token': getCsrfToken()
-    },
-    body: JSON.stringify({ application_id: applicationId, reason: reason, _csrf: getCsrfToken() })
-  })
-  .then(function(response) { return response.json(); })
-  .then(function(data) {
-    if (data.success) {
-      location.reload();
-    } else {
-      alert(data.error || '操作失败');
-    }
-  })
-  .catch(function(err) {
-    alert('操作失败: ' + err.message);
-  });
-}
-</script>
-
-<style>
-.perms-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-/* 审批类型徽标 */
-.risk-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: var(--radius-xs);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  margin-left: 4px;
-  white-space: nowrap;
-}
-
-.risk-badge.risk-high {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.risk-badge.risk-ultra {
-  background: #e5e0ff;
-  color: #5b21b6;
-}
-
-.risk-badge.risk-basic {
-  background: #d4edda;
-  color: #155724;
-}
-
-/* 审批阶段徽标 */
-.stage-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: var(--radius-xs);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.stage-badge.stage-1 {
-  background: #fff3cd;
-  color: #856404;
-}
-
-.stage-badge.stage-2 {
-  background: #e7f1ff;
-  color: #1d6fa5;
-}
-
-.stage-badge.stage-3 {
-  background: #e5e0ff;
-  color: #5b21b6;
-}
-
-/* 用户联动小链接 */
-.link-user {
-  margin-left: 6px;
-  font-size: var(--text-xs);
-  text-decoration: none;
-}
-
-.link-user:hover {
-  text-decoration: underline;
-}
-
-/* 无权审批提示 */
-.cannot-approve {
-  color: var(--gray-400);
-  font-size: var(--text-xs);
-  font-style: italic;
-  max-width: 160px;
-  display: inline-block;
-  vertical-align: middle;
-}
-
-/* 联动高亮行 */
-.highlight-user-row {
-  outline: 2px solid var(--warning, #f39800);
-  outline-offset: -2px;
-  background: #fffdf0 !important;
-}
-
-.approval-chain {
-  min-width: 140px;
-}
-
-.perm-checkboxes {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-/* 权限列表分类统计与说明 */
-.perm-count {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: var(--radius-xs);
-  background: var(--gray-100);
-  color: var(--gray-500);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  margin-left: 6px;
-  vertical-align: middle;
-}
-
-.perm-group-desc {
-  font-size: var(--text-xs);
-  color: var(--gray-400);
-  margin: 2px 0 8px;
-}
-
-.perm-item {
-  padding: 8px 12px;
-  background: var(--gray-50);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--gray-100);
-  transition: var(--transition-fast);
-}
-
-.perm-item:hover {
-  background: var(--primary-bg);
-  border-color: var(--primary-light);
-}
-
-.perm-item label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.perm-key {
-  font-size: var(--text-xs);
-  color: var(--gray-500);
-  font-family: var(--font-mono);
-}
-
-.perm-category {
-  padding: 8px 0;
-  margin-top: 8px;
-  border-top: 1px solid var(--gray-100);
-}
-
-.perm-category:first-child {
-  margin-top: 0;
-  border-top: none;
-}
-
-.perm-category strong {
-  color: var(--gray-600);
-  font-size: var(--text-sm);
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal-content {
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  width: 480px;
-  max-width: 90%;
-  max-height: 80vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  box-shadow: var(--shadow-xl);
-  animation: modalSlideIn 0.2s ease;
-}
-
-@keyframes modalSlideIn {
-  from { transform: translateY(-20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-.modal-header {
-  padding: var(--space-4) var(--space-6);
-  background: var(--gray-50);
-  border-bottom: 1px solid var(--gray-100);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modal-header h3 {
-  margin: 0;
-  font-size: var(--text-lg);
-  color: var(--gray-800);
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
-  color: var(--gray-400);
-  transition: var(--transition-fast);
-}
-
-.modal-close:hover {
-  color: var(--gray-600);
-}
-
-.modal-body {
-  padding: var(--space-6);
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-footer {
-  padding: var(--space-4) var(--space-6);
-  background: var(--gray-50);
-  border-top: 1px solid var(--gray-100);
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-}
-</style>
+<%# ===== 页面模板：admin/permissions.ejs =====%>
+<%# 说明：后台-权限管理页：角色权限矩阵、申请审核（EJS 服务端模板，由 Express 渲染，变量与部分逻辑见对应路由） %>
+<% var active = 'permissions' %>
+<div class="admin-page">
+  <div class="page-header">
+    <h1>🔐 权限管理</h1>
+  </div>
+  
+  <div class="alert alert-info">
+    <span>💡</span> 权限管理说明：管理员可直接授予/撤销基础权限；高危权限（🔴）仅超级管理员可授予；超高危权限（☣，账号/权限/设置/数据核心治理类）仅超级管理员可授予，权限申请需三级审批（对应管理员→上级→超管）。所有权限变更均留审计日志。非超级管理员仅可查看 / 管理自己及下级（直接 / 再下级）树内用户，无法查看同级、上级或其他分支用户。
+  </div>
+
+  <!-- 权限申请审核 -->
+  <div class="section-card accent-warning">
+    <div class="section-header bg-gradient-warning">
+      <h2>📋 待审核的权限申请 <span class="badge badge-warning"><%= pendingApplications.length %></span></h2>
+    </div>
+    <div class="section-body">
+      <% if (pendingApplications.length > 0) { %>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>申请人</th>
+              <th>申请权限</th>
+              <th>类型</th>
+              <th>当前阶段</th>
+              <th>申请理由</th>
+              <th>申请时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% pendingApplications.forEach(function(app) { %>
+              <tr>
+                <td>
+                  <strong><%= app.username %></strong>
+                  <a href="/admin/users?keyword=<%= encodeURIComponent(app.username) %>" class="link-user" title="在用户管理中查看该用户">👤</a>
+                  <div style="font-size:var(--text-xs);color:var(--gray-400);"><%= app.email || '未填写邮箱' %></div>
+                </td>
+                <td><span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span></td>
+                <td>
+                  <% if (app.perm_ultra_high_risk == 1) { %>
+                    <span class="risk-badge risk-ultra">☣ 超高危</span>
+                  <% } else if (app.high_risk) { %>
+                    <span class="risk-badge risk-high">🔴 高危</span>
+                  <% } else { %>
+                    <span class="risk-badge risk-basic">🟢 基础</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if ((app.approval_stage || 1) === 1) { %>
+                    <span class="stage-badge stage-1">一级 · 对应管理员审批</span>
+                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
+                      <%= app.superior_name ? '审批人：' + app.superior_name : '未指定 → 超管兜底' %>
+                    </div>
+                  <% } else if ((app.approval_stage || 1) === 3) { %>
+                    <span class="stage-badge stage-3">三级 · 超级管理员终审</span>
+                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
+                      一二级已过：<%= app.admin_approver_name || '-' %> → <%= app.superior_approver_name || '-' %>
+                    </div>
+                  <% } else { %>
+                    <span class="stage-badge stage-2">二级 · 上级终审</span>
+                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
+                      一级已过：<%= app.admin_approver_name || '-' %>
+                    </div>
+                  <% } %>
+                </td>
+                <td><%= app.reason || '无' %></td>
+                <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
+                <td class="actions">
+                  <% if (app.canApprove) { %>
+                    <button class="btn btn-small btn-success" onclick="approveApplication(<%= app.id %>)">✓ 批准</button>
+                    <button class="btn btn-small btn-danger" onclick="rejectApplication(<%= app.id %>)">✗ 拒绝</button>
+                  <% } else { %>
+                    <span class="cannot-approve" title="<%= app.canApproveReason %>"><%= app.canApproveReason %></span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <div class="empty-state">
+          <span class="empty-state-icon">✅</span>
+          <p class="empty-state-text">暂无待审核的权限申请</p>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- 用户权限管理 -->
+  <div class="section-card accent-primary">
+    <div class="section-header bg-gradient-primary">
+      <h2>👥 用户权限管理</h2>
+    </div>
+    <div class="section-body">
+      <div class="alert alert-warning">
+        <span>⚠️</span> 提示：高危权限（🔴）仅超级管理员可授予/撤销；超高危权限（☣）同样仅超管可操作且申请需三级审批；普通管理员仅可授予/撤销基础权限。授予的权限立即生效并写入审计日志。
+      </div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>用户</th>
+            <th>邮箱</th>
+            <th>角色</th>
+            <th>状态</th>
+            <th>已分配权限</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (users.length > 0) { %>
+            <% users.forEach(u => { %>
+              <tr data-uid="<%= u.id %>">
+                <td>
+                  <strong><%= u.username %></strong>
+                  <a href="/admin/users?keyword=<%= encodeURIComponent(u.username) %>" class="link-user" title="在用户管理中查看该用户">👤</a>
+                </td>
+                <td><%= u.email || '未填写' %></td>
+                <td>
+                  <span class="role-badge role-<%= u.role %>">
+                    <% if (u.role === 'super_admin') { %>👑 超级管理员<% } %>
+                    <% if (u.role === 'admin') { %>🛡️ 管理员<% } %>
+                    <% if (u.role === 'user') { %>👤 普通用户<% } %>
+                    <% if (u.role === 'visitor') { %>👁️ 访客<% } %>
+                  </span>
+                </td>
+                <td>
+                  <span class="status-badge status-<%= u.status %>">
+                    <% if (u.status === 'active') { %>✅ 已激活<% } %>
+                    <% if (u.status === 'pending') { %>⏳ 待审核<% } %>
+                    <% if (u.status === 'disabled') { %>🚫 已禁用<% } %>
+                  </span>
+                </td>
+                <td>
+                  <% if (u.role === 'super_admin') { %>
+                    <span style="color: var(--success); font-weight: 500;">🔑 所有权限（超级管理员）</span>
+                  <% } else { %>
+                    <% var _pMap = typeof userPerms !== 'undefined' ? userPerms : {}; var _perms = _pMap[u.id] || [] %>
+                    <% if (_perms.length > 0) { %>
+                      <div class="perms-list">
+                        <% _perms.forEach(function(pk) { %>
+                          <% var permInfo = permissions.find(function(p) { return p.perm_key === pk; }); %>
+                          <% var permCls = 'perm-default';
+                             if (pk.startsWith('articles.') || pk.startsWith('novels.')) permCls = 'perm-article';
+                             else if (pk.startsWith('image-share.')) permCls = 'perm-image';
+                             else if (pk.startsWith('community.') || pk.startsWith('messages.')) permCls = 'perm-community';
+                             else if (pk.startsWith('users.') || pk.startsWith('permissions.')) permCls = 'perm-admin';
+                             else if (pk.startsWith('pages.') || pk.startsWith('settings.')) permCls = 'perm-system';
+                             else if (pk.endsWith('.access') || pk.endsWith('.read')) permCls = 'perm-basic';
+                          %>
+                          <span class="perm-tag <%= permCls %>" title="<%= pk %>"><%= permInfo ? permInfo.perm_name : pk %><% if (permInfo && permInfo.ultra_high_risk == 1) { %> ☣<% } else if (permInfo && permInfo.high_risk == 1) { %> 🔴<% } %></span>
+                        <% }) %>
+                      </div>
+                    <% } else { %>
+                      <span style="color: var(--gray-400); font-size: var(--text-sm);">无特殊权限</span>
+                    <% } %>
+                  <% } %>
+                </td>
+                <td class="actions">
+                  <% if (u.role !== 'super_admin') { %>
+                    <% var _pMap2 = typeof userPerms !== 'undefined' ? userPerms : {}; var _perms2 = _pMap2[u.id] || [] %>
+                    <button class="btn btn-small btn-primary" onclick="showGrantModal(<%= u.id %>, this)"
+                      data-username="<%= u.username %>"
+                      data-owned="<%- encodeURIComponent(JSON.stringify(_perms2)) %>">授予权限</button>
+                    <% if (_perms2.length > 0) { %>
+                      <% 
+                        var permNamesMap = {};
+                        _perms2.forEach(function(pk) {
+                          var pInfo = permissions.find(function(p) { return p.perm_key === pk; });
+                          permNamesMap[pk] = pInfo ? pInfo.perm_name : pk;
+                        });
+                      %>
+                      <button class="btn btn-small btn-danger" onclick="showRevokeModal(<%= u.id %>, this)" 
+                        data-username="<%= u.username %>" 
+                        data-perms="<%- encodeURIComponent(JSON.stringify(_perms2)) %>"
+                        data-perm-names="<%- encodeURIComponent(JSON.stringify(permNamesMap)) %>">撤销权限</button>
+                    <% } else { %>
+                      <span style="color: var(--gray-400); font-size: var(--text-xs);">无权限可撤销</span>
+                    <% } %>
+                  <% } else { %>
+                    <span style="color: var(--gray-400); font-size: var(--text-xs);">超级管理员</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          <% } else { %>
+            <tr>
+              <td colspan="6" class="empty-row">暂无用户</td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 权限列表（按分类分组，高危标记） -->
+  <div class="section-card accent-info">
+    <div class="section-header bg-gradient-info">
+      <h2>🗂️ 系统权限列表
+        <span class="badge badge-info"><%= permissions.length %> 项</span>
+        <span class="badge badge-danger"><%= permissions.filter(function(p) { return p.high_risk == 1; }).length %> 高危</span> <span class="badge badge-dark"><%= permissions.filter(function(p) { return p.ultra_high_risk == 1; }).length %> 超高危</span>
+      </h2>
+    </div>
+    <div class="section-body">
+      <%# 分类元数据：key → 名称/图标/说明；旧库无 category 列时按 perm_key 推断 %>
+      <%
+        var CATEGORY_META = [
+          { key: 'basic',       icon: '📌', name: '前端访问权限', desc: '登录用户访问各模块的入口权限（申请门槛最低）' },
+          { key: 'content',     icon: '📝', name: '内容管理权限', desc: '文章/小说等内容的查看、创作、编辑、发布、删除' },
+          { key: 'community',   icon: '💬', name: '社区互动权限', desc: '评论、消息等社区功能权限' },
+          { key: 'image',       icon: '🖼️', name: '图片分享权限', desc: '图片上传、审核、分类、评论管理及分享' },
+          { key: 'ai',          icon: '🤖', name: 'AI 能力权限',  desc: 'AI 对话、配图、创作类功能权限' },
+          { key: 'spreadsheet', icon: '📊', name: '表格协作权限', desc: '在线表格相关功能权限' },
+          { key: 'system',      icon: '⚙️', name: '系统管理权限', desc: '用户/权限/设置/数据等后台管理（高危集中区）' }
+        ];
+        function permCategory(p) {
+          if (p.category) return p.category;
+          var k = p.perm_key;
+          if (k.endsWith('.access') || k.endsWith('.read')) return 'basic';
+          if (k.indexOf('articles.') === 0 || k.indexOf('novels.') === 0) return 'content';
+          if (k.indexOf('image-share.') === 0) return 'image';
+          if (k.indexOf('community.') === 0 || k.indexOf('messages.') === 0) return 'community';
+          if (k.indexOf('spreadsheet.') === 0) return 'spreadsheet';
+          return 'system';
+        }
+      %>
+      <% CATEGORY_META.forEach(function(cat) { %>
+        <%
+          var catPerms = permissions.filter(function(p) { return permCategory(p) === cat.key; })
+                                    .sort(function(a, b) { return (a.sort_order || 999) - (b.sort_order || 999); });
+          var catHigh = catPerms.filter(function(p) { return p.high_risk == 1; }).length;
+          var catUltra = catPerms.filter(function(p) { return p.ultra_high_risk == 1; }).length;
+        %>
+        <% if (catPerms.length > 0) { %>
+          <div class="perm-group perm-group-<%= cat.key %>">
+            <h3><%= cat.icon %> <%= cat.name %>
+              <span class="perm-count"><%= catPerms.length %> 项</span>
+              <% if (catHigh > 0) { %><span class="risk-badge risk-high">🔴 高危 <%= catHigh %></span><% } %><% if (catUltra > 0) { %><span class="risk-badge risk-ultra">☣ 超高危 <%= catUltra %></span><% } %>
+            </h3>
+            <div class="perm-group-desc"><%= cat.desc %></div>
+            <div class="perm-group-items">
+              <% catPerms.forEach(function(perm) { %>
+                <div class="perm-tree-item">
+                  <span class="perm-key"><%= perm.perm_key %></span>
+                  <span class="perm-name"><%= perm.perm_name %></span>
+                  <span class="perm-desc"><%= perm.description %></span>
+                                    <% if (perm.ultra_high_risk == 1) { %>
+                    <span class="risk-badge risk-ultra" title="超高危权限：需三级审批（对应管理员→上级→超管），授予与变更应谨慎">☣ 超高危</span>
+                  <% } else if (perm.high_risk == 1) { %>
+                    <span class="risk-badge risk-high" title="高危权限：需二级审批，授予与变更应谨慎">高危</span>
+                  <% } else { %>
+                    <span class="risk-badge risk-basic">基础</span>
+                  <% } %>
+                </div>
+              <% }); %>
+            </div>
+          </div>
+        <% } %>
+      <% }); %>
+    </div>
+  </div>
+
+  <!-- 历史申请记录 -->
+  <div class="section-card accent-purple">
+    <div class="section-header bg-gradient-purple">
+      <h2>📜 申请历史记录</h2>
+    </div>
+    <div class="section-body">
+      <% if (allApplications.length > 0) { %>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>申请人</th>
+              <th>申请权限</th>
+              <th>申请理由</th>
+              <th>申请时间</th>
+              <th>状态</th>
+              <th>审批链</th>
+              <th>拒绝原因</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% allApplications.forEach(function(app) { %>
+              <tr>
+                <td><strong><%= app.username %></strong></td>
+                <td>
+                  <span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span>
+                  <% if (app.high_risk) { %><span class="risk-badge risk-high">🔴 高危</span><% } %>
+                </td>
+                <td><%= app.reason || '无' %></td>
+                <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
+                <td>
+                  <span class="status-badge status-<%= app.status %>">
+                    <% if (app.status === 'pending') { %>⏳ 待审核<% } %>
+                    <% if (app.status === 'approved') { %>✅ 已批准<% } %>
+                    <% if (app.status === 'rejected') { %>❌ 已拒绝<% } %>
+                  </span>
+                </td>
+                <td class="approval-chain">
+                  <% if (app.status === 'pending') { %>
+                    <% if ((app.approval_stage || 1) === 1) { %>
+                      <span class="stage-badge stage-1">一级待审</span>
+                    <% } else if ((app.approval_stage || 1) === 3) { %>
+                      <span class="stage-badge stage-3">三级待审</span>
+                    <% } else { %>
+                      <span class="stage-badge stage-2">二级待审</span>
+                    <% } %>
+                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
+                      一级：<%= app.admin_approver_name || (app.superior_name || '超管兜底') %>
+                    </div>
+                  <% } else if (app.status === 'approved') { %>
+                    <div style="font-size:var(--text-sm);">一级：<%= app.admin_approver_name || '-' %></div>
+                    <% if (app.high_risk) { %>
+                      <div style="font-size:var(--text-sm);">二级：<%= app.superior_approver_name || '-' %></div>
+                    <% } %>
+                    <% if (app.perm_ultra_high_risk == 1) { %>
+                      <div style="font-size:var(--text-sm);">三级终审：<%= app.reviewer_name || '-' %></div>
+                    <% } %>
+                    <% if (app.system_confirmed_at) { %>
+                      <div style="font-size:var(--text-xs);color:var(--success);">✅ 系统已确认生效</div>
+                    <% } %>
+                  <% } else { %>
+                    <div style="font-size:var(--text-sm);">驳回人：<%= app.reviewer_name || '-' %></div>
+                  <% } %>
+                </td>
+                <td><% if (app.status === 'rejected') { %><span style="color: var(--danger); font-size: var(--text-sm);"><%= app.reject_reason || '未填写' %></span><% } else { %><span style="color: var(--gray-300);">-</span><% } %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <div class="empty-state">
+          <span class="empty-state-icon">📭</span>
+          <p class="empty-state-text">暂无申请记录</p>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<!-- 授予权限弹窗 -->
+<div id="grantModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>授予用户权限 - <span id="grantUsername"></span></h3>
+      <button class="modal-close" onclick="closeGrantModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="grantUserId">
+      <p>请选择要授予的权限（高危🔴 / 超高危☣ 权限仅超级管理员可授予）：</p>
+      <div id="grantPermList" class="perm-checkboxes"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-success" onclick="confirmGrant()">确认授予</button>
+      <button class="btn" onclick="closeGrantModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 撤销权限弹窗 -->
+<div id="revokeModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>撤销用户权限 - <span id="revokeUsername"></span></h3>
+      <button class="modal-close" onclick="closeRevokeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="revokeUserId">
+      <p>请选择要撤销的权限：</p>
+      <div id="revokePermList" class="perm-checkboxes"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="confirmRevoke()">确认撤销</button>
+      <button class="btn" onclick="closeRevokeModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 拒绝申请弹窗 -->
+<div id="rejectModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>拒绝权限申请</h3>
+      <button class="modal-close" onclick="closeRejectModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="rejectApplicationId">
+      <div class="form-group">
+        <label>拒绝原因（可选）</label>
+        <textarea id="rejectReasonInput" rows="4" placeholder="请输入拒绝原因，将展示给申请人..." style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);resize:vertical;font-family:inherit;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="confirmReject()">确认拒绝</button>
+      <button class="btn" onclick="closeRejectModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// 全量权限点（服务端渲染注入）与当前操作者角色（用于高危权限分级展示）
+var ALL_PERMS = <%- JSON.stringify(permissions) %>;
+var CURRENT_USER_ROLE = '<%= user.role %>';
+
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+// 显示授予权限弹窗：按分类分组；高危权限非超管禁用（仅超管可授）
+function showGrantModal(userId, btn) {
+  var username = btn.getAttribute('data-username');
+  var ownedEncoded = btn.getAttribute('data-owned');
+  var owned = ownedEncoded ? JSON.parse(decodeURIComponent(ownedEncoded)) : [];
+  var isSuperAdmin = CURRENT_USER_ROLE === 'super_admin';
+
+  document.getElementById('grantUserId').value = userId;
+  document.getElementById('grantUsername').textContent = username;
+
+  var CAT_ICONS = { basic: '📌', content: '📝', community: '💬', image: '🖼️', media: '🖼️', ai: '🤖', spreadsheet: '📊', admin: '⚙️', system: '⚙️' };
+  var groups = {};
+  ALL_PERMS.forEach(function(p) {
+    var cat = p.category || 'system';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(p);
+  });
+
+  var html = '';
+  Object.keys(groups).forEach(function(cat) {
+    var perms = groups[cat].slice().sort(function(a, b) { return (a.sort_order || 999) - (b.sort_order || 999); });
+    if (perms.length === 0) return;
+    html += '<div class="perm-category"><strong>' + (CAT_ICONS[cat] || '📦') + ' ' + (cat === 'basic' ? '前端访问' : cat === 'content' ? '内容管理' : cat === 'community' ? '社区互动' : cat === 'image' ? '图片分享' : cat === 'ai' ? 'AI 能力' : cat === 'spreadsheet' ? '表格协作' : '系统管理') + '</strong></div>';
+    perms.forEach(function(p) {
+      var ownedFlag = owned.indexOf(p.perm_key) !== -1;
+      var highRisk = p.high_risk == 1;
+      var disabled = ownedFlag || (highRisk && !isSuperAdmin);
+      var tip = ownedFlag ? '该用户已拥有此权限' : (highRisk && !isSuperAdmin ? '高危权限，仅超级管理员可授予' : '');
+      html += '<div class="perm-item">' +
+        '<label title="' + tip + '">' +
+        '<input type="checkbox" name="grant_perms" value="' + p.perm_key + '"' + (disabled ? ' disabled' : '') + '> ' +
+        p.perm_name +
+        (highRisk ? ' <span class="risk-badge risk-high">🔴 高危' + (isSuperAdmin ? '' : ' · 仅超管') + '</span>' : ' <span class="risk-badge risk-basic">基础</span>') +
+        (ownedFlag ? ' <span class="risk-badge" style="background:#e9ecef;color:#6c757d;">已拥有</span>' : '') +
+        ' <span class="perm-key">(' + p.perm_key + ')</span>' +
+        '</label></div>';
+    });
+  });
+
+  document.getElementById('grantPermList').innerHTML = html;
+  document.getElementById('grantModal').style.display = 'flex';
+}
+
+function closeGrantModal() {
+  document.getElementById('grantModal').style.display = 'none';
+}
+
+function confirmGrant() {
+  var userId = document.getElementById('grantUserId').value;
+  var checkboxes = document.querySelectorAll('input[name="grant_perms"]:checked');
+
+  if (checkboxes.length === 0) {
+    alert('请选择要授予的权限');
+    return;
+  }
+
+  if (!confirm('确定授予选中的 ' + checkboxes.length + ' 个权限吗？\n（高危权限仅超级管理员可授予，授予后立即生效）')) {
+    return;
+  }
+
+  var requests = [];
+  checkboxes.forEach(function(cb) {
+    requests.push(
+      fetch('/admin/permissions/grant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': getCsrfToken()
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          perm_key: cb.value,
+          _csrf: getCsrfToken()
+        })
+      })
+    );
+  });
+
+  Promise.all(requests).then(function(responses) {
+    var denied = responses.filter(function(r) { return r.status === 403 || r.status === 400; });
+    if (denied.length > 0) {
+      alert('部分权限授予被拒绝（可能为高危权限或参数错误），请刷新后重试');
+    }
+    location.reload();
+  }).catch(function(err) {
+    alert('授予权限失败: ' + err.message);
+  });
+}
+
+// 显示撤销权限弹窗
+function showRevokeModal(userId, btn) {
+  var username = btn.getAttribute('data-username');
+  var permsEncoded = btn.getAttribute('data-perms');
+  var perms = JSON.parse(decodeURIComponent(permsEncoded));
+  var permNamesEncoded = btn.getAttribute('data-perm-names');
+  var permNames = permNamesEncoded ? JSON.parse(decodeURIComponent(permNamesEncoded)) : {};
+  
+  document.getElementById('revokeUserId').value = userId;
+  document.getElementById('revokeUsername').textContent = username;
+  
+  var categories = {
+    '访问权限': [],
+    '用户功能': [],
+    '后台管理': []
+  };
+  
+  perms.forEach(function(permKey) {
+    var displayName = permNames[permKey] || permKey;
+    var item = { key: permKey, name: displayName };
+    
+    if (permKey.endsWith('.access')) {
+      categories['访问权限'].push(item);
+    } else if (permKey.includes('.manage') || permKey.includes('.review') || 
+               permKey.includes('.categories') || permKey.includes('.users') ||
+               permKey.includes('.role') || permKey.includes('.view') ||
+               permKey.includes('.backup') || permKey.includes('.export') ||
+               permKey.includes('.seo') || permKey.includes('.settings')) {
+      categories['后台管理'].push(item);
+    } else {
+      categories['用户功能'].push(item);
+    }
+  });
+  
+  var permListHtml = '';
+  Object.keys(categories).forEach(function(catName) {
+    if (categories[catName].length > 0) {
+      permListHtml += '<div class="perm-category"><strong>' + catName + '</strong></div>';
+      categories[catName].forEach(function(perm) {
+        permListHtml += '<div class="perm-item"><label><input type="checkbox" name="revoke_perms" value="' + perm.key + '"> ' + perm.name + ' <span class="perm-key">(' + perm.key + ')</span></label></div>';
+      });
+    }
+  });
+  
+  document.getElementById('revokePermList').innerHTML = permListHtml;
+  document.getElementById('revokeModal').style.display = 'flex';
+}
+
+function closeRevokeModal() {
+  document.getElementById('revokeModal').style.display = 'none';
+}
+
+function confirmRevoke() {
+  var userId = document.getElementById('revokeUserId').value;
+  var checkboxes = document.querySelectorAll('input[name="revoke_perms"]:checked');
+  
+  if (checkboxes.length === 0) {
+    alert('请选择要撤销的权限');
+    return;
+  }
+  
+  if (!confirm('确定要撤销选中的 ' + checkboxes.length + ' 个权限吗？')) {
+    return;
+  }
+  
+  var requests = [];
+  checkboxes.forEach(function(cb) {
+    requests.push(
+      fetch('/admin/permissions/revoke', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': getCsrfToken()
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          perm_key: cb.value,
+          _csrf: getCsrfToken()
+        })
+      })
+    );
+  });
+  
+  Promise.all(requests).then(function() {
+    location.reload();
+  }).catch(function(err) {
+    alert('撤销权限失败: ' + err.message);
+  });
+}
+
+document.getElementById('grantModal').addEventListener('click', function(e) {
+  if (e.target === this) closeGrantModal();
+});
+document.getElementById('revokeModal').addEventListener('click', function(e) {
+  if (e.target === this) closeRevokeModal();
+});
+document.getElementById('rejectModal').addEventListener('click', function(e) {
+  if (e.target === this) closeRejectModal();
+});
+
+function approveApplication(applicationId) {
+  if (!confirm('确定批准此权限申请吗？\n（高危申请一级批准后将转交您的上级管理员终审）')) return;
+
+  fetch('/admin/permissions/approve', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: JSON.stringify({ application_id: applicationId, _csrf: getCsrfToken() })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      showToast(data.message || '已批准', 'success');
+      setTimeout(function() { location.reload(); }, 900);
+    } else {
+      alert(data.error || '操作失败');
+    }
+  })
+  .catch(function(err) {
+    alert('操作失败: ' + err.message);
+  });
+}
+
+// 联动高亮：从用户管理页「查看权限」跳转过来时，高亮并滚动到对应用户行
+(function() {
+  var uid = <%= typeof highlightUserId !== 'undefined' ? (highlightUserId || 0) : 0 %>;
+  if (!uid) return;
+  var tr = document.querySelector('tr[data-uid="' + uid + '"]');
+  if (tr) {
+    tr.classList.add('highlight-user-row');
+    tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+})();
+
+function rejectApplication(applicationId) {
+  document.getElementById('rejectApplicationId').value = applicationId;
+  document.getElementById('rejectReasonInput').value = '';
+  document.getElementById('rejectModal').style.display = 'flex';
+}
+
+function closeRejectModal() {
+  document.getElementById('rejectModal').style.display = 'none';
+}
+
+function confirmReject() {
+  var applicationId = document.getElementById('rejectApplicationId').value;
+  var reason = document.getElementById('rejectReasonInput').value.trim();
+
+  fetch('/admin/permissions/reject', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: JSON.stringify({ application_id: applicationId, reason: reason, _csrf: getCsrfToken() })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) {
+    if (data.success) {
+      location.reload();
+    } else {
+      alert(data.error || '操作失败');
+    }
+  })
+  .catch(function(err) {
+    alert('操作失败: ' + err.message);
+  });
+}
+</script>
+
+<style>
+.perms-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* 审批类型徽标 */
+.risk-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.risk-badge.risk-high {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.risk-badge.risk-ultra {
+  background: #e5e0ff;
+  color: #5b21b6;
+}
+
+.risk-badge.risk-basic {
+  background: #d4edda;
+  color: #155724;
+}
+
+/* 审批阶段徽标 */
+.stage-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stage-badge.stage-1 {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.stage-badge.stage-2 {
+  background: #e7f1ff;
+  color: #1d6fa5;
+}
+
+.stage-badge.stage-3 {
+  background: #e5e0ff;
+  color: #5b21b6;
+}
+
+/* 用户联动小链接 */
+.link-user {
+  margin-left: 6px;
+  font-size: var(--text-xs);
+  text-decoration: none;
+}
+
+.link-user:hover {
+  text-decoration: underline;
+}
+
+/* 无权审批提示 */
+.cannot-approve {
+  color: var(--gray-400);
+  font-size: var(--text-xs);
+  font-style: italic;
+  max-width: 160px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* 联动高亮行 */
+.highlight-user-row {
+  outline: 2px solid var(--warning, #f39800);
+  outline-offset: -2px;
+  background: #fffdf0 !important;
+}
+
+.approval-chain {
+  min-width: 140px;
+}
+
+.perm-checkboxes {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 权限列表分类统计与说明 */
+.perm-count {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--gray-100);
+  color: var(--gray-500);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.perm-group-desc {
+  font-size: var(--text-xs);
+  color: var(--gray-400);
+  margin: 2px 0 8px;
+}
+
+.perm-item {
+  padding: 8px 12px;
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-100);
+  transition: var(--transition-fast);
+}
+
+.perm-item:hover {
+  background: var(--primary-bg);
+  border-color: var(--primary-light);
+}
+
+.perm-item label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.perm-key {
+  font-size: var(--text-xs);
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+}
+
+.perm-category {
+  padding: 8px 0;
+  margin-top: 8px;
+  border-top: 1px solid var(--gray-100);
+}
+
+.perm-category:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+.perm-category strong {
+  color: var(--gray-600);
+  font-size: var(--text-sm);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  width: 480px;
+  max-width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-xl);
+  animation: modalSlideIn 0.2s ease;
+}
+
+@keyframes modalSlideIn {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  padding: var(--space-4) var(--space-6);
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--gray-800);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--gray-400);
+  transition: var(--transition-fast);
+}
+
+.modal-close:hover {
+  color: var(--gray-600);
+}
+
+.modal-body {
+  padding: var(--space-6);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  padding: var(--space-4) var(--space-6);
+  background: var(--gray-50);
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+</style>

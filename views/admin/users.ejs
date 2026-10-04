@@ -18,7 +18,7 @@
 
   <% if (readOnly) { %>
   <div class="alert alert-info read-only-banner">
-    <span>👁️</span> 当前为只读模式：您仅可查看用户列表，添加、禁用、删除、修改角色等操作仅超级管理员可用。如需操作权限，请前往 <a href="/permissions/apply">🔑 权限申请</a> 页面申请。
+    <span>👁️</span> 当前为只读模式：您仅可查看自己及下级（直接 / 再下级）用户，无法查看同级、上级或其他分支用户；添加、禁用、删除、修改角色等操作仅超级管理员可用。如需操作权限，请前往 <a href="/permissions/apply">🔑 权限申请</a> 页面申请。
   </div>
   <% } %>
 

@@ -86,6 +86,36 @@ function isUltraHighRiskPerm(db, permKey) {
 }
 
 /**
+ * 行级数据权限：当前用户可见的用户 id 集合（用户管理 / 权限管理页数据范围）
+ * 规则：
+ *  - super_admin：全量可见（返回 null 表示不限制）
+ *  - admin：仅可见自己 + 直接下级 + 递归再下级（其审批队列子树）；
+ *           不可见同级管理员、上级、其他分支与孤立用户
+ *  - 普通用户：仅可见自己
+ * 实现：沿 superior_id 递归收集子树（防环：已访问集合）
+ * @param {object} db 数据库实例
+ * @param {object} user 当前用户（含 id / role）
+ * @returns {Set<number>|null} null=全量；Set=允许的用户 id 集合
+ */
+function getVisibleUserIds(db, user) {
+  if (!user) return new Set();
+  if (user.role === 'super_admin') return null;
+  const ids = new Set([user.id]);
+  const queue = [user.id];
+  while (queue.length) {
+    const pid = queue.shift();
+    const children = queryAll(db, 'SELECT id FROM users WHERE superior_id = ?', [pid]);
+    (children || []).forEach(function (c) {
+      if (!ids.has(c.id)) {
+        ids.add(c.id);
+        queue.push(c.id);
+      }
+    });
+  }
+  return ids;
+}
+
+/**
  * 查询全部在职超级管理员 id（链路缺失时的兜底审批人）
  * @returns {number[]}
  */
@@ -231,6 +261,7 @@ module.exports = {
   ULTRA_HIGH_RISK_PERMS,
   isHighRiskPerm,
   isUltraHighRiskPerm,
+  getVisibleUserIds,
   getSuperAdminIds,
   getStageApprover,
   canApproveApplication,

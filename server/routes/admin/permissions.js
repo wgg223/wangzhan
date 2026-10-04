@@ -25,6 +25,7 @@ const { logActivity } = require('../../config/activity');
 const { createNotification } = require('../community');
 const {
   isUltraHighRiskPerm,
+  getVisibleUserIds,
   canApproveApplication,
   grantApplicationPermission,
   notifyStageApprover,
@@ -37,6 +38,13 @@ const {
 router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
 
+  // 行级数据权限：非超管仅可见自己 + 下级树用户（用户矩阵与申请记录同范围）
+  const visibleIds = getVisibleUserIds(db, req.session.user);
+  const scopeSql = visibleIds
+    ? ' AND u.id IN (' + Array.from(visibleIds).map(function () { return '?'; }).join(',') + ')'
+    : '';
+  const scopeParams = visibleIds ? Array.from(visibleIds) : [];
+
   const allPermissions = queryAll(db, 'SELECT * FROM permissions ORDER BY id ASC');
 
   // 单次聚合查询用户权限（替代逐用户 N+1 查询）
@@ -44,8 +52,10 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
     `SELECT u.id, u.username, u.email, u.role, u.status, GROUP_CONCAT(up.perm_key) AS perms
      FROM users u
      LEFT JOIN user_permissions up ON up.user_id = u.id
+     WHERE 1=1${scopeSql}
      GROUP BY u.id
-     ORDER BY u.created_at DESC`);
+     ORDER BY u.created_at DESC`,
+    scopeParams);
   const userPerms = {};
   users.forEach(u => {
     userPerms[u.id] = u.perms ? u.perms.split(',') : [];
@@ -60,8 +70,9 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
      LEFT JOIN permissions p ON pa.perm_key = p.perm_key
      LEFT JOIN users s ON u.superior_id = s.id
      LEFT JOIN users a1 ON pa.approved_by_admin = a1.id
-     WHERE pa.status = 'pending'
-     ORDER BY pa.created_at DESC`
+     WHERE pa.status = 'pending'${scopeSql}
+     ORDER BY pa.created_at DESC`,
+    scopeParams
   );
   // 标注每条申请当前用户能否审批（用于前端按钮展示）
   pendingApplications.forEach(app => {
@@ -84,8 +95,10 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
      LEFT JOIN users a1 ON pa.approved_by_admin = a1.id
      LEFT JOIN users a2 ON pa.approved_by_superior = a2.id
      LEFT JOIN users s ON u.superior_id = s.id
+     WHERE 1=1${scopeSql}
      ORDER BY pa.created_at DESC
-     LIMIT 200`
+     LIMIT 200`,
+    scopeParams
   );
   // 兼容旧数据库：确保 reject_reason 字段存在（旧库可能没有该列）
   allApplications.forEach(app => {
@@ -117,8 +130,9 @@ router.get('/my-approvals', isAuthenticated, (req, res) => {
      FROM permission_applications pa
      LEFT JOIN users u ON pa.user_id = u.id
      LEFT JOIN permissions p ON pa.perm_key = p.perm_key
-     WHERE pa.status = 'pending'
-     ORDER BY pa.created_at DESC`
+     WHERE pa.status = 'pending'${scopeSql}
+     ORDER BY pa.created_at DESC`,
+    scopeParams
   );
 
   // 仅保留当前用户有权审批的申请（审批链命中，或链缺失时超管兜底）
