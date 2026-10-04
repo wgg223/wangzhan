@@ -75,9 +75,35 @@
       <h2>用户列表 <span class="badge badge-primary"><%= pagination.total %></span></h2>
     </div>
     <div class="section-body" style="padding:0;">
+      <% if (!readOnly) { %>
+      <!-- 批量操作工具栏（仅超管可见） -->
+      <div class="batch-toolbar">
+        <span class="batch-count" id="batch-count">已选 <strong>0</strong> 个</span>
+        <button type="button" class="btn btn-small btn-success" onclick="runBatchAction('approve')">✓ 批量通过/启用</button>
+        <button type="button" class="btn btn-small btn-warning" onclick="runBatchAction('disable')">批量禁用</button>
+        <button type="button" class="btn btn-small btn-danger" onclick="runBatchAction('delete')">批量删除</button>
+        <span class="batch-op">
+          <select id="batch-role" title="批量修改为角色">
+            <option value="admin">管理员</option>
+            <option value="user" selected>用户</option>
+          </select>
+          <button type="button" class="btn btn-small btn-primary" onclick="runBatchAction('role')">批量改角色</button>
+        </span>
+        <span class="batch-op">
+          <select id="batch-superior" title="批量设置对应上级管理员">
+            <option value="0">（清除上级）</option>
+            <% adminCandidates.forEach(function(c) { %>
+              <option value="<%= c.id %>"><%= c.username %>（<%= c.role === 'super_admin' ? '超管' : '管理员' %>）</option>
+            <% }) %>
+          </select>
+          <button type="button" class="btn btn-small btn-primary" onclick="runBatchAction('set_superior')">批量设上级</button>
+        </span>
+      </div>
+      <% } %>
       <table class="admin-table">
         <thead>
           <tr>
+            <% if (!readOnly) { %><th style="width:36px;text-align:center;"><input type="checkbox" id="check-all-users" onclick="toggleAllUsers(this)" title="全选本页"></th><% } %>
             <th>ID</th>
             <th>用户名</th>
             <th>邮箱</th>
@@ -92,6 +118,11 @@
           <% if (users.length > 0) { %>
             <% users.forEach(u => { %>
               <tr>
+                <% if (!readOnly) { %>
+                <td style="text-align:center;">
+                  <input type="checkbox" class="user-check" value="<%= u.id %>" data-username="<%= u.username %>">
+                </td>
+                <% } %>
                 <td><span style="color:var(--gray-400);font-family:var(--font-mono);font-size:var(--text-sm);"><%= u.uid || '#' + u.id %></span></td>
                 <td>
                   <strong><%= u.username %></strong>
@@ -183,7 +214,7 @@
             <% }) %>
           <% } else { %>
             <tr>
-              <td colspan="<%= readOnly ? 7 : 8 %>" class="empty-row">没有匹配的用户</td>
+              <td colspan="<%= readOnly ? 7 : 9 %>" class="empty-row">没有匹配的用户</td>
             </tr>
           <% } %>
         </tbody>
@@ -446,6 +477,44 @@
 .import-errors-list li {
   margin-bottom: 2px;
 }
+
+/* 批量操作工具栏 */
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--gray-100);
+  background: var(--gray-50, #f8f9fa);
+}
+
+.batch-toolbar .batch-count {
+  font-size: var(--text-sm);
+  color: var(--gray-600);
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.batch-toolbar .batch-op {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.batch-toolbar select {
+  padding: 4px 6px;
+  font-size: var(--text-xs);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  max-width: 160px;
+}
+
+.batch-toolbar .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 </style>
 
 <!-- 创建用户模态框 -->
@@ -555,6 +624,23 @@
     <div class="modal-footer">
       <button type="button" class="btn" onclick="closeSetSuperiorModal()">取消</button>
       <button type="button" class="btn btn-primary" id="submit-set-superior" onclick="submitSetSuperior()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 批量操作结果模态框 -->
+<div id="batch-result-modal" class="modal" style="display:none;">
+  <div class="modal-content" style="width:560px;">
+    <div class="modal-header">
+      <h2 id="batch-result-title">批量操作结果</h2>
+      <button type="button" class="modal-close" onclick="closeBatchResultModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="batch-result" class="import-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn" onclick="closeBatchResultModal()">关闭</button>
+      <button type="button" class="btn btn-primary" onclick="location.reload()">刷新列表</button>
     </div>
   </div>
 </div>
@@ -807,6 +893,148 @@ function submitSetSuperior() {
 
 document.getElementById('set-superior-modal').addEventListener('click', function(e) {
   if (e.target === this) closeSetSuperiorModal();
+});
+
+// ============ 批量勾选操作 ============
+var BATCH_ACTION_LABELS = {
+  approve: '批量通过/启用',
+  disable: '批量禁用',
+  delete: '批量删除',
+  role: '批量修改角色',
+  set_superior: '批量设置上级管理员'
+};
+
+var __batchBusy = false;
+
+function getSelectedUserIds() {
+  var boxes = document.querySelectorAll('.user-check:checked');
+  var ids = [];
+  for (var i = 0; i < boxes.length; i++) {
+    ids.push(parseInt(boxes[i].value, 10));
+  }
+  return ids;
+}
+
+function updateBatchCount() {
+  var el = document.getElementById('batch-count');
+  if (!el) return;
+  el.innerHTML = '已选 <strong>' + getSelectedUserIds().length + '</strong> 个';
+  syncSelectAll();
+}
+
+function syncSelectAll() {
+  var all = document.querySelectorAll('.user-check');
+  var checked = document.querySelectorAll('.user-check:checked');
+  var sa = document.getElementById('check-all-users');
+  if (sa) sa.checked = all.length > 0 && all.length === checked.length;
+}
+
+function toggleAllUsers(checkbox) {
+  var boxes = document.querySelectorAll('.user-check');
+  for (var i = 0; i < boxes.length; i++) {
+    boxes[i].checked = checkbox.checked;
+  }
+  updateBatchCount();
+}
+
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.classList && e.target.classList.contains('user-check')) {
+    updateBatchCount();
+  }
+});
+
+function runBatchAction(action) {
+  if (__batchBusy) {
+    showToast('批量操作进行中，请稍候', 'error');
+    return;
+  }
+  var ids = getSelectedUserIds();
+  if (ids.length === 0) {
+    showToast('请先勾选要操作的用户', 'error');
+    return;
+  }
+
+  if (action === 'disable' && !confirm('确定要批量禁用 ' + ids.length + ' 个用户吗？被禁用账号将无法登录。')) return;
+  if (action === 'delete' && !confirm('确定要批量删除 ' + ids.length + ' 个用户及其全部关联数据吗？此操作不可恢复！')) return;
+
+  var body = { action: action, ids: ids };
+  if (action === 'role') {
+    body.role = document.getElementById('batch-role').value;
+    if (!body.role) {
+      showToast('请选择要批量设置的角色', 'error');
+      return;
+    }
+  }
+  if (action === 'set_superior') {
+    body.superior_id = parseInt(document.getElementById('batch-superior').value, 10) || 0;
+  }
+
+  __batchBusy = true;
+  setBatchButtonsDisabled(true);
+
+  fetch('/admin/users/batch', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCsrfToken()
+    },
+    body: JSON.stringify(body)
+  })
+  .then(function(response) {
+    return response.json().catch(function() { return {}; }).then(function(data) {
+      if (!response.ok) throw new Error(data.error || '批量操作失败 (HTTP ' + response.status + ')');
+      return data;
+    });
+  })
+  .then(function(data) {
+    if (!data.success) {
+      showToast(data.error || data.message || '批量操作失败', 'error');
+      return;
+    }
+    renderBatchResult(data.action || action, data.results || { success: 0, failed: 0, errors: [] });
+  })
+  .catch(function(err) {
+    showToast(err.message || '网络错误，请重试', 'error');
+  })
+  .finally(function() {
+    __batchBusy = false;
+    setBatchButtonsDisabled(false);
+  });
+}
+
+function setBatchButtonsDisabled(disabled) {
+  var buttons = document.querySelectorAll('.batch-toolbar button');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].disabled = disabled;
+  }
+}
+
+function renderBatchResult(action, results) {
+  document.getElementById('batch-result-title').textContent = BATCH_ACTION_LABELS[action] || '批量操作结果';
+  var box = document.getElementById('batch-result');
+  var errs = results.errors || [];
+  var html = '<strong>操作完成</strong>：成功 <span style="color:var(--success);">' + results.success + '</span> 个' +
+    '，失败 <span style="color:var(--danger);">' + results.failed + '</span> 个。';
+  if (errs.length > 0) {
+    html += '<ul class="import-errors-list">';
+    errs.forEach(function(e) {
+      html += '<li>' + escapeHtml(e.username || ('ID ' + e.id)) + '：' + escapeHtml(e.reason) + '</li>';
+    });
+    html += '</ul>';
+    box.className = 'import-result has-errors';
+  } else {
+    box.className = 'import-result ok';
+  }
+  box.innerHTML = html;
+  document.getElementById('batch-result-modal').style.display = 'flex';
+}
+
+function closeBatchResultModal() {
+  document.getElementById('batch-result-modal').style.display = 'none';
+}
+
+document.getElementById('batch-result-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeBatchResultModal();
 });
 </script>
 <% } %>

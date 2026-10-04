@@ -24,6 +24,7 @@ const {
   generateUid
 } = require('../config/database');
 const { dbUpload } = require('./admin/upload');
+const { validatePassword } = require('../middlewares/auth');
 const fs = require('fs');
 
 // 数据库模式预设
@@ -253,8 +254,10 @@ function validateForm({ username, password, confirm_password, email, db_mode }) 
     return '用户名只能包含中文、英文、数字和下划线';
   }
 
-  if (password.length < 8) {
-    return '密码长度不能少于8位';
+  // P0-3 口令策略统一：安装向导初始超管密码与全站一致（≥10位 + 至少3类字符 + 弱口令黑名单）
+  const pwdCheck = validatePassword(password);
+  if (!pwdCheck.ok) {
+    return pwdCheck.reason;
   }
 
   if (password !== confirm_password) {

@@ -2,8 +2,8 @@
  * 权限管理路由（后台）
  * 能力：
  *   GET  /admin/permissions            —— 权限管理页（权限点列表、用户权限矩阵、申请审核）
- *   POST /admin/permissions/grant      —— 授予权限（仅超管；权限键白名单校验；目标用户操作校验）
- *   POST /admin/permissions/revoke     —— 撤销权限（仅超管，与 grant 权限矩阵对称）
+ *   POST /admin/permissions/grant      —— 授予权限（分级：持 permissions.manage 可授基础权限；高危权限仅超管；目标用户操作校验）
+ *   POST /admin/permissions/revoke     —— 撤销权限（分级，与 grant 权限矩阵对称）
  *   POST /admin/permissions/approve   —— 审批通过（按审批链授权，见下方流程说明）
  *   POST /admin/permissions/reject     —— 拒绝权限申请（记录驳回原因；同样按审批链授权）
  *   GET  /admin/my-approvals           —— 我的审批页（当前用户作为指定审批人的待办列表）
@@ -130,7 +130,7 @@ router.get('/my-approvals', isAuthenticated, (req, res) => {
   });
 });
 
-// 授予权限（仅超管）
+// 授予权限（分级：基础权限需 permissions.manage 即可授予；高危权限仅超级管理员可授予）
 router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { user_id, perm_key } = req.body;
@@ -139,15 +139,15 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.ma
     return res.status(400).json({ error: '参数不完整' });
   }
 
-  // 授予权限仅限超级管理员
-  if (req.session.user.role !== 'super_admin') {
-    return res.status(403).json({ error: '仅超级管理员可授予权限' });
-  }
-
-  // perm_key 必须真实存在于 permissions 表（防伪造权限键）
-  const permExists = queryOne(db, 'SELECT id FROM permissions WHERE perm_key = ?', [perm_key]);
-  if (!permExists) {
+  // perm_key 必须真实存在于 permissions 表（防伪造权限键），并读取高危标记
+  const permRow = queryOne(db, 'SELECT id, high_risk FROM permissions WHERE perm_key = ?', [perm_key]);
+  if (!permRow) {
     return res.status(400).json({ error: '非法的权限项' });
+  }
+  // 高危权限（账号/权限/设置/数据/批量删除类）仅超级管理员可授予；
+  // 普通管理员（持 permissions.manage）可授予基础权限。
+  if (permRow.high_risk === 1 && req.session.user.role !== 'super_admin') {
+    return res.status(403).json({ error: '高危权限仅超级管理员可授予' });
   }
 
   const targetUser = queryOne(db, 'SELECT id, role, username FROM users WHERE id = ?', [user_id]);
@@ -167,14 +167,14 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.ma
       [user_id, perm_key, req.session.user.id]);
     saveDatabase();
     if (targetUser) {
-      logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'grant', target_type: 'permission', target_id: parseInt(user_id), target_title: targetUser.username, detail: '授予权限 ' + perm_key + ' 给用户：' + targetUser.username, ip: req.ip });
+      logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'grant', target_type: 'permission', target_id: parseInt(user_id), target_title: targetUser.username, detail: '授予权限 ' + perm_key + ' 给用户：' + targetUser.username + (permRow.high_risk === 1 ? '（高危权限）' : ''), ip: req.ip });
     }
   }
 
   res.redirect('/admin/permissions');
 });
 
-// 撤销权限（仅超管，与 grant 权限矩阵对齐）
+// 撤销权限（分级：与 grant 对称，高危权限仅超级管理员可撤销）
 router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
   const db = req.db;
   const { user_id, perm_key } = req.body;
@@ -183,15 +183,14 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.m
     return res.status(400).json({ error: '参数不完整' });
   }
 
-  // 撤销权限与 grant/approve 对齐，仅限超级管理员（修复权限矩阵不对称）
-  if (req.session.user.role !== 'super_admin') {
-    return res.status(403).json({ error: '仅超级管理员可撤销权限' });
-  }
-
-  // perm_key 必须真实存在于 permissions 表
-  const permExists = queryOne(db, 'SELECT id FROM permissions WHERE perm_key = ?', [perm_key]);
-  if (!permExists) {
+  // perm_key 必须真实存在于 permissions 表，并读取高危标记
+  const permRow = queryOne(db, 'SELECT id, high_risk FROM permissions WHERE perm_key = ?', [perm_key]);
+  if (!permRow) {
     return res.status(400).json({ error: '非法的权限项' });
+  }
+  // 高危权限仅超级管理员可撤销；普通管理员可撤销基础权限
+  if (permRow.high_risk === 1 && req.session.user.role !== 'super_admin') {
+    return res.status(403).json({ error: '高危权限仅超级管理员可撤销' });
   }
 
   const targetUser = queryOne(db, 'SELECT id, role, username FROM users WHERE id = ?', [user_id]);
@@ -207,7 +206,7 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.m
   db.run('DELETE FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user_id, perm_key]);
   saveDatabase();
   if (targetUser) {
-    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'revoke', target_type: 'permission', target_id: parseInt(user_id), target_title: targetUser.username, detail: '撤销权限 ' + perm_key + ' 从用户：' + targetUser.username, ip: req.ip });
+    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'revoke', target_type: 'permission', target_id: parseInt(user_id), target_title: targetUser.username, detail: '撤销权限 ' + perm_key + ' 从用户：' + targetUser.username + (permRow.high_risk === 1 ? '（高危权限）' : ''), ip: req.ip });
   }
   res.redirect('/admin/permissions');
 });

@@ -51,12 +51,10 @@
     <% Object.entries(permissionsByCategory).forEach(function([catKey, category]) { %>
       <div class="apply-section">
         <h2>
-          <% if (catKey === 'basic') { %>📌<% } %>
-          <% if (catKey === 'content') { %>📝<% } %>
-          <% if (catKey === 'media') { %>🖼️<% } %>
-          <% if (catKey === 'community') { %>💬<% } %>
-          <% if (catKey === 'admin') { %>⚙️<% } %>
-          <%= category.name %>
+          <%
+            var CAT_ICONS = { basic: '📌', content: '📝', community: '💬', image: '🖼️', media: '🖼️', ai: '🤖', spreadsheet: '📊', admin: '⚙️', system: '⚙️' };
+          %>
+          <%= CAT_ICONS[catKey] || '📦' %> <%= category.name %>
         </h2>
         <p class="section-desc"><%= category.description %></p>
         <div class="perms-grid">
@@ -120,8 +118,10 @@
 </div>
 
 <% function renderPermCard(perm) { %>
-  <div class="perm-card <%= perm.isOwned ? 'owned' : (perm.isPending ? 'pending' : 'available') %>">
-    <span class="perm-name"><%= perm.perm_name %></span>
+  <div class="perm-card <%= perm.isOwned ? 'owned' : (perm.isPending ? 'pending' : 'available') %> <%= perm.high_risk == 1 ? 'high-risk' : '' %>">
+    <span class="perm-name"><%= perm.perm_name %>
+      <% if (perm.high_risk == 1) { %><span class="risk-tag" title="高危权限：需对应管理员及其上级两级审批">🔴 高危</span><% } %>
+    </span>
     <% if (perm.description) { %>
       <span class="perm-desc"><%= perm.description %></span>
     <% } %>
@@ -132,7 +132,7 @@
       <span class="status-badge pending">审核中</span>
       <button class="btn btn-small btn-cancel" onclick="cancelApplication('<%= perm.perm_key %>')">取消申请</button>
     <% } else { %>
-      <button class="btn btn-small btn-primary" onclick="showApplyModal('<%= perm.perm_key %>', '<%= perm.perm_name %>')">申请</button>
+      <button class="btn btn-small <%= perm.high_risk == 1 ? 'btn-high-risk' : 'btn-primary' %>" onclick="showApplyModal('<%= perm.perm_key %>', '<%= perm.perm_name %>')"><%= perm.high_risk == 1 ? '申请（二级审批）' : '申请' %></button>
     <% } %>
   </div>
 <% } %>
@@ -234,6 +234,20 @@ h2 {
 
 .perm-card.available {
   border-color: #3498db;
+}
+
+.perm-card.high-risk {
+  border-left: 3px solid #dc3545;
+  background: #fffafa;
+}
+
+.btn-high-risk {
+  background: #dc3545;
+  color: #fff;
+}
+
+.btn-high-risk:hover {
+  background: #c82333;
 }
 
 .perm-card.admin {

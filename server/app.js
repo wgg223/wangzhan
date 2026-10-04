@@ -508,8 +508,19 @@ async function start() {
       }
     });
 
-    // 请求超时保护：单请求 30 秒；Keep-Alive 65 秒
-    server.timeout = 30000;
+    // ===== 请求超时治理（减少 Nginx 502） =====
+    // 原配置 server.timeout=30000 会在请求 30 秒内无数据收发时销毁 socket，
+    // 而 Nginx 侧 proxy_read_timeout 已放宽到 300s —— 慢请求（批量导入/大表格保存等）
+    // 会被 Node 先切断连接，Nginx 随即报 502 Bad Gateway（upstream prematurely closed）。
+    // 现在：
+    //   - server.timeout = 0：关闭闲置销毁（长任务期间 socket 不再被 Node 掐断），
+    //     超时兜底交给 Nginx proxy_read_timeout（300s）与下方 requestTimeout；
+    //   - requestTimeout = 120s：单请求整体上限（Node 18+ 生效，旧版本自动忽略），
+    //     防恶意慢连接拖住进程；批量导入 1000 行异步哈希在 120s 内可完成；
+    //   - headersTimeout 60s < keepAliveTimeout 65s（Node 强制要求前者更小）。
+    server.timeout = 0;
+    server.requestTimeout = 120000;
+    server.headersTimeout = 60000;
     server.keepAliveTimeout = 65000;
 
     // 进程级错误处理

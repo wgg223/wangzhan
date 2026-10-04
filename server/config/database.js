@@ -238,7 +238,21 @@ function ensureSetupStatus() {
           logger.info('[安装状态] 恢复 .setup_completed 文件标记');
         }
       } catch (e) { /* 忽略 */ }
+      return;
     }
+    // 修复分支：表记录为 false 但站点已有用户数据（旧库安装标记未回写）。
+    // 否则 isSetupCompleted() 恒为 false，默认数据迁移（含权限种子/回收）永远被跳过。
+    // 与下方"两者都无"分支同规则：以 users 表是否有数据为准，纠正为已完成。
+    try {
+      const userCount = queryOne(db, 'SELECT COUNT(*) as count FROM users');
+      if (userCount && userCount.count > 0) {
+        db.run("UPDATE app_setup SET setup_value = 'true' WHERE setup_key = 'setup_completed'");
+        if (!fs.existsSync(fileMarker)) {
+          fs.writeFileSync(fileMarker, new Date().toISOString());
+        }
+        logger.info('[安装状态] 纠正 setup_completed=false → true（站点已有数据，恢复默认数据迁移）');
+      }
+    } catch (e) { /* 表刚创建或查询失败时忽略，保持 false 等待安装向导 */ }
     return;
   }
 

@@ -1426,12 +1426,14 @@ router.post('/:source/forgot-password/reset', resetPasswordLimiter, (req, res) =
     return renderVerify('请填写所有字段', null);
   }
 
-  if (new_password.length < 8) {
-    return renderVerify('密码长度不能少于8位', null);
-  }
-
   if (new_password !== confirm_password) {
     return renderVerify('两次输入的密码不一致', null);
+  }
+
+  // P0-3 口令策略统一：与注册入口一致的强口令校验（≥10位 + 至少3类字符 + 弱口令黑名单）
+  const pwdCheck = validatePassword(new_password);
+  if (!pwdCheck.ok) {
+    return renderVerify(pwdCheck.reason, null);
   }
 
   const user = queryOne(db, 'SELECT * FROM users WHERE email = ?', [email]);
@@ -1539,8 +1541,13 @@ router.post('/:source/change-password', changePasswordLimiter, (req, res) => {
     });
   }
 
-  if (!new_password || new_password.length < 8) {
-    return renderChangePassword('新密码长度不能少于8位', null);
+  // P0-3 口令策略统一：与注册入口一致的强口令校验（≥10位 + 至少3类字符 + 弱口令黑名单）
+  if (!new_password) {
+    return renderChangePassword('请输入新密码', null);
+  }
+  const pwdCheck = validatePassword(new_password);
+  if (!pwdCheck.ok) {
+    return renderChangePassword(pwdCheck.reason, null);
   }
 
   if (new_password !== confirm_password) {
@@ -1740,8 +1747,10 @@ router.post('/:source/force-change-password', changePasswordLimiter, (req, res) 
     return renderForceChange('请填写所有字段');
   }
 
-  if (new_password.length < 8) {
-    return renderForceChange('密码长度不能少于8位');
+  // P0-3 口令策略统一：与注册入口一致的强口令校验（≥10位 + 至少3类字符 + 弱口令黑名单）
+  const pwdCheck = validatePassword(new_password);
+  if (!pwdCheck.ok) {
+    return renderForceChange(pwdCheck.reason);
   }
 
   if (new_password !== confirm_password) {

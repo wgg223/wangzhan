@@ -65,10 +65,14 @@ router.use((req, res, next) => {
 // ---------- 挂载子路由 ----------
 router.use(siteStatsRouter);
 
-// 普通用户访问 /admin 时重定向到站点统计
+// 普通用户访问 /admin 时的入口判断（P0-1 收紧：仅拥有 site_stats.view 才可进入站点统计页）
 router.get('/', (req, res, next) => {
   if (req.session.user.role !== 'super_admin') {
-    return res.redirect('/admin/site-stats');
+    const userPerms = res.locals.userPermissions || [];
+    if (userPerms.includes('site_stats.view')) {
+      return res.redirect('/admin/site-stats');
+    }
+    return res.redirect('/');
   }
   next();
 });

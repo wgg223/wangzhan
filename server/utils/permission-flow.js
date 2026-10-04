@@ -12,7 +12,7 @@
 
 const { queryOne, queryAll } = require('../config/db-helpers');
 
-// 高危权限清单：系统级管理权限（授予后可影响账号/权限/站点配置）
+// 高危权限兜底清单（兼容旧库：permissions 表缺少 high_risk 标记或尚未被 seed 覆盖时仍生效）
 const HIGH_RISK_PERMS = [
   'users.manage',
   'permissions.manage',
@@ -21,13 +21,29 @@ const HIGH_RISK_PERMS = [
 ];
 
 /**
- * 判定一次权限申请是否属于高危流程
+ * 判定一次权限申请是否属于高危流程（表驱动 v2）。
+ * 规则（任一命中即高危）：
+ *  1. permissions 表 high_risk = 1（重建后的权限列表已为账号/权限/设置/数据/
+ *     密钥类及可批量删除内容的权限点标记高危，见 db-seed defaultPermissions）
+ *  2. 兜底清单 HIGH_RISK_PERMS 命中（旧库尚未标记时）
+ *  3. 高危用户：管理员角色申请任何管理类权限（防止管理员自我扩权）
+ * @param {object} db 数据库实例
  * @param {string} permKey 权限键
  * @param {string} applicantRole 申请人角色
  * @returns {boolean}
  */
-function isHighRiskPerm(permKey, applicantRole) {
+function isHighRiskPerm(db, permKey, applicantRole) {
+  if (!permKey) return false;
   if (HIGH_RISK_PERMS.includes(permKey)) return true;
+  // 表驱动：优先读 permissions.high_risk 标记
+  try {
+    if (db) {
+      const row = queryOne(db, 'SELECT high_risk FROM permissions WHERE perm_key = ?', [permKey]);
+      if (row && Number(row.high_risk) === 1) return true;
+    }
+  } catch (e) {
+    // 表结构不兼容时忽略，回退到角色规则与兜底清单
+  }
   // 高危用户：管理员角色申请任何管理类权限（防止管理员自我扩权）
   if (applicantRole === 'admin' && typeof permKey === 'string' && permKey.endsWith('.manage')) return true;
   return false;

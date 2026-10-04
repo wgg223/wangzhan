@@ -22,6 +22,7 @@ const crypto = require('crypto');              // 加密模块（随机 ID）
 const { queryOne, getDb, generateUid } = require('../../config/database');
 const { issueToken, revokeToken } = require('../../config/tokens');
 const { apiAuth } = require('../../middlewares/api-auth');
+const { validatePassword } = require('../../middlewares/auth');
 const { generateCaptcha } = require('../../config/captcha');
 const { loginLimiter } = require('../../middlewares/rate-limiter');
 const { verifyTOTP } = require('../../services/two-factor-auth');
@@ -108,8 +109,13 @@ router.post('/register', (req, res) => {
   if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username)) {
     return res.status(400).json({ error: '用户名格式不正确（2-20位，仅限字母数字下划线中文）' });
   }
-  if (password.length < 8 || password.length > 64) {
-    return res.status(400).json({ error: '密码长度需在 8-64 位之间' });
+  // P0-3 口令策略统一：与 Web 端注册一致的强口令校验（≥10位 + 至少3类字符 + 弱口令黑名单）
+  if (password.length > 64) {
+    return res.status(400).json({ error: '密码长度不能超过64位' });
+  }
+  const pwdCheck = validatePassword(password);
+  if (!pwdCheck.ok) {
+    return res.status(400).json({ error: pwdCheck.reason });
   }
 
   // 图形验证码校验（比对存储的文本，用后即焚）
@@ -290,8 +296,13 @@ router.put('/password', apiAuth, (req, res) => {
   const oldPassword = req.body.old_password || '';
   const newPassword = req.body.new_password || '';
 
-  if (newPassword.length < 8 || newPassword.length > 64) {
-    return res.status(400).json({ error: '新密码长度需在 8-64 位之间' });
+  // P0-3 口令策略统一：与 Web 端一致的强口令校验
+  if (newPassword.length > 64) {
+    return res.status(400).json({ error: '新密码长度不能超过64位' });
+  }
+  const pwdCheck = validatePassword(newPassword);
+  if (!pwdCheck.ok) {
+    return res.status(400).json({ error: pwdCheck.reason });
   }
   if (!bcrypt.compareSync(oldPassword, req.apiUser.password)) {
     return res.status(400).json({ error: '当前密码不正确' });

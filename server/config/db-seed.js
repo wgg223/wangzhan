@@ -104,104 +104,158 @@ function insertDefaultDataIfNeeded(db) {
     db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'agreement_version'", [AGREEMENT_CURRENT_VERSION]);
   }
 
-  // 插入默认权限（简化版：按模块合并，每个模块一个管理权限）
+  // 插入默认权限（重建版：细粒度权限点 + 权限类别 category + 高危标记 high_risk + 排序）
+  // 数组结构：[perm_key, perm_name, description, category, high_risk, sort_order]
+  // category：basic=前端访问 / content=内容管理 / community=社区与消息 / image=图片分享
+  //           ai=AI应用 / spreadsheet=在线表格 / system=系统管理
+  // high_risk：1=高危权限（影响账号/权限/站点配置/可批量删除内容等，审批走二级链）
+  // 匹配语义：拥有 X.manage 自动包含该模块全部子权限（见 auth.js hasPermKey）
   const defaultPermissions = [
-    // 前端访问权限
-    ['homepage.access', '主页访问', '访问网站主页（默认授予）'],
-    ['articles.access', '文章访问', '浏览文章列表和详情'],
-    ['novels.access', '小说访问', '访问小说模块'],
-    ['image-share.access', '图片分享访问', '访问图片分享模块'],
-    ['prompts.view', 'AI提示词查询', '访问AI提示词页面并查看提示词内容'],
-    // 站点统计权限
-    ['site_stats.view', '站点统计', '查看站点基本统计数据（用户数、运行状态等）'],
-    // 内容管理权限
-    ['articles.manage', '文章管理', '文章的查看、创建、编辑、删除、发布及评论管理'],
-    ['novels.manage', '小说管理', '小说的查看、创建、编辑、删除及章节管理'],
-    ['pages.manage', '页面管理', '页面的查看、创建、编辑、删除和发布'],
-    ['media.manage', '媒体管理', '媒体文件的查看、上传、编辑和删除'],
-    // 用户与权限管理
-    ['users.manage', '用户管理', '用户的查看、创建、编辑、删除、禁用及角色管理'],
-    ['permissions.manage', '权限管理', '权限的查看、审批、撤销'],
-    // 社区与消息
-    ['messages.manage', '站内信管理', '站内信的查看、发送、删除和群发'],
-    ['comments.manage', '评论管理', '评论的查看、审核、编辑和删除'],
-    // 图片分享管理
-    ['image-share.manage', '图片分享管理', '图片的查看、上传、编辑、删除、审核、分类及用户管理'],
-    ['image-share.share', '创建分享链接', '为图片或AI生图图片生成分享链接（查看无需登录，下载需登录）'],
-    // 分享管理
-    ['shares.manage', '分享管理', '查询全部用户的分享链接，停用、启用或取消分享'],
-    // AI提示词管理
-    ['prompts.manage', 'AI提示词管理', '提示词板块、分类、提示词的创建、编辑和删除'],
-    // AI生图
-    ['imagegen.use', 'AI生图使用', '访问AI图片生成页并生成图片'],
-    ['imagegen.manage', 'AI生图管理', '后台配置AI生图服务商、密钥与每日限额，管理生成记录'],
-    // AI聊天
-    ['aichat.use', 'AI聊天使用', '访问AI聊天页并发送对话'],
-    ['aichat.manage', 'AI聊天管理', '后台配置AI聊天模型、角色、知识库与配额'],
-    // 系统管理
-    ['settings.manage', '系统设置', '网站基础设置、SMTP、协议、弹窗、CDN等配置'],
-    ['data.manage', '数据管理', '数据备份、恢复、导入和导出'],
-    ['community.access', '社区访问', '访问社区页面，浏览动态列表'],
-    ['community.detail.access', '动态详情访问', '查看社区动态的详细内容和评论'],
-    ['articles.detail.access', '文章详情访问', '查看文章详情内容'],
-    ['novels.detail.access', '小说详情访问', '查看小说详情和章节内容'],
-    ['images.detail.access', '图片详情访问', '查看图片详情和大图'],
-    ['community.posts.create', '发布动态', '在社区发布文字动态和图片'],
-    ['community.notifications.manage', '社区通知管理', '查询和删除社区通知'],
-    ['spreadsheet.access', '在线表格访问', '访问在线表格页面，查看和查询表格数据'],
-    ['spreadsheet.manage', '在线表格管理', '创建、编辑、删除在线表格，管理行列数据与列显示']
+    // ---- basic 前端访问 ----
+    ['homepage.access', '主页访问', '访问网站主页（默认授予）', 'basic', 0, 1],
+    ['articles.access', '文章访问', '浏览文章列表和详情（默认授予）', 'basic', 0, 2],
+    ['articles.detail.access', '文章详情访问', '查看文章详情内容', 'basic', 0, 3],
+    ['novels.access', '小说访问', '访问小说模块（默认授予）', 'basic', 0, 4],
+    ['novels.detail.access', '小说详情访问', '查看小说详情和章节内容', 'basic', 0, 5],
+    ['image-share.access', '图片分享访问', '访问图片分享模块（默认授予）', 'basic', 0, 6],
+    ['images.detail.access', '图片详情访问', '查看图片详情和大图', 'basic', 0, 7],
+    ['community.access', '社区访问', '访问社区页面，浏览动态列表', 'basic', 0, 8],
+    ['community.detail.access', '动态详情访问', '查看社区动态的详细内容和评论', 'basic', 0, 9],
+    ['community.posts.create', '发布动态', '在社区发布文字动态和图片', 'basic', 0, 10],
+    ['prompts.view', 'AI提示词查询', '访问AI提示词页面并查看提示词内容', 'basic', 0, 11],
+    ['spreadsheet.access', '在线表格访问', '访问在线表格页面，查看和查询表格数据', 'basic', 0, 12],
+    ['imagegen.use', 'AI生图使用', '访问AI图片生成页并生成图片', 'basic', 0, 13],
+    ['aichat.use', 'AI聊天使用', '访问AI聊天页并发送对话', 'basic', 0, 14],
+    // ---- content 内容管理 ----
+    ['articles.view', '查看文章', '查看后台文章列表与详情', 'content', 0, 1],
+    ['articles.create', '创建文章', '创建新文章', 'content', 0, 2],
+    ['articles.edit.own', '编辑自己的文章', '编辑由本人创建的文章', 'content', 0, 3],
+    ['articles.edit.all', '编辑全部文章', '编辑任意作者的文章', 'content', 0, 4],
+    ['articles.delete.own', '删除自己的文章', '删除由本人创建的文章', 'content', 0, 5],
+    ['articles.delete.all', '删除全部文章', '删除任意作者的文章', 'content', 1, 6],
+    ['articles.publish', '发布文章', '将文章发布上线（对外可见）', 'content', 1, 7],
+    ['articles.category', '管理文章分类', '文章分类的创建、编辑和删除', 'content', 0, 8],
+    ['articles.comment.moderate', '审核文章评论', '审核、删除文章评论', 'content', 0, 9],
+    ['articles.manage', '文章管理全权', '文章模块全部操作（含以上所有文章权限）', 'content', 1, 10],
+    ['novels.view', '查看小说', '查看后台小说列表与详情', 'content', 0, 11],
+    ['novels.create', '创建小说', '创建新小说', 'content', 0, 12],
+    ['novels.edit.own', '编辑自己的小说', '编辑由本人创建的小说', 'content', 0, 13],
+    ['novels.edit.all', '编辑全部小说', '编辑任意作者的小说', 'content', 0, 14],
+    ['novels.delete.own', '删除自己的小说', '删除由本人创建的小说', 'content', 0, 15],
+    ['novels.delete.all', '删除全部小说', '删除任意作者的小说', 'content', 1, 16],
+    ['novels.chapters.manage', '管理小说章节', '小说章节的创建、编辑、删除', 'content', 1, 17],
+    ['novels.manage', '小说管理全权', '小说模块全部操作（含以上所有小说权限）', 'content', 1, 18],
+    ['pages.manage', '页面管理全权', '页面（含自定义页）的查看、创建、编辑、删除和发布', 'content', 1, 19],
+    ['media.manage', '媒体管理全权', '媒体文件的查看、上传、编辑和删除', 'content', 1, 20],
+    ['prompts.manage', 'AI提示词管理', '提示词板块、分类、提示词的创建、编辑和删除', 'content', 0, 21],
+    // ---- community 社区与消息 ----
+    ['comments.manage', '评论管理', '评论的查看、审核、编辑和删除', 'community', 0, 1],
+    ['messages.manage', '站内信管理', '站内信的查看、发送、删除和群发', 'community', 1, 2],
+    ['community.notifications.manage', '社区通知管理', '查询和删除社区通知', 'community', 0, 3],
+    // ---- image 图片分享 ----
+    ['image-share.upload', '上传图片', '向图片分享模块上传图片', 'image', 0, 1],
+    ['image-share.edit.own', '编辑自己的图片', '编辑本人上传的图片信息', 'image', 0, 2],
+    ['image-share.edit.all', '编辑全部图片', '编辑任意用户上传的图片信息', 'image', 0, 3],
+    ['image-share.delete.own', '删除自己的图片', '删除本人上传的图片', 'image', 0, 4],
+    ['image-share.delete.all', '删除全部图片', '删除任意用户上传的图片', 'image', 1, 5],
+    ['image-share.review', '图片审核', '审核待审核图片（含免审特权）', 'image', 1, 6],
+    ['image-share.categories.manage', '图片分类管理', '图片分类的创建、编辑和删除', 'image', 0, 7],
+    ['image-share.users.manage', '图片用户管理', '管理图片分享模块的用户（禁传/免审等）', 'image', 1, 8],
+    ['image-share.comments.manage', '图片评论管理', '图片评论的审核和删除', 'image', 0, 9],
+    ['image-share.share', '创建分享链接', '为图片或AI生图图片生成分享链接（查看无需登录，下载需登录）', 'image', 0, 10],
+    ['image-share.manage', '图片分享管理全权', '图片分享模块全部操作（含以上所有图片权限）', 'image', 1, 11],
+    // ---- ai AI 应用 ----
+    ['imagegen.manage', 'AI生图管理', '后台配置AI生图服务商、密钥与每日限额，管理生成记录', 'ai', 1, 1],
+    ['aichat.manage', 'AI聊天管理', '后台配置AI聊天模型、角色、知识库与配额', 'ai', 1, 2],
+    // ---- spreadsheet 在线表格 ----
+    ['spreadsheet.manage', '在线表格管理', '创建、编辑、删除在线表格，管理行列数据与列显示', 'spreadsheet', 1, 1],
+    // ---- system 系统管理 ----
+    ['site_stats.view', '站点统计查看', '查看站点基本统计数据（用户数、运行状态等）；仅授予管理员及以上', 'system', 0, 1],
+    ['users.view', '查看用户', '查看用户列表与资料', 'system', 0, 2],
+    ['users.create', '创建用户', '手动创建或批量导入用户', 'system', 1, 3],
+    ['users.edit', '编辑用户', '修改用户资料（邮箱、昵称等）', 'system', 1, 4],
+    ['users.delete', '删除用户', '删除用户及其关联数据', 'system', 1, 5],
+    ['users.disable', '禁用/启用用户', '禁用、启用、批准用户账户', 'system', 1, 6],
+    ['users.role.manage', '管理用户角色', '修改用户角色（含提升为管理员/超管）', 'system', 1, 7],
+    ['users.manage', '用户管理全权', '用户模块全部操作（含以上所有用户权限）', 'system', 1, 8],
+    ['permissions.view', '查看权限配置', '查看权限点列表与用户权限矩阵', 'system', 0, 9],
+    ['permissions.grant', '授予权限', '为用户授予权限', 'system', 1, 10],
+    ['permissions.revoke', '撤销权限', '撤销用户的权限', 'system', 1, 11],
+    ['permissions.manage', '权限管理全权', '权限模块全部操作（含查看、授予、撤销、审批）', 'system', 1, 12],
+    ['settings.manage', '系统设置全权', '网站基础设置、SMTP、协议、弹窗、CDN等配置', 'system', 1, 13],
+    ['data.manage', '数据管理全权', '数据备份、恢复、导入和导出', 'system', 1, 14],
+    ['shares.manage', '分享管理', '查询全部用户的分享链接，停用、启用或取消分享', 'system', 0, 15]
   ];
 
-  defaultPermissions.forEach(([key, name, desc]) => {
-    db.run('INSERT OR IGNORE INTO permissions (perm_key, perm_name, description) VALUES (?, ?, ?)', [key, name, desc]);
+  defaultPermissions.forEach(([key, name, desc, category, highRisk, sort]) => {
+    db.run('INSERT OR IGNORE INTO permissions (perm_key, perm_name, description, category, high_risk, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
+      [key, name, desc, category, highRisk, sort]);
+    // 存量行补全分类/高危/排序元数据（权限点元数据以代码为准，幂等覆盖）
+    db.run('UPDATE permissions SET category = ?, high_risk = ?, sort_order = ? WHERE perm_key = ?',
+      [category, highRisk, sort, key]);
   });
 
-  // 新权限补发：为已存在的 admin 角色用户补发 shares.manage（admin 晋升时授予全部权限，此处兜底）
+  // 新权限补发：为已存在的 admin 角色用户补发全部权限点
+  // （admin 晋升时授予全部权限；此处兜底保证旧库升级后 admin 后台权限不丢失）
   try {
     const adminUsers = queryAll(db, "SELECT id FROM users WHERE role = 'admin'");
+    const allPermKeys = queryAll(db, 'SELECT perm_key FROM permissions').map(r => r.perm_key);
     adminUsers.forEach(u => {
-      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-        [u.id, 'shares.manage', u.id]);
+      allPermKeys.forEach(pk => {
+        db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+          [u.id, pk, u.id]);
+      });
     });
   } catch (e) {
-    console.error('[db-seed] 补发 shares.manage 权限失败:', e.message);
+    console.error('[db-seed] 为 admin 补发权限失败:', e.message);
   }
 
   // 迁移旧权限到新权限（为已有用户映射旧权限到新权限）
+  // 新版为细粒度权限点：旧细粒度点映射到同名新点（恢复粒度），
+  // 无对应新点的旧点映射到模块全权（*.manage），保证存量授权语义不丢失。
   try {
     const oldToNewMap = {
-      'articles.view': 'articles.manage', 'articles.create': 'articles.manage',
-      'articles.edit.own': 'articles.manage', 'articles.edit.all': 'articles.manage',
-      'articles.delete.own': 'articles.manage', 'articles.delete.all': 'articles.manage',
-      'articles.publish': 'articles.manage', 'articles.category': 'articles.manage',
-      'articles.comment.view': 'articles.manage', 'articles.comment.create': 'articles.manage',
-      'articles.comment.delete.own': 'articles.manage', 'articles.comment.delete.all': 'articles.manage',
-      'articles.comment.moderate': 'articles.manage',
-      'novels.view': 'novels.manage', 'novels.create': 'novels.manage',
-      'novels.edit.own': 'novels.manage', 'novels.edit.all': 'novels.manage',
-      'novels.delete.own': 'novels.manage', 'novels.delete.all': 'novels.manage',
-      'novels.chapters.view': 'novels.manage', 'novels.chapters.create': 'novels.manage',
-      'novels.chapters.edit.own': 'novels.manage', 'novels.chapters.edit.all': 'novels.manage',
-      'novels.chapters.delete.own': 'novels.manage', 'novels.chapters.delete.all': 'novels.manage',
-      'image-share.view': 'image-share.manage', 'image-share.upload': 'image-share.manage',
-      'image-share.upload.batch': 'image-share.manage', 'image-share.edit.own': 'image-share.manage',
-      'image-share.edit.all': 'image-share.manage', 'image-share.delete.own': 'image-share.manage',
-      'image-share.delete.all': 'image-share.manage', 'image-share.download': 'image-share.manage',
-      'image-share.favorite': 'image-share.manage', 'image-share.comment.view': 'image-share.manage',
-      'image-share.comment.create': 'image-share.manage', 'image-share.comment.delete.own': 'image-share.manage',
-      'image-share.comment.delete.all': 'image-share.manage', 'image-share.categories.view': 'image-share.manage',
-      'image-share.categories.manage': 'image-share.manage', 'image-share.review': 'image-share.manage',
-      'image-share.no-review': 'image-share.manage', 'image-share.users.manage': 'image-share.manage',
-      'image-share.comments.manage': 'image-share.manage',
+      // 文章：细粒度保留（旧同名点直接映射自身）
+      'articles.view': 'articles.view', 'articles.create': 'articles.create',
+      'articles.edit.own': 'articles.edit.own', 'articles.edit.all': 'articles.edit.all',
+      'articles.delete.own': 'articles.delete.own', 'articles.delete.all': 'articles.delete.all',
+      'articles.publish': 'articles.publish', 'articles.category': 'articles.category',
+      'articles.comment.view': 'articles.view', 'articles.comment.create': 'articles.create',
+      'articles.comment.delete.own': 'articles.comment.moderate',
+      'articles.comment.delete.all': 'articles.comment.moderate',
+      'articles.comment.moderate': 'articles.comment.moderate',
+      // 小说：细粒度保留；章节细粒度统一并入章节管理
+      'novels.view': 'novels.view', 'novels.create': 'novels.create',
+      'novels.edit.own': 'novels.edit.own', 'novels.edit.all': 'novels.edit.all',
+      'novels.delete.own': 'novels.delete.own', 'novels.delete.all': 'novels.delete.all',
+      'novels.chapters.view': 'novels.chapters.manage', 'novels.chapters.create': 'novels.chapters.manage',
+      'novels.chapters.edit.own': 'novels.chapters.manage', 'novels.chapters.edit.all': 'novels.chapters.manage',
+      'novels.chapters.delete.own': 'novels.chapters.manage', 'novels.chapters.delete.all': 'novels.chapters.manage',
+      // 图片分享：细粒度保留；浏览/下载/收藏并入访问，评论并入评论管理
+      'image-share.view': 'image-share.access', 'image-share.upload': 'image-share.upload',
+      'image-share.upload.batch': 'image-share.upload', 'image-share.edit.own': 'image-share.edit.own',
+      'image-share.edit.all': 'image-share.edit.all', 'image-share.delete.own': 'image-share.delete.own',
+      'image-share.delete.all': 'image-share.delete.all', 'image-share.download': 'image-share.access',
+      'image-share.favorite': 'image-share.access', 'image-share.comment.view': 'image-share.access',
+      'image-share.comment.create': 'image-share.access',
+      'image-share.comment.delete.own': 'image-share.comments.manage',
+      'image-share.comment.delete.all': 'image-share.comments.manage',
+      'image-share.categories.view': 'image-share.categories.manage',
+      'image-share.categories.manage': 'image-share.categories.manage',
+      'image-share.review': 'image-share.review', 'image-share.no-review': 'image-share.review',
+      'image-share.users.manage': 'image-share.users.manage',
+      'image-share.comments.manage': 'image-share.comments.manage',
+      // 页面/用户/权限/评论/媒体/设置/数据/日志/消息：模块级全权
       'pages.view': 'pages.manage', 'pages.create': 'pages.manage',
       'pages.edit': 'pages.manage', 'pages.delete': 'pages.manage', 'pages.publish': 'pages.manage',
-      'users.view': 'users.manage', 'users.create': 'users.manage',
-      'users.edit': 'users.manage', 'users.delete': 'users.manage',
-      'users.disable': 'users.manage', 'users.role.view': 'users.manage',
-      'users.role.edit': 'users.manage', 'users.permissions.view': 'users.manage',
-      'permissions.view': 'permissions.manage', 'permissions.applications.view': 'permissions.manage',
-      'permissions.applications.approve': 'permissions.manage', 'permissions.applications.reject': 'permissions.manage',
-      'permissions.revoke': 'permissions.manage',
+      'users.view': 'users.view', 'users.create': 'users.create',
+      'users.edit': 'users.edit', 'users.delete': 'users.delete',
+      'users.disable': 'users.disable', 'users.role.view': 'users.view',
+      'users.role.edit': 'users.role.manage', 'users.permissions.view': 'permissions.view',
+      'permissions.view': 'permissions.view', 'permissions.applications.view': 'permissions.view',
+      'permissions.applications.approve': 'permissions.manage',
+      'permissions.applications.reject': 'permissions.manage',
+      'permissions.revoke': 'permissions.revoke',
       'comments.view': 'comments.manage', 'comments.moderate': 'comments.manage',
       'comments.edit': 'comments.manage', 'comments.delete': 'comments.manage',
       'media.view': 'media.manage', 'media.upload': 'media.manage',
@@ -218,6 +272,7 @@ function insertDefaultDataIfNeeded(db) {
       'messages.admin.broadcast': 'messages.manage', 'messages.admin.delete': 'messages.manage',
       'messages.view': 'messages.manage', 'messages.send': 'messages.manage',
       'messages.delete.own': 'messages.manage', 'messages.mark-read': 'messages.manage',
+      // 社区互动并入社区访问
       'community.follow': 'community.access', 'community.unfollow': 'community.access',
       'community.like': 'community.access', 'community.unlike': 'community.access',
       'community.favorite': 'community.access', 'community.unfavorite': 'community.access',
@@ -407,21 +462,87 @@ function insertDefaultDataIfNeeded(db) {
   db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('prompt_enhance_model', 'openai')");
   db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('prompt_enhance_referer', '')");
 
-  // 迁移：为所有已存在的活跃用户添加默认权限
+  // 迁移：为所有已存在的活跃用户添加默认权限（仅执行一次，避免覆盖后续手动撤销）
   try {
-    const defaultUserPerms = [
-      'homepage.access', 'articles.access', 'novels.access',
-      'image-share.access', 'site_stats.view',
-      'community.access', 'community.detail.access', 'articles.detail.access',
-      'novels.detail.access', 'images.detail.access'
-    ];
-    const activeUsers = queryAll(db, "SELECT id FROM users WHERE status = 'active'");
-    activeUsers.forEach(user => {
-      defaultUserPerms.forEach(perm => {
-        db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-          [user.id, perm, user.id]);
+    const defaultPermGrantedRow = queryAll(db, "SELECT setting_value FROM settings WHERE setting_key = 'perm_defaults_granted'");
+    if (!defaultPermGrantedRow.length) {
+      // 默认权限集（不含 site_stats.view：站点统计仅授予管理员及以上，见下方回收迁移）
+      const defaultUserPerms = [
+        'homepage.access', 'articles.access', 'novels.access',
+        'image-share.access',
+        'community.access', 'community.detail.access', 'articles.detail.access',
+        'novels.detail.access', 'images.detail.access'
+      ];
+      const activeUsers = queryAll(db, "SELECT id FROM users WHERE status = 'active'");
+      activeUsers.forEach(user => {
+        defaultUserPerms.forEach(perm => {
+          db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+            [user.id, perm, user.id]);
+        });
       });
-    });
+      db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('perm_defaults_granted', '1')");
+    }
+  } catch (e) {
+    // 如果出错（比如表不存在），忽略
+  }
+
+  // P0-1 修复：回收普通用户被默认授予的站点统计权限（仅执行一次，
+  // 之后管理员单独授予普通用户 site_stats.view 不再被清除）
+  try {
+    const statsReclaimedRow = queryAll(db, "SELECT setting_value FROM settings WHERE setting_key = 'perm_site_stats_reclaimed'");
+    if (!statsReclaimedRow.length) {
+      db.run("DELETE FROM user_permissions WHERE perm_key = 'site_stats.view' AND user_id IN (SELECT id FROM users WHERE role NOT IN ('admin', 'super_admin'))");
+      db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('perm_site_stats_reclaimed', '1')");
+      console.log('[db-seed] 已回收普通用户的站点统计权限（site_stats.view 仅保留管理员及以上）');
+    }
+  } catch (e) {
+    // 如果出错（比如表不存在），忽略
+  }
+
+  // 默认权限集扩充迁移 v2：注册/导入/创建的默认权限由 4 项扩展为 9 项后，
+  // 为存量活跃用户补发 5 项新增默认权限（详情/社区访问类）。
+  // 仅补新增项、不动旧 4 项——避免复活管理员已手动撤销的权限。
+  // （若用户曾主动撤销这 5 项中的某一项，可再次手动撤销，与一次性迁移不冲突）
+  try {
+    const v2Row = queryAll(db, "SELECT setting_value FROM settings WHERE setting_key = 'perm_defaults_v2_granted'");
+    if (!v2Row.length) {
+      const v2DefaultPerms = [
+        'community.access', 'community.detail.access',
+        'articles.detail.access', 'novels.detail.access', 'images.detail.access'
+      ];
+      const v2ActiveUsers = queryAll(db, "SELECT id FROM users WHERE status = 'active' AND role NOT IN ('admin', 'super_admin')");
+      v2ActiveUsers.forEach(user => {
+        v2DefaultPerms.forEach(perm => {
+          db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+            [user.id, perm, user.id]);
+        });
+      });
+      db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('perm_defaults_v2_granted', '1')");
+      console.log(`[db-seed] 已为 ${v2ActiveUsers.length} 个存量活跃用户补发新版默认权限（5 项详情/社区访问）`);
+    }
+  } catch (e) {
+    // 如果出错（比如表不存在），忽略
+  }
+
+  // 默认权限集收窄迁移 v3：默认集由 9 项收窄为 3 项基础访问
+  // （主页 / 文章 / 图片分享；站点统计 site_stats.view 已由 P0-1 回收，不在此列）。
+  // 一次性移除普通用户持有的 6 项非默认权限（小说访问、详情/社区访问）：
+  //   - 保留 homepage.access / articles.access / image-share.access
+  //   - 若个别用户曾被管理员手动授予其中某项，收窄后可随时在权限页重新授予（均为非高危）
+  try {
+    const narrowedRow = queryAll(db, "SELECT setting_value FROM settings WHERE setting_key = 'perm_defaults_narrowed'");
+    if (!narrowedRow.length) {
+      const narrowedPerms = [
+        'novels.access', 'community.access', 'community.detail.access',
+        'articles.detail.access', 'novels.detail.access', 'images.detail.access'
+      ];
+      const narrowedPlaceholders = narrowedPerms.map(() => '?').join(',');
+      db.run(`DELETE FROM user_permissions WHERE perm_key IN (${narrowedPlaceholders})
+        AND user_id IN (SELECT id FROM users WHERE role NOT IN ('admin', 'super_admin'))`,
+        narrowedPerms);
+      db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('perm_defaults_narrowed', '1')");
+      console.log('[db-seed] 已收窄普通用户默认权限集为 3 项基础访问（主页/文章/图片分享）');
+    }
   } catch (e) {
     // 如果出错（比如表不存在），忽略
   }

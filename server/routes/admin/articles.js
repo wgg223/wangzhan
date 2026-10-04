@@ -14,7 +14,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated, hasPermission, isAdminRole } = require('../../middlewares/auth');
+const { isAuthenticated, hasPermission, hasPermKey } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { renderError } = require('../../utils/response');
@@ -22,11 +22,13 @@ const { sanitize } = require('../../utils/html-sanitizer');
 
 // ============ 文章管理 ============
 
-// 文章列表：管理员可见全部，普通作者仅见自己的
-router.get('/articles', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
+// 文章列表：拥有"编辑全部/删除全部"能力者（含 articles.manage）可见全部，其余仅见自己的
+// 细粒度语义：articles.view 为列表查看；articles.edit.all / delete.all 才可管理任意文章
+router.get('/articles', isAuthenticated, hasPermission('articles.view'), (req, res) => {
   const db = req.db;
+  const userPermKeys = res.locals.userPermissions || [];
   let articles;
-  if (isAdminRole(req.session.user)) {
+  if (hasPermKey(userPermKeys, 'articles.edit.all') || hasPermKey(userPermKeys, 'articles.delete.all')) {
     articles = queryAll(db, 'SELECT a.*, u.username as author_name FROM articles a LEFT JOIN users u ON a.author_id = u.id ORDER BY a.created_at DESC');
   } else {
     articles = queryAll(db, 'SELECT a.*, u.username as author_name FROM articles a LEFT JOIN users u ON a.author_id = u.id WHERE a.author_id = ? ORDER BY a.created_at DESC', [req.session.user.id]);
@@ -39,8 +41,8 @@ router.get('/articles', isAuthenticated, hasPermission('articles.manage'), (req,
   });
 });
 
-// 新建文章（编辑器空状态）
-router.get('/articles/new', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
+// 新建文章（编辑器空状态）——需要 articles.create（manage 自动覆盖）
+router.get('/articles/new', isAuthenticated, hasPermission('articles.create'), (req, res) => {
   res.render('admin/article-editor', {
     user: req.session.user,
     article: null,
@@ -48,8 +50,8 @@ router.get('/articles/new', isAuthenticated, hasPermission('articles.manage'), (
   });
 });
 
-// 编辑文章：先查文章，再校验归属（非管理员只能编辑自己的）
-router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
+// 编辑文章：先查文章，再校验归属（拥有 articles.edit.all 可编辑任意文章；仅 edit.own 只能编辑自己的）
+router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.edit.own'), (req, res) => {
   const db = req.db;
   const article = queryOne(db, 'SELECT * FROM articles WHERE id = ?', [req.params.id]);
 
@@ -57,7 +59,8 @@ router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.manage
     return renderError(res, 404, '文章不存在', req);
   }
 
-  if (!isAdminRole(req.session.user) && article.author_id !== req.session.user.id) {
+  const userPermKeys = res.locals.userPermissions || [];
+  if (!hasPermKey(userPermKeys, 'articles.edit.all') && article.author_id !== req.session.user.id) {
     return renderError(res, 403, '权限不足', req, '您只能编辑自己的文章');
   }
 
@@ -69,7 +72,9 @@ router.get('/articles/edit/:id', isAuthenticated, hasPermission('articles.manage
 });
 
 // 保存文章（新建或更新）
-router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
+// 守卫内聚：无固定 manage 守卫，按操作类型在内部校验——
+//   新建（无 id）需 articles.create；更新（有 id）需 articles.edit.own（edit.all/manage 自动覆盖）且校验归属
+router.post('/articles/save', isAuthenticated, (req, res) => {
   const db = req.db;
   let { id, title, content, category, status, cover_image, location } = req.body;
 
@@ -90,15 +95,23 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
   const safeContent = sanitize(content);
   let articleId = id;
 
+  // 权限校验：更新需 edit 权限，新建需 create 权限（super_admin 走 hasPermission 已全量放行）
+  const userPermKeys = res.locals.userPermissions || [];
   if (id) {
-    // 更新：校验文章归属（非管理员只能改自己的）
+    if (!hasPermKey(userPermKeys, 'articles.edit.own')) {
+      return res.status(403).json({ error: '您没有编辑文章的权限' });
+    }
+    // 更新：校验文章归属（拥有 edit.all 可编辑任意文章；仅 edit.own 只能改自己的）
     const existing = queryOne(db, 'SELECT author_id FROM articles WHERE id = ?', [id]);
-    if (existing && !isAdminRole(req.session.user) && existing.author_id !== req.session.user.id) {
+    if (existing && !hasPermKey(userPermKeys, 'articles.edit.all') && existing.author_id !== req.session.user.id) {
       return res.status(403).json({ error: '无权编辑此文章' });
     }
     db.run('UPDATE articles SET title=?, content=?, category=?, status=?, cover_image=?, location=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
       [title, safeContent, category || '', status || 'published', cover_image || '', locationValue, id]);
   } else {
+    if (!hasPermKey(userPermKeys, 'articles.create')) {
+      return res.status(403).json({ error: '您没有创建文章的权限' });
+    }
     // 新建：插入后取回自增 id（按 标题+作者 倒序取最新一条）
     db.run('INSERT INTO articles (title, content, category, status, cover_image, location, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [title, safeContent, category || '', status || 'published', cover_image || '', locationValue, req.session.user.id]);
@@ -118,8 +131,8 @@ router.post('/articles/save', isAuthenticated, hasPermission('articles.manage'),
   res.redirect('/admin/articles');
 });
 
-// 删除文章（连带删除附件文件）
-router.post('/articles/delete/:id', isAuthenticated, hasPermission('articles.manage'), (req, res) => {
+// 删除文章（连带删除附件文件）——需 articles.delete.own（delete.all/manage 自动覆盖），且校验归属
+router.post('/articles/delete/:id', isAuthenticated, hasPermission('articles.delete.own'), (req, res) => {
   const db = req.db;
   const article = queryOne(db, 'SELECT title, author_id FROM articles WHERE id = ?', [req.params.id]);
 
@@ -127,8 +140,9 @@ router.post('/articles/delete/:id', isAuthenticated, hasPermission('articles.man
     return res.status(404).json({ error: '文章不存在' });
   }
 
-  // 越权删除拦截：非管理员只能删自己的
-  if (!isAdminRole(req.session.user) && article.author_id !== req.session.user.id) {
+  // 越权删除拦截：拥有 delete.all 可删任意文章；仅 delete.own 只能删自己的
+  const userPermKeys = res.locals.userPermissions || [];
+  if (!hasPermKey(userPermKeys, 'articles.delete.all') && article.author_id !== req.session.user.id) {
     return res.status(403).json({ error: '无权删除此文章' });
   }
 

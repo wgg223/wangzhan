@@ -8,6 +8,8 @@
  *   POST /admin/users/role/:id      —— 修改角色（白名单校验；晋升 admin 时授予全部权限点）
  *   POST /admin/users/delete/:id    —— 删除账户（同样受锁死保护）
  *   POST /admin/users/set-superior/:id —— 指定/清除用户对应上级管理员（仅超管；防自指/防循环链）
+ *   POST /admin/users/batch          —— 批量管理（仅超管；批准/禁用/删除/改角色/设上级，
+ *                                       复用单用户全部保护逻辑，分块让出事件循环，逐项返回结果）
  *   POST /admin/users/import        —— 批量导入用户（仅超管；支持 CSV/Excel；两段式写入支持同文件指定上级）
  *   GET  /admin/users/import-template —— 下载导入模板（CSV / XLSX）
  * 安全要点：全程 isSuperAdmin；操作前 canOperateUser / ROLE_HIERARCHY / ensureAtLeastOneActiveSuperAdmin
@@ -17,7 +19,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const { isAuthenticated, hasPermission, isSuperAdmin, ROLE_HIERARCHY, ROLE_WHITELIST, canOperateUser, ensureAtLeastOneActiveSuperAdmin } = require('../../middlewares/auth');
+const { isAuthenticated, hasPermission, isSuperAdmin, ROLE_HIERARCHY, ROLE_WHITELIST, canOperateUser, ensureAtLeastOneActiveSuperAdmin, validatePassword } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne, generateUid } = require('../../config/database');
 const { grantDefaultPermissions } = require('../../config/db-helpers');
 const { logActivity } = require('../../config/activity');
@@ -26,6 +28,7 @@ const { cleanupUserDependencies } = require('../../utils/user-deps');
 const fsSafe = require('../../utils/fs-safe');
 const { validateSuperior } = require('../../utils/permission-flow');
 const { parseImportFile } = require('../../utils/spreadsheet-import');
+const { runBatchUserAction, MAX_ERRORS } = require('../../services/batch-user-ops');
 
 // ============ 用户管理 ============
 
@@ -93,54 +96,62 @@ router.get('/users', isAuthenticated, hasPermission('users.manage'), (req, res) 
 });
 
 // 手动创建账户（仅超管）
-router.post('/users/create', isAuthenticated, isSuperAdmin, (req, res) => {
-  const db = req.db;
-  const { username, email, password, role } = req.body;
+// 密码哈希使用异步 bcrypt，避免 hashSync 同步计算阻塞事件循环（单次约 60~100ms CPU）
+router.post('/users/create', isAuthenticated, isSuperAdmin, async (req, res) => {
+  try {
+    const db = req.db;
+    const { username, email, password, role } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: '用户名和密码不能为空' });
-  }
-
-  if (username.length < 3) {
-    return res.status(400).json({ error: '用户名至少3个字符' });
-  }
-
-  if (password.length < 8) {
-    return res.status(400).json({ error: '密码至少6位' });
-  }
-
-  const existingUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
-  if (existingUser) {
-    return res.status(400).json({ error: '用户名已被使用' });
-  }
-
-  if (email) {
-    const existingEmail = queryOne(db, "SELECT id FROM users WHERE email = ? AND email != ''", [email]);
-    if (existingEmail) {
-      return res.status(400).json({ error: '邮箱已被使用' });
+    if (!username || !password) {
+      return res.status(400).json({ error: '用户名和密码不能为空' });
     }
+
+    if (username.length < 3) {
+      return res.status(400).json({ error: '用户名至少3个字符' });
+    }
+
+    // P0-3 口令策略统一：后台创建账户与注册入口一致（≥10位 + 至少3类字符 + 弱口令黑名单）
+    const pwdCheck = validatePassword(password);
+    if (!pwdCheck.ok) {
+      return res.status(400).json({ error: pwdCheck.reason });
+    }
+
+    const existingUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+    if (existingUser) {
+      return res.status(400).json({ error: '用户名已被使用' });
+    }
+
+    if (email) {
+      const existingEmail = queryOne(db, "SELECT id FROM users WHERE email = ? AND email != ''", [email]);
+      if (existingEmail) {
+        return res.status(400).json({ error: '邮箱已被使用' });
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userRole = role || 'user';
+    const validRoles = ['user', 'visitor', 'admin'];
+    if (!validRoles.includes(userRole)) {
+      return res.status(400).json({ error: '无效的用户角色' });
+    }
+
+    const newUid = generateUid(db);
+    db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
+      [newUid, username, hashedPassword, email || '', userRole]);
+
+    // 为新用户授予默认权限
+    const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+    if (newUser) {
+      grantDefaultPermissions(db, newUser.id, req.session.user.id);
+    }
+
+    saveDatabase();
+    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'user', target_id: null, target_title: username, detail: '手动创建账户：' + username + ' (角色: ' + userRole + ')', ip: req.ip });
+    res.json({ success: true, message: '账户创建成功' });
+  } catch (err) {
+    console.error('创建用户失败:', err);
+    return res.status(500).json({ error: '创建用户失败: ' + err.message });
   }
-
-  const hashedPassword = bcrypt.hashSync(password, 10);
-  const userRole = role || 'user';
-  const validRoles = ['user', 'visitor', 'admin'];
-  if (!validRoles.includes(userRole)) {
-    return res.status(400).json({ error: '无效的用户角色' });
-  }
-
-  const newUid = generateUid(db);
-  db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
-    [newUid, username, hashedPassword, email || '', userRole]);
-
-  // 为新用户授予默认权限
-  const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
-  if (newUser) {
-    grantDefaultPermissions(db, newUser.id, req.session.user.id);
-  }
-
-  saveDatabase();
-  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'user', target_id: null, target_title: username, detail: '手动创建账户：' + username + ' (角色: ' + userRole + ')', ip: req.ip });
-  res.json({ success: true, message: '账户创建成功' });
 });
 
 // 批准账户（pending→active 或重新启用），并发送站内通知
@@ -222,10 +233,12 @@ router.post('/users/disable/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   res.redirect('/admin/users');
 });
 
-// 修改用户角色（仅超管；白名单 + 可操作校验 + 锁死保护）
+// 修改用户角色（仅超管；白名单 + 可操作校验 + 锁死保护 + 高危二次确认）
+// P0-2 修复：改角色属于高危提权操作，要求操作者输入本人密码二次确认，
+//           防止账号被他人登入后单点篡改角色；审计 detail 记录确认状态。
 router.post('/users/role/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
-  const { role } = req.body;
+  const { role, confirm_password } = req.body;
 
   const targetUser = queryOne(db, 'SELECT username, role FROM users WHERE id = ?', [req.params.id]);
   if (!targetUser) {
@@ -248,6 +261,16 @@ router.post('/users/role/:id', isAuthenticated, isSuperAdmin, (req, res) => {
     return res.status(400).json({ error: '不能降级最后一个超级管理员' });
   }
 
+  // 高危操作二次确认：校验操作者当前密码（防账号被盗后的单点提权/降级）
+  if (!confirm_password) {
+    return res.status(400).json({ error: '改角色属于高危操作，请输入您的登录密码进行二次确认' });
+  }
+  const operator = queryOne(db, 'SELECT password FROM users WHERE id = ?', [req.session.user.id]);
+  if (!operator || !bcrypt.compareSync(confirm_password, operator.password)) {
+    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'user_role', target_id: parseInt(req.params.id), target_title: targetUser.username, detail: '修改用户角色失败（二次确认密码错误）：' + targetUser.username + ' -> ' + role, ip: req.ip });
+    return res.status(403).json({ error: '二次确认密码错误，操作已记录并中止' });
+  }
+
   db.run('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
   // admin 角色权限由 user_permissions 表控制：晋升时授予全部权限（后续可单独撤销）
   if (role === 'admin') {
@@ -259,7 +282,7 @@ router.post('/users/role/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   }
   saveDatabase();
   if (targetUser) {
-    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'user_role', target_id: parseInt(req.params.id), target_title: targetUser.username, detail: '修改用户角色：' + targetUser.username + ' -> ' + role, ip: req.ip });
+    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'user_role', target_id: parseInt(req.params.id), target_title: targetUser.username, detail: '修改用户角色（已二次确认）：' + targetUser.username + ' -> ' + role, ip: req.ip });
   }
   res.redirect('/admin/users');
 });
@@ -346,6 +369,108 @@ router.post('/users/set-superior/:id', isAuthenticated, isSuperAdmin, (req, res)
     ip: req.ip
   });
   res.json({ success: true, message: superiorId ? '已设置对应上级管理员' : '已清除对应上级管理员' });
+});
+
+// ============ 批量管理（勾选操作） ============
+
+// 单次批量操作用户数上限（防止超长请求拖垮响应，规避 Nginx/Node 双端超时）
+const MAX_BATCH_SIZE = 500;
+
+// 批量操作动作 → 中文名（提示语与活动日志用）
+const BATCH_ACTIONS = {
+  approve: '批准/启用',
+  disable: '禁用',
+  delete: '删除',
+  role: '修改角色',
+  set_superior: '设置上级管理员'
+};
+
+// 批量管理（仅超管）：单请求内对多个用户执行同一种操作。
+// 复用单用户路由的全部保护逻辑（见 services/batch-user-ops.js）：
+//   - approve/disable/delete/role 均带 self 保护、ROLE_HIERARCHY 等级校验、
+//     ensureAtLeastOneActiveSuperAdmin 防管理端锁死、deactivated_at 注销锁定；
+//   - 每 20 个用户让出事件循环，批量期间站点其余请求不被阻塞；
+//   - delete 的关联数据清理在每用户独立事务内完成，单用户失败不影响整批。
+router.post('/users/batch', isAuthenticated, isSuperAdmin, async (req, res) => {
+  try {
+    const db = req.db;
+    const { action, ids, role, superior_id } = req.body || {};
+
+    if (!BATCH_ACTIONS[action]) {
+      return res.status(400).json({ error: '无效的批量操作类型' });
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: '请先勾选要操作的用户' });
+    }
+
+    // 全部 ID 必须为正整数，去重后执行
+    const numericIds = [];
+    for (const id of ids) {
+      const n = parseInt(id, 10);
+      if (!Number.isInteger(n) || n <= 0) {
+        return res.status(400).json({ error: '包含无效的用户ID' });
+      }
+      numericIds.push(n);
+    }
+    const uniqIds = [...new Set(numericIds)];
+    if (uniqIds.length > MAX_BATCH_SIZE) {
+      return res.status(400).json({ error: '单次批量操作最多 ' + MAX_BATCH_SIZE + ' 个用户，请分批操作' });
+    }
+
+    const opts = {};
+    if (action === 'role') {
+      if (!ROLE_WHITELIST.includes(role)) {
+        return res.status(400).json({ error: '非法的角色值' });
+      }
+      opts.role = role;
+      // P0-2 高危二次确认：批量改角色前校验操作者本人密码（一次性校验，整批共享）
+      const { confirm_password } = req.body || {};
+      if (!confirm_password) {
+        return res.status(400).json({ error: '批量改角色属于高危操作，请输入您的登录密码进行二次确认' });
+      }
+      const operatorRow = queryOne(db, 'SELECT password FROM users WHERE id = ?', [req.session.user.id]);
+      if (!operatorRow || !bcrypt.compareSync(confirm_password, operatorRow.password)) {
+        logActivity(db, {
+          user_id: req.session.user.id,
+          username: req.session.user.username,
+          action: 'batch_role',
+          target_type: 'user',
+          target_id: null,
+          target_title: '',
+          detail: '批量修改角色被拒绝（二次确认密码错误，共 ' + uniqIds.length + ' 个目标）',
+          ip: req.ip
+        });
+        return res.status(403).json({ error: '二次确认密码错误，操作已记录并中止' });
+      }
+      opts.confirmVerified = true;
+    }
+    if (action === 'set_superior') {
+      opts.superiorId = parseInt(superior_id, 10) || 0;
+    }
+
+    const results = await runBatchUserAction(db, req.session.user, action, uniqIds, opts);
+
+    logActivity(db, {
+      user_id: req.session.user.id,
+      username: req.session.user.username,
+      action: 'batch_' + action,
+      target_type: 'user',
+      target_id: null,
+      target_title: '',
+      detail: '批量' + BATCH_ACTIONS[action] + '：成功 ' + results.success + ' 个, 失败 ' + results.failed + ' 个（共选择 ' + uniqIds.length + ' 个）',
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      message: '批量' + BATCH_ACTIONS[action] + '完成：成功 ' + results.success + ' 个, 失败 ' + results.failed + ' 个',
+      action: action,
+      results: results
+    });
+  } catch (err) {
+    console.error('批量用户操作失败:', err);
+    return res.status(500).json({ error: '批量操作失败: ' + err.message });
+  }
 });
 
 // ============ 批量导入用户（CSV / Excel） ============
@@ -483,8 +608,14 @@ router.post('/users/import', isAuthenticated, isSuperAdmin, importUpload.single(
       fail(rowNum, username, '用户名无效（至少3个字符）');
       continue;
     }
-    if (!password || password.length < 8) {
-      fail(rowNum, username, '密码无效（至少8位）');
+    // P0-3 口令策略统一：导入账户与注册入口一致的强口令校验（≥10位 + 至少3类字符 + 弱口令黑名单）
+    if (!password) {
+      fail(rowNum, username, '密码不能为空');
+      continue;
+    }
+    const pwdCheck = validatePassword(password);
+    if (!pwdCheck.ok) {
+      fail(rowNum, username, pwdCheck.reason);
       continue;
     }
 
@@ -502,7 +633,9 @@ router.post('/users/import', isAuthenticated, isSuperAdmin, importUpload.single(
     }
 
     try {
-      const hashedPassword = bcrypt.hashSync(password, 10);
+      // 异步 bcrypt：bcryptjs 异步模式在轮次间让出事件循环，
+      // 避免 1000 行 × ~80ms 的同步哈希将整个进程卡死（Nginx 侧表现为 502/504）
+      const hashedPassword = await bcrypt.hash(password, 10);
       db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
         [generateUid(db), username, hashedPassword, email, role]);
 

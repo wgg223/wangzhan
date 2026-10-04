@@ -50,47 +50,24 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000); // 每10分钟清理一次
 
-// 权限分类定义
+// 权限分类定义（与 permissions 表 category 列一致；用于申请页分组展示）
 const PERMISSION_CATEGORIES = {
   'basic': { name: '前端访问', description: '网站基本功能访问权限' },
   'content': { name: '内容管理', description: '文章、小说、页面等内容的管理' },
   'community': { name: '社区与消息', description: '评论、站内信等社区功能' },
   'image': { name: '图片分享', description: '图片分享模块管理' },
-  'system': { name: '系统管理', description: '用户、权限、设置等管理功能' },
-  'spreadsheet': { name: '在线表格', description: '在线表格的访问与管理' }
+  'ai': { name: 'AI 应用', description: 'AI 生图、AI 聊天的后台配置管理' },
+  'spreadsheet': { name: '在线表格', description: '在线表格的访问与管理' },
+  'system': { name: '系统管理', description: '用户、权限、设置等管理功能' }
 };
 
-// 获取权限分类
-function getPermCategory(permKey) {
-  const categoryMap = {
-    'homepage.access': 'basic',
-    'articles.access': 'basic',
-    'novels.access': 'basic',
-    'image-share.access': 'basic',
-    'articles.manage': 'content',
-    'novels.manage': 'content',
-    'pages.manage': 'content',
-    'media.manage': 'content',
-    'messages.manage': 'community',
-    'comments.manage': 'community',
-    'image-share.manage': 'image',
-    'image-share.share': 'image',
-    'users.manage': 'system',
-    'permissions.manage': 'system',
-    'settings.manage': 'system',
-    'data.manage': 'system',
-    'community.access': 'basic',
-    'community.detail.access': 'basic',
-    'articles.detail.access': 'basic',
-    'novels.detail.access': 'basic',
-    'images.detail.access': 'basic',
-    'community.posts.create': 'community',
-    'community.notifications.manage': 'system',
-    'spreadsheet.access': 'spreadsheet',
-    'spreadsheet.manage': 'spreadsheet'
-  };
-  if (categoryMap[permKey]) return categoryMap[permKey];
-  if (permKey.endsWith('.access')) return 'basic';
+// 获取权限分类（v2：优先使用 permissions 表的 category 字段，缺失时兜底规则）
+// @param {object|string} perm permissions 行（需含 perm_key / category）或权限键字符串
+function getPermCategory(perm) {
+  const permKey = typeof perm === 'string' ? perm : (perm && perm.perm_key);
+  if (!permKey) return 'system';
+  if (perm && typeof perm === 'object' && perm.category) return perm.category;
+  if (permKey.endsWith('.access') || permKey.endsWith('.view') || permKey.endsWith('.use')) return 'basic';
   return 'system';
 }
 
@@ -119,10 +96,10 @@ router.get('/permissions/apply', isAuthenticated, (req, res) => {
     [userId]
   );
 
-  // 按分类组织权限
+  // 按分类组织权限（分类来源：permissions.category 表字段）
   const permissionsByCategory = {};
   allPermissions.forEach(perm => {
-    const category = getPermCategory(perm.perm_key);
+    const category = getPermCategory(perm);
     if (!permissionsByCategory[category]) {
       permissionsByCategory[category] = {
         ...PERMISSION_CATEGORIES[category],
@@ -202,8 +179,8 @@ router.post('/permissions/apply', isAuthenticated, (req, res) => {
     return res.status(400).json({ error: '申请原因不能超过500字' });
   }
 
-  // 二级审批流：提交时判定高危，进入一级审批（对应管理员）
-  const highRisk = isHighRiskPerm(perm_key, req.session.user.role) ? 1 : 0;
+  // 二级审批流：提交时判定高危（表驱动：permissions.high_risk + 角色规则），进入一级审批（对应管理员）
+  const highRisk = isHighRiskPerm(db, perm_key, req.session.user.role) ? 1 : 0;
 
   // 创建申请
   db.run(

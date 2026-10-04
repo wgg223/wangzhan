@@ -20,7 +20,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { isAuthenticated } = require('../middlewares/auth');
+const { isAuthenticated, validatePassword } = require('../middlewares/auth');
 const { saveDatabase, queryOne, queryAll } = require('../config/database');
 const { getSettings } = require('../utils/settings');
 const { sendMail } = require('../config/mailer');
@@ -169,8 +169,10 @@ router.post('/account/password', isAuthenticated, (req, res) => {
     return res.redirect('/account?error=请填写所有密码字段');
   }
 
-  if (new_password.length < 8) {
-    return res.redirect('/account?error=新密码至少8位');
+  // P0-3 口令策略统一：与注册入口一致的强口令校验（≥10位 + 至少3类字符 + 弱口令黑名单）
+  const pwdCheck = validatePassword(new_password);
+  if (!pwdCheck.ok) {
+    return res.redirect('/account?error=' + encodeURIComponent(pwdCheck.reason));
   }
 
   if (new_password !== confirm_password) {

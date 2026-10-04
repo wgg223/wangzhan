@@ -15,7 +15,7 @@ const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { isAuthenticated, canAccessAdmin } = require('../../middlewares/auth');
+const { isAuthenticated, canAccessAdmin, validatePassword } = require('../../middlewares/auth');
 const { saveDatabase, queryOne } = require('../../config/database');
 const logger = require('../../utils/logger');
 
@@ -111,8 +111,10 @@ router.post('/profile/password', isAuthenticated, (req, res) => {
     return res.redirect('/admin/profile?error=请填写所有密码字段');
   }
 
-  if (new_password.length < 6) {
-    return res.redirect('/admin/profile?error=新密码至少6位');
+  // P0-3 口令策略统一：后台个人中心改密执行与注册一致的强口令校验（≥10位 + 至少3类字符 + 弱口令黑名单）
+  const pwdCheck = validatePassword(new_password);
+  if (!pwdCheck.ok) {
+    return res.redirect('/admin/profile?error=' + encodeURIComponent(pwdCheck.reason));
   }
 
   if (new_password !== confirm_password) {

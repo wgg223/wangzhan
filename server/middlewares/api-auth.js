@@ -11,6 +11,7 @@
 const { queryOne, queryAll, getDb } = require('../config/database');
 const { findTokenRecord, touchToken } = require('../config/tokens');
 const { logActivity } = require('../config/activity');
+const { hasPermKey } = require('./auth');
 
 /**
  * API Token 鉴权中间件（给原生 App 使用）
@@ -86,8 +87,8 @@ function apiRequireAdmin(req, res, next) {
 /**
  * API 细粒度权限校验：super_admin 拥有所有权限；
  * 其他用户需在 user_permissions 表中被授予对应 perm_key。
- * 与 web 版 hasPermission 对齐，但返回 JSON 403 而非重定向。
- * 支持精确匹配与通配符匹配（articles.* 覆盖 articles.xxx）。
+ * 与 web 版 hasPermission 对齐（精确 / 通配 / 模块全权 manage / .all 层级），
+ * 返回 JSON 403 而非重定向；已过期的权限自动失效。
  * @param {string} permKey - 权限键，如 'articles.edit'
  * @returns {Function} Express 中间件
  */
@@ -105,16 +106,13 @@ function apiRequirePermission(permKey) {
     if (!db) {
       return res.status(503).json({ error: '数据库暂时不可用' });
     }
-    // 查该用户被授予的所有权限键
-    const userPerms = queryAll(db, 'SELECT perm_key FROM user_permissions WHERE user_id = ?', [user.id]);
+    // 查该用户被授予的所有有效权限键（自动过滤过期）
+    const userPerms = queryAll(db,
+      "SELECT perm_key FROM user_permissions WHERE user_id = ? AND (expires_at IS NULL OR expires_at > datetime('now'))",
+      [user.id]);
     const keys = (userPerms || []).map((p) => p.perm_key);
-    // 精确匹配
-    if (keys.includes(permKey)) {
-      return next();
-    }
-    // 通配符匹配：articles.* 覆盖 articles.xxx
-    const parts = permKey.split('.');
-    if (keys.includes(parts[0] + '.*')) {
+    // 统一匹配（精确 + 通配 + manage 全权 + .all 层级）
+    if (hasPermKey(keys, permKey)) {
       return next();
     }
     return res.status(403).json({ error: '权限不足：需要 ' + permKey });

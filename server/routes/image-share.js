@@ -19,7 +19,7 @@ const { isAuthenticated, hasFrontendPermission, hasPermission, getUserPermission
 const { validateMagicBytes } = require('../utils/file-validator');
 const { getImageConfigs, saveImageShareConfigs } = require('../utils/settings');
 const { addImageLog } = require('../utils/image-utils');
-const { isAdminRole } = require('../middlewares/auth');
+const { isAdminRole, hasPermKey, validatePassword } = require('../middlewares/auth');
 
 // 上传配置
 const storage = multer.diskStorage({
@@ -266,7 +266,7 @@ router.get('/image', (req, res) => {
   // 分享链接：是否有权限创建（创建接口幂等，已有链接直接复用）
   const userPerms = user ? getUserPermissions(user.id) : [];
   const canShareLink = !!user && (isAdminRole(user) || user.id === image.user_id) &&
-    (isAdminRole(user) || userPerms.indexOf('image-share.share') !== -1 || userPerms.indexOf('image-share.*') !== -1);
+    (isAdminRole(user) || hasPermKey(userPerms, 'image-share.share'));
 
   res.render('image-share/image-detail', {
     user: user,
@@ -338,8 +338,7 @@ router.get('/user', isAuthenticated, (req, res) => {
   `, [user.id]);
 
   const userPerms = getUserPermissions(user.id);
-  const canShareLink = isAdminRole(user) ||
-    userPerms.indexOf('image-share.share') !== -1 || userPerms.indexOf('image-share.*') !== -1;
+  const canShareLink = isAdminRole(user) || hasPermKey(userPerms, 'image-share.share');
 
   res.render('image-share/user/index', {
     user: user,
@@ -936,6 +935,12 @@ router.post('/user/profile', isAuthenticated, (req, res) => {
   if (new_password) {
     const userInfo = queryOne(db, 'SELECT password FROM users WHERE id = ?', [user.id]);
     const bcrypt = require('bcryptjs');
+
+    // P0-3 口令策略统一：个人资料改密同样执行强口令校验
+    const pwdCheck = validatePassword(new_password);
+    if (!pwdCheck.ok) {
+      return res.render('image-share/message', { user, config, message: pwdCheck.reason, type: 'error' });
+    }
 
     // 验证当前密码
     let passwordOk = false;

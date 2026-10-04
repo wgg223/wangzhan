@@ -174,24 +174,51 @@ function createTables(db) {
   )`);
 
   // 创建权限表
+  // category：权限类别（basic 前端访问 / content 内容管理 / community 社区与消息 /
+  //            image 图片分享 / ai AI应用 / spreadsheet 在线表格 / system 系统管理）
+  // high_risk：高危标记（授予后影响账号/权限/站点配置/可批量删除内容等，审批走二级链）
+  // sort_order：同类目内展示排序
   db.run(`CREATE TABLE IF NOT EXISTS permissions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     perm_key TEXT UNIQUE NOT NULL,
     perm_name TEXT NOT NULL,
     description TEXT,
+    category TEXT DEFAULT 'system',
+    high_risk INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  // 旧库迁移：补 category / high_risk / sort_order 列（新库建表已含，ALTER 幂等忽略）
+  const permMigrations = [
+    "ALTER TABLE permissions ADD COLUMN category TEXT DEFAULT 'system'",
+    'ALTER TABLE permissions ADD COLUMN high_risk INTEGER DEFAULT 0',
+    'ALTER TABLE permissions ADD COLUMN sort_order INTEGER DEFAULT 0'
+  ];
+  permMigrations.forEach(sql => {
+    try { db.run(sql); } catch (e) {
+      if (!e.message || !e.message.includes('duplicate column name')) {
+        console.error('[DB迁移] 执行失败:', sql, '错误:', e.message);
+      }
+    }
+  });
 
   // 创建用户权限关联表
+  // expires_at：权限有效期（NULL=永不过期；到期后权限匹配自动失效）
   db.run(`CREATE TABLE IF NOT EXISTS user_permissions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     perm_key TEXT NOT NULL,
     granted_by INTEGER,
+    expires_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (granted_by) REFERENCES users(id)
   )`);
+  try { db.run('ALTER TABLE user_permissions ADD COLUMN expires_at DATETIME'); } catch (e) {
+    if (!e.message || !e.message.includes('duplicate column name')) {
+      console.error('[DB迁移] 列添加失败:', e.message);
+    }
+  }
 
   // 创建权限申请表
   db.run(`CREATE TABLE IF NOT EXISTS permission_applications (
