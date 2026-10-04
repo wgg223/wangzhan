@@ -32,6 +32,14 @@ const {
   notifyApplicant
 } = require('../../utils/permission-flow');
 
+// 审批为审批链职责（canApproveApplication 做细粒度校验），不依赖 permissions.manage——
+// v8.7.5 起新晋升管理员仅持最小权限集（不含该超高危权限），审批不应被权限门禁拦截
+function isApproverRole(req, res, next) {
+  const role = req.session && req.session.user && req.session.user.role;
+  if (role === 'admin' || role === 'super_admin') return next();
+  return res.status(403).json({ error: '仅管理员可审批权限申请' });
+}
+
 // ============ 权限管理 ============
 
 // 权限管理页：权限点 + 全部用户权限矩阵 + 待审/全部申请
@@ -234,7 +242,7 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.m
 });
 
 // 批准权限申请（按审批链推进：基础=管理员批准后系统确认生效；高危=管理员批准后转其上级终审）
-router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
+router.post('/permissions/approve', isAuthenticated, isApproverRole, (req, res) => {
   const db = req.db;
   const { application_id } = req.body;
 
@@ -361,7 +369,7 @@ router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.
 });
 
 // 拒绝权限申请（按审批链授权；记录驳回原因并通知申请人）
-router.post('/permissions/reject', isAuthenticated, hasPermission('permissions.manage'), (req, res) => {
+router.post('/permissions/reject', isAuthenticated, isApproverRole, (req, res) => {
   const db = req.db;
   const { application_id, reason } = req.body;
 

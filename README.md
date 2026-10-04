@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.7.6 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.7.7 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -309,7 +309,16 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 - 路由守卫：`/settings/basic`、`/settings/smtp`、`/settings/agreement`、`/settings/popup` 挂载由 `hasPermission('settings.manage')` 收紧为 `isSuperAdmin`；`/settings/oauth`（第三方登录配置，含 client_secret 掩码回显）同步收紧
 - API 端：`/api/v1/admin/settings`（GET / PUT）由 `settings.manage` 权限收紧为仅超管 Token
 - 验证：后台侧边栏渲染 26/26 通过（admin 两设置分组均不可见，超管均可见），启动冒烟正常
+### v8.7.7 (2026-10-05)
+
+**修复最小权限集管理员审批 403**
+- 根因：审批路由（approve / reject）此前要求 `permissions.manage`（超高危权限）。v8.7.5 起新晋升管理员仅持最小权限集（不含该权限），在「我的审批」页点击批准 / 拒绝即被权限门禁拦截返回 403
+- 审批本质是审批链职责：`canApproveApplication` 已按上级链做细粒度校验（越权者即使持权限也 403；链缺失由超管兜底）。现审批门禁改为角色校验（admin / super_admin），不再依赖 `permissions.manage`
+- 授予 / 撤销 / 权限管理页仍保持 `permissions.manage` 门禁不变（权限管理 ≠ 审批职责）
+- 验证：最小集管理员（无 permissions.manage）审批高危 200 → stage2、拒绝 200、普通用户审批 403、超管不越级 403、grant 门禁保留 6/6 通过；启动冒烟正常
+
 ### v8.7.6 (2026-10-05)
+
 
 **修复我的审批页 500（v8.7.4 行级权限回归）**
 - 修复 /admin/my-approvals 500 Internal Server Error：v8.7.4 引入行级数据权限时，`scopeSql` 过滤条件被同时注入用户列表查询与我的审批页查询，但我的审批页路由内未定义该变量，访问即抛 ReferenceError → 500
