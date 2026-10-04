@@ -121,6 +121,13 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
 router.get('/my-approvals', isAuthenticated, (req, res) => {
   const db = req.db;
 
+  // 行级数据权限：与用户管理同范围（仅见自己 + 下级树用户的申请），超管全量
+  const visibleIds = getVisibleUserIds(db, req.session.user);
+  const scopeSql = visibleIds
+    ? ' AND u.id IN (' + Array.from(visibleIds).map(function () { return '?'; }).join(',') + ')'
+    : '';
+  const scopeParams = visibleIds ? Array.from(visibleIds) : [];
+
   if (req.session.user.role !== 'admin' && req.session.user.role !== 'super_admin') {
     return res.redirect('/');
   }
