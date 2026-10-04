@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.7.5 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.7.6 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -309,7 +309,16 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 - 路由守卫：`/settings/basic`、`/settings/smtp`、`/settings/agreement`、`/settings/popup` 挂载由 `hasPermission('settings.manage')` 收紧为 `isSuperAdmin`；`/settings/oauth`（第三方登录配置，含 client_secret 掩码回显）同步收紧
 - API 端：`/api/v1/admin/settings`（GET / PUT）由 `settings.manage` 权限收紧为仅超管 Token
 - 验证：后台侧边栏渲染 26/26 通过（admin 两设置分组均不可见，超管均可见），启动冒烟正常
+### v8.7.6 (2026-10-05)
+
+**修复我的审批页 500（v8.7.4 行级权限回归）**
+- 修复 /admin/my-approvals 500 Internal Server Error：v8.7.4 引入行级数据权限时，`scopeSql` 过滤条件被同时注入用户列表查询与我的审批页查询，但我的审批页路由内未定义该变量，访问即抛 ReferenceError → 500
+- 我的审批页现与用户管理同数据范围：非超管仅加载自己及下级树用户的待审批申请（再叠加审批链判定），超管不受限（链缺失申请由超管兜底可见）
+- 回归验证：权限管理页用户矩阵、待审批 / 全部申请记录数据范围不受影响
+- 验证：adm1 / adm3 仅见各自子树申请、超管 200 且链缺失兜底可见、权限矩阵 / 申请过滤回归 7/7 通过；启动冒烟正常
+
 ### v8.7.5 (2026-10-05)
+
 
 **管理员最小权限集 + 改角色二次确认修复**
 - 自动创建 / 晋升管理员（单用户改角色、批量改角色、CSV 导入 role=admin）不再自动授予全部权限，改为仅授予管理员最小权限集：基础访问（主页 / 文章 / 图片分享）+ 用户管理（users.manage）+ 站点统计（site_stats.view）；其余权限（含高危 / 超高危）由管理员本人走权限申请流程（高危二级 / 超高危三级审批）
