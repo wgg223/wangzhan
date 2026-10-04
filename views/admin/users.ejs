@@ -1,17 +1,21 @@
 <%# ===== 页面模板：admin/users.ejs =====%>
-<%# 说明：后台-用户管理页：列表、角色/状态、删除（EJS 服务端模板，由 Express 渲染，变量与部分逻辑见对应路由） %>
+<%# 说明：后台-用户管理页：列表过滤/分页、上级管理员设置、批量导入与导入历史（EJS 服务端模板，由 Express 渲染，变量与部分逻辑见对应路由） %>
 <% var active = 'users' %>
 <% var readOnly = typeof readOnly !== 'undefined' && readOnly; %>
+<% var isSuper = user && user.role === 'super_admin'; %>
 <div class="admin-page">
   <div class="page-header">
     <h1>👥 用户管理</h1>
     <div class="actions">
+      <% if (isSuper) { %>
+      <button type="button" class="btn btn-info" onclick="openImportModal()">📥 批量导入</button>
+      <% } %>
       <% if (!readOnly) { %>
       <button type="button" class="btn btn-primary" onclick="openCreateUserModal()">+ 添加用户</button>
       <% } %>
     </div>
   </div>
-  
+
   <% if (readOnly) { %>
   <div class="alert alert-info read-only-banner">
     <span>👁️</span> 当前为只读模式：您仅可查看用户列表，添加、禁用、删除、修改角色等操作仅超级管理员可用。如需操作权限，请前往 <a href="/permissions/apply">🔑 权限申请</a> 页面申请。
@@ -23,10 +27,52 @@
     <%= error %>
   </div>
   <% } %>
-  
+
+  <!-- 过滤与搜索栏 -->
+  <div class="section-card accent-info">
+    <div class="section-header bg-gradient-info">
+      <h2>🔍 筛选用户</h2>
+    </div>
+    <div class="section-body">
+      <form method="GET" action="/admin/users" class="users-filter-form">
+        <div class="filter-field">
+          <label for="filter-keyword">关键词</label>
+          <input type="text" id="filter-keyword" name="keyword" value="<%= filters.keyword %>" placeholder="用户名 / 邮箱">
+        </div>
+        <div class="filter-field">
+          <label for="filter-role">角色</label>
+          <select id="filter-role" name="role">
+            <option value="">全部角色</option>
+            <option value="super_admin" <%= filters.role === 'super_admin' ? 'selected' : '' %>>超级管理员</option>
+            <option value="admin" <%= filters.role === 'admin' ? 'selected' : '' %>>管理员</option>
+            <option value="user" <%= filters.role === 'user' ? 'selected' : '' %>>用户</option>
+            <option value="visitor" <%= filters.role === 'visitor' ? 'selected' : '' %>>访客</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="filter-status">状态</label>
+          <select id="filter-status" name="status">
+            <option value="">全部状态</option>
+            <option value="active" <%= filters.status === 'active' ? 'selected' : '' %>>已激活</option>
+            <option value="pending" <%= filters.status === 'pending' ? 'selected' : '' %>>待审核</option>
+            <option value="disabled" <%= filters.status === 'disabled' ? 'selected' : '' %>>已禁用</option>
+          </select>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn btn-primary">🔍 筛选</button>
+          <a href="/admin/users" class="btn">重置</a>
+        </div>
+      </form>
+      <div class="filter-summary">
+        共匹配 <strong><%= pagination.total %></strong> 个用户（第 <%= pagination.page %> / <%= pagination.totalPages %> 页）
+      </div>
+    </div>
+  </div>
+
+  <!-- 用户列表 -->
   <div class="section-card accent-primary">
     <div class="section-header bg-gradient-primary">
-      <h2>用户列表 <span class="badge badge-primary"><%= users.length %></span></h2>
+      <h2>用户列表 <span class="badge badge-primary"><%= pagination.total %></span></h2>
     </div>
     <div class="section-body" style="padding:0;">
       <table class="admin-table">
@@ -36,6 +82,7 @@
             <th>用户名</th>
             <th>邮箱</th>
             <th>角色</th>
+            <th>上级管理员</th>
             <th>状态</th>
             <th>注册时间</th>
             <% if (!readOnly) { %><th>操作</th><% } %>
@@ -46,7 +93,10 @@
             <% users.forEach(u => { %>
               <tr>
                 <td><span style="color:var(--gray-400);font-family:var(--font-mono);font-size:var(--text-sm);"><%= u.uid || '#' + u.id %></span></td>
-                <td><strong><%= u.username %></strong></td>
+                <td>
+                  <strong><%= u.username %></strong>
+                  <a href="/admin/permissions?user=<%= u.id %>" class="link-perms" title="查看该用户权限">🔐 权限</a>
+                </td>
                 <td><%= u.email || '未填写' %></td>
                 <td>
                   <span class="role-badge role-<%= u.role %>">
@@ -64,6 +114,18 @@
                         <option value="visitor" <%= u.role === 'visitor' ? 'selected' : '' %>>访客</option>
                       </select>
                     </form>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (u.superior_username) { %>
+                    <span class="superior-tag"><%= u.superior_username %></span>
+                  <% } else { %>
+                    <span style="color:var(--gray-300);font-size:var(--text-sm);">未指定</span>
+                  <% } %>
+                  <% if (isSuper) { %>
+                    <button type="button" class="btn btn-small btn-default btn-set-superior"
+                      data-user-id="<%= u.id %>" data-username="<%= u.username %>" data-superior-id="<%= u.superior_id || 0 %>"
+                      onclick="openSetSuperiorModal(this)">⚙️</button>
                   <% } %>
                 </td>
                 <td>
@@ -121,13 +183,107 @@
             <% }) %>
           <% } else { %>
             <tr>
-              <td colspan="<%= readOnly ? 6 : 7 %>" class="empty-row">暂无用户</td>
+              <td colspan="<%= readOnly ? 7 : 8 %>" class="empty-row">没有匹配的用户</td>
             </tr>
+          <% } %>
+        </tbody>
+      </table>
+
+      <!-- 分页器（保留当前筛选条件） -->
+      <% if (pagination.totalPages > 1) { %>
+        <% var qs = 'keyword=' + encodeURIComponent(filters.keyword) + '&role=' + encodeURIComponent(filters.role) + '&status=' + encodeURIComponent(filters.status); %>
+      <div class="pagination-bar">
+        <% if (pagination.page > 1) { %>
+          <a class="btn btn-small" href="/admin/users?<%= qs %>&page=<%= pagination.page - 1 %>">← 上一页</a>
+        <% } %>
+        <% for (var p = 1; p <= pagination.totalPages; p++) { %>
+          <% if (p === pagination.page) { %>
+            <span class="page-cur"><%= p %></span>
+          <% } else if (Math.abs(p - pagination.page) <= 2 || p === 1 || p === pagination.totalPages) { %>
+            <a class="btn btn-small" href="/admin/users?<%= qs %>&page=<%= p %>"><%= p %></a>
+          <% } else if (Math.abs(p - pagination.page) === 3) { %>
+            <span class="page-ellipsis">…</span>
+          <% } %>
+        <% } %>
+        <% if (pagination.page < pagination.totalPages) { %>
+          <a class="btn btn-small" href="/admin/users?<%= qs %>&page=<%= pagination.page + 1 %>">下一页 →</a>
+        <% } %>
+      </div>
+      <% } %>
+    </div>
+  </div>
+
+  <% if (isSuper) { %>
+  <!-- 批量导入历史（仅超管） -->
+  <div class="section-card accent-warning">
+    <div class="section-header bg-gradient-warning">
+      <h2>📥 批量导入与历史 <span class="badge badge-warning"><%= importLogs.length %></span></h2>
+    </div>
+    <div class="section-body">
+      <div class="alert alert-info">
+        <span>💡</span> 支持一次导入用户及其对应上级管理员：CSV / Excel（xlsx、xls）文件须包含
+        <strong>username（用户名）</strong>、<strong>password（密码）</strong> 列，可选 <strong>email（邮箱）</strong>、
+        <strong>role（角色）</strong>、<strong>superior（上级管理员用户名）</strong> 列。单次最多 1000 行。
+        <a href="/admin/users/import-template?format=csv">下载 CSV 模板</a> ·
+        <a href="/admin/users/import-template?format=xlsx">下载 Excel 模板</a>
+      </div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>文件名</th>
+            <th>格式</th>
+            <th>总数</th>
+            <th>成功</th>
+            <th>失败</th>
+            <th>操作人</th>
+            <th>失败明细</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (importLogs.length > 0) { %>
+            <% importLogs.forEach(function(log) { %>
+              <% var fd = []; try { fd = JSON.parse(log.failed_details || '[]'); } catch (e) { fd = []; } %>
+              <tr>
+                <td><%= new Date(log.created_at).toLocaleString('zh-CN') %></td>
+                <td><%= log.filename %></td>
+                <td><span class="badge badge-default"><%= (log.file_type || 'csv').toUpperCase() %></span></td>
+                <td><%= log.total_count %></td>
+                <td><span style="color:var(--success);font-weight:600;"><%= log.success_count %></span></td>
+                <td>
+                  <% if (log.failed_count > 0) { %>
+                    <span style="color:var(--danger);font-weight:600;"><%= log.failed_count %></span>
+                  <% } else { %>
+                    <span style="color:var(--gray-300);">0</span>
+                  <% } %>
+                </td>
+                <td><%= log.operator_name || '-' %></td>
+                <td>
+                  <% if (fd.length > 0) { %>
+                    <details class="import-fail-details">
+                      <summary>查看 <%= fd.length %> 条<%= log.failed_count > fd.length ? '（已截断）' : '' %></summary>
+                      <ul>
+                        <% fd.forEach(function(e) { %>
+                          <li>第 <%= e.row %> 行「<%= e.username %>」：<%= e.reason %></li>
+                        <% }) %>
+                      </ul>
+                    </details>
+                  <% } else if (log.failed_count > 0) { %>
+                    <span style="color:var(--gray-400);font-size:var(--text-xs);">明细未记录</span>
+                  <% } else { %>
+                    <span style="color:var(--gray-300);">-</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          <% } else { %>
+            <tr><td colspan="8" class="empty-row">暂无导入记录</td></tr>
           <% } %>
         </tbody>
       </table>
     </div>
   </div>
+  <% } %>
 </div>
 
 <style>
@@ -143,6 +299,152 @@
 .read-only-banner a {
   font-weight: 600;
   text-decoration: underline;
+}
+
+/* 筛选栏 */
+.users-filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-field label {
+  font-size: var(--text-xs);
+  color: var(--gray-500);
+  font-weight: 600;
+}
+
+.filter-field input,
+.filter-field select {
+  padding: 8px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  min-width: 160px;
+  background: var(--bg-card);
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-summary {
+  margin-top: 10px;
+  font-size: var(--text-sm);
+  color: var(--gray-500);
+}
+
+/* 权限联动链接 */
+.link-perms {
+  margin-left: 8px;
+  font-size: var(--text-xs);
+  color: var(--primary, #3498db);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.link-perms:hover {
+  text-decoration: underline;
+}
+
+/* 上级管理员标签 */
+.superior-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--primary-bg, #e7f1ff);
+  color: var(--primary, #1d6fa5);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.btn-set-superior {
+  margin-left: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+/* 分页器 */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 16px;
+  flex-wrap: wrap;
+}
+
+.page-cur {
+  display: inline-block;
+  padding: 4px 10px;
+  background: var(--primary, #3498db);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.page-ellipsis {
+  color: var(--gray-400);
+  padding: 0 2px;
+}
+
+/* 导入失败明细 */
+.import-fail-details summary {
+  cursor: pointer;
+  color: var(--warning, #f39800);
+  font-size: var(--text-xs);
+}
+
+.import-fail-details ul {
+  margin: 6px 0 0 16px;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: var(--text-xs);
+  color: var(--gray-600);
+}
+
+.import-fail-details li {
+  margin-bottom: 2px;
+}
+
+/* 导入弹窗结果区 */
+.import-result {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.import-result.ok {
+  background: #f0fff4;
+  border: 1px solid #27ae60;
+}
+
+.import-result.has-errors {
+  background: #fffdf0;
+  border: 1px solid #f39800;
+}
+
+.import-errors-list {
+  margin: 8px 0 0 16px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: var(--text-xs);
+  color: var(--gray-600);
+}
+
+.import-errors-list li {
+  margin-bottom: 2px;
 }
 </style>
 
@@ -182,6 +484,81 @@
     </div>
   </div>
 </div>
+
+<% if (isSuper) { %>
+<!-- 批量导入模态框 -->
+<div id="import-modal" class="modal" style="display:none;">
+  <div class="modal-content" style="width:560px;">
+    <div class="modal-header">
+      <h2>📥 批量导入用户</h2>
+      <button type="button" class="modal-close" onclick="closeImportModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="import-error" class="alert alert-error" style="display:none;"></div>
+      <div class="form-group">
+        <label>第一步：下载模板（可选，也可自行按表头格式创建文件）</label>
+        <div>
+          <a class="btn btn-small" href="/admin/users/import-template?format=csv">📄 CSV 模板</a>
+          <a class="btn btn-small" href="/admin/users/import-template?format=xlsx">📊 Excel 模板</a>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="import-file">第二步：选择文件（CSV / XLSX / XLS，≤10MB，≤1000 行）</label>
+        <input type="file" id="import-file" accept=".csv,.xlsx,.xls">
+      </div>
+      <div class="form-group">
+        <label>表头格式说明</label>
+        <table class="admin-table" style="font-size:var(--text-xs);">
+          <thead>
+            <tr><th>列名</th><th>必填</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>username（用户名）</td><td>是</td><td>至少3个字符，不可与现有用户重复</td></tr>
+            <tr><td>password（密码）</td><td>是</td><td>至少8位</td></tr>
+            <tr><td>email（邮箱）</td><td>否</td><td>不可与现有邮箱重复</td></tr>
+            <tr><td>role（角色）</td><td>否</td><td>user（用户，默认）/ admin（管理员）/ visitor（访客），支持中文</td></tr>
+            <tr><td>superior（上级管理员）</td><td>否</td><td>填已有或同文件内用户的用户名，建立审批对应关系</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="import-result" class="import-result" style="display:none;"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn" onclick="closeImportModal()">关闭</button>
+      <button type="button" class="btn btn-primary" id="submit-import" onclick="submitImport()">开始导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 设置上级管理员模态框 -->
+<div id="set-superior-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>设置对应上级管理员</h2>
+      <button type="button" class="modal-close" onclick="closeSetSuperiorModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="set-superior-error" class="alert alert-error" style="display:none;"></div>
+      <p style="margin:0 0 12px;font-size:var(--text-sm);color:var(--gray-600);">
+        用户 <strong id="set-superior-username"></strong> 的权限申请将由其对应上级管理员一级审批。
+      </p>
+      <div class="form-group">
+        <label for="set-superior-select">上级管理员</label>
+        <select id="set-superior-select">
+          <option value="0">（未指定 —— 审批由超级管理员兜底）</option>
+          <% adminCandidates.forEach(function(c) { %>
+            <option value="<%= c.id %>"><%= c.username %>（<%= c.role === 'super_admin' ? '超级管理员' : '管理员' %>）</option>
+          <% }) %>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn" onclick="closeSetSuperiorModal()">取消</button>
+      <button type="button" class="btn btn-primary" id="submit-set-superior" onclick="submitSetSuperior()">保存</button>
+    </div>
+  </div>
+</div>
+<% } %>
 
 <style>
 .modal {
@@ -267,3 +644,169 @@
   to { transform: translateY(0); opacity: 1; }
 }
 </style>
+
+<% if (isSuper) { %>
+<script>
+// ============ 批量导入 ============
+function openImportModal() {
+  hideImportError();
+  var fileInput = document.getElementById('import-file');
+  fileInput.value = '';
+  var resultBox = document.getElementById('import-result');
+  resultBox.style.display = 'none';
+  resultBox.innerHTML = '';
+  var submitBtn = document.getElementById('submit-import');
+  submitBtn.disabled = false;
+  submitBtn.textContent = '开始导入';
+  document.getElementById('import-modal').style.display = 'flex';
+}
+
+function closeImportModal() {
+  document.getElementById('import-modal').style.display = 'none';
+}
+
+function showImportError(message) {
+  var el = document.getElementById('import-error');
+  el.textContent = message;
+  el.style.display = 'block';
+}
+
+function hideImportError() {
+  var el = document.getElementById('import-error');
+  el.style.display = 'none';
+  el.textContent = '';
+}
+
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
+function submitImport() {
+  var fileInput = document.getElementById('import-file');
+  if (!fileInput.files || fileInput.files.length === 0) {
+    showImportError('请先选择要导入的文件');
+    return;
+  }
+  var file = fileInput.files[0];
+  if (file.size > 10 * 1024 * 1024) {
+    showImportError('文件超过 10MB 上限，请拆分文件后分批导入');
+    return;
+  }
+  hideImportError();
+
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('_csrf', getCsrfToken());
+
+  withButtonLoading(document.getElementById('submit-import'), '导入中...', function() {
+    return fetch('/admin/users/import', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': getCsrfToken() },
+      body: fd
+    })
+    .then(function(response) {
+      return response.json().catch(function() { return {}; }).then(function(data) {
+        if (!response.ok) throw new Error(data.error || '导入失败 (HTTP ' + response.status + ')');
+        return data;
+      });
+    })
+    .then(function(data) {
+      if (!data.success) {
+        showImportError(data.error || data.message || '导入失败');
+        return;
+      }
+      renderImportResult(data.results || { success: 0, failed: 0, errors: [] });
+    })
+    .catch(function(err) {
+      showImportError(err.message || '网络错误，请重试');
+    });
+  });
+}
+
+function renderImportResult(results) {
+  var box = document.getElementById('import-result');
+  var errs = results.errors || [];
+  var html = '<strong>导入完成</strong>：成功 <span style="color:var(--success);">' + results.success + '</span> 个' +
+    '，失败 <span style="color:var(--danger);">' + results.failed + '</span> 个。';
+  if (errs.length > 0) {
+    html += '<ul class="import-errors-list">';
+    errs.forEach(function(e) {
+      html += '<li>第 ' + e.row + ' 行「' + escapeHtml(e.username) + '」：' + escapeHtml(e.reason) + '</li>';
+    });
+    html += '</ul>';
+    box.className = 'import-result has-errors';
+  } else {
+    box.className = 'import-result ok';
+  }
+  html += '<div style="margin-top:10px;"><button type="button" class="btn btn-small btn-primary" onclick="location.reload()">刷新列表与导入历史</button></div>';
+  box.innerHTML = html;
+  box.style.display = 'block';
+}
+
+document.getElementById('import-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeImportModal();
+});
+
+// ============ 设置上级管理员 ============
+var __setSuperiorTargetId = null;
+
+function openSetSuperiorModal(btn) {
+  __setSuperiorTargetId = btn.getAttribute('data-user-id');
+  document.getElementById('set-superior-error').style.display = 'none';
+  document.getElementById('set-superior-username').textContent = btn.getAttribute('data-username');
+  document.getElementById('set-superior-select').value = btn.getAttribute('data-superior-id') || '0';
+  var submitBtn = document.getElementById('submit-set-superior');
+  submitBtn.disabled = false;
+  submitBtn.textContent = '保存';
+  document.getElementById('set-superior-modal').style.display = 'flex';
+}
+
+function closeSetSuperiorModal() {
+  document.getElementById('set-superior-modal').style.display = 'none';
+}
+
+function submitSetSuperior() {
+  if (!__setSuperiorTargetId) return;
+
+  var superiorId = parseInt(document.getElementById('set-superior-select').value, 10) || 0;
+
+  withButtonLoading(document.getElementById('submit-set-superior'), '保存中...', function() {
+    return fetch('/admin/users/set-superior/' + __setSuperiorTargetId, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken()
+      },
+      body: JSON.stringify({ superior_id: superiorId, _csrf: getCsrfToken() })
+    })
+    .then(function(response) {
+      return response.json().catch(function() { return {}; }).then(function(data) {
+        if (!response.ok) throw new Error(data.error || '保存失败 (HTTP ' + response.status + ')');
+        return data;
+      });
+    })
+    .then(function(data) {
+      if (data.success) {
+        showToast(data.message || '已保存', 'success');
+        closeSetSuperiorModal();
+        location.reload();
+      } else {
+        var el = document.getElementById('set-superior-error');
+        el.textContent = data.error || '保存失败';
+        el.style.display = 'block';
+      }
+    })
+    .catch(function(err) {
+      var el = document.getElementById('set-superior-error');
+      el.textContent = err.message || '网络错误，请重试';
+      el.style.display = 'block';
+    });
+  });
+}
+
+document.getElementById('set-superior-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeSetSuperiorModal();
+});
+</script>
+<% } %>

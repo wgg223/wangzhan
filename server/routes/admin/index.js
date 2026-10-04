@@ -56,7 +56,9 @@ router.use((req, res, next) => {
   if (!res.locals.userPermissions) {
     res.locals.userPermissions = [];
   }
-  res.locals.currentPath = req.path;
+  // req.path 在挂载于 /admin 的子路由内是相对路径（如 /users），
+  // 需拼回 baseUrl 才能与 layout.ejs 中 isActive('/admin/xxx') 的全路径比较
+  res.locals.currentPath = (req.baseUrl || '') + (req.path === '/' ? '' : req.path);
   next();
 });
 

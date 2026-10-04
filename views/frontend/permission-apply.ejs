@@ -5,6 +5,16 @@
     <h1>权限申请</h1>
     <p class="subtitle">选择您需要申请的权限，提交后等待管理员审核</p>
 
+    <div class="superior-notice">
+      <% if (mySuperiorName) { %>
+        <span class="superior-icon">🧑‍💼</span>
+        <span>您的对应管理员：<strong><%= mySuperiorName %></strong>。基础权限经其批准后系统自动确认生效；高危权限（用户 / 权限 / 设置 / 数据管理类）需再经其上级管理员终审。</span>
+      <% } else { %>
+        <span class="superior-icon">ℹ️</span>
+        <span>您尚未被指定对应管理员，权限申请将由<strong>超级管理员</strong>直接审批。</span>
+      <% } %>
+    </div>
+
     <% if (rateLimitInfo && rateLimitInfo.remaining <= 2) { %>
       <div class="rate-limit-notice">
         <span class="rate-limit-icon">⏰</span>
@@ -73,7 +83,10 @@
           <tbody>
             <% applications.forEach(function(app) { %>
               <tr>
-                <td><%= app.perm_name || app.perm_key %></td>
+                <td>
+                  <%= app.perm_name || app.perm_key %>
+                  <% if (app.high_risk) { %><span class="risk-tag">高危</span><% } %>
+                </td>
                 <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
                 <td>
                   <span class="status-badge <%= app.status %>">
@@ -81,6 +94,11 @@
                     <% if (app.status === 'approved') { %>已通过<% } %>
                     <% if (app.status === 'rejected') { %>已拒绝<% } %>
                   </span>
+                  <% if (app.status === 'pending') { %>
+                    <div class="stage-hint">
+                      <%= (app.approval_stage || 1) === 1 ? '一级审批中 · 对应管理员' : '二级审批中 · 上级终审' %>
+                    </div>
+                  <% } %>
                 </td>
                 <td><% if (app.status === 'rejected') { %><span class="reject-reason"><%= app.reject_reason || '未填写' %></span><% } else { %>-<% } %></td>
                 <td>
@@ -426,6 +444,44 @@ h2 {
   align-items: center;
   gap: 8px;
   font-size: 14px;
+  color: #856404;
+}
+
+/* 审批链说明条 */
+.superior-notice {
+  background: #e7f1ff;
+  border: 1px solid #b6d4f5;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #1d6fa5;
+}
+
+.superior-icon {
+  font-size: 18px;
+}
+
+/* 高危标识 */
+.risk-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: #f8d7da;
+  color: #721c24;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+/* 审批阶段提示 */
+.stage-hint {
+  margin-top: 4px;
+  font-size: 11px;
   color: #856404;
 }
 

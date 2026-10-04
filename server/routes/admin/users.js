@@ -1,13 +1,15 @@
 /**
  * 用户管理路由（后台）
  * 能力：
- *   GET  /admin/users               —— 用户列表（非超管只读）
+ *   GET  /admin/users               —— 用户列表（非超管只读；支持关键词/角色/状态过滤+分页）
  *   POST /admin/users/create        —— 手动创建账户（仅超管；用户名/邮箱查重；密码≥8位提示）
  *   POST /admin/users/approve/:id   —— 批准/启用账户（并发送站内通知）
  *   POST /admin/users/disable/:id   —— 禁用账户（不可禁用自己/同级或更高；不可禁用最后一名超管）
  *   POST /admin/users/role/:id      —— 修改角色（白名单校验；晋升 admin 时授予全部权限点）
  *   POST /admin/users/delete/:id    —— 删除账户（同样受锁死保护）
- *   POST /admin/users/import-csv    —— CSV 批量导入（校验+分批让出事件循环）
+ *   POST /admin/users/set-superior/:id —— 指定/清除用户对应上级管理员（仅超管；防自指/防循环链）
+ *   POST /admin/users/import        —— 批量导入用户（仅超管；支持 CSV/Excel；两段式写入支持同文件指定上级）
+ *   GET  /admin/users/import-template —— 下载导入模板（CSV / XLSX）
  * 安全要点：全程 isSuperAdmin；操作前 canOperateUser / ROLE_HIERARCHY / ensureAtLeastOneActiveSuperAdmin
  *           三重保护，防止权限越级与管理端锁死。
  */
@@ -22,19 +24,70 @@ const { logActivity } = require('../../config/activity');
 const { createNotification } = require('../community');
 const { cleanupUserDependencies } = require('../../utils/user-deps');
 const fsSafe = require('../../utils/fs-safe');
+const { validateSuperior } = require('../../utils/permission-flow');
+const { parseImportFile } = require('../../utils/spreadsheet-import');
 
 // ============ 用户管理 ============
 
 // 用户列表页（非超管只读：前端按 readOnly 隐藏操作按钮）
+// 支持关键词（用户名/邮箱）、角色、状态过滤与分页（每页 50 条）
 router.get('/users', isAuthenticated, hasPermission('users.manage'), (req, res) => {
   const db = req.db;
-  const users = queryAll(db, 'SELECT id, uid, username, email, role, status, created_at, deactivated_at FROM users ORDER BY created_at DESC');
+
+  const keyword = (req.query.keyword || '').trim();
+  const roleFilter = req.query.role || '';
+  const statusFilter = req.query.status || '';
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const pageSize = 50;
+
+  let where = '1=1';
+  const params = [];
+  if (keyword) {
+    where += ' AND (u.username LIKE ? OR u.email LIKE ?)';
+    params.push('%' + keyword + '%', '%' + keyword + '%');
+  }
+  if (roleFilter) {
+    where += ' AND u.role = ?';
+    params.push(roleFilter);
+  }
+  if (statusFilter) {
+    where += ' AND u.status = ?';
+    params.push(statusFilter);
+  }
+
+  const totalRow = queryOne(db, 'SELECT COUNT(*) AS count FROM users u WHERE ' + where, params);
+  const total = totalRow ? totalRow.count : 0;
+  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
+  const curPage = Math.min(page, totalPages);
+  const offset = (curPage - 1) * pageSize;
+
+  const users = queryAll(db,
+    `SELECT u.id, u.uid, u.username, u.email, u.role, u.status, u.created_at, u.deactivated_at,
+            s.id AS superior_id, s.username AS superior_username
+     FROM users u LEFT JOIN users s ON u.superior_id = s.id
+     WHERE ${where}
+     ORDER BY u.created_at DESC
+     LIMIT ? OFFSET ?`,
+    params.concat([pageSize, offset]));
+
+  // 超管附加数据：可指定的上级管理员候选、导入历史（最近 20 条）
+  let adminCandidates = [];
+  let importLogs = [];
+  if (req.session.user.role === 'super_admin') {
+    adminCandidates = queryAll(db,
+      "SELECT id, username, role FROM users WHERE role IN ('admin', 'super_admin') AND status = 'active' ORDER BY role DESC, username ASC");
+    importLogs = queryAll(db, 'SELECT * FROM user_import_logs ORDER BY created_at DESC LIMIT 20');
+  }
 
   res.render('admin/users', {
     user: req.session.user,
     users: users,
     readOnly: req.session.user.role !== 'super_admin',
     error: req.query.error || null,
+    filters: { keyword: keyword, role: roleFilter, status: statusFilter },
+    pagination: { page: curPage, totalPages: totalPages, total: total },
+    adminCandidates: adminCandidates,
+    importLogs: importLogs,
     settings: res.locals.settings || {}
   });
 });
@@ -258,120 +311,278 @@ router.post('/users/delete/:id', isAuthenticated, isSuperAdmin, (req, res) => {
   res.redirect('/admin/users');
 });
 
-// ============ 批量导入用户 (CSV) ============
+// ============ 指定上级管理员（审批链） ============
+
+// 指定/清除用户对应上级管理员（仅超管；superior_id=0 表示清除）
+router.post('/users/set-superior/:id', isAuthenticated, isSuperAdmin, (req, res) => {
+  const db = req.db;
+  const targetId = parseInt(req.params.id, 10);
+  const superiorId = parseInt(req.body.superior_id, 10) || 0;
+
+  const targetUser = queryOne(db, 'SELECT id, username FROM users WHERE id = ?', [targetId]);
+  if (!targetUser) {
+    return res.status(404).json({ error: '用户不存在' });
+  }
+
+  if (superiorId) {
+    const check = validateSuperior(db, targetId, superiorId);
+    if (!check.ok) {
+      return res.status(400).json({ error: check.reason });
+    }
+  }
+
+  db.run('UPDATE users SET superior_id = ? WHERE id = ?', [superiorId || null, targetId]);
+  saveDatabase();
+  logActivity(db, {
+    user_id: req.session.user.id,
+    username: req.session.user.username,
+    action: 'update',
+    target_type: 'user_superior',
+    target_id: targetId,
+    target_title: targetUser.username,
+    detail: superiorId
+      ? '指定用户 ' + targetUser.username + ' 的对应上级管理员（用户ID ' + superiorId + '）'
+      : '清除用户 ' + targetUser.username + ' 的对应上级管理员',
+    ip: req.ip
+  });
+  res.json({ success: true, message: superiorId ? '已设置对应上级管理员' : '已清除对应上级管理员' });
+});
+
+// ============ 批量导入用户（CSV / Excel） ============
 const multer = require('multer');
-const csvUpload = multer({
+
+// 导入文件上传配置（项目统一 10MB 导入上限）
+const importUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 2 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: function(req, file, cb) {
-    if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+    const ext = (file.originalname.split('.').pop() || '').toLowerCase();
+    if (['csv', 'xlsx', 'xls'].includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('只支持 CSV 文件'));
+      cb(new Error('只支持 CSV 或 Excel（xlsx / xls）文件'));
     }
   }
 });
 
-// CSV 批量导入（仅超管）：表头需含 username/password，可选 email/role
-router.post('/users/import-csv', isAuthenticated, isSuperAdmin, csvUpload.single('csv_file'), async (req, res) => {
-  const db = req.db;
-  if (!req.file) {
-    return res.status(400).json({ error: '请上传 CSV 文件' });
+// 单次导入行数上限（bcrypt 逐行加密较重，防止请求长时间阻塞）
+const MAX_IMPORT_ROWS = 1000;
+
+// 表头别名（英文小写 / 常见中文表头）
+const IMPORT_HEADER_ALIASES = {
+  username: ['username', '用户名', '账号'],
+  password: ['password', '密码'],
+  email: ['email', '邮箱', '电子邮件'],
+  role: ['role', '角色'],
+  superior: ['superior', '上级管理员', '对应管理员', '上级']
+};
+
+// 角色别名映射（导入文件可写英文或中文角色名）
+const IMPORT_ROLE_ALIASES = {
+  'user': 'user', '用户': 'user',
+  'visitor': 'visitor', '访客': 'visitor',
+  'admin': 'admin', '管理员': 'admin'
+};
+
+// 将表头数组映射为字段 → 列索引
+function mapImportHeaders(headers) {
+  const idx = { username: -1, password: -1, email: -1, role: -1, superior: -1 };
+  headers.forEach(function(h, i) {
+    const name = String(h || '').trim().toLowerCase();
+    Object.keys(IMPORT_HEADER_ALIASES).forEach(function(field) {
+      if (idx[field] === -1 && IMPORT_HEADER_ALIASES[field].includes(name)) {
+        idx[field] = i;
+      }
+    });
+  });
+  return idx;
+}
+
+// 导入模板下载（?format=csv|xlsx，默认 csv；CSV 带 UTF-8 BOM 便于 Excel 中文直开）
+router.get('/users/import-template', isAuthenticated, isSuperAdmin, (req, res) => {
+  const format = (req.query.format || 'csv').toLowerCase();
+  const headers = ['username', 'password', 'email', 'role', 'superior'];
+  const rows = [
+    headers,
+    ['zhangsan', 'Zs@12345678', 'zhangsan@example.com', 'user', 'siteadmin'],
+    ['lisi', 'Ls@12345678', 'lisi@example.com', 'visitor', '']
+  ];
+
+  if (format === 'xlsx') {
+    const XLSX = require('xlsx');
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '用户导入');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="users-import-template.xlsx"');
+    return res.send(buf);
   }
 
+  const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="users-import-template.csv"');
+  res.send(csv);
+});
+
+// 批量导入用户（仅超管）：支持 CSV（UTF-8/GBK 自动识别）/ Excel；
+// 表头必含 username/password，可选 email/role/superior（对应上级管理员用户名）。
+// 采用两段式写入：先创建全部用户（支持同文件内互相指定上级），再统一解析并校验上级链。
+router.post('/users/import', isAuthenticated, isSuperAdmin, importUpload.single('file'), async (req, res) => {
+  const db = req.db;
+  if (!req.file) {
+    return res.status(400).json({ error: '请选择要导入的 CSV 或 Excel 文件' });
+  }
+
+  let parsed;
   try {
-    const content = req.file.buffer.toString('utf-8');
-    const lines = content.split('\n').map(line => line.trim()).filter(Boolean);
-    if (lines.length < 2) {
-      return res.status(400).json({ error: 'CSV 文件至少需要包含表头和一行数据' });
+    parsed = parseImportFile(req.file);
+  } catch (err) {
+    return res.status(400).json({ error: '文件解析失败: ' + (err.message || '格式错误') });
+  }
+
+  const colIdx = mapImportHeaders(parsed.headers);
+  if (colIdx.username === -1 || colIdx.password === -1) {
+    return res.status(400).json({ error: '文件必须包含 username（用户名）和 password（密码）列' });
+  }
+  if (parsed.dataRows.length === 0) {
+    return res.status(400).json({ error: '文件中没有数据行' });
+  }
+  if (parsed.dataRows.length > MAX_IMPORT_ROWS) {
+    return res.status(400).json({ error: '单次导入最多 ' + MAX_IMPORT_ROWS + ' 行，请分批导入' });
+  }
+
+  const cell = function(row, i) {
+    if (i === -1 || i >= row.length) return '';
+    return String(row[i] == null ? '' : row[i]).trim();
+  };
+
+  const results = { success: 0, failed: 0, errors: [] };
+  const fail = function(rowNum, username, reason) {
+    results.failed++;
+    if (results.errors.length < 200) {
+      results.errors.push({ row: rowNum, username: username || '', reason: reason });
+    }
+  };
+
+  // ---------- 第一段：逐行校验并创建用户 ----------
+  // pendingSuperiors: [{ row, username, superiorName }]（成功行才进入第二段）
+  const pendingSuperiors = [];
+
+  for (let i = 0; i < parsed.dataRows.length; i++) {
+    const row = parsed.dataRows[i];
+    const rowNum = i + 2 + (parsed.headerRowIdx || 0); // 含表头的真实行号
+    const username = cell(row, colIdx.username);
+    const password = cell(row, colIdx.password);
+    const email = cell(row, colIdx.email);
+    const roleRaw = cell(row, colIdx.role).toLowerCase();
+    const superiorName = cell(row, colIdx.superior);
+    const role = IMPORT_ROLE_ALIASES[roleRaw] || 'user';
+
+    if (!username || username.length < 3) {
+      fail(rowNum, username, '用户名无效（至少3个字符）');
+      continue;
+    }
+    if (!password || password.length < 8) {
+      fail(rowNum, username, '密码无效（至少8位）');
+      continue;
     }
 
-    // 解析表头（大小写不敏感）
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const usernameIdx = headers.indexOf('username');
-    const passwordIdx = headers.indexOf('password');
-    const emailIdx = headers.indexOf('email');
-    const roleIdx = headers.indexOf('role');
-
-    if (usernameIdx === -1 || passwordIdx === -1) {
-      return res.status(400).json({ error: 'CSV 文件必须包含 username 和 password 列' });
+    const existing = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+    if (existing) {
+      fail(rowNum, username, '用户名已存在');
+      continue;
+    }
+    if (email) {
+      const existingEmail = queryOne(db, "SELECT id FROM users WHERE email = ? AND email != ''", [email]);
+      if (existingEmail) {
+        fail(rowNum, username, '邮箱 ' + email + ' 已被使用');
+        continue;
+      }
     }
 
-    const results = { success: 0, failed: 0, errors: [] };
-    const validRoles = ['user', 'visitor', 'admin'];
+    try {
+      const hashedPassword = bcrypt.hashSync(password, 10);
+      db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
+        [generateUid(db), username, hashedPassword, email, role]);
 
-    // 逐行校验并插入
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.trim());
-      const username = cols[usernameIdx];
-      const password = cols[passwordIdx];
-      const email = emailIdx !== -1 ? (cols[emailIdx] || '') : '';
-      const role = roleIdx !== -1 && validRoles.includes(cols[roleIdx]) ? cols[roleIdx] : 'user';
-
-      if (!username || username.length < 3) {
-        results.failed++;
-        results.errors.push(`第 ${i + 1} 行: 用户名无效 (至少3个字符)`);
-        continue;
-      }
-      if (!password || password.length < 8) {
-        results.failed++;
-        results.errors.push(`第 ${i + 1} 行: 用户 "${username}" 密码无效 (至少6位)`);
-        continue;
-      }
-
-      const existing = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
-      if (existing) {
-        results.failed++;
-        results.errors.push(`第 ${i + 1} 行: 用户名 "${username}" 已存在`);
-        continue;
-      }
-
-      if (email) {
-        const existingEmail = queryOne(db, "SELECT id FROM users WHERE email = ? AND email != ''", [email]);
-        if (existingEmail) {
-          results.failed++;
-          results.errors.push(`第 ${i + 1} 行: 邮箱 "${email}" 已存在`);
-          continue;
+      const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+      if (newUser) {
+        if (role === 'admin') {
+          // 与手动改角色对齐：晋升 admin 时授予全部权限点
+          const allPerms = queryAll(db, 'SELECT perm_key FROM permissions');
+          allPerms.forEach(p => {
+            db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+              [newUser.id, p.perm_key, req.session.user.id]);
+          });
+        } else {
+          grantDefaultPermissions(db, newUser.id, req.session.user.id);
         }
       }
 
-      const hashedPassword = bcrypt.hashSync(password, 10);
-      const csvUid = generateUid(db);
-      db.run("INSERT INTO users (uid, username, password, email, role, status) VALUES (?, ?, ?, ?, ?, 'active')",
-        [csvUid, username, hashedPassword, email, role]);
-
-      // 为新用户授予默认权限
-      const newUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
-      if (newUser) {
-        grantDefaultPermissions(db, newUser.id, req.session.user.id);
-      }
-
       results.success++;
-
-      // 分批处理：每处理 20 行让出事件循环，避免阻塞其他请求
-      if (i % 20 === 0) {
-        await new Promise(resolve => { setImmediate(resolve); });
+      if (superiorName) {
+        pendingSuperiors.push({ row: rowNum, username: username, superiorName: superiorName });
       }
+    } catch (err) {
+      fail(rowNum, username, '创建失败: ' + (err.message || '未知错误'));
     }
 
-    saveDatabase();
-    logActivity(db, {
-      user_id: req.session.user.id,
-      username: req.session.user.username,
-      action: 'import',
-      target_type: 'user',
-      detail: `批量导入用户: 成功 ${results.success} 个, 失败 ${results.failed} 个`,
-      ip: req.ip
-    });
-
-    res.json({
-      success: true,
-      message: `导入完成: 成功 ${results.success} 个', 失败 ${results.failed} 个`,
-      results: results
-    });
-  } catch (err) {
-    res.status(400).json({ error: 'CSV 解析失败: ' + err.message });
+    // 分批处理：每处理 20 行让出事件循环，避免阻塞其他请求
+    if (i > 0 && i % 20 === 0) {
+      await new Promise(resolve => { setImmediate(resolve); });
+    }
   }
+
+  // ---------- 第二段：解析并写入上级管理员（此时同文件用户已全部建好） ----------
+  pendingSuperiors.forEach(function(item) {
+    const user = queryOne(db, 'SELECT id FROM users WHERE username = ?', [item.username]);
+    const superior = queryOne(db, 'SELECT id FROM users WHERE username = ?', [item.superiorName]);
+    if (!user || !superior) {
+      fail(item.row, item.username, '上级管理员 "' + item.superiorName + '" 不存在');
+      results.success--;
+      return;
+    }
+    const check = validateSuperior(db, user.id, superior.id);
+    if (!check.ok) {
+      fail(item.row, item.username, check.reason);
+      results.success--;
+      return;
+    }
+    db.run('UPDATE users SET superior_id = ? WHERE id = ?', [superior.id, user.id]);
+  });
+
+  // ---------- 写入导入历史 ----------
+  let logId = 0;
+  try {
+    db.run(
+      'INSERT INTO user_import_logs (filename, file_type, total_count, success_count, failed_count, failed_details, operator_id, operator_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [req.file.originalname, parsed.format || 'csv', parsed.dataRows.length, results.success, results.failed,
+        JSON.stringify(results.errors), req.session.user.id, req.session.user.username]);
+    const logRow = queryOne(db, 'SELECT id FROM user_import_logs ORDER BY id DESC LIMIT 1');
+    logId = logRow ? logRow.id : 0;
+  } catch (err) {
+    console.error('[用户导入] 写入导入历史失败:', err.message);
+  }
+
+  saveDatabase();
+  logActivity(db, {
+    user_id: req.session.user.id,
+    username: req.session.user.username,
+    action: 'import',
+    target_type: 'user',
+    target_id: logId,
+    target_title: req.file.originalname,
+    detail: '批量导入用户（' + (parsed.format || 'csv').toUpperCase() + '）: 成功 ' + results.success + ' 个, 失败 ' + results.failed + ' 个',
+    ip: req.ip
+  });
+
+  res.json({
+    success: true,
+    message: '导入完成: 成功 ' + results.success + ' 个, 失败 ' + results.failed + ' 个',
+    results: results,
+    logId: logId
+  });
 });
 
 module.exports = router;

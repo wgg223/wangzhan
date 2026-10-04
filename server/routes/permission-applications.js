@@ -1,16 +1,20 @@
 /**
  * 用户权限申请路由（前台）
  * 页面/接口：
- *   GET  /permissions/apply —— 权限申请页（按分类展示全部权限 + 已拥有/待审核状态）
- *   POST /permissions/apply  —— 提交权限申请（每用户每小时限 5 条；校验权限存在/未拥有/无待审重复）
+ *   GET  /permissions/apply —— 权限申请页（按分类展示全部权限 + 已拥有/待审核状态 + 审批链说明）
+ *   POST /permissions/apply  —— 提交权限申请（每用户每小时限 5 条；校验权限存在/未拥有/无待审重复；
+ *                               提交时判定高危流程并通知对应审批人）
  *   POST /permissions/cancel —— 取消待审核的申请（仅本人、仅 pending 状态）
  * 说明：内存限流表每 10 分钟清理过期窗口，防止内存膨胀。
+ *       审批流：基础权限=对应管理员审批后系统自动确认；高危权限=对应管理员+其上级两级审批。
  */
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated } = require('../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../config/database');
 const { logActivity } = require('../config/activity');
+const { createNotification } = require('./community');
+const { isHighRiskPerm, notifyStageApprover } = require('../utils/permission-flow');
 
 // 简单的速率限制：每个用户每小时最多提交5个申请
 const applicationRateLimit = new Map();
@@ -140,6 +144,11 @@ router.get('/permissions/apply', isAuthenticated, (req, res) => {
     resetAt: userRecord ? new Date(userRecord.windowStart + RATE_LIMIT_WINDOW).toISOString() : null
   };
 
+  // 当前用户的对应管理员（审批链展示用）
+  const mySuperior = queryOne(db,
+    'SELECT s.username AS superior_username FROM users u LEFT JOIN users s ON u.superior_id = s.id WHERE u.id = ?',
+    [userId]);
+
   res.render('frontend/permission-apply', {
     user: req.session.user,
     permissionsByCategory: permissionsByCategory,
@@ -147,6 +156,7 @@ router.get('/permissions/apply', isAuthenticated, (req, res) => {
     pendingPermKeys: pendingPermKeys,
     applications: allApps,
     rateLimitInfo: rateLimitInfo,
+    mySuperiorName: mySuperior ? mySuperior.superior_username : null,
     settings: res.locals.settings || {}
   });
 });
@@ -192,12 +202,23 @@ router.post('/permissions/apply', isAuthenticated, (req, res) => {
     return res.status(400).json({ error: '申请原因不能超过500字' });
   }
 
+  // 二级审批流：提交时判定高危，进入一级审批（对应管理员）
+  const highRisk = isHighRiskPerm(perm_key, req.session.user.role) ? 1 : 0;
+
   // 创建申请
   db.run(
-    'INSERT INTO permission_applications (user_id, perm_key, reason) VALUES (?, ?, ?)',
-    [userId, perm_key, reason || '']
+    'INSERT INTO permission_applications (user_id, perm_key, reason, high_risk, approval_stage) VALUES (?, ?, ?, ?, 1)',
+    [userId, perm_key, reason || '', highRisk]
   );
   saveDatabase();
+
+  // 通知一级审批人（对应管理员；未指定时通知全部超级管理员）
+  const newApp = queryOne(db,
+    'SELECT * FROM permission_applications WHERE user_id = ? AND perm_key = ? AND status = ? ORDER BY id DESC LIMIT 1',
+    [userId, perm_key, 'pending']);
+  if (newApp) {
+    notifyStageApprover(db, createNotification, newApp, req.session.user.username, perm.perm_name, userId);
+  }
 
   logActivity(db, {
     user_id: userId,
@@ -206,11 +227,16 @@ router.post('/permissions/apply', isAuthenticated, (req, res) => {
     target_type: 'permission',
     target_id: 0,
     target_title: perm.perm_name,
-    detail: '申请权限: ' + perm.perm_name,
+    detail: '申请权限: ' + perm.perm_name + (highRisk ? '（高危流程）' : ''),
     ip: req.ip
   });
 
-  res.json({ success: true, message: '申请已提交，请等待管理员审核' });
+  res.json({
+    success: true,
+    message: highRisk
+      ? '申请已提交：该权限属于高危流程，需经对应管理员及其上级两级审批'
+      : '申请已提交，等待您的对应管理员审批后系统将自动确认生效'
+  });
 });
 
 // 用户取消权限申请

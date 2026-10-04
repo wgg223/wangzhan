@@ -21,8 +21,9 @@
           <thead>
             <tr>
               <th>申请人</th>
-              <th>邮箱</th>
               <th>申请权限</th>
+              <th>类型</th>
+              <th>当前阶段</th>
               <th>申请理由</th>
               <th>申请时间</th>
               <th>操作</th>
@@ -31,14 +32,41 @@
           <tbody>
             <% pendingApplications.forEach(function(app) { %>
               <tr>
-                <td><strong><%= app.username %></strong></td>
-                <td><%= app.email || '未填写' %></td>
+                <td>
+                  <strong><%= app.username %></strong>
+                  <a href="/admin/users?keyword=<%= encodeURIComponent(app.username) %>" class="link-user" title="在用户管理中查看该用户">👤</a>
+                  <div style="font-size:var(--text-xs);color:var(--gray-400);"><%= app.email || '未填写邮箱' %></div>
+                </td>
                 <td><span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span></td>
+                <td>
+                  <% if (app.high_risk) { %>
+                    <span class="risk-badge risk-high">🔴 高危</span>
+                  <% } else { %>
+                    <span class="risk-badge risk-basic">🟢 基础</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if ((app.approval_stage || 1) === 1) { %>
+                    <span class="stage-badge stage-1">一级 · 对应管理员审批</span>
+                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
+                      <%= app.superior_name ? '审批人：' + app.superior_name : '未指定 → 超管兜底' %>
+                    </div>
+                  <% } else { %>
+                    <span class="stage-badge stage-2">二级 · 上级终审</span>
+                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
+                      一级已过：<%= app.admin_approver_name || '-' %>
+                    </div>
+                  <% } %>
+                </td>
                 <td><%= app.reason || '无' %></td>
                 <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
                 <td class="actions">
-                  <button class="btn btn-small btn-success" onclick="approveApplication(<%= app.id %>)">✓ 批准</button>
-                  <button class="btn btn-small btn-danger" onclick="rejectApplication(<%= app.id %>)">✗ 拒绝</button>
+                  <% if (app.canApprove) { %>
+                    <button class="btn btn-small btn-success" onclick="approveApplication(<%= app.id %>)">✓ 批准</button>
+                    <button class="btn btn-small btn-danger" onclick="rejectApplication(<%= app.id %>)">✗ 拒绝</button>
+                  <% } else { %>
+                    <span class="cannot-approve" title="<%= app.canApproveReason %>"><%= app.canApproveReason %></span>
+                  <% } %>
                 </td>
               </tr>
             <% }) %>
@@ -76,8 +104,11 @@
         <tbody>
           <% if (users.length > 0) { %>
             <% users.forEach(u => { %>
-              <tr>
-                <td><strong><%= u.username %></strong></td>
+              <tr data-uid="<%= u.id %>">
+                <td>
+                  <strong><%= u.username %></strong>
+                  <a href="/admin/users?keyword=<%= encodeURIComponent(u.username) %>" class="link-user" title="在用户管理中查看该用户">👤</a>
+                </td>
                 <td><%= u.email || '未填写' %></td>
                 <td>
                   <span class="role-badge role-<%= u.role %>">
@@ -256,15 +287,18 @@
               <th>申请理由</th>
               <th>申请时间</th>
               <th>状态</th>
+              <th>审批链</th>
               <th>拒绝原因</th>
-              <th>审核人</th>
             </tr>
           </thead>
           <tbody>
             <% allApplications.forEach(function(app) { %>
               <tr>
                 <td><strong><%= app.username %></strong></td>
-                <td><span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span></td>
+                <td>
+                  <span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span>
+                  <% if (app.high_risk) { %><span class="risk-badge risk-high">🔴 高危</span><% } %>
+                </td>
                 <td><%= app.reason || '无' %></td>
                 <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
                 <td>
@@ -274,8 +308,29 @@
                     <% if (app.status === 'rejected') { %>❌ 已拒绝<% } %>
                   </span>
                 </td>
+                <td class="approval-chain">
+                  <% if (app.status === 'pending') { %>
+                    <% if ((app.approval_stage || 1) === 1) { %>
+                      <span class="stage-badge stage-1">一级待审</span>
+                    <% } else { %>
+                      <span class="stage-badge stage-2">二级待审</span>
+                    <% } %>
+                    <div style="font-size:var(--text-xs);color:var(--gray-400);">
+                      一级：<%= app.admin_approver_name || (app.superior_name || '超管兜底') %>
+                    </div>
+                  <% } else if (app.status === 'approved') { %>
+                    <div style="font-size:var(--text-sm);">一级：<%= app.admin_approver_name || '-' %></div>
+                    <% if (app.high_risk) { %>
+                      <div style="font-size:var(--text-sm);">二级：<%= app.superior_approver_name || '-' %></div>
+                    <% } %>
+                    <% if (app.system_confirmed_at) { %>
+                      <div style="font-size:var(--text-xs);color:var(--success);">✅ 系统已确认生效</div>
+                    <% } %>
+                  <% } else { %>
+                    <div style="font-size:var(--text-sm);">驳回人：<%= app.reviewer_name || '-' %></div>
+                  <% } %>
+                </td>
                 <td><% if (app.status === 'rejected') { %><span style="color: var(--danger); font-size: var(--text-sm);"><%= app.reject_reason || '未填写' %></span><% } else { %><span style="color: var(--gray-300);">-</span><% } %></td>
-                <td><%= app.reviewer_name || '-' %></td>
               </tr>
             <% }) %>
           </tbody>
@@ -434,7 +489,7 @@ document.getElementById('rejectModal').addEventListener('click', function(e) {
 });
 
 function approveApplication(applicationId) {
-  if (!confirm('确定批准此权限申请吗？')) return;
+  if (!confirm('确定批准此权限申请吗？\n（高危申请一级批准后将转交您的上级管理员终审）')) return;
 
   fetch('/admin/permissions/approve', {
     method: 'POST',
@@ -447,7 +502,8 @@ function approveApplication(applicationId) {
   .then(function(response) { return response.json(); })
   .then(function(data) {
     if (data.success) {
-      location.reload();
+      showToast(data.message || '已批准', 'success');
+      setTimeout(function() { location.reload(); }, 900);
     } else {
       alert(data.error || '操作失败');
     }
@@ -456,6 +512,17 @@ function approveApplication(applicationId) {
     alert('操作失败: ' + err.message);
   });
 }
+
+// 联动高亮：从用户管理页「查看权限」跳转过来时，高亮并滚动到对应用户行
+(function() {
+  var uid = <%= typeof highlightUserId !== 'undefined' ? (highlightUserId || 0) : 0 %>;
+  if (!uid) return;
+  var tr = document.querySelector('tr[data-uid="' + uid + '"]');
+  if (tr) {
+    tr.classList.add('highlight-user-row');
+    tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+})();
 
 function rejectApplication(applicationId) {
   document.getElementById('rejectApplicationId').value = applicationId;
@@ -498,6 +565,79 @@ function confirmReject() {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+/* 审批类型徽标 */
+.risk-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.risk-badge.risk-high {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.risk-badge.risk-basic {
+  background: #d4edda;
+  color: #155724;
+}
+
+/* 审批阶段徽标 */
+.stage-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stage-badge.stage-1 {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.stage-badge.stage-2 {
+  background: #e7f1ff;
+  color: #1d6fa5;
+}
+
+/* 用户联动小链接 */
+.link-user {
+  margin-left: 6px;
+  font-size: var(--text-xs);
+  text-decoration: none;
+}
+
+.link-user:hover {
+  text-decoration: underline;
+}
+
+/* 无权审批提示 */
+.cannot-approve {
+  color: var(--gray-400);
+  font-size: var(--text-xs);
+  font-style: italic;
+  max-width: 160px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* 联动高亮行 */
+.highlight-user-row {
+  outline: 2px solid var(--warning, #f39800);
+  outline-offset: -2px;
+  background: #fffdf0 !important;
+}
+
+.approval-chain {
+  min-width: 140px;
 }
 
 .perm-checkboxes {

@@ -51,7 +51,8 @@ function createTables(db) {
     'ALTER TABLE users ADD COLUMN delete_token TEXT',
     'ALTER TABLE users ADD COLUMN delete_token_expires DATETIME',
     'ALTER TABLE users ADD COLUMN deactivated_at DATETIME',
-    "ALTER TABLE users ADD COLUMN uid TEXT DEFAULT ''"
+    "ALTER TABLE users ADD COLUMN uid TEXT DEFAULT ''",
+    'ALTER TABLE users ADD COLUMN superior_id INTEGER'
   ];
   userMigrations.forEach(sql => {
     try { db.run(sql); } catch (e) {
@@ -206,6 +207,40 @@ function createTables(db) {
     FOREIGN KEY (reviewed_by) REFERENCES users(id)
   )`);
   try { db.run("ALTER TABLE permission_applications ADD COLUMN reject_reason TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  // 二级审批流字段：approval_stage（1=待对应管理员审批 2=待上级审批）、high_risk（高危标记）、
+  // approved_by_admin / approved_by_superior（一级/二级审批人）、system_confirmed_at（系统确认生效时间）
+  const paMigrations = [
+    'ALTER TABLE permission_applications ADD COLUMN approval_stage INTEGER DEFAULT 1',
+    'ALTER TABLE permission_applications ADD COLUMN high_risk INTEGER DEFAULT 0',
+    'ALTER TABLE permission_applications ADD COLUMN approved_by_admin INTEGER',
+    'ALTER TABLE permission_applications ADD COLUMN approved_by_admin_at DATETIME',
+    'ALTER TABLE permission_applications ADD COLUMN approved_by_superior INTEGER',
+    'ALTER TABLE permission_applications ADD COLUMN approved_by_superior_at DATETIME',
+    'ALTER TABLE permission_applications ADD COLUMN system_confirmed_at DATETIME'
+  ];
+  paMigrations.forEach(sql => {
+    try { db.run(sql); } catch (e) {
+      if (!e.message || !e.message.includes('duplicate column name')) {
+        console.error('[DB迁移] 执行失败:', sql, '错误:', e.message);
+      }
+    }
+  });
+
+  // 用户批量导入历史表
+  db.run(`CREATE TABLE IF NOT EXISTS user_import_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    file_type TEXT DEFAULT 'csv',
+    total_count INTEGER DEFAULT 0,
+    success_count INTEGER DEFAULT 0,
+    failed_count INTEGER DEFAULT 0,
+    failed_details TEXT DEFAULT '[]',
+    operator_id INTEGER,
+    operator_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (operator_id) REFERENCES users(id) ON DELETE SET NULL
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_user_import_logs_time ON user_import_logs(created_at DESC)');
 
   // 创建评论表
   db.run(`CREATE TABLE IF NOT EXISTS comments (

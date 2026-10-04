@@ -173,6 +173,9 @@
             <% if (typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'permissions.manage')) { %>
             <li><a href="/admin/permissions" class="<%= isActive('/admin/permissions') ? 'active' : '' %>">🔐 权限管理</a></li>
             <% } %>
+            <% if (user.role === 'admin' || user.role === 'super_admin') { %>
+            <li><a href="/admin/my-approvals" class="<%= isActive('/admin/my-approvals') ? 'active' : '' %>">📝 我的审批</a></li>
+            <% } %>
             <li><a href="/permissions/apply" class="<%= isActive('/permissions/apply') ? 'active' : '' %>">🔑 权限申请</a></li>
           </ul>
         </div>
