@@ -105,10 +105,11 @@ function insertDefaultDataIfNeeded(db) {
   }
 
   // 插入默认权限（重建版：细粒度权限点 + 权限类别 category + 高危标记 high_risk + 排序）
-  // 数组结构：[perm_key, perm_name, description, category, high_risk, sort_order]
+  // 数组结构：[perm_key, perm_name, description, category, high_risk, sort_order, ultra_high_risk]
   // category：basic=前端访问 / content=内容管理 / community=社区与消息 / image=图片分享
   //           ai=AI应用 / spreadsheet=在线表格 / system=系统管理
   // high_risk：1=高危权限（影响账号/权限/站点配置/可批量删除内容等，审批走二级链）
+  // ultra_high_risk：1=超高危权限（账号/权限/设置/数据核心治理类，审批走三级链：对应管理员→上级管理员→超级管理员）
   // 匹配语义：拥有 X.manage 自动包含该模块全部子权限（见 auth.js hasPermKey）
   const defaultPermissions = [
     // ---- basic 前端访问 ----
@@ -172,27 +173,27 @@ function insertDefaultDataIfNeeded(db) {
     // ---- system 系统管理 ----
     ['site_stats.view', '站点统计查看', '查看站点基本统计数据（用户数、运行状态等）；仅授予管理员及以上', 'system', 0, 1],
     ['users.view', '查看用户', '查看用户列表与资料', 'system', 0, 2],
-    ['users.create', '创建用户', '手动创建或批量导入用户', 'system', 1, 3],
+    ['users.create', '创建用户', '手动创建或批量导入用户', 'system', 1, 3, 1],
     ['users.edit', '编辑用户', '修改用户资料（邮箱、昵称等）', 'system', 1, 4],
-    ['users.delete', '删除用户', '删除用户及其关联数据', 'system', 1, 5],
+    ['users.delete', '删除用户', '删除用户及其关联数据', 'system', 1, 5, 1],
     ['users.disable', '禁用/启用用户', '禁用、启用、批准用户账户', 'system', 1, 6],
-    ['users.role.manage', '管理用户角色', '修改用户角色（含提升为管理员/超管）', 'system', 1, 7],
-    ['users.manage', '用户管理全权', '用户模块全部操作（含以上所有用户权限）', 'system', 1, 8],
+    ['users.role.manage', '管理用户角色', '修改用户角色（含提升为管理员/超管）', 'system', 1, 7, 1],
+    ['users.manage', '用户管理全权', '用户模块全部操作（含以上所有用户权限）', 'system', 1, 8, 1],
     ['permissions.view', '查看权限配置', '查看权限点列表与用户权限矩阵', 'system', 0, 9],
-    ['permissions.grant', '授予权限', '为用户授予权限', 'system', 1, 10],
-    ['permissions.revoke', '撤销权限', '撤销用户的权限', 'system', 1, 11],
-    ['permissions.manage', '权限管理全权', '权限模块全部操作（含查看、授予、撤销、审批）', 'system', 1, 12],
-    ['settings.manage', '系统设置全权', '网站基础设置、SMTP、协议、弹窗、CDN等配置', 'system', 1, 13],
-    ['data.manage', '数据管理全权', '数据备份、恢复、导入和导出', 'system', 1, 14],
+    ['permissions.grant', '授予权限', '为用户授予权限', 'system', 1, 10, 1],
+    ['permissions.revoke', '撤销权限', '撤销用户的权限', 'system', 1, 11, 1],
+    ['permissions.manage', '权限管理全权', '权限模块全部操作（含查看、授予、撤销、审批）', 'system', 1, 12, 1],
+    ['settings.manage', '系统设置全权', '网站基础设置、SMTP、协议、弹窗、CDN等配置', 'system', 1, 13, 1],
+    ['data.manage', '数据管理全权', '数据备份、恢复、导入和导出', 'system', 1, 14, 1],
     ['shares.manage', '分享管理', '查询全部用户的分享链接，停用、启用或取消分享', 'system', 0, 15]
   ];
 
-  defaultPermissions.forEach(([key, name, desc, category, highRisk, sort]) => {
-    db.run('INSERT OR IGNORE INTO permissions (perm_key, perm_name, description, category, high_risk, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
-      [key, name, desc, category, highRisk, sort]);
+  defaultPermissions.forEach(([key, name, desc, category, highRisk, sort, ultraHighRisk]) => {
+    db.run('INSERT OR IGNORE INTO permissions (perm_key, perm_name, description, category, high_risk, sort_order, ultra_high_risk) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [key, name, desc, category, highRisk, sort, ultraHighRisk || 0]);
     // 存量行补全分类/高危/排序元数据（权限点元数据以代码为准，幂等覆盖）
-    db.run('UPDATE permissions SET category = ?, high_risk = ?, sort_order = ? WHERE perm_key = ?',
-      [category, highRisk, sort, key]);
+    db.run('UPDATE permissions SET category = ?, high_risk = ?, sort_order = ?, ultra_high_risk = ? WHERE perm_key = ?',
+      [category, highRisk, sort, ultraHighRisk || 0, key]);
   });
 
   // 新权限补发：为已存在的 admin 角色用户补发全部权限点

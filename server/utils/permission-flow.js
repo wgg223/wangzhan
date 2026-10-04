@@ -20,6 +20,20 @@ const HIGH_RISK_PERMS = [
   'data.manage'
 ];
 
+// 超高危权限兜底清单（兼容旧库：permissions 表缺少 ultra_high_risk 标记或尚未被 seed 覆盖时仍生效）
+// 超高危 = 账号/权限/设置/数据核心治理类：申请走三级审批链（对应管理员 → 上级管理员 → 超级管理员终审）
+const ULTRA_HIGH_RISK_PERMS = [
+  'users.manage',
+  'users.role.manage',
+  'users.delete',
+  'users.create',
+  'permissions.manage',
+  'permissions.grant',
+  'permissions.revoke',
+  'settings.manage',
+  'data.manage'
+];
+
 /**
  * 判定一次权限申请是否属于高危流程（表驱动 v2）。
  * 规则（任一命中即高危）：
@@ -50,6 +64,28 @@ function isHighRiskPerm(db, permKey, applicantRole) {
 }
 
 /**
+ * 判定一次权限申请是否属于超高危流程（表驱动 + 兜底清单）。
+ * 超高危权限的申请必须由超级管理员终审（三级链：对应管理员 → 上级管理员 → 超管）。
+ * @param {object} db 数据库实例
+ * @param {string} permKey 权限键
+ * @returns {boolean}
+ */
+function isUltraHighRiskPerm(db, permKey) {
+  if (!permKey) return false;
+  if (ULTRA_HIGH_RISK_PERMS.includes(permKey)) return true;
+  // 表驱动：优先读 permissions.ultra_high_risk 标记
+  try {
+    if (db) {
+      const row = queryOne(db, 'SELECT ultra_high_risk FROM permissions WHERE perm_key = ?', [permKey]);
+      if (row && Number(row.ultra_high_risk) === 1) return true;
+    }
+  } catch (e) {
+    // 表结构不兼容时忽略，回退到兜底清单
+  }
+  return false;
+}
+
+/**
  * 查询全部在职超级管理员 id（链路缺失时的兜底审批人）
  * @returns {number[]}
  */
@@ -76,6 +112,9 @@ function getStageApprover(db, app) {
     // 二级审批人 = 一级审批人的上级
     const stage1 = queryOne(db, 'SELECT superior_id FROM users WHERE id = ?', [app.approved_by_admin]);
     approverId = stage1 ? (stage1.superior_id || null) : null;
+  } else if (stage === 3) {
+    // 三级审批人 = 任意超级管理员（超高危终审）
+    return { approverId: null, anySuperAdmin: true };
   }
 
   if (approverId) {
@@ -100,7 +139,8 @@ function canApproveApplication(db, currentUser, app) {
   if (currentUser.id === stage.approverId) return { ok: true };
   if (currentUser.role === 'super_admin') {
     // 超管可见全貌但不能越过指定审批链（保证二级审批语义）
-    const stageName = (app.approval_stage || 1) === 1 ? '对应管理员' : '上级管理员';
+    const st = app.approval_stage || 1;
+    const stageName = st === 1 ? '对应管理员' : (st === 2 ? '上级管理员' : '超级管理员');
     return { ok: false, reason: '该申请需由申请人的' + stageName + '审批' };
   }
   return { ok: false, reason: '您不是该申请的指定审批人' };
@@ -125,7 +165,8 @@ function grantApplicationPermission(db, app, granterId) {
  */
 function notifyStageApprover(db, createNotification, app, applicantName, permName, fromUserId) {
   const stage = getStageApprover(db, app);
-  const stageLabel = (app.approval_stage || 1) === 1 ? '对应管理员' : '上级管理员';
+  const st = app.approval_stage || 1;
+  const stageLabel = st === 1 ? '对应管理员' : (st === 2 ? '上级管理员' : '超级管理员');
   const title = '有新的权限申请待您审批';
   const content = '用户「' + applicantName + '」申请权限「' + (permName || app.perm_key) + '」' +
     '，您是其' + stageLabel + '，请前往 后台 → 我的审批 处理。';
@@ -187,7 +228,9 @@ function validateSuperior(db, targetUserId, superiorId) {
 
 module.exports = {
   HIGH_RISK_PERMS,
+  ULTRA_HIGH_RISK_PERMS,
   isHighRiskPerm,
+  isUltraHighRiskPerm,
   getSuperAdminIds,
   getStageApprover,
   canApproveApplication,

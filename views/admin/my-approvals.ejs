@@ -8,7 +8,7 @@
 
   <div class="alert alert-info">
     <span>💡</span> 以下是等待您审批的权限申请。基础权限经您批准后由系统自动确认生效；
-    高危权限您批准后将自动转交您的上级管理员终审。全部申请可在 <a href="/admin/permissions">🔐 权限管理</a> 中查看。
+    高危权限您批准后将自动转交您的上级管理员终审；超高危权限（☣）二级批准后将转交超级管理员终审。全部申请可在 <a href="/admin/permissions">🔐 权限管理</a> 中查看。
   </div>
 
   <div class="section-card accent-warning">
@@ -39,7 +39,9 @@
                 </td>
                 <td><span class="perm-tag perm-default"><%= app.perm_name || app.perm_key %></span></td>
                 <td>
-                  <% if (app.high_risk) { %>
+                  <% if (app.perm_ultra_high_risk == 1) { %>
+                    <span class="risk-badge risk-ultra">☣ 超高危</span>
+                  <% } else if (app.high_risk) { %>
                     <span class="risk-badge risk-high">🔴 高危</span>
                   <% } else { %>
                     <span class="risk-badge risk-basic">🟢 基础</span>
@@ -48,6 +50,8 @@
                 <td>
                   <% if ((app.approval_stage || 1) === 1) { %>
                     <span class="stage-badge stage-1">一级 · 对应管理员审批</span>
+                  <% } else if ((app.approval_stage || 1) === 3) { %>
+                    <span class="stage-badge stage-3">三级 · 超级管理员终审</span>
                   <% } else { %>
                     <span class="stage-badge stage-2">二级 · 上级终审</span>
                   <% } %>
@@ -100,7 +104,7 @@ function getCsrfToken() {
 }
 
 function approveApplication(applicationId) {
-  if (!confirm('确定批准此权限申请吗？\n（高危申请一级批准后将转交您的上级管理员终审）')) return;
+  if (!confirm('确定批准此权限申请吗？\n（高危申请一级批准后转交上级终审；超高危申请二级批准后转交超级管理员终审）')) return;
 
   fetch('/admin/permissions/approve', {
     method: 'POST',
@@ -207,6 +211,11 @@ document.getElementById('rejectModal').addEventListener('click', function(e) {
 .stage-badge.stage-1 {
   background: #fff3cd;
   color: #856404;
+}
+
+.stage-badge.stage-3 {
+  background: #e5e0ff;
+  color: #5b21b6;
 }
 
 .stage-badge.stage-2 {

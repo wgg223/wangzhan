@@ -185,6 +185,7 @@ function createTables(db) {
     description TEXT,
     category TEXT DEFAULT 'system',
     high_risk INTEGER DEFAULT 0,
+    ultra_high_risk INTEGER DEFAULT 0,
     sort_order INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
@@ -192,7 +193,8 @@ function createTables(db) {
   const permMigrations = [
     "ALTER TABLE permissions ADD COLUMN category TEXT DEFAULT 'system'",
     'ALTER TABLE permissions ADD COLUMN high_risk INTEGER DEFAULT 0',
-    'ALTER TABLE permissions ADD COLUMN sort_order INTEGER DEFAULT 0'
+    'ALTER TABLE permissions ADD COLUMN sort_order INTEGER DEFAULT 0',
+    'ALTER TABLE permissions ADD COLUMN ultra_high_risk INTEGER DEFAULT 0'
   ];
   permMigrations.forEach(sql => {
     try { db.run(sql); } catch (e) {

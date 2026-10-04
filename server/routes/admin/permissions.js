@@ -24,6 +24,7 @@ const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { createNotification } = require('../community');
 const {
+  isUltraHighRiskPerm,
   canApproveApplication,
   grantApplicationPermission,
   notifyStageApprover,
@@ -52,7 +53,7 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
 
   // 获取待审核的权限申请（关联申请人、权限名、申请人对应管理员、一级审批人）
   const pendingApplications = queryAll(db,
-    `SELECT pa.*, u.username, u.email, p.perm_name, p.description,
+    `SELECT pa.*, u.username, u.email, p.perm_name, p.description, p.ultra_high_risk AS perm_ultra_high_risk,
             s.username AS superior_name, a1.username AS admin_approver_name
      FROM permission_applications pa
      LEFT JOIN users u ON pa.user_id = u.id
@@ -71,7 +72,7 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
 
   // 获取申请记录（含一级/二级审批人、系统确认时间；限最近 200 条）
   const allApplications = queryAll(db,
-    `SELECT pa.*, u.username, u.email, p.perm_name, p.description,
+    `SELECT pa.*, u.username, u.email, p.perm_name, p.description, p.ultra_high_risk AS perm_ultra_high_risk,
      r.username as reviewer_name,
      a1.username as admin_approver_name,
      a2.username as superior_approver_name,
@@ -112,7 +113,7 @@ router.get('/my-approvals', isAuthenticated, (req, res) => {
   }
 
   const pending = queryAll(db,
-    `SELECT pa.*, u.username, u.email, p.perm_name, p.description
+    `SELECT pa.*, u.username, u.email, p.perm_name, p.description, p.ultra_high_risk AS perm_ultra_high_risk
      FROM permission_applications pa
      LEFT JOIN users u ON pa.user_id = u.id
      LEFT JOIN permissions p ON pa.perm_key = p.perm_key
@@ -140,7 +141,7 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.ma
   }
 
   // perm_key 必须真实存在于 permissions 表（防伪造权限键），并读取高危标记
-  const permRow = queryOne(db, 'SELECT id, high_risk FROM permissions WHERE perm_key = ?', [perm_key]);
+  const permRow = queryOne(db, 'SELECT id, high_risk, ultra_high_risk FROM permissions WHERE perm_key = ?', [perm_key]);
   if (!permRow) {
     return res.status(400).json({ error: '非法的权限项' });
   }
@@ -167,7 +168,7 @@ router.post('/permissions/grant', isAuthenticated, hasPermission('permissions.ma
       [user_id, perm_key, req.session.user.id]);
     saveDatabase();
     if (targetUser) {
-      logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'grant', target_type: 'permission', target_id: parseInt(user_id), target_title: targetUser.username, detail: '授予权限 ' + perm_key + ' 给用户：' + targetUser.username + (permRow.high_risk === 1 ? '（高危权限）' : ''), ip: req.ip });
+      logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'grant', target_type: 'permission', target_id: parseInt(user_id), target_title: targetUser.username, detail: '授予权限 ' + perm_key + ' 给用户：' + targetUser.username + (permRow.ultra_high_risk === 1 ? '（超高危权限）' : (permRow.high_risk === 1 ? '（高危权限）' : '')), ip: req.ip });
     }
   }
 
@@ -184,7 +185,7 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.m
   }
 
   // perm_key 必须真实存在于 permissions 表，并读取高危标记
-  const permRow = queryOne(db, 'SELECT id, high_risk FROM permissions WHERE perm_key = ?', [perm_key]);
+  const permRow = queryOne(db, 'SELECT id, high_risk, ultra_high_risk FROM permissions WHERE perm_key = ?', [perm_key]);
   if (!permRow) {
     return res.status(400).json({ error: '非法的权限项' });
   }
@@ -206,7 +207,7 @@ router.post('/permissions/revoke', isAuthenticated, hasPermission('permissions.m
   db.run('DELETE FROM user_permissions WHERE user_id = ? AND perm_key = ?', [user_id, perm_key]);
   saveDatabase();
   if (targetUser) {
-    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'revoke', target_type: 'permission', target_id: parseInt(user_id), target_title: targetUser.username, detail: '撤销权限 ' + perm_key + ' 从用户：' + targetUser.username + (permRow.high_risk === 1 ? '（高危权限）' : ''), ip: req.ip });
+    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'revoke', target_type: 'permission', target_id: parseInt(user_id), target_title: targetUser.username, detail: '撤销权限 ' + perm_key + ' 从用户：' + targetUser.username + (permRow.ultra_high_risk === 1 ? '（超高危权限）' : (permRow.high_risk === 1 ? '（高危权限）' : '')), ip: req.ip });
   }
   res.redirect('/admin/permissions');
 });
@@ -237,6 +238,7 @@ router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.
   const permName = perm ? perm.perm_name : application.perm_key;
   const stage = application.approval_stage || 1;
   const highRisk = application.high_risk ? true : false;
+  const ultraHighRisk = isUltraHighRiskPerm(db, application.perm_key);
 
   if (stage === 1 && highRisk) {
     // 高危流程一级审批通过 → 转交一级审批人的上级终审
@@ -264,6 +266,32 @@ router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.
     return res.json({ success: true, message: '一级审批已通过，已转交您的上级管理员终审' });
   }
 
+  // 超高危流程二级审批通过 → 转三级：超级管理员终审
+  if (stage === 2 && highRisk && ultraHighRisk) {
+    db.run(`UPDATE permission_applications
+            SET approval_stage = 3, approved_by_superior = ?, approved_by_superior_at = CURRENT_TIMESTAMP
+            WHERE id = ?`,
+      [req.session.user.id, application_id]);
+    saveDatabase();
+
+    // 通知三级审批人（任意超级管理员）
+    const advanced = Object.assign({}, application, { approval_stage: 3, approved_by_superior: req.session.user.id });
+    notifyStageApprover(db, createNotification, advanced, applicant ? applicant.username : '', permName, req.session.user.id);
+
+    logActivity(db, {
+      user_id: req.session.user.id,
+      username: req.session.user.username,
+      action: 'approve',
+      target_type: 'permission_application',
+      target_id: application_id,
+      target_title: applicant ? applicant.username : '',
+      detail: '二级审批通过(超高危): ' + application.perm_key + '，已转交超级管理员终审',
+      ip: req.ip
+    });
+
+    return res.json({ success: true, message: '二级审批已通过，已转交超级管理员终审' });
+  }
+
   // 基础流程一级审批 → 系统自动确认生效；高危流程二级审批（上级终审）→ 生效
   const inserted = grantApplicationPermission(db, application, req.session.user.id);
 
@@ -274,6 +302,13 @@ router.post('/permissions/approve', isAuthenticated, hasPermission('permissions.
                 system_confirmed_at = CURRENT_TIMESTAMP
             WHERE id = ?`,
       [req.session.user.id, req.session.user.id, application_id]);
+  } else if (stage === 3) {
+    // 超高危终审：保留二级审批人记录（approved_by_superior），仅由超级管理员完成终审
+    db.run(`UPDATE permission_applications
+            SET status = 'approved', reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP,
+                system_confirmed_at = CURRENT_TIMESTAMP
+            WHERE id = ?`,
+      [req.session.user.id, application_id]);
   } else {
     db.run(`UPDATE permission_applications
             SET status = 'approved', reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP,
