@@ -120,10 +120,29 @@ function grantDefaultPermissions(db, userId, grantedBy) {
   });
 }
 
+/**
+ * 管理员最小权限集：自动创建 / 晋升管理员时授予（最小化原则）
+ * - 基础访问 3 项（与普通用户一致）：主页 / 文章 / 图片分享
+ * - users.manage：用户管理核心职责（在行级数据范围内管理下级树）
+ * - site_stats.view：站点统计（后台管理入口默认落点）
+ * 其余权限（含高危 / 超高危）一律由管理员本人走权限申请流程（三级审批）。
+ */
+function grantAdminDefaultPermissions(db, userId, grantedBy) {
+  const adminDefaultPerms = [
+    'homepage.access', 'articles.access', 'image-share.access',
+    'users.manage', 'site_stats.view'
+  ];
+  adminDefaultPerms.forEach(perm => {
+    db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+      [userId, perm, grantedBy]);
+  });
+}
+
 module.exports = {
   setUseNativeSql,
   queryOne,
   queryAll,
   generateUid,
-  grantDefaultPermissions
+  grantDefaultPermissions,
+  grantAdminDefaultPermissions
 };

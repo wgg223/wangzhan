@@ -19,7 +19,7 @@
  * @param {Object} opts 附加参数：{ role?, superiorId? }
  * @returns {Promise<{success:number, failed:number, errors:Array}>}
  */
-const { queryOne, queryAll } = require('../config/db-helpers');
+const { queryOne, queryAll, grantAdminDefaultPermissions } = require('../config/db-helpers');
 const { ROLE_HIERARCHY, ROLE_WHITELIST, canOperateUser, ensureAtLeastOneActiveSuperAdmin } = require('../middlewares/auth');
 const { createNotification } = require('../routes/community');
 const { cleanupUserDependencies } = require('../utils/user-deps');
@@ -124,11 +124,8 @@ function opRole(db, operator, target, opts, notif) {
 
   db.run('UPDATE users SET role = ? WHERE id = ?', [role, target.id]);
   if (role === 'admin') {
-    const allPerms = queryAll(db, 'SELECT perm_key FROM permissions');
-    allPerms.forEach(p => {
-      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-        [target.id, p.perm_key, operator.id]);
-    });
+    // 最小权限原则：批量晋升 admin 仅授予管理员最小权限集，其余权限（含高危/超高危）走申请流程
+    grantAdminDefaultPermissions(db, target.id, operator.id);
   }
   return true;
 }

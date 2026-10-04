@@ -139,7 +139,7 @@
                   <% if (!readOnly && u.role !== 'super_admin') { %>
                     <form action="/admin/users/role/<%= u.id %>" method="POST" class="inline-form" style="margin-left:6px;">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <select name="role" onchange="this.form.submit()" style="font-size:11px;padding:2px 6px;border-radius:4px;border:1px solid var(--gray-200);" <%= (u.id === user.id) ? 'disabled' : '' %>>
+                      <select name="role" data-user-id="<%= u.id %>" data-username="<%= u.username %>" onchange="openRoleConfirm({ mode: 'single', userId: parseInt(this.dataset.userId, 10), username: this.dataset.username, newRole: this.value, newRoleLabel: this.options[this.selectedIndex].text })" style="font-size:11px;padding:2px 6px;border-radius:4px;border:1px solid var(--gray-200);" <%= (u.id === user.id) ? 'disabled' : '' %>>
                         <option value="admin" <%= u.role === 'admin' ? 'selected' : '' %>>管理员</option>
                         <option value="user" <%= u.role === 'user' ? 'selected' : '' %>>用户</option>
                         <option value="visitor" <%= u.role === 'visitor' ? 'selected' : '' %>>访客</option>
@@ -254,7 +254,7 @@
       <div class="alert alert-info">
         <span>💡</span> 支持一次导入用户及其对应上级管理员：CSV / Excel（xlsx、xls）文件须包含
         <strong>username（用户名）</strong>、<strong>password（密码）</strong> 列，可选 <strong>email（邮箱）</strong>、
-        <strong>role（角色）</strong>、<strong>superior（上级管理员用户名）</strong>、<strong>permissions（权限，可选）</strong> 列；权限列用逗号或分号分隔权限键（如 <code>articles.view, image-share.upload</code>），不存在的权限将导致该行导入失败。单次最多 1000 行。
+        <strong>role（角色）</strong>、<strong>superior（上级管理员用户名）</strong>、<strong>permissions（权限，可选）</strong> 列；权限列用逗号或分号分隔权限键（如 <code>articles.view, image-share.upload</code>），不存在的权限将导致该行导入失败；<strong>role=admin 的行忽略权限列</strong>，按最小权限集自动授予（基础访问 + 用户管理 + 站点统计），其余权限需自行申请。单次最多 1000 行。
         <a href="/admin/users/import-template?format=csv">下载 CSV 模板</a> ·
         <a href="/admin/users/import-template?format=xlsx">下载 Excel 模板</a>
       </div>
@@ -628,6 +628,31 @@
   </div>
 </div>
 
+<!-- 改角色高危二次确认模态框 -->
+<div id="role-confirm-modal" class="modal" style="display:none;">
+  <div class="modal-content" style="max-width:440px;">
+    <div class="modal-header">
+      <h2>🔒 高危操作二次确认</h2>
+      <button type="button" class="modal-close" onclick="closeRoleConfirm()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="role-confirm-error" class="alert alert-error" style="display:none;"></div>
+      <p style="margin:0 0 12px;font-size:var(--text-sm);color:var(--gray-600);">
+        改角色属于高危操作，请确认：<br><strong id="role-confirm-target"></strong>
+      </p>
+      <div class="form-group">
+        <label for="role-confirm-password">登录密码</label>
+        <input type="password" id="role-confirm-password" placeholder="请输入您的登录密码" autocomplete="current-password" />
+      </div>
+      <p style="margin:8px 0 0;font-size:12px;color:var(--gray-500);">输入您本人的登录密码进行二次确认；密码错误将中止操作并记录审计日志。<br>晋升管理员将按最小权限原则仅授予：基础访问（主页 / 文章 / 图片分享）+ 用户管理 + 站点统计，其余权限需自行申请。</p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn" onclick="closeRoleConfirm()">取消</button>
+      <button type="button" class="btn btn-danger" id="role-confirm-submit" onclick="submitRoleConfirm()">确认修改</button>
+    </div>
+  </div>
+</div>
+
 <!-- 批量操作结果模态框 -->
 <div id="batch-result-modal" class="modal" style="display:none;">
   <div class="modal-content" style="width:560px;">
@@ -895,6 +920,98 @@ document.getElementById('set-superior-modal').addEventListener('click', function
   if (e.target === this) closeSetSuperiorModal();
 });
 
+// ============ 改角色高危二次确认 ============
+var __roleConfirmBusy = false;
+var __roleConfirmCtx = null;
+
+function openRoleConfirm(ctx) {
+  __roleConfirmCtx = ctx;
+  var target = document.getElementById('role-confirm-target');
+  target.textContent = (ctx.mode === 'batch'
+    ? '批量修改 ' + ctx.batchIds.length + ' 个用户的角色为「' + ctx.newRoleLabel + '」'
+    : '将用户「' + ctx.username + '」的角色修改为「' + ctx.newRoleLabel + '」');
+  document.getElementById('role-confirm-error').style.display = 'none';
+  var input = document.getElementById('role-confirm-password');
+  input.value = '';
+  document.getElementById('role-confirm-modal').style.display = 'flex';
+  setTimeout(function() { input.focus(); }, 50);
+}
+
+function closeRoleConfirm() {
+  document.getElementById('role-confirm-modal').style.display = 'none';
+  __roleConfirmCtx = null;
+}
+
+function showRoleConfirmError(msg) {
+  var el = document.getElementById('role-confirm-error');
+  el.textContent = msg || '操作失败，请重试';
+  el.style.display = 'block';
+}
+
+function submitRoleConfirm() {
+  if (__roleConfirmBusy || !__roleConfirmCtx) return;
+  var pwd = document.getElementById('role-confirm-password').value;
+  if (!pwd) {
+    showRoleConfirmError('请输入您的登录密码');
+    return;
+  }
+  __roleConfirmBusy = true;
+  var btn = document.getElementById('role-confirm-submit');
+  var oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '确认中…';
+
+  var req;
+  if (__roleConfirmCtx.mode === 'single') {
+    req = fetch('/admin/users/role/' + __roleConfirmCtx.userId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+      body: JSON.stringify({ role: __roleConfirmCtx.newRole, confirm_password: pwd })
+    });
+  } else {
+    req = fetch('/admin/users/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+      body: JSON.stringify({ action: 'role', ids: __roleConfirmCtx.batchIds, role: __roleConfirmCtx.newRole, confirm_password: pwd })
+    });
+  }
+
+  req
+    .then(function(response) {
+      return response.json().catch(function() { return {}; }).then(function(data) {
+        return { ok: response.ok, data: data };
+      });
+    })
+    .then(function(r) {
+      if (!r.ok) throw new Error(r.data.error || '操作失败 (HTTP ' + r.status + ')');
+      if (r.data && r.data.success === false) throw new Error(r.data.error || r.data.message || '操作失败');
+      if (__roleConfirmCtx.mode === 'single') {
+        showToast('角色已修改为「' + __roleConfirmCtx.newRoleLabel + '」');
+        closeRoleConfirm();
+        setTimeout(function() { location.reload(); }, 600);
+      } else {
+        closeRoleConfirm();
+        renderBatchResult('role', r.data.results || { success: 0, failed: 0, errors: [] });
+      }
+    })
+    .catch(function(err) {
+      showRoleConfirmError(err.message || '网络错误，请重试');
+    })
+    .finally(function() {
+      __roleConfirmBusy = false;
+      btn.disabled = false;
+      btn.textContent = oldText;
+    });
+}
+
+document.getElementById('role-confirm-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeRoleConfirm();
+});
+
+document.getElementById('role-confirm-password').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') submitRoleConfirm();
+});
+
 // ============ 批量勾选操作 ============
 var BATCH_ACTION_LABELS = {
   approve: '批量通过/启用',
@@ -964,6 +1081,10 @@ function runBatchAction(action) {
       showToast('请选择要批量设置的角色', 'error');
       return;
     }
+    // 高危操作：先弹登录密码二次确认，确认后提交
+    var roleSel = document.getElementById('batch-role');
+    openRoleConfirm({ mode: 'batch', batchIds: ids, newRole: body.role, newRoleLabel: roleSel.options[roleSel.selectedIndex].text });
+    return;
   }
   if (action === 'set_superior') {
     body.superior_id = parseInt(document.getElementById('batch-superior').value, 10) || 0;
