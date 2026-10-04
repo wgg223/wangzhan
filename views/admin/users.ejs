@@ -254,7 +254,7 @@
       <div class="alert alert-info">
         <span>💡</span> 支持一次导入用户及其对应上级管理员：CSV / Excel（xlsx、xls）文件须包含
         <strong>username（用户名）</strong>、<strong>password（密码）</strong> 列，可选 <strong>email（邮箱）</strong>、
-        <strong>role（角色）</strong>、<strong>superior（上级管理员用户名）</strong> 列。单次最多 1000 行。
+        <strong>role（角色）</strong>、<strong>superior（上级管理员用户名）</strong>、<strong>permissions（权限，可选）</strong> 列；权限列用逗号或分号分隔权限键（如 <code>articles.view, image-share.upload</code>），不存在的权限将导致该行导入失败。单次最多 1000 行。
         <a href="/admin/users/import-template?format=csv">下载 CSV 模板</a> ·
         <a href="/admin/users/import-template?format=xlsx">下载 Excel 模板</a>
       </div>

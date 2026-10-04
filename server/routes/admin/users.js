@@ -499,7 +499,8 @@ const IMPORT_HEADER_ALIASES = {
   password: ['password', '密码'],
   email: ['email', '邮箱', '电子邮件'],
   role: ['role', '角色'],
-  superior: ['superior', '上级管理员', '对应管理员', '上级']
+  superior: ['superior', '上级管理员', '对应管理员', '上级'],
+  permissions: ['permissions', '权限', '权限列表', '权限集']
 };
 
 // 角色别名映射（导入文件可写英文或中文角色名）
@@ -511,7 +512,7 @@ const IMPORT_ROLE_ALIASES = {
 
 // 将表头数组映射为字段 → 列索引
 function mapImportHeaders(headers) {
-  const idx = { username: -1, password: -1, email: -1, role: -1, superior: -1 };
+  const idx = { username: -1, password: -1, email: -1, role: -1, superior: -1, permissions: -1 };
   headers.forEach(function(h, i) {
     const name = String(h || '').trim().toLowerCase();
     Object.keys(IMPORT_HEADER_ALIASES).forEach(function(field) {
@@ -526,11 +527,11 @@ function mapImportHeaders(headers) {
 // 导入模板下载（?format=csv|xlsx，默认 csv；CSV 带 UTF-8 BOM 便于 Excel 中文直开）
 router.get('/users/import-template', isAuthenticated, isSuperAdmin, (req, res) => {
   const format = (req.query.format || 'csv').toLowerCase();
-  const headers = ['username', 'password', 'email', 'role', 'superior'];
+  const headers = ['username', 'password', 'email', 'role', 'superior', 'permissions'];
   const rows = [
     headers,
-    ['zhangsan', 'Zs@12345678', 'zhangsan@example.com', 'user', 'siteadmin'],
-    ['lisi', 'Ls@12345678', 'lisi@example.com', 'visitor', '']
+    ['zhangsan', 'Zs@12345678', 'zhangsan@example.com', 'user', 'siteadmin', 'articles.view, image-share.upload'],
+    ['lisi', 'Ls@12345678', 'lisi@example.com', 'visitor', '', 'articles.view']
   ];
 
   if (format === 'xlsx') {
@@ -544,14 +545,19 @@ router.get('/users/import-template', isAuthenticated, isSuperAdmin, (req, res) =
     return res.send(buf);
   }
 
-  const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\r\n');
+  // 权限列含逗号时需引号包裹（CSV 标准转义；parseCSV 解析器支持引号字段）
+  const csvEscape = function(v, i) {
+    if (i === 5 && /[,，]/.test(String(v))) return '"' + String(v) + '"';
+    return String(v);
+  };
+  const csv = '\uFEFF' + rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="users-import-template.csv"');
   res.send(csv);
 });
 
 // 批量导入用户（仅超管）：支持 CSV（UTF-8/GBK 自动识别）/ Excel；
-// 表头必含 username/password，可选 email/role/superior（对应上级管理员用户名）。
+// 表头必含 username/password，可选 email/role/superior（对应上级管理员用户名）/permissions（权限键，逗号或分号分隔，如 articles.view, image-share.upload）。
 // 采用两段式写入：先创建全部用户（支持同文件内互相指定上级），再统一解析并校验上级链。
 router.post('/users/import', isAuthenticated, isSuperAdmin, importUpload.single('file'), async (req, res) => {
   const db = req.db;
@@ -577,12 +583,16 @@ router.post('/users/import', isAuthenticated, isSuperAdmin, importUpload.single(
     return res.status(400).json({ error: '单次导入最多 ' + MAX_IMPORT_ROWS + ' 行，请分批导入' });
   }
 
+  // 权限列校验集合（一次性加载全部权限键，防止逐行查询）
+  const allPermKeys = new Set((queryAll(db, 'SELECT perm_key FROM permissions') || []).map(function(r) { return r.perm_key; }));
+
   const cell = function(row, i) {
     if (i === -1 || i >= row.length) return '';
     return String(row[i] == null ? '' : row[i]).trim();
   };
 
   const results = { success: 0, failed: 0, errors: [] };
+  let importedPermCount = 0;
   const fail = function(rowNum, username, reason) {
     results.failed++;
     if (results.errors.length < 200) {
@@ -603,6 +613,13 @@ router.post('/users/import', isAuthenticated, isSuperAdmin, importUpload.single(
     const roleRaw = cell(row, colIdx.role).toLowerCase();
     const superiorName = cell(row, colIdx.superior);
     const role = IMPORT_ROLE_ALIASES[roleRaw] || 'user';
+    const permRaw = cell(row, colIdx.permissions);
+    const permKeys = permRaw ? String(permRaw).split(/[，,;；、\s]+/).map(function(s) { return s.trim(); }).filter(Boolean) : [];
+    const invalidPerms = permKeys.filter(function(k) { return !allPermKeys.has(k); });
+    if (invalidPerms.length) {
+      fail(rowNum, username, '权限不存在: ' + invalidPerms.join(', '));
+      continue;
+    }
 
     if (!username || username.length < 3) {
       fail(rowNum, username, '用户名无效（至少3个字符）');
@@ -650,6 +667,12 @@ router.post('/users/import', isAuthenticated, isSuperAdmin, importUpload.single(
           });
         } else {
           grantDefaultPermissions(db, newUser.id, req.session.user.id);
+          // 导入文件权限列：校验通过后逐项授予（导入仅超管，含高危权限合规；与分级授权同源校验）
+          permKeys.forEach(function(pk) {
+            db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+              [newUser.id, pk, req.session.user.id]);
+          });
+          importedPermCount += permKeys.length;
         }
       }
 
@@ -706,7 +729,7 @@ router.post('/users/import', isAuthenticated, isSuperAdmin, importUpload.single(
     target_type: 'user',
     target_id: logId,
     target_title: req.file.originalname,
-    detail: '批量导入用户（' + (parsed.format || 'csv').toUpperCase() + '）: 成功 ' + results.success + ' 个, 失败 ' + results.failed + ' 个',
+    detail: '批量导入用户（' + (parsed.format || 'csv').toUpperCase() + '）: 成功 ' + results.success + ' 个, 失败 ' + results.failed + ' 个' + (importedPermCount > 0 ? ', 授予权限 ' + importedPermCount + ' 项' : ''),
     ip: req.ip
   });
 
