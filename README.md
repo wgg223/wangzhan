@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.7.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.7.1 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -302,6 +302,13 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 - 服务端超时重配：`server.timeout = 0`（长任务 socket 不再被 Node 掐断）、`requestTimeout = 120s` 单请求整体上限、`headersTimeout 60s < keepAliveTimeout 65s`，超时兜底交由 Nginx `proxy_read_timeout`（300s）
 - 启动命令带 `--expose-gc --max-old-space-size=768`（见 package.json scripts），大文件 / 大批量场景堆内存可控
 - 修复：`ensureSetupStatus` 纠正存量库 `setup_completed=false` 导致默认数据（权限种子 / 回收迁移）被整体跳过的隐患
+### v8.7.1 (2026-10-04)
+
+**后台设置页收紧为仅超管**
+- 「服务器设置」分组（CDN设置 / 系统更新 / 备份管理 / 服务器维护 / 服务器日志 / 项目管理 / 重置服务器）与「网站设置」分组（基础设置 / SMTP配置 / 第三方登录 / 协议设置 / 弹窗设置）侧边栏入口与全部路由改为仅超级管理员可见可操作
+- 路由守卫：`/settings/basic`、`/settings/smtp`、`/settings/agreement`、`/settings/popup` 挂载由 `hasPermission('settings.manage')` 收紧为 `isSuperAdmin`；`/settings/oauth`（第三方登录配置，含 client_secret 掩码回显）同步收紧
+- API 端：`/api/v1/admin/settings`（GET / PUT）由 `settings.manage` 权限收紧为仅超管 Token
+- 验证：后台侧边栏渲染 26/26 通过（admin 两设置分组均不可见，超管均可见），启动冒烟正常
 ### v8.6.0 (2026-10-04)
 
 **用户批量导入（超管）**

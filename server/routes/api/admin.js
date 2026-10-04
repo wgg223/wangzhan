@@ -548,14 +548,14 @@ router.delete('/novels/:id', apiRequirePermission('novels.manage'), (req, res) =
 
 // ============ 设置 ============
 // 读取全部设置（键值对形式返回）
-router.get('/settings', apiRequirePermission('settings.manage'), (req, res) => {
+router.get('/settings', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   // 走统一设置缓存（所有写入方均经 upsertSettings 失效缓存），缓存命中 0 查询
   res.json({ settings: getSettings(db) });
 });
 
 // 批量保存设置：键名校验（字母数字下划线）+ 值截断 2000 字符 + upsert
-router.put('/settings', apiRequirePermission('settings.manage'), (req, res) => {
+router.put('/settings', apiRequireSuperAdmin, (req, res) => {
   const db = getDb();
   const values = req.body.settings;
   if (!values || typeof values !== 'object') {

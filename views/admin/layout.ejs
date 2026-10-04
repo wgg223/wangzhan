@@ -179,7 +179,7 @@
             <li><a href="/permissions/apply" class="<%= isActive('/permissions/apply') ? 'active' : '' %>">🔑 权限申请</a></li>
           </ul>
         </div>
-        <% if ((user.role === 'admin' || user.role === 'super_admin') && typeof userPermissions !== 'undefined' && hasPerm(userPermissions, 'settings.manage')) { %>
+        <% if (user.role === 'super_admin') { %>
         <div class="nav-group">
           <p class="nav-group-title">网站设置</p>
           <ul>

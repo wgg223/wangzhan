@@ -82,10 +82,10 @@ router.use(activityLogsRouter);
 router.use(settingsRouter);
 router.use(pagesRouter);
 // ---------- 设置模块子路由（需 settings.manage 权限，与主 settings.js 对齐） ----------
-router.use('/settings/basic', hasPermission('settings.manage'), settingsBasicRouter);
-router.use('/settings/smtp', hasPermission('settings.manage'), settingsSmtpRouter);
-router.use('/settings/agreement', hasPermission('settings.manage'), settingsAgreementRouter);
-router.use('/settings/popup', hasPermission('settings.manage'), settingsPopupRouter);
+router.use('/settings/basic', isSuperAdmin, settingsBasicRouter);
+router.use('/settings/smtp', isSuperAdmin, settingsSmtpRouter);
+router.use('/settings/agreement', isSuperAdmin, settingsAgreementRouter);
+router.use('/settings/popup', isSuperAdmin, settingsPopupRouter);
 router.use(articlesRouter);
 router.use(promptsRouter);
 router.use(aiImageRouter);

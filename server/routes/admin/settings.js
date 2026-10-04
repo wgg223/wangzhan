@@ -429,7 +429,7 @@ router.delete('/settings/backup/:filename', isAuthenticated, isSuperAdmin, (req,
 // ============ 第三方登录设置 ============
 
 // OAuth 配置页：client_secret 解密后掩码回显（避免页面源码暴露明文）
-router.get('/settings/oauth', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
+router.get('/settings/oauth', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { initDefaultProviders } = require('../../routes/oauth');
   const { decrypt } = require('../../config/crypto-secure');
@@ -457,7 +457,7 @@ router.get('/settings/oauth', isAuthenticated, hasPermission('settings.manage'),
 });
 
 // 保存 OAuth 配置（支持多 provider 批量提交；掩码值不覆盖原 secret）
-router.post('/settings/oauth', isAuthenticated, hasPermission('settings.manage'), (req, res) => {
+router.post('/settings/oauth', isAuthenticated, isSuperAdmin, (req, res) => {
   const db = req.db;
   const { encrypt } = require('../../config/crypto-secure');
   const { provider_id, client_id, client_secret, redirect_uri, is_enabled } = req.body;
