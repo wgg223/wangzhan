@@ -227,6 +227,32 @@ function createNotification(db, { userId, type, title, content, fromUserId, targ
 }
 
 /**
+ * 生成通知跳转链接（点击通知自动跳转对应页面）
+ * 规则：按 target_type 映射目标页面；permission 类通知按接收者角色分流
+ *      （审批通知→我的审批页 / 结果通知→申请记录页）
+ * @param {object} n 通知行（含 target_type / target_id）
+ * @param {object} user 当前用户（含 role）
+ * @returns {string|null} 
+ */
+function getNotifLink(n, user) {
+  const tt = n.target_type || '';
+  const tid = n.target_id || '';
+  if (tt === 'article' && tid) return '/articles/' + tid;
+  if (tt === 'comment' && tid) return '/articles/' + tid;
+  if (tt === 'user' && tid) return '/user/' + tid;
+  if (tt === 'conversation' && tid) return '/chat/' + tid;
+  if (tt === 'image' && tid) return '/image-share/image/' + tid;
+  if (tt === 'community_post' && tid) return '/community/post/' + tid;
+  if (tt === 'permission') {
+    return (user && (user.role === 'admin' || user.role === 'super_admin'))
+      ? '/admin/my-approvals?id=' + tid
+      : '/permissions/apply';
+  }
+  if (tt === 'account') return '/auth/frontend/change-password';
+  return null;
+}
+
+/**
  * 获取用户通知列表
  */
 router.get('/api/notifications', isAuthenticated, (req, res) => {
@@ -265,6 +291,11 @@ router.get('/api/notifications', isAuthenticated, (req, res) => {
       'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0',
       [userId]
     )?.count || 0;
+
+    // 注入跳转链接（点击通知自动跳转对应页面）
+    (notifications || []).forEach(function (n) {
+      n.link = getNotifLink(n, req.session.user);
+    });
 
     res.json({
       success: true,
@@ -820,3 +851,4 @@ router.delete('/api/community/notifications/:id', isAuthenticated, hasPermission
 
 module.exports = router;
 module.exports.createNotification = createNotification;
+module.exports.getNotifLink = getNotifLink;

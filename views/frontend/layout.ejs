@@ -304,6 +304,8 @@
       }
 
       function getNotifUrl(n) {
+        // 后端已生成权威跳转链接（含角色分流），优先使用；以下为兜底映射
+        if (n.link) return n.link;
         var tt = n.target_type || '';
         var tid = n.target_id || '';
         if (tt === 'article' && tid) return '/articles/' + tid;
@@ -311,6 +313,7 @@
         if (tt === 'user' && tid) return '/user/' + tid;
         if (tt === 'conversation' && tid) return '/chat/' + tid;
         if (tt === 'image' && tid) return '/image-share/image/' + tid;
+        if (tt === 'community_post' && tid) return '/community/post/' + tid;
         if (tt === 'permission') return '/permissions/apply';
         if (tt === 'account') return '/auth/frontend/change-password';
         return null;

@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.7.8 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.7.9 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -309,7 +309,18 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 - 路由守卫：`/settings/basic`、`/settings/smtp`、`/settings/agreement`、`/settings/popup` 挂载由 `hasPermission('settings.manage')` 收紧为 `isSuperAdmin`；`/settings/oauth`（第三方登录配置，含 client_secret 掩码回显）同步收紧
 - API 端：`/api/v1/admin/settings`（GET / PUT）由 `settings.manage` 权限收紧为仅超管 Token
 - 验证：后台侧边栏渲染 26/26 通过（admin 两设置分组均不可见，超管均可见），启动冒烟正常
+### v8.7.9 (2026-10-06)
+
+**点击通知自动跳转到对应页面**
+- 通知接口（GET /api/notifications）为每条通知注入跳转链接 link，点击铃铛通知即自动跳转到对应页面
+- 跳转映射：文章 /articles/:id、图片 /image-share/image/:id、动态 /community/post/:id、用户主页 /user/:id、私信 /chat/:id、改密页
+- 权限申请通知按角色分流：管理员收到审批通知 → 我的审批页（带申请 id 深链高亮）；普通用户收到结果通知 → 申请记录页
+- 新增 community_post 通知类型跳转（点赞/评论动态）
+- 我的审批页支持 ?id= 深链：自动滚动并高亮对应申请行
+- 验证：12 类通知跳转链接 12/12 通过；启动冒烟正常
+
 ### v8.7.8 (2026-10-05)
+
 
 **审批链异常自动流转 + 审批进度/时间戳可视化**
 - 异常自动流转：审批链解析（stage1/stage2）沿上级链自动跳过异常账户——用户被禁用 / 删除 / 降级为普通用户时，申请自动流转到下一个有效管理员或超级管理员；全链失效或链路信息不可恢复时由超管兜底

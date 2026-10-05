@@ -304,3 +304,25 @@ document.getElementById('rejectModal').addEventListener('click', function(e) {
   gap: var(--space-3);
 }
 </style>
+
+<script>
+// 审批通知深链：?id=<申请id> 时高亮并滚动到对应申请行
+(function () {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var aid = params.get('id');
+    if (aid) {
+      var rows = document.querySelectorAll('.admin-table tbody tr');
+      rows.forEach(function (tr) {
+        var btn = tr.querySelector('button[onclick*="' + aid + ')"]');
+        if (btn) {
+          tr.style.outline = '2px solid #f59e0b';
+          tr.style.boxShadow = '0 0 10px rgba(245, 158, 11, 0.45)';
+          tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(function () { tr.style.outline = ''; tr.style.boxShadow = ''; }, 4000);
+        }
+      });
+    }
+  } catch (e) {}
+})();
+</script>
