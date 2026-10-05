@@ -26,6 +26,7 @@
               <th>当前阶段</th>
               <th>申请理由</th>
               <th>申请时间</th>
+              <th>进度时间线</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -58,6 +59,11 @@
                 </td>
                 <td><%= app.reason || '无' %></td>
                 <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
+                <td>
+                  <% if (app.approved_by_admin_at) { %>一级通过：<%= new Date(app.approved_by_admin_at).toLocaleString('zh-CN') %><br><% } %>
+                  <% if (app.approved_by_superior_at) { %>二级通过：<%= new Date(app.approved_by_superior_at).toLocaleString('zh-CN') %><% } %>
+                  <% if (!app.approved_by_admin_at && !app.approved_by_superior_at) { %>-<% } %>
+                </td>
                 <td class="actions">
                   <button class="btn btn-small btn-success" onclick="approveApplication(<%= app.id %>)">✓ 批准</button>
                   <button class="btn btn-small btn-danger" onclick="rejectApplication(<%= app.id %>)">✗ 拒绝</button>

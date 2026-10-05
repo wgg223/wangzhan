@@ -26,6 +26,7 @@ const { createNotification } = require('../community');
 const {
   isUltraHighRiskPerm,
   getVisibleUserIds,
+  getCurrentApproverName,
   canApproveApplication,
   grantApplicationPermission,
   notifyStageApprover,
@@ -87,6 +88,8 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
     const check = canApproveApplication(db, req.session.user, app);
     app.canApprove = check.ok;
     app.canApproveReason = check.ok ? '' : check.reason;
+    // 当前阶段待审批人（含异常流转解析），供进度展示
+    app.currentApproverName = getCurrentApproverName(db, app);
   });
 
   // 获取申请记录（含一级/二级审批人、系统确认时间；限最近 200 条）
@@ -111,6 +114,10 @@ router.get('/permissions', isAuthenticated, hasPermission('permissions.manage'),
   // 兼容旧数据库：确保 reject_reason 字段存在（旧库可能没有该列）
   allApplications.forEach(app => {
     if (app.reject_reason === undefined) app.reject_reason = '';
+    // 进度：pending 时解析当前待审批人（含异常流转）
+    if (app.status === 'pending') {
+      app.currentApproverName = getCurrentApproverName(db, app);
+    }
   });
 
   res.render('admin/permissions', {
@@ -152,6 +159,10 @@ router.get('/my-approvals', isAuthenticated, (req, res) => {
 
   // 仅保留当前用户有权审批的申请（审批链命中，或链缺失时超管兜底）
   const myPending = pending.filter(app => canApproveApplication(db, req.session.user, app).ok);
+  myPending.forEach(app => {
+    // 进度：当前阶段待审批人（含异常流转）
+    app.currentApproverName = getCurrentApproverName(db, app);
+  });
 
   res.render('admin/my-approvals', {
     user: req.session.user,

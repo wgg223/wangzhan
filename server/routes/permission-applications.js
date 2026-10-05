@@ -14,7 +14,7 @@ const { isAuthenticated } = require('../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../config/database');
 const { logActivity } = require('../config/activity');
 const { createNotification } = require('./community');
-const { isHighRiskPerm, notifyStageApprover } = require('../utils/permission-flow');
+const { isHighRiskPerm, notifyStageApprover, getCurrentApproverName } = require('../utils/permission-flow');
 
 // 简单的速率限制：每个用户每小时最多提交5个申请
 const applicationRateLimit = new Map();
@@ -120,6 +120,13 @@ router.get('/permissions/apply', isAuthenticated, (req, res) => {
     max: MAX_APPLICATIONS_PER_WINDOW,
     resetAt: userRecord ? new Date(userRecord.windowStart + RATE_LIMIT_WINDOW).toISOString() : null
   };
+
+  // 申请记录注入进度（pending 时解析当前待审批人，含异常流转）
+  allApps.forEach(app => {
+    if (app.status === 'pending') {
+      app.currentApproverName = getCurrentApproverName(db, app);
+    }
+  });
 
   // 当前用户的对应管理员（审批链展示用）
   const mySuperior = queryOne(db,

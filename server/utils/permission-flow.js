@@ -130,27 +130,58 @@ function getSuperAdminIds(db) {
  * @returns {{approverId: number|null, anySuperAdmin: boolean}}
  *   approverId 非空 → 仅该用户可审批；anySuperAdmin=true → 任意超级管理员可审批
  */
+/**
+ * 沿上级链解析第一个"有效审批人"（异常账户自动流转）
+ * 异常账户 = 用户不存在（已被删除）/ 状态非 active（已禁用）/ 角色不再是管理员或超管（已降级）
+ * 规则：从 startUserId 沿 superior_id 向上，跳过异常账户，取第一个有效审批人；
+ *       链到头 / 形成环 / 链路信息不可恢复（中间节点被删除）时返回 null（由超管兜底）。
+ * @returns {number|null} 有效审批人 id；null = 需超管兜底
+ */
+function resolveActiveApprover(db, startUserId) {
+  let curId = startUserId || null;
+  const visited = new Set();
+  while (curId && !visited.has(curId)) {
+    visited.add(curId);
+    const u = queryOne(db, 'SELECT id, superior_id, role, status FROM users WHERE id = ?', [curId]);
+    if (!u) return null; // 用户已被删除：上级链信息不可恢复 → 超管兜底
+    if (u.status === 'active' && (u.role === 'admin' || u.role === 'super_admin')) return u.id;
+    curId = u.superior_id; // 禁用 / 降级 → 继续向上流转
+  }
+  return null; // 环 / 链到头 → 超管兜底
+}
+
 function getStageApprover(db, app) {
   const stage = app.approval_stage || 1;
-  let approverId = null;
-
   if (stage === 1) {
-    // 一级审批人 = 申请人的对应管理员
+    // 一级审批人 = 申请人的对应管理员（异常自动流转到其有效上级）
     const applicant = queryOne(db, 'SELECT superior_id FROM users WHERE id = ?', [app.user_id]);
-    approverId = applicant ? (applicant.superior_id || null) : null;
+    const startId = applicant ? (applicant.superior_id || null) : null;
+    if (!startId) return { approverId: null, anySuperAdmin: true };
+    const id = resolveActiveApprover(db, startId);
+    return id ? { approverId: id, anySuperAdmin: false } : { approverId: null, anySuperAdmin: true };
   } else if (stage === 2) {
-    // 二级审批人 = 一级审批人的上级
+    // 二级审批人 = 一级审批人的上级（异常自动流转到其有效上级）
     const stage1 = queryOne(db, 'SELECT superior_id FROM users WHERE id = ?', [app.approved_by_admin]);
-    approverId = stage1 ? (stage1.superior_id || null) : null;
+    const startId = stage1 ? (stage1.superior_id || null) : null;
+    if (!startId) return { approverId: null, anySuperAdmin: true };
+    const id = resolveActiveApprover(db, startId);
+    return id ? { approverId: id, anySuperAdmin: false } : { approverId: null, anySuperAdmin: true };
   } else if (stage === 3) {
     // 三级审批人 = 任意超级管理员（超高危终审）
     return { approverId: null, anySuperAdmin: true };
   }
-
-  if (approverId) {
-    return { approverId: approverId, anySuperAdmin: false };
-  }
   return { approverId: null, anySuperAdmin: true };
+}
+
+/**
+ * 当前阶段待审批人展示名（供进度查询）
+ * @returns {string} 用户名 / '超级管理员'（兜底或终审）/ '超管兜底'
+ */
+function getCurrentApproverName(db, app) {
+  const stage = getStageApprover(db, app);
+  if (stage.anySuperAdmin) return '超级管理员';
+  const u = queryOne(db, 'SELECT username FROM users WHERE id = ?', [stage.approverId]);
+  return u ? u.username : '超管兜底';
 }
 
 /**
@@ -264,6 +295,7 @@ module.exports = {
   getVisibleUserIds,
   getSuperAdminIds,
   getStageApprover,
+  getCurrentApproverName,
   canApproveApplication,
   grantApplicationPermission,
   notifyStageApprover,

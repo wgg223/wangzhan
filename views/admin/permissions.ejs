@@ -24,6 +24,7 @@
               <th>申请权限</th>
               <th>类型</th>
               <th>当前阶段</th>
+              <th>待审批人</th>
               <th>申请理由</th>
               <th>申请时间</th>
               <th>操作</th>
@@ -65,6 +66,7 @@
                     </div>
                   <% } %>
                 </td>
+                <td><%= app.currentApproverName || '-' %></td>
                 <td><%= app.reason || '无' %></td>
                 <td><%= new Date(app.created_at).toLocaleString('zh-CN') %></td>
                 <td class="actions">
@@ -308,20 +310,22 @@
                     <% } %>
                     <div style="font-size:var(--text-xs);color:var(--gray-400);">
                       一级：<%= app.admin_approver_name || (app.superior_name || '超管兜底') %>
+                      <% if (app.approved_by_admin_at) { %><div style="font-size:var(--text-xs);color:var(--gray-400);">一级通过：<%= new Date(app.approved_by_admin_at).toLocaleString('zh-CN') %></div><% } %>
+                      <% if (app.approved_by_admin_at) { %><div style="font-size:var(--text-xs);color:var(--gray-400);">一级通过：<%= new Date(app.approved_by_admin_at).toLocaleString('zh-CN') %></div><% } %>
                     </div>
                   <% } else if (app.status === 'approved') { %>
-                    <div style="font-size:var(--text-sm);">一级：<%= app.admin_approver_name || '-' %></div>
+                    <div style="font-size:var(--text-sm);">一级：<%= app.admin_approver_name || '-' %> <% if (app.approved_by_admin_at) { %>· <%= new Date(app.approved_by_admin_at).toLocaleString('zh-CN') %><% } %></div>
                     <% if (app.high_risk) { %>
-                      <div style="font-size:var(--text-sm);">二级：<%= app.superior_approver_name || '-' %></div>
+                      <div style="font-size:var(--text-sm);">二级：<%= app.superior_approver_name || '-' %> <% if (app.approved_by_superior_at) { %>· <%= new Date(app.approved_by_superior_at).toLocaleString('zh-CN') %><% } %></div>
                     <% } %>
                     <% if (app.perm_ultra_high_risk == 1) { %>
-                      <div style="font-size:var(--text-sm);">三级终审：<%= app.reviewer_name || '-' %></div>
+                      <div style="font-size:var(--text-sm);">三级终审：<%= app.reviewer_name || '-' %> <% if (app.reviewed_at) { %>· <%= new Date(app.reviewed_at).toLocaleString('zh-CN') %><% } %></div>
                     <% } %>
                     <% if (app.system_confirmed_at) { %>
                       <div style="font-size:var(--text-xs);color:var(--success);">✅ 系统已确认生效</div>
                     <% } %>
                   <% } else { %>
-                    <div style="font-size:var(--text-sm);">驳回人：<%= app.reviewer_name || '-' %></div>
+                    <div style="font-size:var(--text-sm);">驳回人：<%= app.reviewer_name || '-' %> <% if (app.reviewed_at) { %>· <%= new Date(app.reviewed_at).toLocaleString('zh-CN') %><% } %></div>
                   <% } %>
                 </td>
                 <td><% if (app.status === 'rejected') { %><span style="color: var(--danger); font-size: var(--text-sm);"><%= app.reject_reason || '未填写' %></span><% } else { %><span style="color: var(--gray-300);">-</span><% } %></td>
