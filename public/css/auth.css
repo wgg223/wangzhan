@@ -42,33 +42,33 @@ html {
   --auth-warning: var(--warning);
   --auth-warning-bg: rgba(245, 158, 11, 0.08);
   --auth-gradient-start: var(--primary);
-  --auth-gradient-end: #4f46e5;
+  --auth-gradient-end: #8b5cf6;
   /* 品牌面板使用更深的渐变端，保证白字对比度 >= 4.5:1 */
-  --auth-brand-start: #4f46e5;
-  --auth-brand-end: #3730a3;
+  --auth-brand-start: #7c3aed;
+  --auth-brand-end: #5b21b6;
   --auth-transition: var(--transition-base);
 }
 
 /* 图片分享主题 */
 .image-share-theme {
-  --auth-primary: #667eea;
-  --auth-primary-dark: #5a6fd6;
-  --auth-primary-bg: rgba(102, 126, 234, 0.08);
-  --auth-gradient-start: #667eea;
-  --auth-gradient-end: #764ba2;
-  --auth-brand-start: #5a6fd6;
-  --auth-brand-end: #453a85;
+  --auth-primary: #ec4899;
+  --auth-primary-dark: #be185d;
+  --auth-primary-bg: rgba(236, 72, 153, 0.08);
+  --auth-gradient-start: #ec4899;
+  --auth-gradient-end: #8b5cf6;
+  --auth-brand-start: #7c3aed;
+  --auth-brand-end: #5b21b6;
 }
 
 /* 主站点主题 (frontend) */
 .frontend-theme {
-  --auth-primary: var(--success);
-  --auth-primary-dark: var(--success-dark);
-  --auth-primary-bg: var(--success-bg);
-  --auth-gradient-start: #10b981;
-  --auth-gradient-end: #047857;
-  --auth-brand-start: #059669;
-  --auth-brand-end: #065f46;
+  --auth-primary: #8b5cf6;
+  --auth-primary-dark: #7c3aed;
+  --auth-primary-bg: rgba(139, 92, 246, 0.08);
+  --auth-gradient-start: #8b5cf6;
+  --auth-gradient-end: #ec4899;
+  --auth-brand-start: #7c3aed;
+  --auth-brand-end: #5b21b6;
 }
 
 /* ========================================

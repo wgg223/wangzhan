@@ -395,7 +395,7 @@ var currentUploadAbort = false;
 function getAttachmentFileIcon(filename) {
   var ext = filename.split('.').pop().toLowerCase();
   if (['zip','rar','7z','tar','gz','bz2','xz'].includes(ext)) return { icon: 'fa-file-archive', color: '#f59e0b' };
-  if (['exe','msi','dmg','apk','ipa'].includes(ext)) return { icon: 'fa-cog', color: '#6366f1' };
+  if (['exe','msi','dmg','apk','ipa'].includes(ext)) return { icon: 'fa-cog', color: '#ec4899' };
   if (['pdf'].includes(ext)) return { icon: 'fa-file-pdf', color: '#ef4444' };
   if (['doc','docx'].includes(ext)) return { icon: 'fa-file-word', color: '#3b82f6' };
   if (['xls','xlsx'].includes(ext)) return { icon: 'fa-file-excel', color: '#10b981' };

@@ -70,14 +70,14 @@
 }
 
 .settings-option:hover {
-  border-color: var(--primary, #6366f1);
-  color: var(--primary, #6366f1);
+  border-color: var(--primary, #ec4899);
+  color: var(--primary, #ec4899);
 }
 
 .settings-option.active {
-  border-color: var(--primary, #6366f1);
-  background: var(--primary-bg, #eef2ff);
-  color: var(--primary, #6366f1);
+  border-color: var(--primary, #ec4899);
+  background: var(--primary-bg, #fdf2f8);
+  color: var(--primary, #ec4899);
   font-weight: 600;
 }
 
@@ -103,7 +103,7 @@
 }
 
 .auth-settings-fab:hover {
-  border-color: var(--primary, #6366f1);
+  border-color: var(--primary, #ec4899);
 }
 
 @media (max-width: 480px) {

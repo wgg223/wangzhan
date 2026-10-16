@@ -1,0 +1,318 @@
+/* ============================================
+   动漫风格主题层（全站统一装饰与组件风格）
+   樱花粉 × 薰衣草紫：渐变、星光、圆角、柔光
+   说明：本文件在所有主样式之后引入，做“风格覆盖层”，
+   颜色统一走 variables.css，确保明暗双模式自动生效。
+   ============================================ */
+
+/* ---------- 1. 页面背景：粉紫柔光 + 星光 ---------- */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(720px 420px at 12% -6%, rgba(249, 168, 212, 0.28) 0%, transparent 62%),
+    radial-gradient(820px 520px at 108% 18%, rgba(167, 139, 250, 0.24) 0%, transparent 60%),
+    radial-gradient(760px 520px at 50% 112%, rgba(244, 114, 182, 0.18) 0%, transparent 58%);
+}
+
+[data-theme="dark"] body::before {
+  background:
+    radial-gradient(720px 420px at 12% -6%, rgba(244, 114, 182, 0.16) 0%, transparent 62%),
+    radial-gradient(820px 520px at 108% 18%, rgba(139, 92, 246, 0.2) 0%, transparent 60%),
+    radial-gradient(760px 520px at 50% 112%, rgba(88, 28, 135, 0.28) 0%, transparent 58%);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image:
+    radial-gradient(2px 2px at 12% 28%, rgba(236, 72, 153, 0.7) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 78% 12%, rgba(139, 92, 246, 0.8) 50%, transparent 51%),
+    radial-gradient(2px 2px at 90% 55%, rgba(244, 114, 182, 0.6) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 24% 82%, rgba(167, 139, 250, 0.7) 50%, transparent 51%),
+    radial-gradient(1px 1px at 62% 72%, rgba(236, 72, 153, 0.55) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 44% 8%, rgba(249, 168, 212, 0.9) 50%, transparent 51%);
+  background-repeat: repeat;
+  animation: animeTwinkle 6s ease-in-out infinite alternate;
+}
+
+@keyframes animeTwinkle {
+  0%   { opacity: 0.35; }
+  100% { opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::after { animation: none; opacity: 0.4; }
+}
+
+/* ---------- 2. 文本选中与滚动条 ---------- */
+::selection {
+  background: var(--primary);
+  color: #fff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary-light) var(--bg-secondary);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--primary-light), var(--accent));
+  border-radius: 10px;
+  border: 2px solid var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--primary), var(--accent));
+}
+
+/* 键盘焦点：粉紫描边 */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ---------- 3. 顶部导航：粉紫渐变氛围 ---------- */
+header {
+  background: linear-gradient(180deg, var(--header-bg) 0%, rgba(255, 255, 255, 0.72) 100%);
+  border-bottom: 1px solid var(--primary-border);
+}
+
+[data-theme="dark"] header {
+  background: linear-gradient(180deg, var(--header-bg) 0%, rgba(23, 16, 36, 0.7) 100%);
+}
+
+/* 导航顶部渐变细线 */
+header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary-light), var(--primary), var(--accent), var(--primary-light));
+  background-size: 200% 100%;
+  animation: animeHeaderShimmer 8s linear infinite;
+}
+
+@keyframes animeHeaderShimmer {
+  0%   { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  header::before { animation: none; }
+}
+
+/* Logo 渐变文字 */
+.logo a {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.logo a img { -webkit-text-fill-color: initial; }
+
+/* 主导航：悬浮/选中为粉紫胶囊 */
+.nav-main li a:hover {
+  background: linear-gradient(135deg, var(--primary-bg), rgba(167, 139, 250, 0.18));
+  color: var(--primary-dark);
+}
+
+.nav-main li a.active {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  box-shadow: 0 4px 14px -4px var(--primary-shadow);
+}
+
+[data-theme="dark"] .nav-main li a.active { color: #fff; }
+
+/* ---------- 4. 按钮：糖果渐变 + 柔光 ---------- */
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+  border-color: transparent;
+  box-shadow: 0 6px 16px -6px var(--primary-shadow);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--accent) 100%);
+  border-color: transparent;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -6px var(--primary-shadow);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+  border-color: transparent;
+  box-shadow: 0 6px 16px -6px var(--success-shadow);
+}
+
+.btn-success:hover {
+  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  border-color: transparent;
+  transform: translateY(-1px);
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+  border-color: transparent;
+  box-shadow: 0 6px 16px -6px var(--warning-shadow);
+}
+
+.btn-warning:hover {
+  background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+  border-color: transparent;
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #fb7185 0%, #e11d48 100%);
+  border-color: transparent;
+  box-shadow: 0 6px 16px -6px var(--danger-shadow);
+}
+
+.btn-danger:hover {
+  background: linear-gradient(135deg, #f43f5e 0%, #be123c 100%);
+  border-color: transparent;
+  transform: translateY(-1px);
+}
+
+.btn-info {
+  background: linear-gradient(135deg, #60a5fa 0%, #2563eb 100%);
+  border-color: transparent;
+  box-shadow: 0 6px 16px -6px var(--info-shadow);
+}
+
+.btn-info:hover {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  border-color: transparent;
+  transform: translateY(-1px);
+}
+
+/* 下载按钮（前台文章/分享） */
+.btn-download {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  border: none;
+  color: #fff;
+  box-shadow: 0 6px 16px -6px var(--primary-shadow);
+}
+
+.btn-download:hover {
+  background: linear-gradient(135deg, var(--primary-dark), var(--accent));
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+/* 通用按钮圆角更圆润 */
+.btn, .btn-small, .btn-large, .btn-sm {
+  border-radius: 12px;
+}
+
+/* ---------- 5. 卡片：圆角 + 粉紫柔光 ---------- */
+.card,
+.article-card,
+.panel,
+.container {
+  border-radius: var(--radius-lg);
+}
+
+.card,
+.article-card {
+  border-color: var(--primary-border);
+}
+
+/* ---------- 6. 页脚 ---------- */
+footer {
+  border-top: 2px solid transparent;
+  border-image: linear-gradient(90deg, var(--primary-light), var(--accent), var(--primary-light)) 1;
+  background: var(--footer-bg);
+}
+
+/* ---------- 7. 后台管理：紫夜侧边栏 ---------- */
+.sidebar {
+  background: linear-gradient(180deg, #2a1e3e 0%, #1d1430 100%);
+}
+
+[data-theme="dark"] .sidebar {
+  background: linear-gradient(180deg, #1d1430 0%, #110b1c 100%);
+}
+
+.sidebar-nav li a.active {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  box-shadow: 0 4px 14px -4px var(--primary-shadow);
+}
+
+.sidebar-nav li a.active:hover { color: #fff; }
+
+/* ---------- 8. 认证页：柔光卡片 ---------- */
+.auth-shell {
+  box-shadow:
+    0 25px 60px -18px rgba(236, 72, 153, 0.32),
+    0 0 0 1px rgba(236, 72, 153, 0.08);
+}
+
+/* ---------- 9. 图片分享/分享页（独立站） ---------- */
+.nav {
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+}
+
+.image-share-theme .auth-page,
+.share-page {
+  background:
+    radial-gradient(1100px 600px at 88% -12%, rgba(249, 168, 212, 0.35) 0%, transparent 62%),
+    radial-gradient(900px 520px at -12% 112%, rgba(167, 139, 250, 0.3) 0%, transparent 55%),
+    var(--gray-50);
+}
+
+/* 表格 hover 与选中 */
+.admin-table tbody tr:hover,
+table tr:hover {
+  background: var(--primary-focus);
+}
+
+/* 统计数字与分类图标 */
+.stat-card .number,
+.category-card i {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.category-card i {
+  -webkit-text-fill-color: transparent;
+}
+
+/* 选项卡激活态 */
+.tabs a.active,
+.tabs a:hover {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+}
+
+/* ---------- 10. 深色模式微调 ---------- */
+[data-theme="dark"] .nav-main li a:hover {
+  color: var(--primary-light);
+}
+
+[data-theme="dark"] .card,
+[data-theme="dark"] .article-card {
+  border-color: var(--primary-border);
+}

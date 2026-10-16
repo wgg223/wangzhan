@@ -3,7 +3,7 @@
 <%- include('header') %>
 
 <div style="margin-bottom: 20px;">
-  <a href="/image-share" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回首页</a>
+  <a href="/image-share" style="color: #ec4899;"><i class="fas fa-arrow-left"></i> 返回首页</a>
 </div>
 
 <div class="card">
@@ -17,7 +17,7 @@
         <button onclick="zoomImage(1.2)" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; cursor: pointer; font-size: 14px;"><i class="fas fa-search-plus"></i></button>
         <button onclick="zoomImage(0.8)" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; cursor: pointer; font-size: 14px;"><i class="fas fa-search-minus"></i></button>
         <button onclick="resetZoom()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; cursor: pointer; font-size: 14px;">重置</button>
-        <a href="/image-share/download?id=<%= image.id %>" style="padding: 6px 12px; border: 1px solid #667eea; border-radius: 6px; background: #667eea; color: white; text-decoration: none; font-size: 14px;"><i class="fas fa-download"></i> 下载</a>
+        <a href="/image-share/download?id=<%= image.id %>" style="padding: 6px 12px; border: 1px solid #ec4899; border-radius: 6px; background: #ec4899; color: white; text-decoration: none; font-size: 14px;"><i class="fas fa-download"></i> 下载</a>
         <% if (canShareLink) { %>
           <button type="button" onclick="openShareModal()" style="padding: 6px 12px; border: 1px solid #10b981; border-radius: 6px; background: #10b981; color: white; cursor: pointer; font-size: 14px;"><i class="fas fa-share-alt"></i> 分享链接</button>
         <% } %>
@@ -38,10 +38,10 @@
         </div>
         
         <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; font-size: 14px;">
-          <div style="margin-bottom: 8px;"><i class="fas fa-folder" style="width: 20px; color: #667eea;"></i> 分类: <%= image.cate_name || '未分类' %></div>
-          <div style="margin-bottom: 8px;"><i class="fas fa-clock" style="width: 20px; color: #667eea;"></i> 时间: <%= image.created_at %></div>
-          <div style="margin-bottom: 8px;"><i class="fas fa-download" style="width: 20px; color: #667eea;"></i> 下载: <%= image.download_count || 0 %> 次</div>
-          <div><i class="fas fa-eye" style="width: 20px; color: #667eea;"></i> 浏览: <%= image.view_count || 0 %> 次</div>
+          <div style="margin-bottom: 8px;"><i class="fas fa-folder" style="width: 20px; color: #ec4899;"></i> 分类: <%= image.cate_name || '未分类' %></div>
+          <div style="margin-bottom: 8px;"><i class="fas fa-clock" style="width: 20px; color: #ec4899;"></i> 时间: <%= image.created_at %></div>
+          <div style="margin-bottom: 8px;"><i class="fas fa-download" style="width: 20px; color: #ec4899;"></i> 下载: <%= image.download_count || 0 %> 次</div>
+          <div><i class="fas fa-eye" style="width: 20px; color: #ec4899;"></i> 浏览: <%= image.view_count || 0 %> 次</div>
         </div>
       </div>
       
@@ -87,7 +87,7 @@
     </form>
   <% } else { %>
     <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; text-align: center; margin-bottom: 20px;">
-      <p style="color: #666;">请 <a href="/image-share/login" style="color: #667eea; font-weight: 600;">登录</a> 后发表评论</p>
+      <p style="color: #666;">请 <a href="/image-share/login" style="color: #ec4899; font-weight: 600;">登录</a> 后发表评论</p>
     </div>
   <% } %>
 

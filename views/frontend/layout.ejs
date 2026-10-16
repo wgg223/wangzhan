@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title><%= settings.site_name || '我的网站' %></title>
   <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
-  <meta name="theme-color" content="#6366f1">
+  <meta name="theme-color" content="#ec4899">
   <link rel="manifest" href="/pwa/manifest.json">
   <link rel="apple-touch-icon" href="/pwa/icon-192.png">
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/style.css') : '/css/style.css' %>">
@@ -16,6 +16,7 @@
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/font-switcher.js') : '/js/font-switcher.js' %>"></script>
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/site-settings.css') : '/css/site-settings.css' %>">
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/site-settings.js') : '/js/site-settings.js' %>"></script>
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/anime-theme.css') : '/css/anime-theme.css' %>">
   <style>
     body {
       <% if (settings.background_image) { %>
@@ -31,7 +32,7 @@
       background: var(--bg-primary, #fff); color: var(--text-primary, #1e293b);
       cursor: pointer; max-width: 150px; outline: none;
     }
-    .nav-font-switch select:hover { border-color: #6366f1; }
+    .nav-font-switch select:hover { border-color: #ec4899; }
     @media (max-width: 900px) { .nav-font-switch { display: none; } }
     
     @media (max-width: 480px) {
@@ -196,7 +197,7 @@
   <% if (settings.welcome_popup_enabled === '1') { %>
   <div id="welcome-popup" style="display:none;position:fixed;z-index:99990;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
     <div style="position:relative;background:#fff;margin:8% auto;padding:0;width:550px;max-width:90%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
-      <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="background:linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
         <h3 style="margin:0;font-size:18px;" id="welcome-popup-title"><%= settings.welcome_popup_title || '欢迎访问' %></h3>
         <button type="button" onclick="closeWelcomePopup()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
       </div>
@@ -204,7 +205,7 @@
         <%- settings.welcome_popup_content || '<p>欢迎来到本站！</p>' %>
       </div>
       <div style="padding:16px 24px;border-top:1px solid #eee;text-align:right;">
-        <button type="button" onclick="closeWelcomePopup()" class="btn" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.gotIt">我知道了</button>
+        <button type="button" onclick="closeWelcomePopup()" class="btn" style="background:linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.gotIt">我知道了</button>
       </div>
     </div>
   </div>
@@ -214,7 +215,7 @@
   <!-- 首次启动隐私政策弹窗（内容来自后台设置，网站/EXE/APK 通用） -->
   <div id="privacy-popup" style="display:none;position:fixed;z-index:999999;inset:0;background:rgba(0,0,0,0.65);">
     <div style="background:#fff;margin:5% auto;width:560px;max-width:92%;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
-      <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:16px 24px;text-align:center;">
+      <div style="background:linear-gradient(135deg,#ec4899 0%,#8b5cf6 100%);color:#fff;padding:16px 24px;text-align:center;">
         <h3 style="margin:0;font-size:19px;" data-i18n="popup.privacyTitle">用户协议与隐私政策</h3>
       </div>
       <div style="padding:24px;max-height:50vh;overflow-y:auto;line-height:1.8;color:#555;" id="privacy-popup-content">
@@ -225,7 +226,7 @@
       </div>
       <div style="padding:16px 24px;border-top:1px solid #eee;text-align:center;">
         <button type="button" id="privacy-reject" class="btn" style="background:#eee;color:#555;margin-right:12px;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.disagree">不同意</button>
-        <button type="button" id="privacy-accept" class="btn" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.agree">同意并继续</button>
+        <button type="button" id="privacy-accept" class="btn" style="background:linear-gradient(135deg,#ec4899 0%,#8b5cf6 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.agree">同意并继续</button>
       </div>
     </div>
   </div>

@@ -88,7 +88,7 @@ a:hover {
   font-size: var(--text-2xl);
   font-weight: 700;
   letter-spacing: -0.3px;
-  background: linear-gradient(135deg, #6366f1, #a5b4fc);
+  background: linear-gradient(135deg, #ec4899, #f9a8d4);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -965,7 +965,7 @@ select:focus {
    登录页面(后台)
    ============================================ */
 .admin-login-page {
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  background: linear-gradient(135deg, #2a1e3e 0%, #1d1430 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1139,8 +1139,8 @@ select:focus {
 }
 
 .section-header.bg-gradient-primary {
-  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
-  border-bottom: 1px solid #c7d2fe;
+  background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);
+  border-bottom: 1px solid #fbcfe8;
 }
 
 .section-header.bg-gradient-success {
@@ -1267,7 +1267,7 @@ select:focus {
 .perm-tag.perm-community {
   background: #e0e7ff;
   color: #3730a3;
-  border: 1px solid #a5b4fc;
+  border: 1px solid #f9a8d4;
 }
 
 .perm-tag.perm-admin {
@@ -1313,7 +1313,7 @@ select:focus {
 .perm-group.perm-group-article { border-left-color: #f59e0b; }
 .perm-group.perm-group-novel { border-left-color: #ec4899; }
 .perm-group.perm-group-image { border-left-color: #10b981; }
-.perm-group.perm-group-community { border-left-color: #6366f1; }
+.perm-group.perm-group-community { border-left-color: #ec4899; }
 .perm-group.perm-group-page { border-left-color: #8b5cf6; }
 .perm-group.perm-group-user { border-left-color: #06b6d4; }
 .perm-group.perm-group-permission { border-left-color: #f97316; }

@@ -164,20 +164,20 @@ html, body {
 }
 
 .ss-btn.is-active {
-  background: #eef2ff;
-  border-color: #a5b4fc;
-  color: #4f46e5;
+  background: #fdf2f8;
+  border-color: #f9a8d4;
+  color: #be185d;
 }
 
 .ss-btn-primary {
-  background: #6366f1;
-  border-color: #6366f1;
+  background: #ec4899;
+  border-color: #ec4899;
   color: #ffffff;
 }
 
 .ss-btn-primary:hover {
-  background: #4f46e5;
-  border-color: #4f46e5;
+  background: #be185d;
+  border-color: #be185d;
   color: #ffffff;
 }
 
@@ -269,7 +269,7 @@ html, body {
   height: 36px;
   margin: 0 auto 12px;
   border: 3px solid #e2e8f0;
-  border-top-color: #6366f1;
+  border-top-color: #ec4899;
   border-radius: 50%;
   animation: ss-spin 0.8s linear infinite;
 }
@@ -362,8 +362,8 @@ html, body {
 }
 
 .ss-comment-loc {
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #fdf2f8;
+  color: #be185d;
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 11px;
@@ -390,7 +390,7 @@ html, body {
 }
 
 .ss-comment-body .mention {
-  color: #4f46e5;
+  color: #be185d;
   font-weight: 600;
 }
 
@@ -453,7 +453,7 @@ html, body {
 
 .ss-input:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: #ec4899;
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
@@ -616,7 +616,7 @@ html, body {
 .ss-field select:focus,
 .ss-field textarea:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: #ec4899;
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
@@ -652,8 +652,8 @@ html, body {
 .ss-tab:hover { color: #334155; }
 
 .ss-tab.is-active {
-  color: #4f46e5;
-  border-bottom-color: #6366f1;
+  color: #be185d;
+  border-bottom-color: #ec4899;
   font-weight: 600;
 }
 
@@ -692,8 +692,8 @@ html, body {
 }
 
 .ss-version-item.is-current {
-  border-color: #a5b4fc;
-  background: #eef2ff;
+  border-color: #f9a8d4;
+  background: #fdf2f8;
 }
 
 .ss-version-info {
@@ -819,8 +819,8 @@ html, body {
 .ss-md-report li { margin: 2px 0; }
 
 .ss-md-report code {
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #fdf2f8;
+  color: #be185d;
   padding: 1px 5px;
   border-radius: 4px;
   font-family: Consolas, monospace;
@@ -953,8 +953,8 @@ html, body {
   display: block;
   font-family: Consolas, monospace;
   font-size: 12px;
-  color: #4f46e5;
-  background: #eef2ff;
+  color: #be185d;
+  background: #fdf2f8;
   border-radius: 4px;
   padding: 6px 10px;
   margin: 6px 0;

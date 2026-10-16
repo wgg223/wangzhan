@@ -3,9 +3,9 @@
 <%- include('../header') %>
 
 <div style="margin-bottom: 20px;">
-  <a href="/image-share/user" style="color: #667eea;"><i class="fas fa-arrow-left"></i> 返回我的图片</a>
+  <a href="/image-share/user" style="color: #ec4899;"><i class="fas fa-arrow-left"></i> 返回我的图片</a>
   <span style="margin-left: 10px;">|</span>
-  <a href="/image-share/user/upload" style="color: #667eea; margin-left: 10px;"><i class="fas fa-upload"></i> 单张上传</a>
+  <a href="/image-share/user/upload" style="color: #ec4899; margin-left: 10px;"><i class="fas fa-upload"></i> 单张上传</a>
 </div>
 
 <div class="card" style="max-width: 800px;">
@@ -22,7 +22,7 @@
       <div style="border: 2px dashed #ddd; padding: 20px; text-align: center; border-radius: 8px; background: #f9f9f9;" id="dropZone">
         <input type="file" name="images" id="imageInput" accept="image/*" multiple style="display: none;">
         <div id="uploadPrompt">
-          <i class="fas fa-cloud-upload-alt" style="font-size: 48px; color: #667eea;"></i>
+          <i class="fas fa-cloud-upload-alt" style="font-size: 48px; color: #ec4899;"></i>
           <p style="margin: 15px 0; color: #666;">点击选择文件或拖拽图片到此处</p>
           <p style="color: #999; font-size: 12px;">支持 JPG、PNG、GIF 格式，每张最大 10MB，最多 20 张</p>
         </div>
@@ -79,7 +79,7 @@ imageInput.addEventListener('change', handleFiles);
 // 拖拽处理
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
-  dropZone.style.borderColor = '#667eea';
+  dropZone.style.borderColor = '#ec4899';
   dropZone.style.background = '#f0f0ff';
 });
 
