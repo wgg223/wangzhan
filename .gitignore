@@ -25,6 +25,7 @@
 !/ecosystem.config.js
 !/package.json
 !/package-lock.json
+!/CHANGELOG.md
 !/server/
 !/views/
 !/public/
