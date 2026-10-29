@@ -30,6 +30,7 @@ const { upload } = require('./upload');
 const cdnConfig = require('../../../cdn-config');
 const { getSettings, upsertSettings } = require('../../utils/settings');
 const { backupDir } = require('../../config/app-root');
+const { sanitize } = require('../../utils/html-sanitizer');
 
 // ============ 网站设置 ============
 
@@ -68,13 +69,13 @@ router.post('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
     icp_link: icp_link || 'https://beian.miit.gov.cn/',
     footer_text: footer_text || '',
     logo: logo || '',
-    user_agreement: user_agreement || '',
-    privacy_policy: privacy_policy || '',
-    delete_account_agreement: delete_account_agreement || '',
+    user_agreement: sanitize(user_agreement),
+    privacy_policy: sanitize(privacy_policy),
+    delete_account_agreement: sanitize(delete_account_agreement),
     message_popup_enabled: req.body.message_popup_enabled === '1' ? '1' : '0',
     welcome_popup_enabled: req.body.welcome_popup_enabled === '1' ? '1' : '0',
     welcome_popup_title: welcome_popup_title || '欢迎访问',
-    welcome_popup_content: welcome_popup_content || '',
+    welcome_popup_content: sanitize(welcome_popup_content),
     smtp_host: req.body.smtp_host || '',
     smtp_port: req.body.smtp_port || '465',
     smtp_secure: req.body.smtp_secure || 'true',

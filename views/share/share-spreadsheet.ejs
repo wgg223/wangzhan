@@ -123,12 +123,12 @@
     <script>
       // 分享页配置（后端注入）
       window.__SHARE__ = {
-        dataUrl: <%- JSON.stringify(dataUrl) %>,
+        dataUrl: <%- JSON.stringify(dataUrl).replace(/</g, '\\u003c') %>,
         embed: <%= embed ? 'true' : 'false' %>
       };
       // 只读分享内容保护配置（防复制 + 访客 IP 水印溯源）
       window.__SS_PROTECT__ = {
-        watermark: <%- JSON.stringify('只读分享' + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')) %>,
+        watermark: <%- JSON.stringify('只读分享' + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')).replace(/</g, '\\u003c') %>,
         tip: '只读分享内容受保护，禁止复制或截图'
       };
     </script>

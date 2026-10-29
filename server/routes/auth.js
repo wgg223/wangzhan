@@ -24,22 +24,22 @@ const { createRateLimiter, loginLimiter } = require('../middlewares/rate-limiter
 // ============ 频率限制器 ============
 const registerLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 10,
   message: '注册请求过于频繁，请稍后再试'
 });
 const sendCodeLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 5,
   message: '验证码发送过于频繁，请稍后再试'
 });
 const resetPasswordLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 10,
   message: '密码重置尝试过多，请稍后再试'
 });
 const changePasswordLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 10,
   message: '修改密码尝试过多，请稍后再试'
 });
 
@@ -1518,8 +1518,11 @@ router.post('/:source/change-password', changePasswordLimiter, (req, res) => {
   if (!['frontend', 'image-share'].includes(source)) {
     return res.redirect('/');
   }
+  if (!req.session.user) {
+    return res.redirect('/auth/' + source + '/login');
+  }
   const db = req.db;
-  const { username, current_password, new_password, confirm_password } = req.body;
+  const { current_password, new_password, confirm_password } = req.body;
   const siteName = getSiteName(db, source);
 
   function renderChangePassword(errorMsg, successMsg) {
@@ -1554,18 +1557,7 @@ router.post('/:source/change-password', changePasswordLimiter, (req, res) => {
     return renderChangePassword('两次输入的新密码不一致', null);
   }
 
-  let targetUser = null;
-  if (req.session.user) {
-    targetUser = queryOne(db, 'SELECT * FROM users WHERE id = ?', [req.session.user.id]);
-  } else {
-    if (!username) {
-      return renderChangePassword('请提供用户名', null);
-    }
-    targetUser = queryOne(db, 'SELECT * FROM users WHERE username = ?', [username]);
-    if (!targetUser) {
-      return renderChangePassword('用户名不存在', null);
-    }
-  }
+  let targetUser = queryOne(db, 'SELECT * FROM users WHERE id = ?', [req.session.user.id]);
 
   if (!bcrypt.compareSync(current_password, targetUser.password)) {
     // 记录修改密码失败日志 - 密码错误
@@ -1833,7 +1825,6 @@ router.post('/admin-reset-password/:userId', resetPasswordLimiter, (req, res) =>
   res.json({
     success: true,
     message: '密码已重置',
-    newPassword: newPassword,
     username: user.username
   });
 });
@@ -2218,110 +2209,11 @@ function performDeleteAccount(db, user, req, res, agreementContent, smtpConfigur
 }
 
 // ============================================================
-// 双因素认证 (2FA/TOTP)
+// 双因素认证 (2FA/TOTP) — 已拆分到 two-factor.js
 // ============================================================
-const { generateSecret, generateTOTPUri, verifyTOTP } = require('../services/two-factor-auth');
-
-// 获取 2FA 状态
-router.get('/2fa/status', (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ error: '未登录' });
-  }
-  const db = req.db;
-  const user = queryOne(db, 'SELECT totp_secret, totp_enabled FROM users WHERE id = ?', [req.session.user.id]);
-  res.json({
-    enabled: user ? Boolean(user.totp_enabled) : false,
-    hasSecret: user ? Boolean(user.totp_secret) : false
-  });
-});
-
-// 生成 2FA 密钥 (开启第一步)
-router.post('/2fa/setup', (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ error: '未登录' });
-  }
-  const db = req.db;
-  const secret = generateSecret();
-  const uri = generateTOTPUri(secret, req.session.user.username, res.locals.settings?.site_name || 'MyWebsite');
-
-  // 临时保存密钥，待验证后正式启用
-  req.session.pendingTotpSecret = secret;
-
-  res.json({
-    secret: secret,
-    uri: uri,
-    qrcode: uri // 前端可用此生成二维码
-  });
-});
-
-// 验证并启用 2FA
-router.post('/2fa/verify', (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ error: '未登录' });
-  }
-  const { token } = req.body;
-  const secret = req.session.pendingTotpSecret;
-
-  if (!token) {
-    return res.status(400).json({ error: '请输入验证码' });
-  }
-  if (!secret) {
-    return res.status(400).json({ error: '请先获取密钥' });
-  }
-
-  if (!verifyTOTP(token, secret)) {
-    return res.status(400).json({ error: '验证码无效，请重试' });
-  }
-
-  const db = req.db;
-  db.run('UPDATE users SET totp_secret = ?, totp_enabled = 1 WHERE id = ?', [secret, req.session.user.id]);
-  saveDatabase();
-
-  delete req.session.pendingTotpSecret;
-
-  logActivity(db, {
-    user_id: req.session.user.id,
-    username: req.session.user.username,
-    action: 'enable_2fa',
-    target_type: 'auth',
-    detail: '用户启用了双因素认证',
-    ip: req.ip
-  });
-
-  res.json({ success: true, message: '双因素认证已启用' });
-});
-
-// 关闭 2FA
-router.post('/2fa/disable', (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ error: '未登录' });
-  }
-  const { token } = req.body;
-  const db = req.db;
-  const user = queryOne(db, 'SELECT totp_secret FROM users WHERE id = ?', [req.session.user.id]);
-
-  if (!user || !user.totp_secret) {
-    return res.status(400).json({ error: '双因素认证未启用' });
-  }
-
-  if (!token || !verifyTOTP(token, user.totp_secret)) {
-    return res.status(400).json({ error: '验证码无效' });
-  }
-
-  db.run('UPDATE users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?', [req.session.user.id]);
-  saveDatabase();
-
-  logActivity(db, {
-    user_id: req.session.user.id,
-    username: req.session.user.username,
-    action: 'disable_2fa',
-    target_type: 'auth',
-    detail: '用户关闭了双因素认证',
-    ip: req.ip
-  });
-
-  res.json({ success: true, message: '双因素认证已关闭' });
-});
+const { verifyTOTP } = require('../services/two-factor-auth');
+const twoFactorRoutes = require('./two-factor');
+router.use('/', twoFactorRoutes);
 
 // ============================================================
 // 登录异常检测中间件

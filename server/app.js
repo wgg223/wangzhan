@@ -17,6 +17,7 @@
 require('dotenv').config();
 const express = require('express');               // Web 框架
 const path = require('path');                     // 路径处理
+const crypto = require('crypto');                 // 加密（CSP nonce、会话密钥等）
 const session = require('express-session');       // 会话中间件（默认内存存储）
 const expressLayouts = require('express-ejs-layouts'); // EJS 布局支持（layout.ejs 套壳）
 const fs = require('fs');                         // 文件系统
@@ -112,7 +113,7 @@ app.use(session({
   // 会话签名密钥：优先环境变量；未设置时生成随机密钥（重启后所有会话失效，仅限开发）
   secret: process.env.SESSION_SECRET || (() => {
     console.error('[安全] 未设置 SESSION_SECRET 环境变量，使用随机密钥（重启后所有会话失效）');
-    return require('crypto').randomBytes(32).toString('hex');
+    return crypto.randomBytes(32).toString('hex');
   })(),
   store: sessionStore,          // undefined 时 express-session 使用默认内存存储
   resave: false,          // 会话未修改时不强制重存
@@ -132,7 +133,6 @@ app.use(session({
 // 每个请求生成随机 nonce，供模板内联脚本/样式使用
 // 迁移完成后，CSP 中的 'unsafe-inline' 将替换为 'nonce-<%= nonce %>'
 app.use((req, res, next) => {
-  const crypto = require('crypto');
   res.locals.nonce = crypto.randomBytes(16).toString('base64');
   next();
 });
@@ -189,8 +189,8 @@ app.use(express.static(path.join(__dirname, '../public'), {
   setHeaders: (res, filePath) => {
     // 用户上传的动态内容（public/uploads/*）：URL 无版本指纹，禁止长缓存，
     // 否则头像/动态图/分享图更新后，浏览器与 CDN 边缘仍展示旧文件（immutable 30 天）
-    const normPath = filePath.split(path.sep).join('/');
-    if (normPath.includes('/uploads/')) {
+    // 兼容 Windows（\\）与 POSIX（/）路径分隔符，避免 split+join 开销
+    if (filePath.includes('/uploads/') || filePath.includes('\\uploads\\')) {
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
       return;
     }
@@ -240,6 +240,11 @@ function getCachedNavPages(db) {
 
 // ============ 全局上下文中间件 ============
 // 为每个请求注入 db 句柄、当前用户、站点设置、导航页、CSRF 占位、CDN 配置与布局选择
+// 静态资源前缀集合：命中时跳过设置/导航注入，减少无意义的缓存查找
+const STATIC_PREFIXES = ['/css/', '/js/', '/fonts/', '/uploads/', '/vendor/', '/pwa/', '/assets/'];
+const isStaticPath = (p) => STATIC_PREFIXES.some(prefix => p.startsWith(prefix)) ||
+  p === '/favicon.ico' || p === '/favicon.png' || p === '/robots.txt' || p === '/sw.js' || p === '/manifest.json';
+
 app.use((req, res, next) => {
   req.db = getDb(); // 当前数据库句柄（better-sqlite3 或 sql.js）
   if (!req.db) {
@@ -253,6 +258,13 @@ app.use((req, res, next) => {
       user: null,
       settings: {}
     });
+  }
+
+  // 静态资源请求：仅注入最少上下文，跳过设置/导航查询（express.static 已在此之前处理）
+  if (isStaticPath(req.path)) {
+    res.locals.user = req.session.user || null;
+    res.locals.cdn = cdnConfig;
+    return next();
   }
 
   res.locals.user = req.session.user || null;   // 当前登录用户（模板可用）

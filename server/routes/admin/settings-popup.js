@@ -10,6 +10,7 @@ const express = require('express');
 const router = express.Router();
 const { getSettings, upsertSettings } = require('../../utils/settings');
 const { safeLogActivity } = require('../../utils/error-handler');
+const { sanitize } = require('../../utils/html-sanitizer');
 
 // 弹窗设置 - 仅管理员可访问（上层路由统一鉴权）
 
@@ -39,7 +40,7 @@ router.post('/', (req, res) => {
     message_popup_enabled: messagePopupEnabled,
     welcome_popup_enabled: welcomePopupEnabled,
     welcome_popup_title: req.body.welcome_popup_title || '欢迎访问',
-    welcome_popup_content: req.body.welcome_popup_content || ''
+    welcome_popup_content: sanitize(req.body.welcome_popup_content)
   });
 
   safeLogActivity(db, {

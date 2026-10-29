@@ -21,8 +21,7 @@ function resetPassword(userId, username, btn) {
       })
       .then(function(data) {
         if (data.success) {
-          showToast('密码已重置成功！\n\n用户名: ' + data.username + '\n新密码: ' + data.newPassword +
-            '\n\n请妥善保管新密码，并告知用户。\n用户下次登录时需要修改密码。', 'success');
+          showToast('密码已重置成功！\n\n用户名: ' + data.username + '\n\n请通知该用户使用「找回密码」功能设置新密码。', 'success');
         } else {
           showToast('重置失败: ' + (data.error || '未知错误'), 'error');
         }

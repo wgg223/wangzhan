@@ -19,7 +19,7 @@ const router = express.Router();
 const { logActivity } = require('../../config/activity');
 const fs = require('fs');
 const path = require('path');
-const { exec, spawn } = require('child_process');
+const { exec, execFile, spawn } = require('child_process');
 const https = require('https');
 const http = require('http');
 const AdmZip = require('adm-zip');
@@ -132,12 +132,12 @@ async function fetchReleases() {
 function unzipCrossPlatform(zipPath, destDir) {
   return new Promise((resolve, reject) => {
     if (isWindows) {
-      exec(`powershell -command "Expand-Archive -Path '${zipPath}' -DestinationPath '${destDir}' -Force"`, (error) => {
+      execFile('powershell', ['-NoProfile', '-Command', 'Expand-Archive', '-Path', zipPath, '-DestinationPath', destDir, '-Force'], (error) => {
         if (error) reject(new Error('PowerShell解压失败: ' + error.message));
         else resolve();
       });
     } else {
-      exec(`unzip -o "${zipPath}" -d "${destDir}"`, (error) => {
+      execFile('unzip', ['-o', zipPath, '-d', destDir], (error) => {
         if (error) reject(new Error('unzip解压失败: ' + error.message));
         else resolve();
       });

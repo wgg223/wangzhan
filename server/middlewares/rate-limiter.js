@@ -3,45 +3,16 @@
  * 作用：基于内存 Map 实现滑动窗口计数限流，防止暴力破解、接口滥用。
  * 特点：
  *   - 无第三方依赖，纯内存实现，适合单进程部署；
- *   - 每 5 分钟清理过期窗口与超量条目，控制内存上限（10 万条）；
+ *   - 每个限流器独立 Map，分散内存压力；
+ *   - 每 1 分钟清理过期窗口，分批删除避免阻塞事件循环；
  *   - 支持自定义 key（默认按 IP）、窗口大小、最大次数；
  *   - 可选"跳过失败/成功请求"：响应结束时按状态码回退计数。
  * 注意：内存实现不跨进程共享，多实例部署时需改用 Redis 方案。
  */
 
-// 全局限流计数表：key（默认 IP）→ { count, resetTime, windowMs }
-const rateLimits = new Map();
-const MAX_ENTRIES = 100000;   // 内存条数上限，防止恶意 IP 池撑爆内存
-
-// 每 5 分钟定时清理：过期条目 + 超量条目
-setInterval(() => {
-  const now = Date.now();
-  let deletedCount = 0;
-
-  // 清理已过期的窗口条目（超过窗口时间未活动的 key）
-  for (const [key, entry] of rateLimits) {
-    if (now - entry.resetTime > entry.windowMs) {
-      rateLimits.delete(key);
-      deletedCount++;
-    }
-
-    if (deletedCount > 5000) {   // 单次最多清 5000 条，避免长时间阻塞事件循环
-      break;
-    }
-  }
-
-  // 条目数仍超过上限时，按插入顺序删除最早的条目（FIFO 兜底）
-  if (rateLimits.size > MAX_ENTRIES) {
-    const entriesToDelete = rateLimits.size - MAX_ENTRIES;
-    let deleted = 0;
-    for (const [key, entry] of rateLimits) {
-      if (deleted >= entriesToDelete) break;
-      rateLimits.delete(key);
-      deleted++;
-    }
-    console.warn(`[rate-limiter] 内存使用过高，已清理 ${deleted} 个过期条目`);
-  }
-}, 5 * 60 * 1000);
+const MAX_ENTRIES_PER_LIMITER = 50000;   // 每个限流器内存条数上限
+const CLEANUP_INTERVAL_MS = 60 * 1000;   // 清理间隔：1 分钟（原 5 分钟过长）
+const CLEANUP_BATCH_SIZE = 3000;         // 单次清理最多删除条数（避免阻塞事件循环）
 
 /**
  * 创建限流中间件
@@ -64,7 +35,41 @@ function createRateLimiter(options) {
     skipSuccessfulRequests = false
   } = options;
 
-  return (req, res, next) => {
+  // 每个限流器独立 Map，分散内存压力
+  const rateLimits = new Map();
+
+  // 定时清理：每个限流器独立定时器，间隔 1 分钟
+  const cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    let deletedCount = 0;
+
+    for (const [key, entry] of rateLimits) {
+      if (now - entry.resetTime > entry.windowMs) {
+        rateLimits.delete(key);
+        deletedCount++;
+      }
+      // 分批清理，避免单次遍历阻塞事件循环
+      if (deletedCount >= CLEANUP_BATCH_SIZE) break;
+    }
+
+    // FIFO 兜底：超过上限时淘汰最早条目
+    if (rateLimits.size > MAX_ENTRIES_PER_LIMITER) {
+      const entriesToDelete = rateLimits.size - MAX_ENTRIES_PER_LIMITER;
+      let deleted = 0;
+      for (const key of rateLimits.keys()) {
+        if (deleted >= entriesToDelete) break;
+        rateLimits.delete(key);
+        deleted++;
+      }
+    }
+  }, CLEANUP_INTERVAL_MS);
+
+  // 不阻止进程退出
+  if (cleanupTimer.unref) {
+    cleanupTimer.unref();
+  }
+
+  const middleware = (req, res, next) => {
     const key = keyGenerator(req);   // 计算限流 key（默认客户端 IP）
     const now = Date.now();
     let entry = rateLimits.get(key);
@@ -106,6 +111,12 @@ function createRateLimiter(options) {
 
     next();   // 未超限，放行
   };
+
+  // 暴露内部状态供调试/健康检查使用
+  middleware._rateLimits = rateLimits;
+  middleware._cleanupTimer = cleanupTimer;
+
+  return middleware;
 }
 
 // 全局限流：所有路由共用，每分钟最多 600 次

@@ -314,7 +314,7 @@ router.post('/users/:id/reset-password', (req, res) => {
     method: req.method
   });
 
-  res.json({ success: true, message: '密码已重置', new_password: newPassword });
+  res.json({ success: true, message: '密码已重置，用户下次登录需通过找回密码功能设置新密码' });
 });
 
 // 删除用户（含超管保护）

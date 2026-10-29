@@ -24,6 +24,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { queryOne, queryAll, saveDatabase } = require('../config/database');
 const { isAdminRole, hasFrontendPermission } = require('../middlewares/auth');
+const { doubleSubmitCookie } = require('../middlewares/security');
 const { publicDir } = require('../config/app-root');
 const docStore = require('../utils/spreadsheet-doc-store');
 const { getClientIp } = require('../utils/client-ip');
@@ -97,7 +98,7 @@ function canManageSource(db, user, share) {
 // ============ API（创建 / 停用 / 启用） ============
 
 // 创建分享链接（需 image-share.share 权限，仅本人/管理员可分享自己的图）
-router.post('/api/create', hasFrontendPermission('image-share.share'), (req, res) => {
+router.post('/api/create', doubleSubmitCookie, hasFrontendPermission('image-share.share'), (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const sourceType = req.body.source_type;
@@ -170,11 +171,11 @@ function manageShareStatus(req, res, enabled) {
   res.json({ success: true });
 }
 
-router.post('/api/disable', (req, res) => manageShareStatus(req, res, false));
-router.post('/api/enable', (req, res) => manageShareStatus(req, res, true));
+router.post('/api/disable', doubleSubmitCookie, (req, res) => manageShareStatus(req, res, false));
+router.post('/api/enable', doubleSubmitCookie, (req, res) => manageShareStatus(req, res, true));
 
 // 取消分享（删除分享记录，本人/管理员；删除后链接立即失效）
-router.post('/api/delete', (req, res) => {
+router.post('/api/delete', doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   if (!user) return res.status(401).json({ error: '请先登录' });

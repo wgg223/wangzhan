@@ -1,12 +1,57 @@
 /**
  * 数据库查询辅助函数
  * 兼容 better-sqlite3 和 sql.js 两种驱动
+ *
+ * 优化：better-sqlite3 模式下缓存 prepared statement，
+ *       相同 SQL 直接复用已编译语句，避免重复解析开销。
+ *       缓存上限 500 条（LRU 淘汰），防止 SQL 模板爆炸时内存失控。
  */
 
 let useNativeSql = false;
 
+// better-sqlite3 prepared statement 缓存（Map<sql, Statement>）
+// 使用 Map 的天然插入顺序：最近访问的条目删除后重新插入即移到末尾，
+// 超限时删除最早的条目（FIFO 近似 LRU），无需额外链表。
+const stmtCache = new Map();
+const STMT_CACHE_MAX = 500;
+
+/**
+ * 获取缓存的 prepared statement（仅 better-sqlite3 模式使用）
+ * @param {Object} dbInstance - better-sqlite3 数据库实例
+ * @param {string} sql - SQL 查询语句
+ * @returns {Object} prepared statement
+ */
+function getCachedStmt(dbInstance, sql) {
+  let stmt = stmtCache.get(sql);
+  if (stmt) {
+    // 移到末尾（最近使用）
+    stmtCache.delete(sql);
+    stmtCache.set(sql, stmt);
+    return stmt;
+  }
+  // 缓存未命中：编译新语句
+  stmt = dbInstance.prepare(sql);
+  if (stmtCache.size >= STMT_CACHE_MAX) {
+    // 淘汰最早的条目
+    const oldestKey = stmtCache.keys().next().value;
+    stmtCache.delete(oldestKey);
+  }
+  stmtCache.set(sql, stmt);
+  return stmt;
+}
+
+/**
+ * 清空 prepared statement 缓存（数据库关闭/重建时调用）
+ */
+function clearStmtCache() {
+  stmtCache.clear();
+}
+
 function setUseNativeSql(value) {
   useNativeSql = value;
+  if (!value) {
+    clearStmtCache(); // 切换到 sql.js 模式时清空缓存
+  }
 }
 
 /**
@@ -19,7 +64,7 @@ function setUseNativeSql(value) {
 function queryOne(dbInstance, sql, params = []) {
   try {
     if (useNativeSql) {
-      return dbInstance.prepare(sql).get(params) || null;
+      return getCachedStmt(dbInstance, sql).get(params) || null;
     } else {
       const stmt = dbInstance.prepare(sql);
       if (params.length > 0) {
@@ -54,7 +99,7 @@ function queryOne(dbInstance, sql, params = []) {
 function queryAll(dbInstance, sql, params = []) {
   try {
     if (useNativeSql) {
-      return dbInstance.prepare(sql).all(params);
+      return getCachedStmt(dbInstance, sql).all(params);
     } else {
       const stmt = dbInstance.prepare(sql);
       if (params.length > 0) {
@@ -76,6 +121,30 @@ function queryAll(dbInstance, sql, params = []) {
   } catch (err) {
     console.error('查询多条记录失败:', err.message, 'SQL:', sql);
     return [];
+  }
+}
+
+/**
+ * 执行写操作（INSERT/UPDATE/DELETE），使用缓存的 prepared statement
+ * @param {Object} dbInstance - 数据库实例
+ * @param {string} sql - SQL 语句
+ * @param {Array} params - 参数
+ * @returns {Object} better-sqlite3 的 RunResult 或 sql.js 的变更结果
+ */
+function runStmt(dbInstance, sql, params = []) {
+  try {
+    if (useNativeSql) {
+      return getCachedStmt(dbInstance, sql).run(params);
+    } else {
+      return dbInstance.run(sql, params);
+    }
+  } catch (err) {
+    // duplicate column name 是迁移正常噪音，静默
+    if (err.message && err.message.includes('duplicate column name')) {
+      return null;
+    }
+    console.error('执行写操作失败:', err.message, 'SQL:', sql);
+    throw err;
   }
 }
 
@@ -114,10 +183,21 @@ function grantDefaultPermissions(db, userId, grantedBy) {
   const defaultPerms = [
     'homepage.access', 'articles.access', 'image-share.access'
   ];
-  defaultPerms.forEach(perm => {
-    db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-      [userId, perm, grantedBy]);
-  });
+  // 使用事务包裹批量插入，减少 WAL 检查点开销
+  if (useNativeSql && db.transaction) {
+    const insertMany = db.transaction(() => {
+      defaultPerms.forEach(perm => {
+        runStmt(db, 'INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+          [userId, perm, grantedBy]);
+      });
+    });
+    insertMany();
+  } else {
+    defaultPerms.forEach(perm => {
+      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+        [userId, perm, grantedBy]);
+    });
+  }
 }
 
 /**
@@ -132,16 +212,29 @@ function grantAdminDefaultPermissions(db, userId, grantedBy) {
     'homepage.access', 'articles.access', 'image-share.access',
     'users.manage', 'site_stats.view'
   ];
-  adminDefaultPerms.forEach(perm => {
-    db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
-      [userId, perm, grantedBy]);
-  });
+  // 使用事务包裹批量插入
+  if (useNativeSql && db.transaction) {
+    const insertMany = db.transaction(() => {
+      adminDefaultPerms.forEach(perm => {
+        runStmt(db, 'INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+          [userId, perm, grantedBy]);
+      });
+    });
+    insertMany();
+  } else {
+    adminDefaultPerms.forEach(perm => {
+      db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)',
+        [userId, perm, grantedBy]);
+    });
+  }
 }
 
 module.exports = {
   setUseNativeSql,
   queryOne,
   queryAll,
+  runStmt,
+  clearStmtCache,
   generateUid,
   grantDefaultPermissions,
   grantAdminDefaultPermissions

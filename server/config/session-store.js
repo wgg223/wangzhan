@@ -6,7 +6,8 @@
  *   - 仅在 better-sqlite3 原生模式下启用；sql.js 回退模式继续使用内存存储；
  *   - 会话以 JSON 文本存储，expires 为毫秒时间戳，与 cookie maxAge（24 小时）对齐；
  *   - 定期清理过期会话，防止 sessions 表无限增长；
- *   - store 通过 getDb 延迟取数据库实例（初始化发生在模块加载之后）。
+ *   - store 通过 getDb 延迟取数据库实例（初始化发生在模块加载之后）；
+ *   - 优化：预创建 prepared statement 缓存，会话操作（每请求热路径）无需重复编译 SQL。
  */
 
 const { queryOne } = require('./db-helpers');
@@ -26,6 +27,14 @@ class SqliteSessionStore extends session.Store {
     this.ttlMs = options.ttlMs || DEFAULT_TTL_MS;
     this.cleanupIntervalMs = options.cleanupIntervalMs || DEFAULT_CLEANUP_MS;
     this._tableReady = false;
+    // 预编译 prepared statement 缓存（延迟到 _db() 首次成功时创建）
+    this._stmts = {
+      get: null,
+      set: null,
+      destroy: null,
+      touch: null,
+      cleanup: null
+    };
 
     // 定时清理过期会话
     this._cleanupTimer = setInterval(() => this._cleanup(), this.cleanupIntervalMs);
@@ -35,7 +44,7 @@ class SqliteSessionStore extends session.Store {
   }
 
   /**
-   * 确保 sessions 表存在（延迟到首次使用时创建，兼容数据库初始化时序）
+   * 确保 sessions 表存在并预编译 prepared statement（延迟到首次使用）
    * @returns {Object|null} 数据库实例（未就绪返回 null）
    */
   _db() {
@@ -50,6 +59,23 @@ class SqliteSessionStore extends session.Store {
         )`);
         db.run('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires)');
         this._tableReady = true;
+
+        // 预编译高频操作的 prepared statement（better-sqlite3 模式）
+        if (typeof db.prepare === 'function' && db.prepare.length <= 1) {
+          try {
+            this._stmts.get = db.prepare('SELECT data, expires FROM sessions WHERE sid = ?');
+            this._stmts.set = db.prepare(
+              'INSERT INTO sessions (sid, data, expires) VALUES (?, ?, ?) ' +
+              'ON CONFLICT(sid) DO UPDATE SET data = excluded.data, expires = excluded.expires'
+            );
+            this._stmts.destroy = db.prepare('DELETE FROM sessions WHERE sid = ?');
+            this._stmts.touch = db.prepare('UPDATE sessions SET expires = ? WHERE sid = ?');
+            this._stmts.cleanup = db.prepare('DELETE FROM sessions WHERE expires <= ?');
+          } catch (stmtErr) {
+            // prepared statement 创建失败时回退到普通 db.run（sql.js 兼容路径）
+            this._stmts.get = null;
+          }
+        }
       } catch (err) {
         console.error('[session] sessions 表初始化失败:', err.message);
       }
@@ -72,7 +98,15 @@ class SqliteSessionStore extends session.Store {
     try {
       const db = this._db();
       if (!db) return callback && callback(null, null);
-      const row = queryOne(db, 'SELECT data, expires FROM sessions WHERE sid = ?', [sid]);
+
+      // 优先使用预编译的 prepared statement
+      let row;
+      if (this._stmts.get) {
+        row = this._stmts.get.get(sid) || null;
+      } else {
+        row = queryOne(db, 'SELECT data, expires FROM sessions WHERE sid = ?', [sid]);
+      }
+
       if (!row) return callback && callback(null, null);
       if (row.expires <= Date.now()) {
         this.destroy(sid, () => {});
@@ -96,11 +130,16 @@ class SqliteSessionStore extends session.Store {
       if (!db) return callback && callback(new Error('数据库未就绪'));
       const data = JSON.stringify(session);
       const expires = this._getExpiry(session);
-      db.run(
-        'INSERT INTO sessions (sid, data, expires) VALUES (?, ?, ?) ' +
-        'ON CONFLICT(sid) DO UPDATE SET data = excluded.data, expires = excluded.expires',
-        [sid, data, expires]
-      );
+
+      if (this._stmts.set) {
+        this._stmts.set.run(sid, data, expires);
+      } else {
+        db.run(
+          'INSERT INTO sessions (sid, data, expires) VALUES (?, ?, ?) ' +
+          'ON CONFLICT(sid) DO UPDATE SET data = excluded.data, expires = excluded.expires',
+          [sid, data, expires]
+        );
+      }
       callback && callback(null);
     } catch (err) {
       callback && callback(err);
@@ -111,7 +150,12 @@ class SqliteSessionStore extends session.Store {
     try {
       const db = this._db();
       if (!db) return callback && callback(new Error('数据库未就绪'));
-      db.run('DELETE FROM sessions WHERE sid = ?', [sid]);
+
+      if (this._stmts.destroy) {
+        this._stmts.destroy.run(sid);
+      } else {
+        db.run('DELETE FROM sessions WHERE sid = ?', [sid]);
+      }
       callback && callback(null);
     } catch (err) {
       callback && callback(err);
@@ -123,7 +167,12 @@ class SqliteSessionStore extends session.Store {
       const db = this._db();
       if (!db) return callback && callback(new Error('数据库未就绪'));
       const expires = this._getExpiry(session);
-      db.run('UPDATE sessions SET expires = ? WHERE sid = ?', [expires, sid]);
+
+      if (this._stmts.touch) {
+        this._stmts.touch.run(expires, sid);
+      } else {
+        db.run('UPDATE sessions SET expires = ? WHERE sid = ?', [expires, sid]);
+      }
       callback && callback(null);
     } catch (err) {
       callback && callback(err);
@@ -137,7 +186,12 @@ class SqliteSessionStore extends session.Store {
     try {
       const db = this._db();
       if (!db) return;
-      db.run('DELETE FROM sessions WHERE expires <= ?', [Date.now()]);
+
+      if (this._stmts.cleanup) {
+        this._stmts.cleanup.run(Date.now());
+      } else {
+        db.run('DELETE FROM sessions WHERE expires <= ?', [Date.now()]);
+      }
     } catch (err) {
       // 清理失败不影响主流程
     }

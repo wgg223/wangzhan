@@ -1,6 +1,11 @@
 /**
  * 系统资源监控模块
  * 监控内存、CPU使用情况，并在内存过高时触发GC
+ *
+ * 优化：
+ *   - CPU 型号等静态信息缓存到实例属性，避免每次 getSystemInfo 都遍历 os.cpus()；
+ *   - requestCount / errorCount 采用滑动窗口（每分钟重置），防止长时间运行溢出；
+ *   - CPU 使用率改为差值计算（两次采样间隔的 cpu times 差值），结果更准确。
  */
 const os = require('os');
 const { formatBytes, formatUptime } = require('../utils/format');
@@ -15,12 +20,61 @@ class SystemMonitor {
     this.startTime = Date.now();
     this.requestCount = 0;
     this.errorCount = 0;
-    this.lastCpuUsage = process.cpuUsage();
+
+    // 滑动窗口计数器：每分钟重置一次，防止长时间运行溢出
+    this._countResetTimer = setInterval(() => {
+      this.requestCount = 0;
+      this.errorCount = 0;
+    }, 60 * 1000);
+    if (this._countResetTimer.unref) {
+      this._countResetTimer.unref();
+    }
+
+    // 缓存 CPU 静态信息（型号、核心数），避免每次遍历 os.cpus()
+    const cpus = os.cpus();
+    this._cpuModel = cpus[0]?.model || 'unknown';
+    this._cpuCores = cpus.length;
+
+    // CPU 使用率差值计算：保存上次采样的累计 idle/tick
+    this._lastCpuTimes = this._getCpuTimes();
+    this._lastCpuPercent = 0;
+
     this.lastCheckTime = Date.now();
 
     // 启动定时检查
     this._timer = setInterval(() => this.check(), this.checkInterval);
     this._timer.unref(); // 不阻止进程退出
+  }
+
+  /**
+   * 读取当前 CPU 累计时间（所有核心合计）
+   */
+  _getCpuTimes() {
+    const cpus = os.cpus();
+    let totalIdle = 0;
+    let totalTick = 0;
+    for (let i = 0; i < cpus.length; i++) {
+      const cpu = cpus[i];
+      for (const type in cpu.times) {
+        totalTick += cpu.times[type];
+      }
+      totalIdle += cpu.times.idle;
+    }
+    return { idle: totalIdle, total: totalTick };
+  }
+
+  /**
+   * 计算两次采样之间的 CPU 使用率（百分比）
+   */
+  _computeCpuPercent() {
+    const current = this._getCpuTimes();
+    const idleDelta = current.idle - this._lastCpuTimes.idle;
+    const totalDelta = current.total - this._lastCpuTimes.total;
+    this._lastCpuTimes = current;
+
+    if (totalDelta === 0) return this._lastCpuPercent;
+    this._lastCpuPercent = ((1 - idleDelta / totalDelta) * 100);
+    return this._lastCpuPercent;
   }
 
   /**
@@ -33,16 +87,8 @@ class SystemMonitor {
     const usedMem = totalMem - freeMem;
     const systemMemPercent = ((usedMem / totalMem) * 100).toFixed(1);
 
-    // 计算CPU使用率
-    const cpus = os.cpus();
-    let totalIdle = 0;
-    let totalTick = 0;
-    cpus.forEach(cpu => {
-      for (const type in cpu.times) {
-        totalTick += cpu.times[type];
-      }
-      totalIdle += cpu.times.idle;
-    });
+    // 使用差值法计算 CPU 使用率（更准确）
+    const cpuPercent = this._computeCpuPercent();
 
     return {
       // 进程内存
@@ -60,16 +106,17 @@ class SystemMonitor {
         used: this._formatBytes(usedMem),
         percent: systemMemPercent + '%'
       },
-      // CPU
+      // CPU（使用缓存的静态信息 + 差值计算的使用率）
       cpu: {
-        cores: cpus.length,
-        model: cpus[0]?.model || 'unknown',
+        cores: this._cpuCores,
+        model: this._cpuModel,
+        usage: cpuPercent.toFixed(1) + '%',
         loadAvg: os.loadavg()
       },
       // 运行时
       uptime: this._formatUptime(process.uptime()),
       startedAt: new Date(this.startTime).toISOString(),
-      // 请求统计
+      // 请求统计（滑动窗口，每分钟重置）
       requestCount: this.requestCount,
       errorCount: this.errorCount,
       // Node.js版本
@@ -129,7 +176,7 @@ class SystemMonitor {
         global.gc();
         this.logger.log('[监控] 手动触发垃圾回收完成');
       } else {
-        // 未暴露GC，尝试通过内存分配触发
+        // 未暴露GC，提示启动参数
         this.logger.log('[监控] 提示: 使用 --expose-gc 参数可启用手动GC');
       }
     } catch (err) {
@@ -158,6 +205,10 @@ class SystemMonitor {
     if (this._timer) {
       clearInterval(this._timer);
       this._timer = null;
+    }
+    if (this._countResetTimer) {
+      clearInterval(this._countResetTimer);
+      this._countResetTimer = null;
     }
   }
 

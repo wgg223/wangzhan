@@ -41,8 +41,10 @@ class MemoryCache {
       return null;
     }
 
-    // LRU: 更新访问时间
-    item.lastAccess = Date.now();
+    // LRU: 利用 Map 的插入顺序特性，删除后重新插入即移到末尾（最近使用）
+    // 淘汰时直接删除 Map 的第一个 key 即可 O(1) 获取最久未访问条目
+    this.cache.delete(key);
+    this.cache.set(key, item);
     this.hits++;
     return item.value;
   }
@@ -54,8 +56,11 @@ class MemoryCache {
    * @param {number} [ttl] 可选的自定义TTL（秒）
    */
   set(key, value, ttl) {
-    // 如果缓存已满，执行 LRU 淘汰
-    if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
+    // 如果 key 已存在，先删除（确保重新插入到末尾）
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      // 缓存已满且为新 key：淘汰最久未访问的条目（Map 的第一个 key，O(1)）
       this._evictLRU();
     }
 
@@ -63,26 +68,16 @@ class MemoryCache {
     this.cache.set(key, {
       value,
       expiry,
-      lastAccess: Date.now(),
       createdAt: Date.now()
     });
   }
 
   /**
-   * LRU 淘汰：删除最久未访问的条目
+   * LRU 淘汰：删除最久未访问的条目（Map 的第一个 key，O(1)）
    */
   _evictLRU() {
-    let oldest = Infinity;
-    let oldestKey = null;
-
-    for (const [key, item] of this.cache.entries()) {
-      if (item.lastAccess < oldest) {
-        oldest = item.lastAccess;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
+    const oldestKey = this.cache.keys().next().value;
+    if (oldestKey !== undefined) {
       this.cache.delete(oldestKey);
       this.evictions++;
     }

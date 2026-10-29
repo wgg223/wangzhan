@@ -5,7 +5,7 @@
  *       两张表的读写，并通过内存缓存（settingsCache）减少数据库查询，
  *       任何写入都会主动清除对应缓存保证数据一致性。
  */
-const { queryAll, queryOne, saveDatabase } = require('../config/database');
+const { queryAll, saveDatabase } = require('../config/database');
 const { settingsCache } = require('../config/cache');
 
 /**
@@ -34,19 +34,25 @@ function getSettings(db) {
 
 /**
  * 批量保存设置（upsert 模式：存在则更新，不存在则插入）
+ * 优化：使用 INSERT OR REPLACE 替代先查后写，并用事务包裹减少 WAL 开销。
  * @param {Object} db - 数据库实例
  * @param {Object} settingsMap - key-value 对象（value 为 undefined 的键会被跳过）
  */
 function upsertSettings(db, settingsMap) {
-  for (const [key, value] of Object.entries(settingsMap)) {
-    if (value !== undefined) {
-      // 先查该键是否已存在
-      const existing = queryOne(db, 'SELECT id FROM settings WHERE setting_key = ?', [key]);
-      if (existing) {
-        db.run('UPDATE settings SET setting_value = ? WHERE setting_key = ?', [value, key]);  // 更新
-      } else {
-        db.run('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)', [key, value]); // 插入
+  const entries = Object.entries(settingsMap).filter(([, value]) => value !== undefined);
+  if (entries.length === 0) return;
+
+  // 使用事务包裹：单次 WAL 检查点代替 N 次独立写入
+  if (db.transaction) {
+    const upsertMany = db.transaction(() => {
+      for (const [key, value] of entries) {
+        db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', [key, value]);
       }
+    });
+    upsertMany();
+  } else {
+    for (const [key, value] of entries) {
+      db.run('INSERT OR REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)', [key, value]);
     }
   }
   saveDatabase();                       // 持久化

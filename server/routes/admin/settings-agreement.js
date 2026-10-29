@@ -10,6 +10,7 @@ const express = require('express');
 const router = express.Router();
 const { getSettings, upsertSettings } = require('../../utils/settings');
 const { safeLogActivity } = require('../../utils/error-handler');
+const { sanitize } = require('../../utils/html-sanitizer');
 
 // 协议设置 - 仅管理员可访问（上层路由统一鉴权）
 
@@ -34,9 +35,9 @@ router.post('/', (req, res) => {
   } = req.body;
 
   upsertSettings(db, {
-    user_agreement: user_agreement || '',
-    privacy_policy: privacy_policy || '',
-    delete_account_agreement: delete_account_agreement || ''
+    user_agreement: sanitize(user_agreement),
+    privacy_policy: sanitize(privacy_policy),
+    delete_account_agreement: sanitize(delete_account_agreement)
   });
 
   // 记录审计日志（失败不打断流程）

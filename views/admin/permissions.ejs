@@ -404,7 +404,7 @@
 
 <script>
 // 全量权限点（服务端渲染注入）与当前操作者角色（用于高危权限分级展示）
-var ALL_PERMS = <%- JSON.stringify(permissions) %>;
+var ALL_PERMS = <%- JSON.stringify(permissions).replace(/</g, '\\u003c') %>;
 var CURRENT_USER_ROLE = '<%= user.role %>';
 
 function getCsrfToken() {

@@ -15,6 +15,7 @@ const { isAuthenticated, hasPermission } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { renderError } = require('../../utils/response');
+const { sanitize } = require('../../utils/html-sanitizer');
 
 // ============ 页面管理 ============
 
@@ -64,6 +65,8 @@ router.post('/pages/save', isAuthenticated, hasPermission('pages.manage'), (req,
     return res.status(400).json({ error: '标题和Slug不能为空' });
   }
 
+  const safeContent = sanitize(content);
+
   // 构建回传数据对象供slug冲突时使用（保留用户已填内容，避免重填）
   const submittedData = {
     id: id || undefined,
@@ -97,11 +100,11 @@ router.post('/pages/save', isAuthenticated, hasPermission('pages.manage'), (req,
   if (id) {
     // 更新已有页面
     db.run('UPDATE pages SET title=?, slug=?, content=?, type=?, status=?, parent_id=?, sort_order=?, font_color=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-      [title, slug, content, type || 'page', status || 'published', parent_id || 0, sort_order || 0, font_color || '', id]);
+      [title, slug, safeContent, type || 'page', status || 'published', parent_id || 0, sort_order || 0, font_color || '', id]);
   } else {
     // 新建页面
     db.run('INSERT INTO pages (title, slug, content, type, status, parent_id, sort_order, font_color) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [title, slug, content, type || 'page', status || 'published', parent_id || 0, sort_order || 0, font_color || '']);
+      [title, slug, safeContent, type || 'page', status || 'published', parent_id || 0, sort_order || 0, font_color || '']);
   }
 
   saveDatabase();

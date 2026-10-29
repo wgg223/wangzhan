@@ -1,12 +1,91 @@
 /**
  * 操作活动日志模块
  * 记录用户在后台的各类操作历史，用于在仪表盘展示
+ *
+ * 优化：写入队列 + 事务批量提交
+ *   - 非关键写入（活动日志）先进入内存队列，每 2 秒或累积 50 条时批量 flush；
+ *   - flush 使用 db.transaction() 包裹，单次 WAL 检查点代替 N 次独立写入；
+ *   - 减少主库写入压力，避免突发活动日志阻塞业务请求。
  */
 
 const { queryOne, queryAll, saveDatabase } = require('./database');
 
+// 写入队列配置
+const WRITE_QUEUE_MAX = 50;          // 队列满 50 条立即 flush
+const WRITE_QUEUE_INTERVAL_MS = 2000; // 或每 2 秒 flush 一次
+const _writeQueue = [];
+let _flushTimer = null;
+
 /**
- * 记录用户操作
+ * 启动 flush 定时器（懒初始化，首次 logActivity 时启动）
+ */
+function _ensureFlushTimer() {
+  if (_flushTimer) return;
+  _flushTimer = setInterval(() => _flushQueue(), WRITE_QUEUE_INTERVAL_MS);
+  if (_flushTimer.unref) {
+    _flushTimer.unref(); // 不阻止进程退出
+  }
+}
+
+/**
+ * 批量 flush 队列中的日志到数据库（事务包裹）
+ */
+function _flushQueue() {
+  if (_writeQueue.length === 0) return;
+
+  // 取出当前队列，清空原队列（减少持锁时间）
+  const batch = _writeQueue.splice(0, _writeQueue.length);
+
+  try {
+    const db = require('./database').getDb();
+    if (!db) {
+      // 数据库未就绪，放回队列头（下次再试）
+      _writeQueue.unshift(...batch);
+      return;
+    }
+
+    // 使用事务批量写入
+    if (db.transaction) {
+      const insertMany = db.transaction(() => {
+        for (const entry of batch) {
+          db.run(
+            `INSERT INTO activity_logs (user_id, username, action, target_type, target_id, target_title, detail, ip, route, method, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+8 hours'))`,
+            [
+              entry.user_id, entry.username, entry.action, entry.target_type,
+              entry.target_id || '', entry.target_title || '', entry.detail || '',
+              entry.ip || '', entry.route || '', entry.method || ''
+            ]
+          );
+        }
+      });
+      insertMany();
+    } else {
+      // sql.js 回退：逐条写入
+      for (const entry of batch) {
+        db.run(
+          `INSERT INTO activity_logs (user_id, username, action, target_type, target_id, target_title, detail, ip, route, method, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+8 hours'))`,
+          [
+            entry.user_id, entry.username, entry.action, entry.target_type,
+            entry.target_id || '', entry.target_title || '', entry.detail || '',
+            entry.ip || '', entry.route || '', entry.method || ''
+          ]
+        );
+      }
+    }
+    saveDatabase();
+  } catch (err) {
+    console.error('活动日志批量写入失败:', err.message);
+    // 写入失败的日志放回队列（下次重试），但限制队列膨胀
+    if (_writeQueue.length < 1000) {
+      _writeQueue.unshift(...batch);
+    }
+  }
+}
+
+/**
+ * 记录用户操作（入队，不直接写库）
  * @param {Object} db - 数据库实例
  * @param {Object} options - 日志选项
  * @param {number} options.user_id - 操作用户ID
@@ -39,26 +118,17 @@ function logActivity(db, options) {
     return;
   }
 
-  try {
-    db.run(
-      `INSERT INTO activity_logs (user_id, username, action, target_type, target_id, target_title, detail, ip, route, method, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+8 hours'))`,
-      [
-        user_id,
-        username,
-        action,
-        target_type,
-        target_id || '',
-        target_title || '',
-        detail || '',
-        ip || '',
-        route || '',
-        method || ''
-      ]
-    );
-    saveDatabase();
-  } catch (err) {
-    console.error('活动日志写入失败:', err.message);
+  // 入队
+  _writeQueue.push({
+    user_id, username, action, target_type,
+    target_id, target_title, detail, ip, route, method
+  });
+
+  // 队列满时立即 flush
+  if (_writeQueue.length >= WRITE_QUEUE_MAX) {
+    _flushQueue();
+  } else {
+    _ensureFlushTimer();
   }
 }
 

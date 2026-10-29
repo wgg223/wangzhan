@@ -15,6 +15,7 @@ const CHUNKS_PREFIX = '/uploads/.chunks/';     // 分片上传临时目录
 
 // 访问判定短缓存（TTL 30 秒）：避免每张图片请求都命中数据库
 const DECISION_CACHE_TTL = 30 * 1000;
+const DECISION_CACHE_MAX = 10000; // 最大条目数，防止恶意构造大量不同路径撑爆内存
 const decisionCache = new Map();
 
 // 每分钟清理一次过期缓存条目
@@ -22,6 +23,16 @@ setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of decisionCache) {
     if (now > entry.expires) decisionCache.delete(key);
+  }
+  // 超过上限时淘汰最早条目
+  if (decisionCache.size > DECISION_CACHE_MAX) {
+    const excess = decisionCache.size - DECISION_CACHE_MAX;
+    let deleted = 0;
+    for (const key of decisionCache.keys()) {
+      if (deleted >= excess) break;
+      decisionCache.delete(key);
+      deleted++;
+    }
   }
 }, 60 * 1000);
 

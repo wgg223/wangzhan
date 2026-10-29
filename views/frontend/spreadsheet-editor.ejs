@@ -49,7 +49,7 @@
       <button type="button" class="ss-btn" id="btnSsAi" title="AI 助手：生成 / 公式 / 清洗 / 分析">✨ AI</button>
       <button type="button" class="ss-btn" id="btnSsExport" title="导出 xlsx / csv">⬇️ 导出</button>
       <div class="ss-user-chip">
-        <img src="<%- user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="ss-user-avatar">
+        <img src="<%= user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="ss-user-avatar">
         <span class="ss-user-name"><%= user.nickname || user.username %></span>
       </div>
     </div>
@@ -87,15 +87,15 @@
     // 编辑器配置（后端注入 → spreadsheet-editor.js 读取）
     window.__SHEET__ = {
       sheetId: <%= sheet.id %>,
-      name: <%- JSON.stringify(sheet.name || '') %>,
-      description: <%- JSON.stringify(sheet.description || '') %>,
+      name: <%- JSON.stringify(sheet.name || '').replace(/</g, '\\u003c') %>,
+      description: <%- JSON.stringify(sheet.description || '').replace(/</g, '\\u003c') %>,
       version: <%= sheet.doc_version || 0 %>,
       isLocked: <%= sheet.is_locked ? 'true' : 'false' %>,
       isPublicRead: <%= sheet.is_public_read ? 'true' : 'false' %>,
       permLevel: <%= permLevel %>,
       canEdit: <%= canEdit ? 'true' : 'false' %>,
       canManage: <%= canManage ? 'true' : 'false' %>,
-      user: <%- JSON.stringify({ id: user.id, username: user.username, nickname: user.nickname || user.username, avatar: user.avatar || '' }) %>,
+      user: <%- JSON.stringify({ id: user.id, username: user.username, nickname: user.nickname || user.username, avatar: user.avatar || '' }).replace(/</g, '\\u003c') %>,
       csrf: (document.querySelector('meta[name="csrf-token"]') || {}).content || '',
       api: {
         doc: '/api/spreadsheet/<%= sheet.id %>/doc',
@@ -130,7 +130,7 @@
   <script>
     // 只读内容保护配置（permLevel===1 用户：防复制 + 用户名/IP 水印溯源）
     window.__SS_PROTECT__ = {
-      watermark: <%- JSON.stringify((user.nickname || user.username) + ' #' + user.id + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')) %>,
+      watermark: <%- JSON.stringify((user.nickname || user.username) + ' #' + user.id + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')).replace(/</g, '\\u003c') %>,
       tip: '只读内容受保护：禁止复制、截图与导出，如需更高权限请点击「申请权限」'
     };
   </script>

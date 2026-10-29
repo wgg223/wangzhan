@@ -83,12 +83,13 @@ function shouldSkip(path, method) {
  * @param {string} path - 请求路径
  * @returns {string} 目标类型标识（如 article/novel/admin）
  * 说明：路由前缀按长度降序匹配，保证 /articles/xxx 优先于 / 等短前缀。
+ *       预计算排序结果，避免每个请求重复排序。
  */
+const SORTED_ROUTES = Object.keys(ROUTE_TARGET_MAP).sort((a, b) => b.length - a.length);
+
 function determineTargetType(path) {
   // 按优先级从长到短匹配
-  const sortedRoutes = Object.keys(ROUTE_TARGET_MAP).sort((a, b) => b.length - a.length);
-
-  for (const prefix of sortedRoutes) {
+  for (const prefix of SORTED_ROUTES) {
     if (path.startsWith(prefix)) {
       return ROUTE_TARGET_MAP[prefix];
     }

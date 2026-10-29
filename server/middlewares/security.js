@@ -45,20 +45,30 @@ function doubleSubmitCookie(req, res, next) {
     return next();
   }
 
-  // multipart/form-data 上传跳过 CSRF（已有认证中间件保护）
+  // multipart/form-data 上传请求：CSRF token 通过自定义请求头传递（前端在 FormData 之外设置 X-CSRF-Token），
+  // 不再按 Content-Type 整体跳过，而是要求 multipart 请求也携带有效 token
   const contentType = req.headers['content-type'] || '';
-  if (contentType.startsWith('multipart/form-data')) {
-    return next();
-  }
+  const isMultipart = contentType.startsWith('multipart/form-data');
 
   // 验证 CSRF token
   // 兼容多种前端约定：X-CSRF-Token / CSRF-Token / X-XSRF-Token / body._csrf
   const submittedToken = req.headers['x-csrf-token']
     || req.headers['csrf-token']
     || req.headers['x-xsrf-token']
-    || req.body?._csrf;
+    || (!isMultipart ? req.body?._csrf : null); // multipart 请求体未解析，不读 body
 
-  if (!submittedToken || submittedToken !== req.session.doubleSubmitToken) {
+  // 时序安全比较：防止 timing attack 逐字符猜测 token
+  const expected = req.session.doubleSubmitToken;
+  let tokenValid = false;
+  if (submittedToken && expected) {
+    const submittedBuf = Buffer.from(String(submittedToken));
+    const expectedBuf = Buffer.from(String(expected));
+    if (submittedBuf.length === expectedBuf.length) {
+      tokenValid = crypto.timingSafeEqual(submittedBuf, expectedBuf);
+    }
+  }
+
+  if (!tokenValid) {
     // 对于 API/JSON 请求返回 JSON 错误
     const isJsonRequest = (req.headers['content-type'] || '').includes('application/json');
     if (isJsonRequest || req.xhr) {

@@ -66,6 +66,7 @@ function createIndexes(db) {
     // 上传保护中间件按 url 反查记录（图片直链鉴权必须）
     db.run('CREATE INDEX IF NOT EXISTS idx_images_url ON images(url)');
     db.run('CREATE INDEX IF NOT EXISTS idx_aiimg_records_path ON ai_image_records(image_path)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_aiimg_records_ref ON ai_image_records(reference_image)');
     db.run('CREATE INDEX IF NOT EXISTS idx_novels_cover ON novels(cover_image)');
 
     // ===== 图片评论 =====
