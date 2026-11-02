@@ -2,6 +2,14 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.9.1 (2026-11-02)
+
+**修复在线Office文档编辑器启动崩溃、头像混合内容**
+
+- 修复文档编辑器打开即崩溃：Univer sheets 预设 `^1.0.0` 与 docs 预设 `1.3.1` 混装出两套核心版本，被同一 bundle 打包两次导致 DI 标识符重复注册（`Identifier "..." already exists`）与致命 `Cannot find "..." registered by any injector`；9 个 preset 全部锁定精确版本 `1.3.1`，构建产物 42.8MB → 13.3MB
+- 浏览器实跑验证 docs / sheets 两种预设初始化，控制台无 error/warn，表格编辑器无回归
+- 修复 OAuth 头像 Mixed Content：写入前统一 `http://` → `https://`（`server/routes/oauth.js`），存量记录启动时一次性升级（`server/config/db-seed.js`）
+
 ## v8.9.0 (2026-11-02)
 
 **在线表格升级为在线Office（文档 + 表格 + 演示文稿）**
@@ -14,6 +22,7 @@
 - 文档结构校验按类型分流（spreadsheet/document/presentation）
 - Univer 构建加入 Docs presets 与中文语言包；新增依赖 reveal.js、mammoth
 - 后台管理同步：类型列展示、三种类型创建表单
+- 部署链路（[部署指南.md](./部署指南.md) 第四节重写）：Nginx 大文件参数（`client_max_body_size` 512m + `client_body_timeout` / `proxy_send·read_timeout` / `proxy_request_buffering`）、`/uploads/` 改为反代到 Node 以启用附件鉴权（仅 `dynamics`、`novels` 保留直读）、`data/office-docs` 与上传子目录创建及权限说明、三层上传上限对照表
 
 ## v8.8.2 (2026-11-01)
 

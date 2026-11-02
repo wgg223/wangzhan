@@ -223,6 +223,14 @@ async function getAccessToken(provider, config, code, redirectUri) {
   }
 }
 
+// 第三方头像统一升级为 https
+// QQ/微博/微信等返回的是 http:// 绝对地址，存库后在 HTTPS 页面里会触发浏览器混合内容拦截
+// （头像裂开 + console 报 Mixed Content），这些图床均支持 HTTPS，写入前直接改写协议即可
+function normalizeAvatarUrl(url) {
+  if (typeof url !== 'string' || !url) return url;
+  return url.startsWith('http://') ? 'https://' + url.slice(7) : url;
+}
+
 // 获取用户信息
 async function getUserInfo(provider, config, accessToken, openid) {
   const axios = require('axios');
@@ -255,7 +263,7 @@ async function getUserInfo(provider, config, accessToken, openid) {
         return {
           open_id: String(data.id),
           nickname: data.name || data.login,
-          avatar: data.avatar_url,
+          avatar: normalizeAvatarUrl(data.avatar_url),
           email: verifiedEmail
         };
       }
@@ -267,7 +275,7 @@ async function getUserInfo(provider, config, accessToken, openid) {
         return {
           open_id: data.openid,
           nickname: data.nickname,
-          avatar: data.headimgurl,
+          avatar: normalizeAvatarUrl(data.headimgurl),
           email: null
         };
       }
@@ -284,7 +292,7 @@ async function getUserInfo(provider, config, accessToken, openid) {
         return {
           open_id: openid,
           nickname: data.nickname,
-          avatar: data.figureurl_qq_2 || data.figureurl_qq,
+          avatar: normalizeAvatarUrl(data.figureurl_qq_2 || data.figureurl_qq),
           email: null
         };
       }
@@ -296,7 +304,7 @@ async function getUserInfo(provider, config, accessToken, openid) {
         return {
           open_id: String(data.id),
           nickname: data.screen_name,
-          avatar: data.avatar_large,
+          avatar: normalizeAvatarUrl(data.avatar_large),
           email: null
         };
       }
@@ -309,7 +317,7 @@ async function getUserInfo(provider, config, accessToken, openid) {
         return {
           open_id: data.id,
           nickname: data.name,
-          avatar: data.picture,
+          avatar: normalizeAvatarUrl(data.picture),
           email: data.email,
           verified_email: data.verified_email
         };

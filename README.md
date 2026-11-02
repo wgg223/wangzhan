@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.9.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.9.1 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -277,6 +277,19 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 
 建议在 Nginx 等反向代理后运行（`TRUST_PROXY=1`），并配置 HTTPS。
 
+### 大文件上传（在线 Office / 附件）
+
+上传能力由三层上限共同决定，任一层低于预期都会在中间截断（完整 Nginx 片段见 [部署指南.md](./部署指南.md) 第四节）：
+
+| 层 | 当前值 | 说明 |
+| --- | --- | --- |
+| Nginx `client_max_body_size` | 512m | 默认仅 1m，超限由 Nginx 直接返回 413，请求不会到达 Node；同时需配 `client_body_timeout`、`proxy_send/read_timeout` |
+| Node `express.json` / `MAX_DOC_SIZE` | 50MB | 协同保存走 JSON body，为 2GB 小内存机刻意保留的上限 |
+| 附件分片合成 | 200MB（单片 3MB） | 走分片接口，不受上面两项限制；未完成分片由运维脚本定时清理 |
+| Office 文档落盘 | 500MB | >10MB 自动写入 `data/office-docs/`，SQLite 仅存路径 |
+
+`/uploads/` 需反代到 Node（由 `upload-protect` 中间件鉴权），不要让 Nginx `alias` 直读磁盘，否则私有附件与 Office 文件可被直链下载。
+
 ## 已清理组件（2026-09）
 
 以下组件已从项目中移除，运行时无需依赖：
@@ -293,6 +306,14 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.9.1 (2026-11-02)
+
+**修复在线Office文档编辑器启动崩溃、头像混合内容**
+- 修复：在线文档打开即白屏报错（`[redi]: Cannot find "..." registered by any injector` / `Expect 1 dependency item(s) for id "..." but get 0`，伴随上百条 `Identifier "..." already exists`）。根因是 `@univerjs/preset-sheets-*` 用 `^1.0.0`、`@univerjs/preset-docs-*` 用 `1.3.1`，npm 装出两套核心版本并被同一 IIFE 打包两次，DI 标识符重复注册、`PluginService` 检测到 core 1.0.0 与 plugin 1.3.1 版本不匹配
+- 修复：9 个 Univer preset 全部锁定精确版本 `1.3.1`（去掉 `^`，防止 `npm install` 再次解析出多份核心），`node_modules` 无嵌套 @univerjs 副本，构建产物由 42.8MB 降到 13.3MB
+- 验证：浏览器实跑 docs / sheets 两种预设初始化，控制台 0 error / 0 warn，表格编辑器无回归
+- 修复：第三方登录（QQ / 微博 / 微信等）头像以 `http://` 绝对地址入库，HTTPS 页面触发浏览器 Mixed Content 拦截。现在写入前统一升级为 `https://`，存量数据启动时一次性改写（`users.avatar` 与 `user_oauth_bindings.avatar`）
 
 ### v8.9.0 (2026-11-02)
 

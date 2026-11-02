@@ -311,6 +311,20 @@ function insertDefaultDataIfNeeded(db) {
     console.error('[db-seed] 权限迁移出错:', e.message);
   }
 
+  // 存量 OAuth 头像协议升级：历史上写入的是 http:// 绝对地址，
+  // 在 HTTPS 页面下会被浏览器按混合内容拦截，这里一次性改写为 https://
+  try {
+    const httpAvatars = queryAll(db, "SELECT COUNT(*) AS c FROM users WHERE avatar LIKE 'http://%'")[0].c
+      + queryAll(db, "SELECT COUNT(*) AS c FROM user_oauth_bindings WHERE avatar LIKE 'http://%'")[0].c;
+    if (httpAvatars > 0) {
+      db.run("UPDATE users SET avatar = 'https://' || substr(avatar, 8) WHERE avatar LIKE 'http://%'");
+      db.run("UPDATE user_oauth_bindings SET avatar = 'https://' || substr(avatar, 8) WHERE avatar LIKE 'http://%'");
+      console.log(`[db-seed] 已将 ${httpAvatars} 条 http 头像升级为 https`);
+    }
+  } catch (e) {
+    console.error('[db-seed] 头像协议升级出错:', e.message);
+  }
+
   // 插入默认项目数据
   const defaultProjects = [
     ['blog', '博客系统', '文章、页面、评论',
