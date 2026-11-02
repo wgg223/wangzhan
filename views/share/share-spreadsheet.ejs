@@ -24,7 +24,7 @@
     <meta property="og:description" content="<%= sheet.description ? String(sheet.description).slice(0, 100) : '一份在线表格分享' %>">
     <meta property="og:type" content="website">
   <% } %>
-  <link rel="stylesheet" href="/vendor/univer/index.css">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/univer/index.css') : '/vendor/univer/index.css' %>">
   <% if (state === 'ok') { %>
   <link rel="stylesheet" href="/css/ss-content-protect.css">
   <% } %>
@@ -133,7 +133,7 @@
       };
     </script>
     <script src="/js/ss-content-protect.js" defer></script>
-    <script src="/vendor/univer/univer.min.js"></script>
+    <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/univer/univer.min.js') : '/vendor/univer/univer.min.js' %>"></script>
     <script>
       // 只读查看器：加载分享数据 → Univer 渲染 → 设为只读
       (function () {

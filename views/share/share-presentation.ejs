@@ -1,0 +1,374 @@
+<%# ===== 页面模板：share/share-presentation.ejs =====%>
+<%# 说明：分享-演示文稿只读页（公开，无需登录；数据经 /share/:token/data 异步加载，自绘幻灯片只读渲染，不支持下载）；embed=true 时为 iframe 嵌入视图 %>
+<%
+  // 时间格式化（模板内联 helper）
+  function fmtTime(t) {
+    if (!t) return '-';
+    var d = new Date(t);
+    if (isNaN(d.getTime())) return String(t);
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  // iframe 嵌入代码（仅普通页展示）
+  var embedCode = '<iframe src="' + (baseUrl || '') + (embedUrl || '') + '" width="100%" height="600" frameborder="0" style="border:1px solid #e0e4ea;border-radius:12px;" loading="lazy" allowfullscreen></iframe>';
+%>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= state === 'ok' ? (title || '演示文稿分享') : '内容不可用' %></title>
+  <meta name="robots" content="noindex, nofollow">
+  <% if (state === 'ok' && !embed) { %>
+    <meta property="og:title" content="<%= title || '演示文稿分享' %>">
+    <meta property="og:description" content="<%= sheet.description ? String(sheet.description).slice(0, 100) : '一份演示文稿分享' %>">
+    <meta property="og:type" content="website">
+  <% } %>
+  <% if (state === 'ok') { %>
+  <link rel="stylesheet" href="/css/ss-content-protect.css">
+  <% } %>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #fdf5f9; color: #43303e; min-height: 100vh; }
+    body.embed { background: #111; overflow: hidden; }
+
+    /* ---- 幻灯片舞台：按 960x540 逻辑尺寸等比缩放 ---- */
+    .stage { position: relative; width: 100%; overflow: hidden; border-radius: 10px; background: #e9edf3; }
+    .slide { position: absolute; inset: 0; background-size: contain; }
+    .canvas { position: absolute; top: 0; left: 0; width: 960px; height: 540px; transform-origin: top left; }
+    .el { position: absolute; overflow: hidden; }
+    .el img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .el-text { white-space: pre-wrap; word-break: break-word; line-height: 1.45; padding: 4px 8px; }
+
+    /* ---- 控件 ---- */
+    .bar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 0 0; }
+    .nav-btn { border: 1px solid #e0e4ea; background: #fff; color: #333; font-size: 13px; padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+    .nav-btn:hover { background: #f3f6fa; }
+    .nav-btn:disabled { opacity: .45; cursor: not-allowed; }
+    .counter { font-size: 13px; color: #666; min-width: 68px; text-align: center; }
+    .thumbs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0 2px; }
+    .thumb { position: relative; flex-shrink: 0; width: 128px; height: 72px; border: 2px solid #e2e8f0; border-radius: 6px; background: #fff; cursor: pointer; overflow: hidden; font-size: 11px; color: #64748b; }
+    .thumb.active { border-color: #ec4899; }
+    .thumb .no { position: absolute; left: 4px; top: 2px; font-size: 11px; color: #94a3b8; z-index: 2; }
+    .thumb .mini { position: absolute; top: 0; left: 0; width: 960px; height: 540px; transform-origin: top left; transform: scale(.1333); pointer-events: none; }
+
+    /* ---- 嵌入视图：铺满视口 ---- */
+    body.embed .stage { position: fixed; inset: 0; width: 100vw; height: 100vh; border-radius: 0; background: #111; }
+    body.embed .bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: rgba(17,17,17,.55); border-radius: 22px; padding: 6px 12px; opacity: 0; transition: opacity .2s; z-index: 20; }
+    body.embed:hover .bar { opacity: 1; }
+    body.embed .counter { color: #eee; }
+    body.embed #shareLoading, body.embed #shareError { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #111; z-index: 30; }
+    body.embed #shareLoading p { color: #bbb; }
+    body.embed #shareError p { color: #fca5a5; }
+
+    /* ---- 全屏放映 ---- */
+    body.showing .wrap-hide { display: none !important; }
+    body.showing .stage { position: fixed; inset: 0; width: 100vw; height: 100vh; border-radius: 0; background: #111; z-index: 40; }
+    body.showing .bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: rgba(17,17,17,.55); border-radius: 22px; padding: 6px 12px; z-index: 41; }
+    body.showing .counter { color: #eee; }
+    .exit-show { position: fixed; right: 18px; top: 14px; z-index: 42; border: 1px solid rgba(255,255,255,.3); background: rgba(17,17,17,.55); color: #fff; font-size: 13px; padding: 6px 14px; border-radius: 8px; cursor: pointer; display: none; }
+    body.showing .exit-show { display: block; }
+
+    /* ---- 普通视图 ---- */
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.06); overflow: hidden; margin-bottom: 16px; padding: 18px 20px; }
+    .head-card h1 { font-size: 18px; word-break: break-all; }
+    .head-card .meta { font-size: 12px; color: #999; margin-top: 8px; }
+    .head-card .meta span { margin-right: 16px; }
+    .head-card .desc { font-size: 13px; color: #666; line-height: 1.7; margin-top: 10px; word-break: break-all; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .btn { display: inline-block; border: 1px solid #e0e4ea; background: #fff; color: #333; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; transition: background .15s, border-color .15s; }
+    .btn:hover { background: #f3f6fa; border-color: #c8d0dc; }
+    .sheet-loading, .sheet-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(250, 251, 253, .95); z-index: 15; }
+    .sheet-error p { font-size: 13px; color: #b91c1c; }
+    .spin { width: 28px; height: 28px; border: 3px solid #dbe3ee; border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    [hidden] { display: none !important; }
+    .empty { padding: 40px; text-align: center; color: #94a3b8; font-size: 13px; }
+    .embed-card { padding: 14px 20px; }
+    .embed-card h3 { font-size: 14px; margin-bottom: 8px; }
+    .embed-card textarea { width: 100%; height: 64px; font-size: 12px; font-family: Consolas, Monaco, monospace; color: #666; border: 1px solid #e0e4ea; border-radius: 8px; padding: 8px 10px; resize: none; background: #fafbfc; }
+    .tip { font-size: 12px; color: #aaa; text-align: center; margin-top: 4px; }
+    .footer { text-align: center; color: #aaa; font-size: 12px; padding: 12px 0; }
+    .doc-card { position: relative; padding: 14px; }
+  </style>
+  <link rel="stylesheet" href="/css/anime-theme.css">
+</head>
+<body class="<%= embed ? 'embed' : 'page' %>">
+  <% if (state === 'ok') { %>
+    <button type="button" class="exit-show" id="btnExitShow">退出放映</button>
+    <% if (!embed) { %>
+    <div class="wrap">
+      <div class="card head-card wrap-hide">
+        <h1><%= sheet.name || '演示文稿' %></h1>
+        <div class="meta">
+          <span>👤 <%= ownerName %></span>
+          <% if (stats) { %>
+          <span>🔖 v<%= stats.version || 0 %></span>
+          <span>🕘 更新于 <%= fmtTime(stats.updatedAt) %></span>
+          <span>👁 <%= stats.viewCount || 0 %> 次查看</span>
+          <% } %>
+        </div>
+        <% if (sheet.description) { %><p class="desc"><%= sheet.description %></p><% } %>
+        <div class="actions">
+          <button type="button" class="btn" id="btnShareCopy">🔗 复制链接</button>
+          <button type="button" class="btn" id="btnShow">▶ 放映</button>
+        </div>
+      </div>
+
+      <div class="card doc-card">
+        <div class="stage" id="pptStage" style="aspect-ratio:16/9;">
+          <div class="canvas" id="pptCanvas"></div>
+        </div>
+        <div class="bar">
+          <button type="button" class="nav-btn" id="btnPrev">‹ 上一页</button>
+          <span class="counter" id="pptCounter">- / -</span>
+          <button type="button" class="nav-btn" id="btnNext">下一页 ›</button>
+        </div>
+        <div class="thumbs" id="pptThumbs"></div>
+        <div class="sheet-loading" id="shareLoading">
+          <div class="spin"></div>
+          <p style="font-size:13px;color:#888;">正在加载演示文稿…</p>
+        </div>
+        <div class="sheet-error" id="shareError" hidden>
+          <p>⚠️ 演示文稿加载失败</p>
+          <p id="shareErrorMsg">请稍后刷新重试</p>
+        </div>
+      </div>
+
+      <div class="card embed-card wrap-hide">
+        <h3>嵌入到网页</h3>
+        <textarea id="shareEmbedCode" readonly spellcheck="false" data-ss-copy-ok><%= embedCode %></textarea>
+      </div>
+      <div class="tip wrap-hide">分享自 <%= baseUrl %> · 只读分享（不支持下载），如需编辑请向作者申请权限</div>
+    </div>
+    <% } else { %>
+    <div class="stage" id="pptStage">
+      <div class="canvas" id="pptCanvas"></div>
+    </div>
+    <div class="bar">
+      <button type="button" class="nav-btn" id="btnPrev">‹</button>
+      <span class="counter" id="pptCounter">- / -</span>
+      <button type="button" class="nav-btn" id="btnNext">›</button>
+    </div>
+    <div id="shareLoading">
+      <div class="spin"></div>
+      <p style="font-size:13px;color:#bbb;">正在加载演示文稿…</p>
+    </div>
+    <div id="shareError" hidden>
+      <p style="font-size:13px;color:#fca5a5;">⚠️ 演示文稿加载失败</p>
+    </div>
+    <% } %>
+
+    <script>
+      // 分享页配置（后端注入）
+      window.__SHARE__ = {
+        dataUrl: <%- JSON.stringify(dataUrl).replace(/</g, '\\u003c') %>,
+        embed: <%= embed ? 'true' : 'false' %>
+      };
+      // 只读分享内容保护配置（防复制 + 访客 IP 水印溯源）
+      window.__SS_PROTECT__ = {
+        watermark: <%- JSON.stringify('只读分享' + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')).replace(/</g, '\\u003c') %>,
+        tip: '只读分享内容受保护，禁止复制或截图'
+      };
+    </script>
+    <script src="/js/ss-content-protect.js" defer></script>
+    <script>
+      // 只读演示文稿查看器：自绘幻灯片（与编辑器同一数据模型，不使用 Univer）
+      (function () {
+        var CFG = window.__SHARE__ || {};
+        var LOGIC_W = 960, LOGIC_H = 540;
+        var slides = [];
+        var idx = 0;
+
+        var stage = document.getElementById('pptStage');
+        var canvas = document.getElementById('pptCanvas');
+        var thumbsBox = document.getElementById('pptThumbs');
+        var counter = document.getElementById('pptCounter');
+        var btnPrev = document.getElementById('btnPrev');
+        var btnNext = document.getElementById('btnNext');
+        var mask = document.getElementById('shareLoading');
+        var errBox = document.getElementById('shareError');
+        var errMsg = document.getElementById('shareErrorMsg');
+
+        function esc(s) {
+          return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function fail(msg) {
+          if (mask) mask.hidden = true;
+          if (errBox) errBox.hidden = false;
+          if (errMsg && msg) errMsg.textContent = msg;
+        }
+
+        // 画布按舞台尺寸等比缩放：页内模式按宽铺满；嵌入/放映模式按 contain 缩放并居中（避免非 16:9 视口下顶部对齐留黑）
+        function fit() {
+          if (!stage || !canvas) return;
+          var sw = stage.clientWidth, sh = stage.clientHeight;
+          if (sw <= 0) return;
+          var letterbox = document.body.classList.contains('embed') || document.body.classList.contains('showing');
+          var scale = letterbox ? Math.min(sw / LOGIC_W, sh / LOGIC_H) : sw / LOGIC_W;
+          canvas.style.transform = 'scale(' + scale + ')';
+          canvas.style.left = letterbox ? Math.round((sw - LOGIC_W * scale) / 2) + 'px' : '0px';
+          canvas.style.top = letterbox ? Math.round((sh - LOGIC_H * scale) / 2) + 'px' : '0px';
+          if (!letterbox) stage.style.height = Math.round(sw * LOGIC_H / LOGIC_W) + 'px';
+        }
+
+        function elementsHtml(list) {
+          return (list || []).map(function (el) {
+            if (el.type === 'image') {
+              return '<div class="el" style="left:' + (el.x || 0) + 'px;top:' + (el.y || 0) + 'px;width:' + (el.width || 0) + 'px;height:' + (el.height || 0) + 'px;">'
+                + '<img src="' + esc(el.src) + '" alt="" draggable="false"></div>';
+            }
+            var st = el.style || {};
+            return '<div class="el el-text" style="left:' + (el.x || 0) + 'px;top:' + (el.y || 0) + 'px;width:' + (el.width || 0) + 'px;height:' + (el.height || 0) + 'px;'
+              + 'font-size:' + (parseInt(st.fontSize, 10) || 18) + 'px;'
+              + 'font-weight:' + esc(st.fontWeight || 'normal') + ';'
+              + 'text-align:' + esc(st.textAlign || 'left') + ';'
+              + 'color:' + esc(st.color || '#333') + ';">' + esc(el.content) + '</div>';
+          }).join('');
+        }
+
+        function render() {
+          if (!canvas) return;
+          var slide = slides[idx];
+          counter.textContent = slides.length ? ((idx + 1) + ' / ' + slides.length) : '- / -';
+          if (btnPrev) btnPrev.disabled = idx <= 0;
+          if (btnNext) btnNext.disabled = idx >= slides.length - 1;
+          if (!slide) {
+            canvas.innerHTML = '<div class="empty">无幻灯片</div>';
+            canvas.style.background = '#fff';
+            renderThumbs();
+            return;
+          }
+          canvas.style.background = slide.background || '#ffffff';
+          canvas.innerHTML = elementsHtml(slide.elements);
+          renderThumbs();
+        }
+
+        function renderThumbs() {
+          if (!thumbsBox) return;
+          thumbsBox.innerHTML = slides.map(function (s, i) {
+            return '<div class="thumb' + (i === idx ? ' active' : '') + '" data-i="' + i + '">'
+              + '<span class="no">' + (i + 1) + '</span>'
+              + '<div class="mini" style="background:' + esc(s.background || '#fff') + ';">' + elementsHtml(s.elements) + '</div>'
+              + '</div>';
+          }).join('');
+        }
+
+        function go(n) {
+          if (!slides.length) return;
+          var next = Math.max(0, Math.min(slides.length - 1, n));
+          if (next === idx) return;
+          idx = next;
+          render();
+        }
+
+        function setShowing(on) {
+          document.body.classList.toggle('showing', Boolean(on));
+          if (on && stage.requestFullscreen && !document.fullscreenElement) {
+            stage.requestFullscreen().catch(function () { /* 全屏被拒绝时仍以页内放映模式继续 */ });
+          }
+          if (!on && document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(function () { /* 忽略 */ });
+          }
+          setTimeout(fit, 60);
+        }
+
+        if (btnPrev) btnPrev.addEventListener('click', function () { go(idx - 1); });
+        if (btnNext) btnNext.addEventListener('click', function () { go(idx + 1); });
+        if (thumbsBox) thumbsBox.addEventListener('click', function (e) {
+          var t = e.target.closest ? e.target.closest('.thumb') : null;
+          if (t && t.dataset.i != null) go(parseInt(t.dataset.i, 10));
+        });
+        var btnShow = document.getElementById('btnShow');
+        if (btnShow) btnShow.addEventListener('click', function () { setShowing(true); });
+        var btnExit = document.getElementById('btnExitShow');
+        if (btnExit) btnExit.addEventListener('click', function () { setShowing(false); });
+
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(idx + 1); }
+          else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(idx - 1); }
+          else if (e.key === 'Home') go(0);
+          else if (e.key === 'End') go(slides.length - 1);
+          else if (e.key === 'Escape') setShowing(false);
+          else if (e.key === 'f' || e.key === 'F') setShowing(!document.body.classList.contains('showing'));
+        });
+        // 放映时点击画面下一页
+        if (stage) stage.addEventListener('click', function () {
+          if (document.body.classList.contains('showing') || CFG.embed) go(idx + 1);
+        });
+        window.addEventListener('resize', fit);
+        document.addEventListener('fullscreenchange', function () {
+          if (!document.fullscreenElement) document.body.classList.remove('showing');
+          setTimeout(fit, 60);
+        });
+
+        function loadData() {
+          fetch(CFG.dataUrl).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          }).then(function (json) {
+            if (!json || !json.success || !json.data || !json.data.doc) {
+              throw new Error((json && json.error) || '文档数据为空');
+            }
+            var doc = json.data.doc;
+            slides = doc.slides || [];
+            idx = 0;
+            render();
+            fit();
+            if (mask) mask.hidden = true;
+          }).catch(function (e) {
+            fail(e.message || '数据加载失败，请刷新重试');
+          });
+        }
+
+        function boot() {
+          fit();
+          loadData();
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+        else boot();
+
+        // 复制链接（分享页仅在线只读查看，不提供下载）
+        var btnCopy = document.getElementById('btnShareCopy');
+        var embedCode = document.getElementById('shareEmbedCode');
+        if (btnCopy) btnCopy.addEventListener('click', function () {
+          var text = location.origin + <%- JSON.stringify(pageUrl) %>;
+          function ok() {
+            btnCopy.textContent = '✅ 已复制';
+            setTimeout(function () { btnCopy.textContent = '🔗 复制链接'; }, 1600);
+          }
+          function fallback() {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); ok(); } catch (e) { /* 忽略 */ }
+            document.body.removeChild(ta);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(ok, fallback);
+          } else fallback();
+        });
+        if (embedCode) embedCode.addEventListener('focus', function () { embedCode.select(); });
+      })();
+    </script>
+    <% if (!embed) { %><div class="footer wrap-hide">演示文稿分享</div><% } %>
+  <% } else { %>
+    <div class="wrap">
+      <div class="card">
+        <div style="padding:60px 20px;text-align:center;">
+          <div style="font-size:46px;color:#ccc;margin-bottom:14px;">🔒</div>
+          <h2 style="font-size:18px;color:#666;margin-bottom:8px;">内容已下架或链接失效</h2>
+          <p style="font-size:13px;color:#999;">该分享链接不存在、已被停用，或内容已删除</p>
+        </div>
+      </div>
+    </div>
+  <% } %>
+</body>
+</html>

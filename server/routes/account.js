@@ -440,7 +440,7 @@ router.post('/account/comment/:id/delete', isAuthenticated, (req, res) => {
   res.redirect('/account?success=评论已删除');
 });
 
-// 我的分享列表（图片/AI生图/AI对话分享链接管理）
+// 我的分享列表（图片/AI生图/AI对话/在线 Office 分享链接管理）
 router.get('/account/shares', isAuthenticated, (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
@@ -458,13 +458,15 @@ router.get('/account/shares', isAuthenticated, (req, res) => {
   const shares = queryAll(db, `
     SELECT s.*,
       u.nickname AS creator_nickname, u.username AS creator_username,
-      COALESCE(img.title, aiimg.prompt, conv.title, '') AS source_title,
-      COALESCE(img.url, aiimg.image_path, '') AS source_path
+      COALESCE(img.title, aiimg.prompt, conv.title, sp.name, '') AS source_title,
+      COALESCE(img.url, aiimg.image_path, '') AS source_path,
+      sp.doc_type AS source_doc_type
     FROM image_shares s
     LEFT JOIN users u ON u.id = s.created_by
     LEFT JOIN images img ON s.source_type = 'image' AND img.id = s.source_id
     LEFT JOIN ai_image_records aiimg ON s.source_type = 'ai_image' AND aiimg.id = s.source_id
     LEFT JOIN ai_conversations conv ON s.source_type = 'ai_chat' AND conv.id = s.source_id
+    LEFT JOIN spreadsheets sp ON s.source_type = 'spreadsheet' AND sp.id = s.source_id
     ${where}
     ORDER BY s.created_at DESC
     LIMIT ? OFFSET ?`, [userId, pageSize, offset]);

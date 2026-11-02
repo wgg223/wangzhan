@@ -2,6 +2,29 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.9.3 (2026-11-02)
+
+**修复文档/演示文稿分享不可用；导入支持全部 Office 格式**
+
+- 修复分享：`/share/:token` 按 `spreadsheets.doc_type` 分流渲染，文档与演示文稿不再被当表格打开空白；新增 Univer Docs 只读分享页与演示文稿放映分享页；编辑器分享弹窗按 `{success,data}` 响应结构解析，链接可正常复制
+- 导入入口打通：`/office` 与后台「📥 导入文件」弹窗支持 `.xlsx / .xls / .csv / .docx / .pptx / .doc / .ppt`，按扩展名分派创建表格 / 文档 / 演示文稿，导入后直接打开对应编辑器
+- `.docx` → Univer Docs：中文样式名（标题 1–6 / Title / Heading N）映射为 `namedStyleType`，保留加粗/斜体/删除线/颜色/字号、项目符号列表与段落层级；表格降级为逐段文本并在提示中说明
+- `.pptx` → 演示文稿：EMU 坐标按幻灯片实际尺寸等比换算到 960×540 画布，保留字号（磅）、粗体、对齐、文字颜色与页面背景；图片元素跳过并提示
+- 旧版 `.doc / .ppt` 为 OLE 二进制，无纯 JS 解析器：服务器探测到 LibreOffice（`soffice`）时自动先转 `.docx/.pptx` 再导入，未安装时返回可操作的中文提示；`deploy.py` 新增 `DEPLOY_INSTALL_LIBREOFFICE=1` 可选安装
+- 上传上限放开：导入体积由 `OFFICE_IMPORT_MAX_MB`（默认 50，范围 1–200）统一驱动 multer 限制与两个弹窗的前端校验/提示文案；>10MB 文档导入即走 `data/office-docs/` 文件存储（新增 `insertDoc` 统一落库）
+- 2GB 内存保护：解析器需要整包 Buffer，导入改为同一时刻单任务（并发返回「服务器正在导入其他文件，请稍后重试」）
+- 修复中文文件名乱码：busboy 按 latin1 解码 multipart 文件名，新增 `decodeFilename/decodeUploadName` 在落库前转回 UTF-8（同时修正批量导入的表名与描述）
+- 导入弹窗错误提示由 `alert()` 改为弹窗内红色提示条，413 附带 Nginx `client_max_body_size` 排查指引
+
+## v8.9.2 (2026-11-02)
+
+**修复 vendor 资源被边缘缓存钉死（v8.9.1 的新包送不到用户手上）**
+
+- 源站 `public/vendor/univer/univer.min.js` 已换成去重后的 13.3MB 新包，线上仍复现 `Identifier "..." already exists` / `Plugin version mismatch`：实测边缘返回的 `Content-Length: 44837997`、`Last-Modified` 与 `ETag` 都指向旧包，且 `Cache-Control: public, max-age=2678400, immutable`
+- 根因两层：Nginx 静态 location 对 `.js/.css` 统一下发 `expires 30d + immutable`（Cloudflare 按源站头缓存 31 天），而 vendor 引用 URL 没有版本指纹；`immutable` 让浏览器连 revalidate 都跳过
+- 修复：4 个模板的 Univer `index.css` / `univer.min.js` 引用改用既有 `cdn.getUrl()`，自动追加 `?v=<应用版本>`（发版即换缓存键，无需手动刷 CDN；启用 CDN 域名时同时切域名）
+- 修复：Nginx 静态分档——`/vendor/*` 指纹资源 365d immutable，图片/字体维持长缓存，普通 `.js/.css` 改由 Node 以 `no-cache` + ETag 提供（304 协商），与 `server/app.js` 既有策略对齐
+
 ## v8.9.1 (2026-11-02)
 
 **修复在线Office文档编辑器启动崩溃、头像混合内容**

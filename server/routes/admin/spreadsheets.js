@@ -4,7 +4,7 @@
  *   GET    /admin/spreadsheets                 —— 管理列表（统计 + 状态过滤 + 搜索）
  *   GET    /admin/spreadsheets/create          —— 创建表单
  *   POST   /admin/spreadsheets                 —— 创建（Univer 空文档）
- *   POST   /admin/spreadsheets/import          —— 上传 .xlsx/.csv 创建表格
+ *   POST   /admin/spreadsheets/import          —— 上传 Office 文件（表格/文档/演示文稿按扩展名分派）
  *   POST   /admin/spreadsheets/batch-preview   —— 预览 Excel 各 Sheet 结构
  *   POST   /admin/spreadsheets/batch-import    —— 批量导入（每 Sheet 一个表格）
  *   POST   /admin/spreadsheets/batch           —— 批量管理（软删/硬删/恢复/锁定/解锁/公开只读开关）
@@ -28,11 +28,12 @@ const { logActivity } = require('../../config/activity');
 const { createNotification } = require('../community');
 const { createEmptyUniverDoc } = require('../../utils/spreadsheet-migrate');
 const { importBufferToUniverDoc } = require('../../utils/spreadsheet-univer-io');
+const { importOfficeFile, decodeUploadName, SUPPORTED_EXTENSIONS, MAX_IMPORT_BYTES, MAX_IMPORT_MB } = require('../../utils/office-import');
 const docStore = require('../../utils/spreadsheet-doc-store');
 
 const importUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: MAX_IMPORT_BYTES }
 });
 
 // 所有路由需要 spreadsheet.manage 权限
@@ -72,6 +73,7 @@ router.get('/spreadsheets', (req, res) => {
     user: req.session.user,
     sheets,
     filter: { status, q: keyword },
+    importLimits: { maxMb: MAX_IMPORT_MB, accept: SUPPORTED_EXTENSIONS.map(e => '.' + e) },
     settings: res.locals.settings || {}
   });
 });
@@ -118,31 +120,42 @@ router.post('/spreadsheets', (req, res) => {
   res.json({ success: true, data: { id: result.lastInsertRowid, docType: docType }, redirect: '/admin/spreadsheets' });
 });
 
-// ============ 导入（单文件创建） ============
+// ============ 导入（单文件创建，按扩展名分派到表格/文档/演示文稿） ============
 
-router.post('/spreadsheets/import', importUpload.single('file'), (req, res) => {
+router.post('/spreadsheets/import', importUpload.single('file'), decodeUploadName, async (req, res) => {
   const db = req.db;
-  if (!req.file) return res.status(400).json({ success: false, error: '请上传 .xlsx 或 .csv 文件' });
+  if (!req.file) return res.status(400).json({ success: false, error: `请上传 ${SUPPORTED_EXTENSIONS.map(e => '.' + e).join(' / ')} 文件` });
   const docName = String(req.body.name || '').trim().slice(0, 100)
-    || String(req.file.originalname || '').replace(/\.(xlsx|xls|csv)$/i, '').slice(0, 100)
-    || '导入的表格';
+    || String(req.file.originalname || '').replace(/\.[^.]+$/, '').slice(0, 100)
+    || '导入的文档';
+  const description = String(req.body.description || '').trim().slice(0, 500);
   let imported;
   try {
-    imported = importBufferToUniverDoc(req.file.buffer, req.file.originalname, docName);
+    imported = await importOfficeFile(req.file.buffer, req.file.originalname, docName);
   } catch (e) {
     return res.status(400).json({ success: false, error: e.message || '文件解析失败' });
   }
-  const result = db.run(
-    'INSERT INTO spreadsheets (name, description, created_by, doc_data, doc_version) VALUES (?, ?, ?, ?, 1)',
-    [docName, String(req.body.description || '').trim().slice(0, 500), req.session.user.id, JSON.stringify(imported.workbook)]
-  );
+  let docId;
+  try {
+    docId = docStore.insertDoc(db, {
+      name: docName, description, createdBy: req.session.user.id,
+      docType: imported.docType, doc: imported.doc
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message || '文档保存失败' });
+  }
   saveDatabase(db);
+  const typeNames = { spreadsheet: '表格', document: '文档', presentation: '演示文稿' };
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
-    action: 'import', target_type: 'spreadsheet', target_id: result.lastInsertRowid,
-    target_title: docName, detail: `后台导入表格：${docName}（${imported.stats.sheets} 个工作表，${imported.stats.cells} 个单元格）`, ip: req.ip
+    action: 'import', target_type: 'spreadsheet', target_id: docId,
+    target_title: docName, detail: `后台导入${typeNames[imported.docType] || '文档'}：${docName}（${req.file.originalname}）`, ip: req.ip
   });
-  res.json({ success: true, data: { id: result.lastInsertRowid, stats: imported.stats }, redirect: '/admin/spreadsheets' });
+  res.json({
+    success: true,
+    data: { id: docId, docType: imported.docType, stats: imported.stats, warnings: imported.warnings },
+    redirect: '/admin/spreadsheets'
+  });
 });
 
 // ============ 批量导入 ============
@@ -156,7 +169,7 @@ function countSheetCells(sheet) {
 }
 
 /** 预览 Excel 文件中的 Sheet 列表（查询表内文件） */
-router.post('/spreadsheets/batch-preview', importUpload.single('file'), (req, res) => {
+router.post('/spreadsheets/batch-preview', importUpload.single('file'), decodeUploadName, (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, error: '请上传 Excel 文件' });
   let imported;
   try {
@@ -179,7 +192,7 @@ router.post('/spreadsheets/batch-preview', importUpload.single('file'), (req, re
 });
 
 /** 批量导入：多 Sheet Excel 文件，每个 Sheet 创建一个新表格 */
-router.post('/spreadsheets/batch-import', importUpload.single('file'), (req, res) => {
+router.post('/spreadsheets/batch-import', importUpload.single('file'), decodeUploadName, (req, res) => {
   const db = req.db;
   if (!req.file) return res.status(400).json({ success: false, error: '请上传 Excel 文件' });
 

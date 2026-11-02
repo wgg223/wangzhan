@@ -694,53 +694,63 @@
   // ============ 分享 ============
 
   function openShareModal() {
+    var modal = openModal({ title: '🔗 分享文档', body: '<div class="ss-inline-loading">加载分享状态…</div>' });
     csrfFetch(API.share)
-      .then(function (json) {
-        var data = (json.data && json.data.share) || null;
-        renderShareModal(data);
-      })
-      .catch(function (err) { showToast(err.message || '加载分享状态失败', 'error'); });
+      .then(function (json) { renderShareModal(modal, json.data || {}); })
+      .catch(function (err) {
+        modal.body.innerHTML = '<p class="ss-inline-error">' + escapeHtml(err.message || '加载分享状态失败') + '</p>';
+      });
   }
 
-  function renderShareModal(share) {
-    var bodyHtml = '';
-    if (share && share.token) {
-      var link = location.origin + '/share/' + share.token;
-      bodyHtml += '<div class="ss-field"><label>分享链接</label>'
+  // /api/document/:id/share 返回 data = {shared,status,token,url,embedUrl,viewCount,createdAt}
+  function renderShareModal(modal, d) {
+    var bodyHtml;
+    if (d.shared && d.token) {
+      var link = location.origin + (d.url || '/share/' + d.token);
+      var embedUrl = location.origin + (d.embedUrl || ('/share/' + d.token + '/embed'));
+      var embedCode = '<iframe src="' + embedUrl + '" width="100%" height="640" frameborder="0" style="border:1px solid #e0e4ea;border-radius:12px;" loading="lazy" allowfullscreen></iframe>';
+      bodyHtml = (d.status !== 1 ? '<p class="ss-inline-error">分享当前处于停用状态。</p>' : '')
+        + '<div class="ss-share-stats"><b>浏览 ' + (d.viewCount || 0) + '</b>'
+        + (d.createdAt ? '<span>创建于 ' + escapeHtml(fmtTime(d.createdAt)) + '</span>' : '') + '</div>'
+        + '<div class="ss-field"><label>分享链接</label>'
         + '<div class="ss-share-link-row">'
-        + '<input type="text" readonly value="' + escapeHtml(link) + '" id="shareLinkInput">'
-        + '<button class="ss-btn" id="btnCopyShare">复制</button>'
+        + '<input type="text" class="ss-input" readonly value="' + escapeHtml(link) + '" id="shareLinkInput">'
+        + '<button type="button" class="ss-btn" id="btnCopyShare">复制</button>'
+        + '<button type="button" class="ss-btn" id="btnOpenShare">打开</button>'
         + '</div></div>'
-        + '<div class="ss-share-stats">访问次数：<b>' + (share.visit_count || 0) + '</b></div>'
-        + '<button class="ss-btn ss-btn-danger" id="btnCancelShare">取消分享</button>';
+        + '<div class="ss-field"><label>嵌入代码（iframe）</label>'
+        + '<textarea class="ss-input" rows="2" readonly id="shareEmbedCode">' + escapeHtml(embedCode) + '</textarea></div>'
+        + '<p class="ss-hint">获得链接的人无需登录即可在线只读查看，分享页不支持下载。</p>'
+        + '<button type="button" class="ss-btn ss-btn-danger" id="btnCancelShare">停止分享</button>';
     } else {
-      bodyHtml += '<p class="ss-hint">尚未开启分享，开启后所有获得链接的人可查看此文档。</p>'
-        + '<button class="ss-btn ss-btn-primary" id="btnEnableShare">开启分享</button>';
+      bodyHtml = '<p class="ss-hint">尚未开启分享，开启后所有获得链接的人可在线只读查看此文档。</p>'
+        + '<button type="button" class="ss-btn ss-btn-primary" id="btnEnableShare">开启分享</button>';
     }
-    var modal = openModal({ title: '🔗 分享文档', body: bodyHtml });
+    modal.body.innerHTML = bodyHtml;
 
-    if (share && share.token) {
-      var copyBtn = modal.body.querySelector('#btnCopyShare');
-      if (copyBtn) copyBtn.addEventListener('click', function () {
-        var input = modal.body.querySelector('#shareLinkInput');
-        if (input) { copyText(input.value).then(function () { showToast('已复制', 'success'); }); }
+    if (d.shared && d.token) {
+      var link2 = modal.body.querySelector('#shareLinkInput').value;
+      modal.body.querySelector('#btnCopyShare').addEventListener('click', function () {
+        copyText(link2).then(function (ok) { showToast(ok ? '链接已复制' : '复制失败，请手动选择复制', ok ? 'success' : 'error'); });
       });
-      var cancelBtn = modal.body.querySelector('#btnCancelShare');
-      if (cancelBtn) cancelBtn.addEventListener('click', function () {
+      modal.body.querySelector('#btnOpenShare').addEventListener('click', function () {
+        window.open(link2, '_blank', 'noopener');
+      });
+      modal.body.querySelector('#btnCancelShare').addEventListener('click', function () {
         csrfFetch(API.share, { method: 'DELETE' })
-          .then(function () { modal.close(); showToast('已取消分享', 'success'); })
+          .then(function () { showToast('分享已停止', 'success'); renderShareModal(modal, { shared: false }); })
           .catch(function (err) { showToast(err.message || '操作失败', 'error'); });
       });
     } else {
       var enableBtn = modal.body.querySelector('#btnEnableShare');
-      if (enableBtn) enableBtn.addEventListener('click', function () {
+      enableBtn.addEventListener('click', function () {
+        enableBtn.disabled = true;
         csrfFetch(API.share, { method: 'POST', body: JSON.stringify({}) })
           .then(function (json) {
-            modal.close();
             showToast('分享已开启', 'success');
-            openShareModal();
+            renderShareModal(modal, json.data || { shared: false });
           })
-          .catch(function (err) { showToast(err.message || '操作失败', 'error'); });
+          .catch(function (err) { enableBtn.disabled = false; showToast(err.message || '操作失败', 'error'); });
       });
     }
   }

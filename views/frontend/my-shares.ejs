@@ -39,8 +39,16 @@
             <tbody>
               <% shares.forEach(function(s) { %>
                 <%
-                  var typeName = s.source_type === 'image' ? '图片' : (s.source_type === 'ai_image' ? 'AI生图' : 'AI对话');
-                  var typeClass = s.source_type === 'image' ? 'type-image' : (s.source_type === 'ai_image' ? 'type-aiimg' : 'type-aichat');
+                  // 在线 Office（表格/文档/演示文稿）共用 source_type='spreadsheet'，按 doc_type 细分文案
+                  var typeName, typeClass;
+                  if (s.source_type === 'image') { typeName = '图片'; typeClass = 'type-image'; }
+                  else if (s.source_type === 'ai_image') { typeName = 'AI生图'; typeClass = 'type-aiimg'; }
+                  else if (s.source_type === 'spreadsheet') {
+                    typeClass = 'type-aichat';
+                    typeName = s.source_doc_type === 'document' ? '在线文档'
+                      : (s.source_doc_type === 'presentation' ? '演示文稿' : '在线表格');
+                  }
+                  else { typeName = 'AI对话'; typeClass = 'type-aichat'; }
                   var active = s.status === 1;
                   var shareUrl = '/share/' + s.share_token;
                 %>

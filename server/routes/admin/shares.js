@@ -14,16 +14,19 @@ const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 
 // 分享列表查询公共部分（LEFT JOIN 源表取标题/缩略图，JOIN users 取分享人）
+// 在线 Office（表格/文档/演示文稿）共用 source_type='spreadsheet'，需带出 doc_type 才能区分文案
 const SHARE_SELECT = `
   SELECT s.*,
     u.nickname AS creator_nickname, u.username AS creator_username,
-    COALESCE(img.title, aiimg.prompt, conv.title, '') AS source_title,
-    COALESCE(img.url, aiimg.image_path, '') AS source_path
+    COALESCE(img.title, aiimg.prompt, conv.title, sp.name, '') AS source_title,
+    COALESCE(img.url, aiimg.image_path, '') AS source_path,
+    sp.doc_type AS source_doc_type
   FROM image_shares s
   LEFT JOIN users u ON u.id = s.created_by
   LEFT JOIN images img ON s.source_type = 'image' AND img.id = s.source_id
   LEFT JOIN ai_image_records aiimg ON s.source_type = 'ai_image' AND aiimg.id = s.source_id
   LEFT JOIN ai_conversations conv ON s.source_type = 'ai_chat' AND conv.id = s.source_id
+  LEFT JOIN spreadsheets sp ON s.source_type = 'spreadsheet' AND sp.id = s.source_id
 `;
 
 // 从查询串或表单体读取筛选条件，返回 { where: [], params: [] }
@@ -36,10 +39,10 @@ function buildFilters(query) {
 
   if (keyword) {
     const kw = '%' + keyword + '%';
-    where.push("(s.share_token LIKE ? OR u.username LIKE ? OR u.nickname LIKE ? OR COALESCE(img.title, aiimg.prompt, conv.title, '') LIKE ?)");
+    where.push("(s.share_token LIKE ? OR u.username LIKE ? OR u.nickname LIKE ? OR COALESCE(img.title, aiimg.prompt, conv.title, sp.name, '') LIKE ?)");
     params.push(kw, kw, kw, kw);
   }
-  if (sourceType === 'image' || sourceType === 'ai_image' || sourceType === 'ai_chat') {
+  if (sourceType === 'image' || sourceType === 'ai_image' || sourceType === 'ai_chat' || sourceType === 'spreadsheet') {
     where.push('s.source_type = ?');
     params.push(sourceType);
   }
@@ -76,7 +79,8 @@ router.get('/shares', isAuthenticated, hasPermission('shares.manage'), (req, res
     ' LEFT JOIN users u ON u.id = s.created_by' +
     " LEFT JOIN images img ON s.source_type = 'image' AND img.id = s.source_id" +
     " LEFT JOIN ai_image_records aiimg ON s.source_type = 'ai_image' AND aiimg.id = s.source_id" +
-    " LEFT JOIN ai_conversations conv ON s.source_type = 'ai_chat' AND conv.id = s.source_id " +
+    " LEFT JOIN ai_conversations conv ON s.source_type = 'ai_chat' AND conv.id = s.source_id" +
+    " LEFT JOIN spreadsheets sp ON s.source_type = 'spreadsheet' AND sp.id = s.source_id " +
     whereSql, params);
   const total = countRow ? countRow.count : 0;
 

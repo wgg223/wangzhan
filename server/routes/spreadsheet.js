@@ -66,7 +66,8 @@ const { logActivity } = require('../config/activity');
 const { createNotification } = require('./community');
 const { resolveModel, callChatCompletion } = require('../services/ai-chat/provider');
 const { createEmptyUniverDoc } = require('../utils/spreadsheet-migrate');
-const { importBufferToUniverDoc, exportUniverDoc } = require('../utils/spreadsheet-univer-io');
+const { exportUniverDoc } = require('../utils/spreadsheet-univer-io');
+const { importOfficeFile, decodeUploadName, SUPPORTED_EXTENSIONS, MAX_IMPORT_BYTES, MAX_IMPORT_MB } = require('../utils/office-import');
 const docStore = require('../utils/spreadsheet-doc-store');
 const { getClientIp } = require('../utils/client-ip');
 const {
@@ -200,6 +201,7 @@ router.get('/office', isAuthenticated, hasFrontendPermission('spreadsheet.access
     user: req.session.user,
     docs: rows,
     canManage: canManageSpreadsheet(req),
+    importLimits: { maxMb: MAX_IMPORT_MB, accept: SUPPORTED_EXTENSIONS.map(e => '.' + e) },
     settings: res.locals.settings || {}
   });
 });
@@ -430,38 +432,51 @@ router.delete('/api/spreadsheet/:id(\\d+)', isAuthenticated, hasFrontendPermissi
 
 // ============ 导入导出 ============
 
-const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMPORT_BYTES } });
 
-// 上传 .xlsx/.csv 创建新表格
-router.post('/api/spreadsheet/import', isAuthenticated, hasFrontendPermission('spreadsheet.access'), importUpload.single('file'), (req, res) => {
-  const db = req.db;
-  if (!canManageSpreadsheet(req)) {
-    return res.status(403).json({ success: false, error: '您没有创建表格的权限' });
-  }
-  if (!req.file) return res.status(400).json({ success: false, error: '请上传 .xlsx 或 .csv 文件' });
-  const docName = String(req.body.name || '').trim().slice(0, 100)
-    || String(req.file.originalname || '').replace(/\.(xlsx|csv)$/i, '').slice(0, 100)
-    || '导入的表格';
-  let imported;
-  try {
-    imported = importBufferToUniverDoc(req.file.buffer, req.file.originalname, docName);
-  } catch (e) {
-    return res.status(400).json({ success: false, error: e.message || '文件解析失败' });
-  }
-  const result = db.run(
-    'INSERT INTO spreadsheets (name, description, created_by, doc_data, doc_version) VALUES (?, ?, ?, ?, 1)',
-    [docName, String(req.body.description || '').trim().slice(0, 500), req.session.user.id, JSON.stringify(imported.workbook)]
-  );
-  saveDatabase(db);
-  logActivity(db, {
-    user_id: req.session.user.id, username: req.session.user.username,
-    action: 'import', target_type: 'spreadsheet', target_id: result.lastInsertRowid,
-    target_title: docName,
-    detail: `导入 ${req.file.originalname}（${imported.stats.sheets} 个工作表，${imported.stats.cells} 个单元格）`,
-    ip: getClientIp(req)
+// 上传 Office 文件创建新文档（按扩展名分派到表格/文档/演示文稿解析器）
+router.post('/api/spreadsheet/import', isAuthenticated, hasFrontendPermission('spreadsheet.access'),
+  importUpload.single('file'), decodeUploadName, async (req, res) => {
+    const db = req.db;
+    if (!canManageSpreadsheet(req)) {
+      return res.status(403).json({ success: false, error: '您没有创建文档的权限' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: `请上传 ${SUPPORTED_EXTENSIONS.map(e => '.' + e).join(' / ')} 文件` });
+    }
+    const docName = String(req.body.name || '').trim().slice(0, 100)
+    || String(req.file.originalname || '').replace(/\.[^.]+$/, '').slice(0, 100)
+    || '导入的文档';
+    const description = String(req.body.description || '').trim().slice(0, 500);
+    let imported;
+    try {
+      imported = await importOfficeFile(req.file.buffer, req.file.originalname, docName);
+    } catch (e) {
+      return res.status(400).json({ success: false, error: e.message || '文件解析失败' });
+    }
+    let sheetId;
+    try {
+      sheetId = docStore.insertDoc(db, {
+        name: docName, description, createdBy: req.session.user.id,
+        docType: imported.docType, doc: imported.doc
+      });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e.message || '文档保存失败' });
+    }
+    saveDatabase(db);
+    const typeNames = { spreadsheet: '表格', document: '文档', presentation: '演示文稿' };
+    logActivity(db, {
+      user_id: req.session.user.id, username: req.session.user.username,
+      action: 'import', target_type: 'spreadsheet', target_id: sheetId,
+      target_title: docName,
+      detail: `导入 ${req.file.originalname} → ${typeNames[imported.docType] || '文档'}`,
+      ip: getClientIp(req)
+    });
+    res.json({
+      success: true,
+      data: { id: sheetId, docType: imported.docType, stats: imported.stats, warnings: imported.warnings }
+    });
   });
-  res.json({ success: true, data: { id: result.lastInsertRowid, stats: imported.stats } });
-});
 
 // 导出下载
 router.get('/api/spreadsheet/:id(\\d+)/export', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(1), (req, res) => {

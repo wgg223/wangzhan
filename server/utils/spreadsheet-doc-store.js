@@ -266,7 +266,7 @@ function createEmptyDocument(title) {
     body: {
       dataStream: '\r\n',
       sectionBreaks: [{ startIndex: 0 }],
-      paragraphs: [{ startIndex: 0, paragraphStyle: { spacing: { lineSpacing: 360 } } }],
+      paragraphs: [{ startIndex: 0, paragraphStyle: {} }],
       textRuns: [],
     },
     documentStyle: {
@@ -317,6 +317,29 @@ function createEmptyPresentation(title) {
   };
 }
 
+/**
+ * 新建文档并落库（导入/创建共用）
+ * 大文档 JSON 超过阈值时改走文件存储，避免单条 SQLite 记录过大撑爆内存
+ * @param {object} db
+ * @param {{name, description, createdBy, docType, doc}} opts
+ * @returns {number} 新文档 id
+ */
+function insertDoc(db, opts) {
+  const json = JSON.stringify(opts.doc);
+  const result = db.run(
+    'INSERT INTO spreadsheets (name, description, created_by, doc_data, doc_version, doc_type) VALUES (?, ?, ?, ?, 1, ?)',
+    [opts.name, opts.description || '', opts.createdBy, json, opts.docType]
+  );
+  const id = result.lastInsertRowid;
+  const saved = officeDocStore.saveDoc(db, id, json, 1);
+  if (!saved.success) {
+    // 文件写入失败则回滚该行，避免留下无数据的空文档
+    db.run('DELETE FROM spreadsheets WHERE id = ?', [id]);
+    throw new Error(saved.error || '文档保存失败');
+  }
+  return id;
+}
+
 module.exports = {
   PRESENCE_TTL_MS,
   CHANGE_TTL_MS,
@@ -331,6 +354,7 @@ module.exports = {
   reloadDoc,
   createEmptyDocument,
   createEmptyPresentation,
+  insertDoc,
   // 共享内存状态（路由直接读写，保证跨模块一致性）
   docCache,
   presenceMap,

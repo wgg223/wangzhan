@@ -177,5 +177,120 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
   }
+
+  // 导入文件对话框（Office 全格式：按扩展名分派为表格 / 文档 / 演示文稿）
+  var IMPORT_ACCEPT = <%- JSON.stringify((typeof importLimits !== 'undefined' && importLimits && importLimits.accept) ? importLimits.accept : ['.docx', '.doc', '.xlsx', '.xls', '.csv', '.pptx', '.ppt']) %>;
+  var IMPORT_MAX_MB = <%= (typeof importLimits !== 'undefined' && importLimits ? importLimits.maxMb : 50) %>;
+
+  var btnImport = document.getElementById('btnImportDoc');
+  if (btnImport) {
+    btnImport.addEventListener('click', function () {
+      var modalRoot = document.getElementById('sheetModalRoot');
+      if (!modalRoot) return;
+      var picked = null;
+      var backdrop = document.createElement('div');
+      backdrop.className = 'ss-modal-backdrop';
+      backdrop.innerHTML = '<div class="ss-modal">'
+        + '<div class="ss-modal-head"><h3>📥 导入文件</h3><button type="button" class="ss-modal-close">&times;</button></div>'
+        + '<div class="ss-modal-body">'
+        + '<div class="ss-field"><label>选择文件（' + IMPORT_ACCEPT.join(' / ') + '，最大 ' + IMPORT_MAX_MB + 'MB）</label>'
+        + '<div id="importDrop" style="padding:18px;border:2px dashed #cbd5e1;border-radius:8px;text-align:center;cursor:pointer;font-size:14px;color:#475569">点击选择文件，或拖拽到此处</div>'
+        + '<input type="file" id="importFileInput" accept="' + IMPORT_ACCEPT.join(',') + '" hidden></div>'
+        + '<div class="ss-field"><label>文档名称（默认取文件名）</label>'
+        + '<input type="text" id="importDocName" maxlength="100" placeholder="留空则使用文件名" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:14px;box-sizing:border-box"></div>'
+        + '<p style="font-size:13px;color:#64748b;margin:8px 0 0">导入后按扩展名自动创建表格 / 文档 / 演示文稿；保留文字与结构，图片暂不支持。旧版 .doc/.ppt 需服务器安装 LibreOffice。</p>'
+        + '<div id="importWarn" style="display:none;margin-top:8px;padding:8px;border-radius:6px;background:#fffbeb;color:#92400e;font-size:13px"></div>'
+        + '</div>'
+        + '<div class="ss-modal-actions">'
+        + '<button type="button" class="ss-btn" id="btnCancelImport">取消</button>'
+        + '<button type="button" class="ss-btn ss-btn-primary" id="btnConfirmImport">导入</button>'
+        + '</div></div>';
+      modalRoot.appendChild(backdrop);
+
+      var close = function () { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); };
+      var drop = backdrop.querySelector('#importDrop');
+      var fileInput = backdrop.querySelector('#importFileInput');
+      var warnBox = backdrop.querySelector('#importWarn');
+      var confirmBtn = backdrop.querySelector('#btnConfirmImport');
+
+      backdrop.querySelector('.ss-modal-close').addEventListener('click', close);
+      backdrop.querySelector('#btnCancelImport').addEventListener('click', close);
+      backdrop.addEventListener('mousedown', function (e) { if (e.target === backdrop) close(); });
+      drop.addEventListener('click', function () { fileInput.click(); });
+      fileInput.addEventListener('change', function () { setFile(fileInput.files[0]); });
+      drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.style.borderColor = '#4338ca'; });
+      drop.addEventListener('dragleave', function () { drop.style.borderColor = '#cbd5e1'; });
+      drop.addEventListener('drop', function (e) {
+        e.preventDefault();
+        drop.style.borderColor = '#cbd5e1';
+        setFile(e.dataTransfer.files[0]);
+      });
+
+      function showMsg(text, isError) {
+        warnBox.style.display = '';
+        warnBox.style.background = isError ? '#fef2f2' : '#fffbeb';
+        warnBox.style.color = isError ? '#b91c1c' : '#92400e';
+        warnBox.textContent = text;
+      }
+
+      function setFile(file) {
+        if (!file) return;
+        var ext = (file.name || '').split('.').pop().toLowerCase();
+        if (IMPORT_ACCEPT.indexOf('.' + ext) === -1) {
+          showMsg('仅支持 ' + IMPORT_ACCEPT.join(' / ') + ' 文件', true);
+          return;
+        }
+        if (file.size > IMPORT_MAX_MB * 1024 * 1024) {
+          showMsg('文件超过 ' + IMPORT_MAX_MB + 'MB 限制，请拆分后再导入', true);
+          return;
+        }
+        picked = file;
+        drop.textContent = '已选择：' + file.name + '（' + (file.size / 1024 / 1024).toFixed(2) + ' MB）';
+      }
+
+      confirmBtn.addEventListener('click', function () {
+        if (!picked) { showMsg('请先选择文件', true); return; }
+        var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+        var formData = new FormData();
+        formData.append('file', picked);
+        var nameVal = backdrop.querySelector('#importDocName').value.trim();
+        if (nameVal) formData.append('name', nameVal);
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '导入中…';
+        fetch('/api/spreadsheet/import', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': csrf, 'X-Requested-With': 'XMLHttpRequest' },
+          credentials: 'same-origin',
+          body: formData
+        }).then(function (res) {
+          if (res.status === 413) {
+            throw new Error('文件过大，服务器拒绝接收（413）。若使用 Nginx 反向代理，请确认 client_max_body_size 已放大');
+          }
+          return res.json();
+        }).then(function (json) {
+          if (json.success && json.data && json.data.id) {
+            var warns = json.data.warnings || [];
+            if (warns.length) {
+              // 有提示（如忽略了图片）时先展示结果，由用户确认后再打开文档
+              showMsg('导入成功：' + warns.join('；'), false);
+              confirmBtn.disabled = false;
+              confirmBtn.textContent = '打开文档';
+              confirmBtn.onclick = function () { window.location.href = '/office/' + json.data.id; };
+            } else {
+              window.location.href = '/office/' + json.data.id;
+            }
+          } else {
+            showMsg(json.error || '导入失败', true);
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = '导入';
+          }
+        }).catch(function (err) {
+          showMsg('导入失败：' + err.message, true);
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = '导入';
+        });
+      });
+    });
+  }
 });
 </script>

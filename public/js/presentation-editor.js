@@ -48,6 +48,24 @@
     for (var i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) | 0;
     return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
   }
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
   function debounce(fn, ms) {
     var t = null;
     return function () {
@@ -383,30 +401,62 @@
   // ============ 分享 & 权限 ============
 
   function openShareModal() {
+    var modal = openModal({ title: '🔗 分享演示文稿', body: '<div class="ss-inline-loading">加载分享状态…</div>' });
     csrfFetch(API.share).then(function (json) {
-      var share = (json.data && json.data.share) || null;
-      var bodyHtml = '';
-      if (share && share.token) {
-        var link = location.origin + '/share/' + share.token;
-        bodyHtml = '<div class="ss-field"><label>分享链接</label><div class="ss-share-link-row"><input type="text" readonly value="' + escapeHtml(link) + '" id="shareLinkInput"><button class="ss-btn" id="btnCopyShare">复制</button></div></div><button class="ss-btn ss-btn-danger" id="btnCancelShare">取消分享</button>';
-      } else {
-        bodyHtml = '<p class="ss-hint">尚未开启分享</p><button class="ss-btn ss-btn-primary" id="btnEnableShare">开启分享</button>';
-      }
-      var modal = openModal({ title: '🔗 分享演示文稿', body: bodyHtml });
-      if (share && share.token) {
-        modal.body.querySelector('#btnCopyShare').addEventListener('click', function () {
-          var input = modal.body.querySelector('#shareLinkInput');
-          if (input) { navigator.clipboard.writeText(input.value).then(function () { showToast('已复制', 'success'); }); }
-        });
-        modal.body.querySelector('#btnCancelShare').addEventListener('click', function () {
-          csrfFetch(API.share, { method: 'DELETE' }).then(function () { modal.close(); showToast('已取消分享', 'success'); });
-        });
-      } else {
-        modal.body.querySelector('#btnEnableShare').addEventListener('click', function () {
-          csrfFetch(API.share, { method: 'POST', body: JSON.stringify({}) }).then(function () { modal.close(); showToast('分享已开启', 'success'); openShareModal(); });
-        });
-      }
+      renderShareModal(modal, json.data || {});
+    }).catch(function (err) {
+      modal.body.innerHTML = '<p class="ss-inline-error">' + escapeHtml(err.message || '加载分享状态失败') + '</p>';
     });
+  }
+
+  // /api/presentation/:id/share 返回 data = {shared,status,token,url,embedUrl,viewCount,createdAt}
+  function renderShareModal(modal, d) {
+    var bodyHtml;
+    if (d.shared && d.token) {
+      var link = location.origin + (d.url || '/share/' + d.token);
+      var embedUrl = location.origin + (d.embedUrl || ('/share/' + d.token + '/embed'));
+      var embedCode = '<iframe src="' + embedUrl + '" width="100%" height="600" frameborder="0" style="border:1px solid #e0e4ea;border-radius:12px;" loading="lazy" allowfullscreen></iframe>';
+      bodyHtml = (d.status !== 1 ? '<p class="ss-inline-error">分享当前处于停用状态。</p>' : '')
+        + '<div class="ss-share-stats"><b>浏览 ' + (d.viewCount || 0) + '</b>'
+        + (d.createdAt ? '<span>创建于 ' + escapeHtml(fmtTime(d.createdAt)) + '</span>' : '') + '</div>'
+        + '<div class="ss-field"><label>分享链接</label><div class="ss-share-link-row">'
+        + '<input type="text" class="ss-input" readonly value="' + escapeHtml(link) + '" id="shareLinkInput">'
+        + '<button type="button" class="ss-btn" id="btnCopyShare">复制</button>'
+        + '<button type="button" class="ss-btn" id="btnOpenShare">打开</button></div></div>'
+        + '<div class="ss-field"><label>嵌入代码（iframe）</label>'
+        + '<textarea class="ss-input" rows="2" readonly id="shareEmbedCode">' + escapeHtml(embedCode) + '</textarea></div>'
+        + '<p class="ss-hint">获得链接的人无需登录即可在线放映，分享页不支持下载。</p>'
+        + '<button type="button" class="ss-btn ss-btn-danger" id="btnCancelShare">停止分享</button>';
+    } else {
+      bodyHtml = '<p class="ss-hint">尚未开启分享，开启后所有获得链接的人可在线放映此演示文稿。</p>'
+        + '<button type="button" class="ss-btn ss-btn-primary" id="btnEnableShare">开启分享</button>';
+    }
+    modal.body.innerHTML = bodyHtml;
+
+    if (d.shared && d.token) {
+      var link2 = modal.body.querySelector('#shareLinkInput').value;
+      modal.body.querySelector('#btnCopyShare').addEventListener('click', function () {
+        copyText(link2).then(function (ok) { showToast(ok ? '链接已复制' : '复制失败，请手动选择复制', ok ? 'success' : 'error'); });
+      });
+      modal.body.querySelector('#btnOpenShare').addEventListener('click', function () {
+        window.open(link2, '_blank', 'noopener');
+      });
+      modal.body.querySelector('#btnCancelShare').addEventListener('click', function () {
+        csrfFetch(API.share, { method: 'DELETE' }).then(function () {
+          showToast('分享已停止', 'success');
+          renderShareModal(modal, { shared: false });
+        }).catch(function (err) { showToast(err.message || '操作失败', 'error'); });
+      });
+    } else {
+      var enableBtn = modal.body.querySelector('#btnEnableShare');
+      enableBtn.addEventListener('click', function () {
+        enableBtn.disabled = true;
+        csrfFetch(API.share, { method: 'POST', body: JSON.stringify({}) }).then(function (json) {
+          showToast('分享已开启', 'success');
+          renderShareModal(modal, json.data || { shared: false });
+        }).catch(function (err) { enableBtn.disabled = false; showToast(err.message || '操作失败', 'error'); });
+      });
+    }
   }
 
   function openPermModal() {

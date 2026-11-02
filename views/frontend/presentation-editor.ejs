@@ -9,7 +9,7 @@
   <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
   <link rel="stylesheet" href="/css/fonts.css">
   <script src="/js/font-switcher.js"></script>
-  <link rel="stylesheet" href="/vendor/univer/index.css">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/univer/index.css') : '/vendor/univer/index.css' %>">
   <link rel="stylesheet" href="/css/spreadsheet-editor.css">
   <link rel="stylesheet" href="/css/anime-theme.css">
   <% if (permLevel === 1) { %>
