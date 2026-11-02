@@ -1,17 +1,17 @@
 <%# ===== 页面模板：admin/spreadsheets.ejs =====%>
-<%# 说明：后台在线表格管理列表页（Univer 模式） %>
+<%# 说明：后台在线Office管理列表页（文档/表格/演示文稿） %>
 <div class="admin-page-header">
-  <h2>📊 在线表格管理</h2>
+  <h2>📂 在线Office管理</h2>
   <div style="display:flex;gap:10px;">
     <button class="btn btn-outline" onclick="openBatchImport()">📥 批量导入Excel</button>
-    <a href="/admin/spreadsheets/create" class="btn btn-primary">➕ 创建表格</a>
+    <a href="/admin/spreadsheets/create" class="btn btn-primary">➕ 创建文档</a>
   </div>
 </div>
 
 <div class="admin-card">
   <% if (sheets.length === 0) { %>
   <div class="empty-state">
-    <p>暂无表格，点击右上角"创建表格"或"批量导入Excel"开始</p>
+    <p>暂无文档，点击右上角"创建文档"或"批量导入Excel"开始</p>
   </div>
   <% } else { %>
   <!-- 批量管理栏 -->
@@ -21,7 +21,7 @@
     </label>
     <span id="batchSelectedInfo" style="font-size:13px;color:#666;">已选 0 个</span>
     <span style="flex:1;"></span>
-    <button class="btn btn-outline" onclick="batchAction('restore')" title="恢复软删除的表格">♻️ 批量恢复</button>
+    <button class="btn btn-outline" onclick="batchAction('restore')" title="恢复软删除的文档">♻️ 批量恢复</button>
     <button class="btn btn-outline" onclick="batchAction('lock')" title="锁定后禁止在线编辑">🔒 批量锁定</button>
     <button class="btn btn-outline" onclick="batchAction('unlock')" title="解除锁定">🔓 批量解锁</button>
     <button class="btn btn-outline" onclick="batchAction('public-read')" title="开启后所有登录用户可查看（只读）">🌐 公开只读</button>
@@ -34,7 +34,8 @@
       <tr>
         <th style="width:36px;"></th>
         <th>ID</th>
-        <th>表格名称</th>
+        <th>类型</th>
+        <th>名称</th>
         <th>描述</th>
         <th>创建者</th>
         <th>创建时间</th>
@@ -44,9 +45,13 @@
     </thead>
     <tbody>
       <% sheets.forEach(function(sheet) { %>
+      <% var docType = sheet.doc_type || 'spreadsheet'; %>
+      <% var typeIcon = docType === 'document' ? '📄' : docType === 'presentation' ? '📽️' : '📊'; %>
+      <% var typeName = docType === 'document' ? '文档' : docType === 'presentation' ? '演示文稿' : '表格'; %>
       <tr>
         <td><input type="checkbox" class="sheet-row-check" value="<%= sheet.id %>" onchange="updateBatchBar()"></td>
         <td><%= sheet.id %></td>
+        <td><span title="<%= typeName %>"><%= typeIcon %></span></td>
         <td><strong><%= sheet.name %></strong></td>
         <td><%= sheet.description || '-' %></td>
         <td><%= sheet.creator_name || '-' %></td>
@@ -63,7 +68,7 @@
           <% } %>
         </td>
         <td class="table-actions">
-          <a href="/spreadsheet/<%= sheet.id %>" class="action-link" target="_blank">打开</a>
+          <a href="/office/<%= sheet.id %>" class="action-link" target="_blank">打开</a>
           <a href="/admin/spreadsheets/<%= sheet.id %>/edit" class="action-link">编辑</a>
           <button class="action-link" onclick="openSheetPerms(<%= sheet.id %>)">权限</button>
           <button class="action-link danger" onclick="deleteSheet(<%= sheet.id %>, '<%= sheet.name.replace(/'/g, "\\'") %>')">删除</button>

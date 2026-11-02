@@ -1082,6 +1082,26 @@ function createTables(db) {
     if (existingCols.indexOf('is_public_read') === -1) {
       db.run(`ALTER TABLE spreadsheets ADD COLUMN is_public_read INTEGER DEFAULT 0`);
     }
+    // 文档类型：spreadsheet（表格）、document（文档）、presentation（演示文稿）
+    if (existingCols.indexOf('doc_type') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_type TEXT DEFAULT 'spreadsheet'`);
+    }
+    // 文件存储路径（大文档使用文件系统存储，>10MB 自动迁移到文件）
+    if (existingCols.indexOf('doc_file') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_file TEXT DEFAULT ''`);
+    }
+    // 文档子类型/模板（如 document:blank/richtext, presentation:blank/16x9 等）
+    if (existingCols.indexOf('doc_template') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_template TEXT DEFAULT 'blank'`);
+    }
+    // 幻灯片数量（仅 presentation 类型使用）
+    if (existingCols.indexOf('slide_count') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN slide_count INTEGER DEFAULT 0`);
+    }
+    // 文档页数/字数统计
+    if (existingCols.indexOf('word_count') === -1) {
+      db.run(`ALTER TABLE spreadsheets ADD COLUMN word_count INTEGER DEFAULT 0`);
+    }
   } catch (e) {
     console.error('迁移 spreadsheets 表字段失败:', e.message);
   }

@@ -1,0 +1,121 @@
+<%# ===== 页面模板：frontend/presentation-editor.ejs =====%>
+<%# 说明：演示文稿编辑器页（独立布局，layout:false）：复用 spreadsheet-editor.css 的 UI 组件，交互见 public/js/presentation-editor.js %>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= doc.name %> - 演示文稿</title>
+  <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <script src="/js/font-switcher.js"></script>
+  <link rel="stylesheet" href="/vendor/univer/index.css">
+  <link rel="stylesheet" href="/css/spreadsheet-editor.css">
+  <link rel="stylesheet" href="/css/anime-theme.css">
+  <% if (permLevel === 1) { %>
+  <link rel="stylesheet" href="/css/ss-content-protect.css">
+  <% } %>
+</head>
+<body>
+  <!-- 应用栏 -->
+  <header class="ss-appbar">
+    <div class="ss-appbar-left">
+      <a href="/office" class="ss-back-btn" title="返回列表">←</a>
+      <div class="ss-title-block">
+        <h1 id="ssDocName" class="ss-doc-name" title="<%= doc.description || '' %>"><%= doc.name %></h1>
+        <div class="ss-subinfo">
+          <span id="ssSaveStatus" class="ss-save-status">加载中…</span>
+          <span class="ss-meta">v<%= doc.doc_version || 0 %></span>
+          <span class="ss-badge" style="background:#fff7ed;color:#c2410c">📽️ 演示文稿</span>
+          <% if (doc.is_locked) { %><span class="ss-badge ss-badge-locked">🔒 已锁定</span><% } %>
+          <% if (doc.is_public_read) { %><span class="ss-badge ss-badge-public">🌐 公开只读</span><% } %>
+          <% if (permLevel >= 3) { %><span class="ss-badge ss-badge-edit">可编辑</span><% } else if (permLevel >= 2) { %><span class="ss-badge ss-badge-comment">可评论</span><% } else { %><span class="ss-badge ss-badge-view">👁️ 只读</span><% } %>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-appbar-center" id="ssPresenceBar" title="在线协作者"></div>
+
+    <div class="ss-appbar-right">
+      <button type="button" class="ss-btn" id="btnSsSave" hidden>💾 保存</button>
+      <button type="button" class="ss-btn" id="btnSsVersions" title="历史版本">🕘 版本</button>
+      <% if (canManage) { %>
+      <button type="button" class="ss-btn" id="btnSsShare" title="分享 / 嵌入">🔗 分享</button>
+      <button type="button" class="ss-btn" id="btnSsPerms" title="文档权限管理">🔐 权限</button>
+      <% } else if (permLevel === 1) { %>
+      <button type="button" class="ss-btn" id="btnSsApplyPerm" title="申请更高权限">🔓 申请权限</button>
+      <% } %>
+      <button type="button" class="ss-btn" id="btnSsExport" title="导出演示文稿">⬇️ 导出</button>
+      <div class="ss-user-chip">
+        <img src="<%= user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="ss-user-avatar">
+        <span class="ss-user-name"><%= user.nickname || user.username %></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 演示文稿编辑/预览区域 -->
+  <main class="ss-main" style="display:flex;flex-direction:column;overflow:hidden">
+    <!-- 幻灯片缩略图导航栏 -->
+    <div id="pptSlideNav" style="display:flex;gap:8px;padding:8px 16px;overflow-x:auto;background:#f1f5f9;border-bottom:1px solid #e2e8f0;flex-shrink:0"></div>
+    <!-- 幻灯片编辑区 -->
+    <div id="pptEditorArea" style="flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#e2e8f0">
+      <div id="pptSlideContainer" style="width:960px;height:540px;background:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.15);position:relative"></div>
+    </div>
+    <div class="ss-loading-mask" id="ssLoadingMask">
+      <div class="ss-loading-box">
+        <div class="ss-spinner"></div>
+        <p>正在加载演示文稿…</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- 面板挂载点 -->
+  <div id="ssModalRoot"></div>
+  <div id="ssToastRoot"></div>
+
+  <script>
+    window.__SHEET__ = {
+      sheetId: <%= doc.id %>,
+      docType: 'presentation',
+      name: <%- JSON.stringify(doc.name || '').replace(/</g, '\\u003c') %>,
+      description: <%- JSON.stringify(doc.description || '').replace(/</g, '\\u003c') %>,
+      version: <%= doc.doc_version || 0 %>,
+      isLocked: <%= doc.is_locked ? 'true' : 'false' %>,
+      isPublicRead: <%= doc.is_public_read ? 'true' : 'false' %>,
+      permLevel: <%= permLevel %>,
+      canEdit: <%= canEdit ? 'true' : 'false' %>,
+      canManage: <%= canManage ? 'true' : 'false' %>,
+      user: <%- JSON.stringify({ id: user.id, username: user.username, nickname: user.nickname || user.username, avatar: user.avatar || '' }).replace(/</g, '\\u003c') %>,
+      csrf: (document.querySelector('meta[name="csrf-token"]') || {}).content || '',
+      api: {
+        doc: '/api/spreadsheet/<%= doc.id %>/doc',
+        meta: '/api/spreadsheet/<%= doc.id %>/meta',
+        export: '/api/spreadsheet/<%= doc.id %>/export',
+        versions: '/api/spreadsheet/<%= doc.id %>/versions',
+        presence: '/api/spreadsheet/<%= doc.id %>/presence',
+        changes: '/api/spreadsheet/<%= doc.id %>/changes',
+        lock: '/api/spreadsheet/<%= doc.id %>/lock',
+        publicRead: '/api/spreadsheet/<%= doc.id %>/public-read',
+        share: '/api/spreadsheet/<%= doc.id %>/share',
+        permissions: '/api/spreadsheet/<%= doc.id %>/permissions',
+        myPerm: '/api/spreadsheet/<%= doc.id %>/permission/my',
+        revokePerm: '/api/spreadsheet/<%= doc.id %>/permission',
+        applications: '/api/spreadsheet/<%= doc.id %>/permission/applications',
+        approve: '/api/spreadsheet/<%= doc.id %>/permission/approve',
+        apply: '/api/spreadsheet/<%= doc.id %>/permission/apply',
+        users: '/api/spreadsheet/<%= doc.id %>/users'
+      }
+    };
+  </script>
+  <% if (permLevel === 1) { %>
+  <script>
+    window.__SS_PROTECT__ = {
+      watermark: <%- JSON.stringify((user.nickname || user.username) + ' #' + user.id + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')).replace(/</g, '\\u003c') %>,
+      tip: '只读内容受保护：禁止复制、截图与导出'
+    };
+  </script>
+  <script src="/js/ss-content-protect.js" defer></script>
+  <% } %>
+  <script src="/js/presentation-editor.js?v=20261102" defer></script>
+</body>
+</html>

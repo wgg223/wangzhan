@@ -1,0 +1,139 @@
+<%# ===== 页面模板：frontend/document-editor.ejs =====%>
+<%# 说明：Univer 在线文档编辑器页（独立布局，layout:false）：复用 spreadsheet-editor.css 的 UI 组件，交互见 public/js/document-editor.js %>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= doc.name %> - 在线文档</title>
+  <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <script src="/js/font-switcher.js"></script>
+  <link rel="stylesheet" href="/vendor/univer/index.css">
+  <link rel="stylesheet" href="/css/spreadsheet-editor.css">
+  <link rel="stylesheet" href="/css/anime-theme.css">
+  <% if (permLevel === 1) { %>
+  <link rel="stylesheet" href="/css/ss-content-protect.css">
+  <% } %>
+</head>
+<body>
+  <!-- 应用栏 -->
+  <header class="ss-appbar">
+    <div class="ss-appbar-left">
+      <a href="/office" class="ss-back-btn" title="返回列表">←</a>
+      <div class="ss-title-block">
+        <h1 id="ssDocName" class="ss-doc-name" title="<%= doc.description || '' %>"><%= doc.name %></h1>
+        <div class="ss-subinfo">
+          <span id="ssSaveStatus" class="ss-save-status">加载中…</span>
+          <span class="ss-meta">v<%= doc.doc_version || 0 %></span>
+          <span class="ss-badge" style="background:#f0f4ff;color:#4338ca">📄 文档</span>
+          <% if (doc.is_locked) { %><span class="ss-badge ss-badge-locked" title="文档已被锁定，禁止编辑">🔒 已锁定</span><% } %>
+          <% if (doc.is_public_read) { %><span class="ss-badge ss-badge-public" title="公开只读：所有登录用户可查看">🌐 公开只读</span><% } %>
+          <% if (permLevel >= 3) { %><span class="ss-badge ss-badge-edit">可编辑</span><% } else if (permLevel >= 2) { %><span class="ss-badge ss-badge-comment">可评论</span><% } else { %><span class="ss-badge ss-badge-view" title="只读查看">👁️ 只读</span><% } %>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss-appbar-center" id="ssPresenceBar" title="在线协作者"></div>
+
+    <div class="ss-appbar-right">
+      <button type="button" class="ss-btn" id="btnSsSave" hidden>💾 保存</button>
+      <button type="button" class="ss-btn" id="btnSsComments" title="批注 / 评论">💬 批注<span class="ss-btn-badge" id="ssCommentCount" hidden>0</span></button>
+      <button type="button" class="ss-btn" id="btnSsVersions" title="历史版本">🕘 版本</button>
+      <% if (canManage) { %>
+      <button type="button" class="ss-btn" id="btnSsShare" title="分享 / 嵌入">🔗 分享</button>
+      <button type="button" class="ss-btn" id="btnSsPerms" title="文档权限管理">🔐 权限</button>
+      <% } else if (permLevel === 1) { %>
+      <button type="button" class="ss-btn" id="btnSsApplyPerm" title="申请更高权限">🔓 申请权限</button>
+      <% } %>
+      <button type="button" class="ss-btn" id="btnSsAi" title="AI 助手：润色 / 续写 / 翻译 / 总结">✨ AI</button>
+      <button type="button" class="ss-btn" id="btnSsExport" title="导出文档">⬇️ 导出</button>
+      <div class="ss-user-chip">
+        <img src="<%= user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="ss-user-avatar">
+        <span class="ss-user-name"><%= user.nickname || user.username %></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Univer Docs 编辑器容器 -->
+  <main class="ss-main">
+    <div id="univer-container"></div>
+    <div class="ss-loading-mask" id="ssLoadingMask">
+      <div class="ss-loading-box">
+        <div class="ss-spinner"></div>
+        <p>正在加载文档…</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- 批注侧栏 -->
+  <aside class="ss-comment-panel" id="ssCommentPanel" hidden>
+    <div class="ss-comment-panel-head">
+      <h3>💬 批注与评论</h3>
+      <button type="button" class="ss-panel-close" id="ssCommentClose">&times;</button>
+    </div>
+    <div class="ss-comment-list" id="ssCommentList"></div>
+    <div class="ss-comment-form" id="ssCommentForm">
+      <input type="text" id="ssCommentInput" class="ss-input" data-ss-copy-ok placeholder="发表评论，@用户 可提醒…" maxlength="1000">
+      <button type="button" class="ss-btn ss-btn-primary" id="ssCommentSend">发送</button>
+    </div>
+  </aside>
+
+  <!-- 面板 / 对话框 / 轻提示挂载点 -->
+  <div id="ssModalRoot"></div>
+  <div id="ssToastRoot"></div>
+
+  <script>
+    window.__SHEET__ = {
+      sheetId: <%= doc.id %>,
+      docType: 'document',
+      name: <%- JSON.stringify(doc.name || '').replace(/</g, '\\u003c') %>,
+      description: <%- JSON.stringify(doc.description || '').replace(/</g, '\\u003c') %>,
+      version: <%= doc.doc_version || 0 %>,
+      isLocked: <%= doc.is_locked ? 'true' : 'false' %>,
+      isPublicRead: <%= doc.is_public_read ? 'true' : 'false' %>,
+      permLevel: <%= permLevel %>,
+      canEdit: <%= canEdit ? 'true' : 'false' %>,
+      canManage: <%= canManage ? 'true' : 'false' %>,
+      user: <%- JSON.stringify({ id: user.id, username: user.username, nickname: user.nickname || user.username, avatar: user.avatar || '' }).replace(/</g, '\\u003c') %>,
+      csrf: (document.querySelector('meta[name="csrf-token"]') || {}).content || '',
+      api: {
+        doc: '/api/spreadsheet/<%= doc.id %>/doc',
+        meta: '/api/spreadsheet/<%= doc.id %>/meta',
+        export: '/api/spreadsheet/<%= doc.id %>/export',
+        versions: '/api/spreadsheet/<%= doc.id %>/versions',
+        comments: '/api/spreadsheet/<%= doc.id %>/comments',
+        presence: '/api/spreadsheet/<%= doc.id %>/presence',
+        changes: '/api/spreadsheet/<%= doc.id %>/changes',
+        lock: '/api/spreadsheet/<%= doc.id %>/lock',
+        publicRead: '/api/spreadsheet/<%= doc.id %>/public-read',
+        share: '/api/spreadsheet/<%= doc.id %>/share',
+        permissions: '/api/spreadsheet/<%= doc.id %>/permissions',
+        myPerm: '/api/spreadsheet/<%= doc.id %>/permission/my',
+        revokePerm: '/api/spreadsheet/<%= doc.id %>/permission',
+        applications: '/api/spreadsheet/<%= doc.id %>/permission/applications',
+        approve: '/api/spreadsheet/<%= doc.id %>/permission/approve',
+        apply: '/api/spreadsheet/<%= doc.id %>/permission/apply',
+        users: '/api/spreadsheet/<%= doc.id %>/users',
+        ai: {
+          formula: '/api/spreadsheet/<%= doc.id %>/ai/formula',
+          generate: '/api/spreadsheet/<%= doc.id %>/ai/generate',
+          analyze: '/api/spreadsheet/<%= doc.id %>/ai/analyze',
+          chart: '/api/spreadsheet/<%= doc.id %>/ai/chart'
+        }
+      }
+    };
+  </script>
+  <script src="/vendor/univer/univer.min.js"></script>
+  <% if (permLevel === 1) { %>
+  <script>
+    window.__SS_PROTECT__ = {
+      watermark: <%- JSON.stringify((user.nickname || user.username) + ' #' + user.id + (typeof clientIp !== 'undefined' && clientIp ? ' · ' + clientIp : '')).replace(/</g, '\\u003c') %>,
+      tip: '只读内容受保护：禁止复制、截图与导出，如需更高权限请点击「申请权限」'
+    };
+  </script>
+  <script src="/js/ss-content-protect.js" defer></script>
+  <% } %>
+  <script src="/js/document-editor.js?v=20261102" defer></script>
+</body>
+</html>

@@ -49,7 +49,7 @@ router.get('/spreadsheets', (req, res) => {
   const status = ['active', 'deleted', 'all'].includes(req.query.status) ? req.query.status : 'all';
   const keyword = String(req.query.q || '').trim();
 
-  let sql = `SELECT s.id, s.name, s.description, s.status, s.doc_version, s.is_luckysheet, s.is_locked, s.is_public_read,
+  let sql = `SELECT s.id, s.name, s.description, s.status, s.doc_version, s.doc_type, s.is_luckysheet, s.is_locked, s.is_public_read,
     s.created_by, s.created_at, s.updated_at, u.username AS creator_name,
     LENGTH(s.doc_data) AS doc_size,
     (SELECT COUNT(*) FROM spreadsheet_versions v WHERE v.spreadsheet_id = s.id) AS version_count,
@@ -89,20 +89,33 @@ router.get('/spreadsheets/create', (req, res) => {
 router.post('/spreadsheets', (req, res) => {
   const db = req.db;
   const name = String(req.body.name || '').trim().slice(0, 100);
-  if (!name) return res.status(400).json({ success: false, error: '表格名称不能为空' });
+  if (!name) return res.status(400).json({ success: false, error: '文档名称不能为空' });
   const description = String(req.body.description || '').trim().slice(0, 500);
-  const doc = createEmptyUniverDoc(name);
+  const docType = String(req.body.docType || 'spreadsheet').trim();
+  const validTypes = ['spreadsheet', 'document', 'presentation'];
+  if (!validTypes.includes(docType)) return res.status(400).json({ success: false, error: '无效的文档类型' });
+
+  let doc;
+  if (docType === 'document') {
+    doc = docStore.createEmptyDocument(name);
+  } else if (docType === 'presentation') {
+    doc = docStore.createEmptyPresentation(name);
+  } else {
+    doc = createEmptyUniverDoc(name);
+  }
+
   const result = db.run(
-    'INSERT INTO spreadsheets (name, description, created_by, doc_data, doc_version) VALUES (?, ?, ?, ?, 1)',
-    [name, description, req.session.user.id, JSON.stringify(doc)]
+    'INSERT INTO spreadsheets (name, description, created_by, doc_data, doc_version, doc_type) VALUES (?, ?, ?, ?, 1, ?)',
+    [name, description, req.session.user.id, JSON.stringify(doc), docType]
   );
   saveDatabase(db);
+  const typeNames = { spreadsheet: '表格', document: '文档', presentation: '演示文稿' };
   logActivity(db, {
     user_id: req.session.user.id, username: req.session.user.username,
     action: 'create', target_type: 'spreadsheet', target_id: result.lastInsertRowid,
-    target_title: name, detail: '后台创建在线表格（Univer）: ' + name, ip: req.ip
+    target_title: name, detail: '后台创建在线' + (typeNames[docType] || '表格') + ': ' + name, ip: req.ip
   });
-  res.json({ success: true, data: { id: result.lastInsertRowid }, redirect: '/admin/spreadsheets' });
+  res.json({ success: true, data: { id: result.lastInsertRowid, docType: docType }, redirect: '/admin/spreadsheets' });
 });
 
 // ============ 导入（单文件创建） ============

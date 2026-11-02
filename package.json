@@ -1,6 +1,6 @@
 {
   "name": "website-with-admin",
-  "version": "8.8.2",
+  "version": "8.9.0",
   "description": "网站前端和后台管理系统 ",
   "main": "server/app.js",
   "scripts": {
@@ -25,6 +25,8 @@
     "security:check": "node -e \"const config = require('./security-config.json'); console.log('安全配置验证通过:', Object.keys(config).length, '个配置项');\""
   },
   "dependencies": {
+    "@univerjs/preset-docs-core": "^1.3.1",
+    "@univerjs/preset-docs-drawing": "^1.3.1",
     "@univerjs/preset-sheets-conditional-formatting": "^1.0.0",
     "@univerjs/preset-sheets-core": "^1.0.0",
     "@univerjs/preset-sheets-data-validation": "^1.0.0",
@@ -45,11 +47,13 @@
     "express-session": "^1.17.3",
     "iconv-lite": "^0.6.3",
     "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.13.0",
     "marked": "^12.0.0",
     "multer": "^2.5.0",
     "node-cron": "^4.4.1",
     "nodemailer": "^10.2.1",
     "quill": "^2.0.0",
+    "reveal.js": "^6.0.2",
     "sanitize-html": "^2.17.6",
     "sql.js": "^1.9.0",
     "svg-captcha": "^1.4.0",

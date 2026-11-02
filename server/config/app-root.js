@@ -15,5 +15,7 @@ module.exports = {
   publicDir: path.join(projectRoot, 'public'),
   uploadsDir: path.join(projectRoot, 'public', 'uploads'),
   backupDir: path.join(projectRoot, 'backups'),
-  databasePath: path.join(projectRoot, 'database.sqlite')
+  databasePath: path.join(projectRoot, 'database.sqlite'),
+  dataDir: path.join(projectRoot, 'data'),                    // 通用数据目录
+  officeDocsDir: path.join(projectRoot, 'data', 'office-docs') // 大文档文件存储
 };

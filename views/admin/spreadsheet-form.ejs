@@ -1,16 +1,26 @@
 <%# ===== 页面模板：admin/spreadsheet-form.ejs =====%>
-<%# 说明：后台在线表格创建/编辑表单页（Univer 模式） %>
+<%# 说明：后台在线Office创建/编辑表单页（文档/表格/演示文稿） %>
 <div class="admin-page-header">
-  <h2><%= sheet ? '✏️ 编辑表格' : '➕ 创建表格' %></h2>
+  <h2><%= sheet ? '✏️ 编辑文档' : '➕ 创建文档' %></h2>
   <a href="/admin/spreadsheets" class="btn btn-secondary">← 返回列表</a>
 </div>
 
 <div class="admin-card">
   <form id="sheetForm" onsubmit="return submitForm(event)">
     <div class="form-row">
+      <% if (!sheet) { %>
       <div class="form-group">
-        <label>表格名称 *</label>
-        <input type="text" id="sheetName" value="<%= sheet ? sheet.name : '' %>" placeholder="请输入表格名称" required />
+        <label>文档类型 *</label>
+        <select id="docType">
+          <option value="document">📄 文档</option>
+          <option value="spreadsheet">📊 表格</option>
+          <option value="presentation">📽️ 演示文稿</option>
+        </select>
+      </div>
+      <% } %>
+      <div class="form-group">
+        <label>文档名称 *</label>
+        <input type="text" id="sheetName" value="<%= sheet ? sheet.name : '' %>" placeholder="请输入文档名称" required />
       </div>
       <div class="form-group">
         <label>状态</label>
@@ -28,16 +38,16 @@
       </div>
     </div>
     <div class="form-group">
-      <label>表格描述</label>
-      <textarea id="sheetDesc" rows="3" placeholder="请输入表格描述（可选）"><%= sheet ? sheet.description : '' %></textarea>
+      <label>文档描述</label>
+      <textarea id="sheetDesc" rows="3" placeholder="请输入文档描述（可选）"><%= sheet ? sheet.description : '' %></textarea>
     </div>
     <div class="form-hint">
-      创建后点击「打开」进入 Univer 在线表格编辑器，支持协同编辑、批注、图表与版本历史。
+      创建后点击「打开」进入在线编辑器，支持协同编辑、批注与版本历史。
       <% if (sheet && typeof sheet.versions === 'number') { %><br>当前统计：v<%= sheet.doc_version %> · 历史版本 <%= sheet.versions %> · 批注 <%= sheet.comments %> · 图表 <%= sheet.charts %> · 授权用户 <%= sheet.perms %><% } %>
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="btn btn-primary"><%= sheet ? '保存修改' : '创建表格' %></button>
+      <button type="submit" class="btn btn-primary"><%= sheet ? '保存修改' : '创建文档' %></button>
       <a href="/admin/spreadsheets" class="btn btn-secondary">取消</a>
     </div>
   </form>
@@ -53,7 +63,7 @@
 function submitForm(e) {
   e.preventDefault();
   var name = document.getElementById('sheetName').value.trim();
-  if (!name) { alert('请输入表格名称'); return false; }
+  if (!name) { alert('请输入文档名称'); return false; }
 
   var data = {
     name: name,
@@ -61,6 +71,9 @@ function submitForm(e) {
     status: document.getElementById('sheetStatus').value,
     isLocked: document.getElementById('sheetLocked').checked ? 1 : 0
   };
+
+  var docTypeEl = document.getElementById('docType');
+  if (docTypeEl) data.docType = docTypeEl.value;
 
   var url = <%- JSON.stringify(sheet ? '/admin/spreadsheets/' + sheet.id : '/admin/spreadsheets') %>;
   var method = 'POST';

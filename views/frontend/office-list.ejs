@@ -1,0 +1,181 @@
+<%# ===== 页面模板：frontend/office-list.ejs =====%>
+<%# 说明：在线Office统一列表页（文档/表格/演示文稿）：卡片网格 + 搜索 + 创建/导入 %>
+<div class="container">
+  <div class="page-header">
+    <h1>📂 在线Office</h1>
+    <p class="page-desc">文档 · 表格 · 演示文稿 — 协同编辑 · 自动保存 · 版本历史 · AI 助手</p>
+  </div>
+
+  <div class="action-bar">
+    <input type="search" id="docSearch" class="sheet-search-input" placeholder="🔍 搜索文档名称 / 描述 / 创建者…" autocomplete="off">
+    <select id="docTypeFilter" class="sheet-perm-filter" title="按类型筛选">
+      <option value="all">全部类型</option>
+      <option value="document">📄 文档</option>
+      <option value="spreadsheet">📊 表格</option>
+      <option value="presentation">📽️ 演示文稿</option>
+    </select>
+    <select id="docPermFilter" class="sheet-perm-filter" title="按权限筛选">
+      <option value="all">全部权限</option>
+      <option value="0">无权限</option>
+      <option value="1">只读查看</option>
+      <option value="2">可评论</option>
+      <option value="3">可编辑</option>
+      <option value="4">可管理</option>
+    </select>
+    <% if (canManage) { %>
+    <button type="button" class="btn btn-primary" id="btnCreateDoc">＋ 新建文档</button>
+    <button type="button" class="btn btn-outline" id="btnImportDoc">📥 导入文件</button>
+    <a href="/admin/spreadsheets" class="btn btn-outline">⚙️ 后台管理</a>
+    <% } %>
+  </div>
+
+  <% if (docs.length === 0) { %>
+  <div class="empty-state">
+    <div class="empty-icon">📋</div>
+    <h3>暂无文档</h3>
+    <p><% if (canManage) { %>点击「新建文档」创建第一个文档、表格或演示文稿<% } else { %>还没有任何共享文档，请联系管理员创建<% } %></p>
+  </div>
+  <% } else { %>
+  <div class="sheet-grid" id="docGrid">
+    <% docs.forEach(function(doc) { %>
+    <% var docType = doc.doc_type || 'spreadsheet'; %>
+    <% var typeIcon = docType === 'document' ? '📄' : docType === 'presentation' ? '📽️' : '📊'; %>
+    <% var typeName = docType === 'document' ? '文档' : docType === 'presentation' ? '演示文稿' : '表格'; %>
+    <a href="/office/<%= doc.id %>" class="sheet-card" data-name="<%= (doc.name || '').toLowerCase() %>"
+       data-desc="<%= ((doc.description || '')).toLowerCase() %>" data-creator="<%= ((doc.creator_name || '')).toLowerCase() %>"
+       data-perm="<%= doc.permLevel %>" data-type="<%= docType %>">
+      <div class="sheet-card-icon">
+        <% if (doc.permLevel >= 3) { %>✏️<% } else if (doc.permLevel >= 2) { %>💬<% } else if (doc.permLevel >= 1) { %>👁️<% } else { %>🔒<% } %>
+      </div>
+      <div class="sheet-card-body">
+        <h3 class="sheet-card-title"><%= typeIcon %> <%= doc.name %></h3>
+        <p class="sheet-card-desc"><%= doc.description || '暂无描述' %></p>
+        <div class="sheet-card-meta">
+          <span>👤 <%= doc.creator_name || '未知' %></span>
+          <span>v<%= doc.doc_version || 0 %></span>
+          <span><%= doc.updated_at ? new Date(doc.updated_at).toLocaleDateString('zh-CN') : '' %></span>
+        </div>
+        <div class="sheet-card-tags">
+          <span class="sheet-tag" style="background:#f0f4ff;color:#4338ca"><%= typeName %></span>
+          <span class="sheet-tag perm-<%= doc.permLevel %>">
+            <% if (doc.permLevel >= 4) { %>可管理<% } else if (doc.permLevel >= 3) { %>可编辑<% } else if (doc.permLevel >= 2) { %>可评论<% } else if (doc.permLevel >= 1) { %>只读查看<% } else { %>无权限<% } %>
+          </span>
+          <% if (doc.is_public_read) { %>
+          <span class="sheet-tag" title="公开只读：所有登录用户可查看">🌐 公开</span>
+          <% } %>
+          <% if (doc.permLevel === 0) { %>
+          <button type="button" class="sheet-tag sheet-tag-apply" data-apply="<%= doc.id %>">📩 申请访问</button>
+          <% } %>
+        </div>
+      </div>
+    </a>
+    <% }); %>
+  </div>
+  <div class="empty-state" id="noSearchResult" hidden>
+    <div class="empty-icon">🔍</div>
+    <h3>没有匹配的文档</h3>
+    <p>换个关键词试试</p>
+  </div>
+  <% } %>
+</div>
+
+<!-- 新建对话框挂载点 -->
+<div id="sheetModalRoot"></div>
+<div id="toastRoot"></div>
+
+<link rel="stylesheet" href="/css/spreadsheets.css">
+<script>
+// 扩展列表页 JS：增加类型筛选 + 新建文档对话框
+document.addEventListener('DOMContentLoaded', function() {
+  var searchInput = document.getElementById('docSearch');
+  var typeFilter = document.getElementById('docTypeFilter');
+  var permFilter = document.getElementById('docPermFilter');
+  var grid = document.getElementById('docGrid');
+  var noResult = document.getElementById('noSearchResult');
+
+  function filterDocs() {
+    if (!grid) return;
+    var keyword = (searchInput ? searchInput.value : '').toLowerCase();
+    var typeVal = typeFilter ? typeFilter.value : 'all';
+    var permVal = permFilter ? permFilter.value : 'all';
+    var cards = grid.querySelectorAll('.sheet-card');
+    var visibleCount = 0;
+    cards.forEach(function(card) {
+      var name = card.getAttribute('data-name') || '';
+      var desc = card.getAttribute('data-desc') || '';
+      var creator = card.getAttribute('data-creator') || '';
+      var perm = card.getAttribute('data-perm') || '0';
+      var type = card.getAttribute('data-type') || 'spreadsheet';
+      var matchKeyword = !keyword || name.indexOf(keyword) !== -1 || desc.indexOf(keyword) !== -1 || creator.indexOf(keyword) !== -1;
+      var matchType = typeVal === 'all' || type === typeVal;
+      var matchPerm = permVal === 'all' || perm === permVal;
+      if (matchKeyword && matchType && matchPerm) {
+        card.style.display = '';
+        visibleCount++;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+    if (noResult) noResult.hidden = visibleCount > 0;
+  }
+
+  if (searchInput) searchInput.addEventListener('input', filterDocs);
+  if (typeFilter) typeFilter.addEventListener('change', filterDocs);
+  if (permFilter) permFilter.addEventListener('change', filterDocs);
+
+  // 新建文档对话框
+  var btnCreate = document.getElementById('btnCreateDoc');
+  if (btnCreate) {
+    btnCreate.addEventListener('click', function() {
+      var modalRoot = document.getElementById('sheetModalRoot');
+      if (!modalRoot) return;
+      var backdrop = document.createElement('div');
+      backdrop.className = 'ss-modal-backdrop';
+      backdrop.innerHTML = '<div class="ss-modal">'
+        + '<div class="ss-modal-head"><h3>新建文档</h3><button type="button" class="ss-modal-close">&times;</button></div>'
+        + '<div class="ss-modal-body">'
+        + '<div class="ss-field"><label>文档类型</label>'
+        + '<select id="newDocType" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:14px">'
+        + '<option value="document">📄 文档</option>'
+        + '<option value="spreadsheet">📊 表格</option>'
+        + '<option value="presentation">📽️ 演示文稿</option>'
+        + '</select></div>'
+        + '<div class="ss-field"><label>文档名称</label>'
+        + '<input type="text" id="newDocName" placeholder="未命名文档" maxlength="100" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:14px;box-sizing:border-box"></div>'
+        + '<div class="ss-field"><label>描述（可选）</label>'
+        + '<textarea id="newDocDesc" rows="2" maxlength="500" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:14px;box-sizing:border-box;resize:vertical"></textarea></div>'
+        + '</div>'
+        + '<div class="ss-modal-actions">'
+        + '<button type="button" class="ss-btn" id="btnCancelCreate">取消</button>'
+        + '<button type="button" class="ss-btn ss-btn-primary" id="btnConfirmCreate">创建</button>'
+        + '</div></div>';
+      modalRoot.appendChild(backdrop);
+
+      var close = function() { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); };
+      backdrop.querySelector('.ss-modal-close').addEventListener('click', close);
+      backdrop.querySelector('#btnCancelCreate').addEventListener('click', close);
+      backdrop.addEventListener('mousedown', function(e) { if (e.target === backdrop) close(); });
+
+      backdrop.querySelector('#btnConfirmCreate').addEventListener('click', function() {
+        var docType = backdrop.querySelector('#newDocType').value;
+        var name = backdrop.querySelector('#newDocName').value.trim();
+        var desc = backdrop.querySelector('#newDocDesc').value.trim();
+        var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+        fetch('/api/spreadsheet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+          credentials: 'same-origin',
+          body: JSON.stringify({ docType: docType, name: name || undefined, description: desc || undefined })
+        }).then(function(res) { return res.json(); }).then(function(json) {
+          if (json.success && json.data && json.data.id) {
+            close();
+            window.location.href = '/office/' + json.data.id;
+          } else {
+            alert(json.error || '创建失败');
+          }
+        }).catch(function(err) { alert('请求失败：' + err.message); });
+      });
+    });
+  }
+});
+</script>

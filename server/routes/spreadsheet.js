@@ -159,8 +159,18 @@ function loadSheetForRequest(req, res, next) {
 
 // ============ 文档结构校验 ============
 
-function validateUniverDoc(doc) {
+function validateUniverDoc(doc, docType) {
   if (!doc || typeof doc !== 'object') return '文档必须是对象';
+  if (docType === 'document') {
+    if (!doc.body || typeof doc.body !== 'object') return '缺少 body';
+    if (typeof doc.body.dataStream !== 'string') return '缺少 dataStream';
+    return null;
+  }
+  if (docType === 'presentation') {
+    if (!Array.isArray(doc.slides) || doc.slides.length === 0) return '缺少 slides';
+    return null;
+  }
+  // spreadsheet (default)
   if (!doc.sheets || typeof doc.sheets !== 'object') return '缺少 sheets';
   if (!Array.isArray(doc.sheetOrder) || doc.sheetOrder.length === 0) return '缺少 sheetOrder';
   if (doc.sheetOrder.length > 100) return '工作表数量超过上限（100）';
@@ -174,78 +184,117 @@ function validateUniverDoc(doc) {
 
 // ============ 页面路由 ============
 
-// 表格列表页
+// 表格列表页（兼容旧链接）
 router.get('/spreadsheet', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  return res.redirect('/office');
+});
+
+// 在线Office统一列表页（文档/表格/演示文稿）
+router.get('/office', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const db = req.db;
   const sheets = queryAll(db,
-    "SELECT s.id, s.name, s.description, s.created_by, s.status, s.doc_version, s.updated_at, s.created_at, s.is_public_read, u.username AS creator_name FROM spreadsheets s LEFT JOIN users u ON s.created_by = u.id WHERE s.status = 'active' ORDER BY s.updated_at DESC"
+    "SELECT s.id, s.name, s.description, s.created_by, s.status, s.doc_version, s.doc_type, s.updated_at, s.created_at, s.is_public_read, u.username AS creator_name FROM spreadsheets s LEFT JOIN users u ON s.created_by = u.id WHERE s.status = 'active' ORDER BY s.updated_at DESC"
   );
   const rows = sheets.map(s => ({ ...s, permLevel: getDocPermLevel(req, s.id, s) }));
-  res.render('frontend/spreadsheets', {
+  res.render('frontend/office-list', {
     user: req.session.user,
-    sheets: rows,
+    docs: rows,
     canManage: canManageSpreadsheet(req),
     settings: res.locals.settings || {}
   });
 });
 
-// 在线表格编辑器页（独立布局）
+// 在线表格编辑器页（兼容旧链接，根据 doc_type 分发）
 router.get('/spreadsheet/:id(\\d+)', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  return res.redirect('/office/' + req.params.id);
+});
+
+// 在线Office统一编辑器页（根据 doc_type 分发到不同编辑器）
+router.get('/office/:id(\\d+)', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const db = req.db;
-  const sheetId = parseInt(req.params.id, 10);
-  const sheet = queryOne(db, 'SELECT id, name, description, is_locked, is_public_read, doc_version, updated_at, created_by FROM spreadsheets WHERE id = ? AND status = ?', [sheetId, 'active']);
-  if (!sheet) {
-    return res.status(404).render('frontend/error', { message: '页面未找到', error: '表格不存在或已被删除', user: req.session.user, settings: res.locals.settings || {} });
+  const docId = parseInt(req.params.id, 10);
+  const doc = queryOne(db, 'SELECT id, name, description, is_locked, is_public_read, doc_version, doc_type, updated_at, created_by FROM spreadsheets WHERE id = ? AND status = ?', [docId, 'active']);
+  if (!doc) {
+    return res.status(404).render('frontend/error', { message: '页面未找到', error: '文档不存在或已被删除', user: req.session.user, settings: res.locals.settings || {} });
   }
-  const permLevel = getDocPermLevel(req, sheetId, sheet);
-  // 私有模型：无查看权限 → 渲染无权限页（提供只读权限申请入口）
+  const permLevel = getDocPermLevel(req, docId, doc);
+  // 私有模型：无查看权限 → 渲染无权限页
   if (permLevel < 1) {
     const pendingApp = queryOne(db,
       'SELECT perm_type, status, reason, created_at FROM spreadsheet_permission_applications WHERE spreadsheet_id = ? AND user_id = ? AND status = ? ORDER BY id DESC LIMIT 1',
-      [sheetId, req.session.user.id, 'pending']);
-    const owner = queryOne(db, 'SELECT nickname, username FROM users WHERE id = ?', [sheet.created_by]);
+      [docId, req.session.user.id, 'pending']);
+    const owner = queryOne(db, 'SELECT nickname, username FROM users WHERE id = ?', [doc.created_by]);
     logActivity(db, {
       user_id: req.session.user.id, username: req.session.user.username,
-      action: 'access_denied', target_type: 'spreadsheet', target_id: sheetId,
-      target_title: sheet.name,
-      detail: '无访问权限用户尝试打开表格（已引导至申请页）', ip: getClientIp(req)
+      action: 'access_denied', target_type: 'spreadsheet', target_id: docId,
+      target_title: doc.name,
+      detail: '无访问权限用户尝试打开文档（已引导至申请页）', ip: getClientIp(req)
     });
     return res.render('frontend/spreadsheet-noaccess', {
       user: req.session.user,
-      sheet,
+      sheet: doc,
       ownerName: (owner && (owner.nickname || owner.username)) || '未知',
       pendingApp,
       settings: res.locals.settings || {}
     });
   }
-  res.render('frontend/spreadsheet-editor', {
+
+  const docType = doc.doc_type || 'spreadsheet';
+  const commonOpts = {
     layout: false,
     user: req.session.user,
-    sheet,
+    doc: doc,
     permLevel,
     canManage: permLevel >= 4,
     canEdit: permLevel >= 3,
     clientIp: getClientIp(req),
     settings: res.locals.settings || {}
-  });
+  };
+
+  if (docType === 'document') {
+    return res.render('frontend/document-editor', commonOpts);
+  } else if (docType === 'presentation') {
+    return res.render('frontend/presentation-editor', commonOpts);
+  } else {
+    // spreadsheet (default)
+    return res.render('frontend/spreadsheet-editor', {
+      ...commonOpts,
+      sheet: doc // 兼容旧模板使用 sheet 变量名
+    });
+  }
 });
 
 // ============ 文档 CRUD ============
 
-// 新建空白表格
+// 新建空白文档（支持 spreadsheet/document/presentation 三种类型）
 router.post('/api/spreadsheet', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
   const db = req.db;
   if (!canManageSpreadsheet(req)) {
-    return res.status(403).json({ success: false, error: '您没有创建表格的权限' });
+    return res.status(403).json({ success: false, error: '您没有创建文档的权限' });
   }
-  const name = String(req.body.name || '').trim().slice(0, 100) || '未命名表格';
+  const docType = String(req.body.docType || 'spreadsheet').trim();
+  const validTypes = ['spreadsheet', 'document', 'presentation'];
+  if (!validTypes.includes(docType)) {
+    return res.status(400).json({ success: false, error: '无效的文档类型' });
+  }
+  const name = String(req.body.name || '').trim().slice(0, 100) || '未命名文档';
   const description = String(req.body.description || '').trim().slice(0, 500);
-  const doc = createEmptyUniverDoc(name);
+
+  let doc;
+  if (docType === 'document') {
+    doc = docStore.createEmptyDocument(name);
+  } else if (docType === 'presentation') {
+    doc = docStore.createEmptyPresentation(name);
+  } else {
+    doc = createEmptyUniverDoc(name);
+  }
+
   const result = db.run(
-    'INSERT INTO spreadsheets (name, description, created_by, doc_data, doc_version) VALUES (?, ?, ?, ?, 1)',
-    [name, description, req.session.user.id, JSON.stringify(doc)]
+    'INSERT INTO spreadsheets (name, description, created_by, doc_data, doc_version, doc_type) VALUES (?, ?, ?, ?, 1, ?)',
+    [name, description, req.session.user.id, JSON.stringify(doc), docType]
   );
   saveDatabase(db);
+  const typeNames = { spreadsheet: '在线表格', document: '在线文档', presentation: '演示文稿' };
   logActivity(db, {
     user_id: req.session.user.id,
     username: req.session.user.username,
@@ -253,10 +302,10 @@ router.post('/api/spreadsheet', isAuthenticated, hasFrontendPermission('spreadsh
     target_type: 'spreadsheet',
     target_id: result.lastInsertRowid,
     target_title: name,
-    detail: '新建在线表格',
+    detail: '新建' + (typeNames[docType] || '在线表格'),
     ip: getClientIp(req)
   });
-  res.json({ success: true, data: { id: result.lastInsertRowid } });
+  res.json({ success: true, data: { id: result.lastInsertRowid, docType: docType } });
 });
 
 // 获取 Univer 文档（惰性迁移）
@@ -273,10 +322,11 @@ router.put('/api/spreadsheet/:id(\\d+)/doc', isAuthenticated, hasFrontendPermiss
   const db = req.db;
   const sheetId = req.spreadsheet.id;
   if (req.spreadsheet.is_locked === 1) {
-    return res.status(403).json({ success: false, error: '表格已锁定，无法保存' });
+    return res.status(403).json({ success: false, error: '文档已锁定，无法保存' });
   }
   const doc = req.body.doc;
-  const err = validateUniverDoc(doc);
+  const docType = req.spreadsheet.doc_type || 'spreadsheet';
+  const err = validateUniverDoc(doc, docType);
   if (err) return res.status(400).json({ success: false, error: '文档数据无效：' + err });
 
   let json;

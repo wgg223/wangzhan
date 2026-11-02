@@ -1,8 +1,10 @@
 /**
- * 在线表格文档共享存储（前台路由 + 后台管理路由共用）
+ * 在线Office文档共享存储（前台路由 + 后台管理路由共用）
  *
  * 职责：
  *  - 文档内存缓存（docCache），保证同一进程内所有模块读写同一份文档
+ *  - 支持多种文档类型：spreadsheet（表格）、document（文档）、presentation（演示文稿）
+ *  - 大文档自动文件存储（>10MB 存文件系统，SQLite 只存路径）
  *  - Luckysheet 旧数据惰性迁移（loadDoc）
  *  - 防抖落库 / 全量持久化（schedulePersist / persistDocEntry）
  *  - 版本快照（writeSnapshot / shouldAutoSnapshot）
@@ -13,6 +15,7 @@
 'use strict';
 const { queryOne, saveDatabase, getDb } = require('../config/database');
 const { migrateLuckysheetToUniver, createEmptyUniverDoc } = require('./spreadsheet-migrate');
+const officeDocStore = require('./office-doc-store');
 
 const PERSIST_DEBOUNCE_MS = 2000; // 变更落库防抖
 const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000; // 自动版本快照最小间隔
@@ -32,39 +35,65 @@ const changeQueues = new Map();
 const persistTimers = new Map();
 let changeSeq = Date.now(); // 单调递增序号（跨重启单调，避免旧序号覆盖）
 
-/** 获取文档（优先内存缓存，其次数据库；Luckysheet 旧数据惰性迁移） */
+/** 获取文档（优先内存缓存，其次数据库/文件；Luckysheet 旧数据惰性迁移） */
 function loadDoc(db, sheetId) {
   const cached = docCache.get(sheetId);
   if (cached) {
     cached.lastAccess = Date.now();
     return cached;
   }
-  const row = queryOne(db, 'SELECT doc_data, doc_version, luckysheet_data FROM spreadsheets WHERE id = ?', [sheetId]);
+  const row = queryOne(db,
+    'SELECT doc_data, doc_version, doc_file, doc_type, luckysheet_data FROM spreadsheets WHERE id = ?',
+    [sheetId]);
   if (!row) return null;
 
   let doc = null;
-  if (row.doc_data) {
+
+  // 优先从文件存储加载（大文档）
+  if (row.doc_file) {
+    const result = officeDocStore.readDocFile(sheetId);
+    if (result.data) {
+      try { doc = JSON.parse(result.data); } catch (e) { doc = null; }
+    }
+  } else if (row.doc_data) {
     try { doc = JSON.parse(row.doc_data); } catch (e) { doc = null; }
   }
-  // 惰性迁移：Luckysheet 旧数据 → Univer
+
+  // 惰性迁移：Luckysheet 旧数据 → Univer（仅 spreadsheet 类型）
   let migrated = null;
-  if (!doc && row.luckysheet_data) {
+  const docType = row.doc_type || 'spreadsheet';
+  if (!doc && row.luckysheet_data && docType === 'spreadsheet') {
     const result = migrateLuckysheetToUniver(row.luckysheet_data);
     if (result && result.workbook) {
       doc = result.workbook;
       migrated = result;
     }
   }
-  if (!doc) doc = createEmptyUniverDoc('');
 
+  // 空文档：根据类型创建默认模板
+  if (!doc) {
+    if (docType === 'spreadsheet') {
+      doc = createEmptyUniverDoc('');
+    } else if (docType === 'document') {
+      doc = createEmptyDocument();
+    } else if (docType === 'presentation') {
+      doc = createEmptyPresentation();
+    } else {
+      doc = createEmptyUniverDoc('');
+    }
+  }
+
+  const jsonStr = JSON.stringify(doc);
   const entry = {
     doc,
+    docType,
     version: row.doc_version || 0,
     lastAccess: Date.now(),
     dirty: false,
     lastPersistAt: Date.now(),
     lastSnapshotAt: 0,
-    size: row.doc_data ? row.doc_data.length : 0, // JSON 字节估算（缓存大小预算用）
+    size: jsonStr.length,
+    useFileStorage: !!row.doc_file,
   };
   docCache.set(sheetId, entry);
 
@@ -96,12 +125,13 @@ function importMigratedComments(db, sheetId, comments, doc) {
   });
 }
 
-/** 全量持久化文档（立即写库） */
+/** 全量持久化文档（立即写库/文件，大文档自动使用文件存储） */
 function persistDocEntry(db, sheetId, entry) {
   const json = JSON.stringify(entry.doc);
-  db.run('UPDATE spreadsheets SET doc_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [json, sheetId]);
+  const result = officeDocStore.saveDoc(db, sheetId, json, entry.version);
   entry.dirty = false;
   entry.size = json.length;
+  entry.useFileStorage = result.useFile;
   entry.lastPersistAt = Date.now();
 }
 
@@ -226,6 +256,67 @@ setInterval(() => {
   }
 }, 10000).unref();
 
+/** 创建空文档模板（Univer Docs 格式） */
+function createEmptyDocument(title) {
+  return {
+    id: 'doc_' + Date.now(),
+    appVersion: '1.0.0',
+    name: title || '未命名文档',
+    docType: 'document',
+    body: {
+      dataStream: '\r\n',
+      sectionBreaks: [{ startIndex: 0 }],
+      paragraphs: [{ startIndex: 0, paragraphStyle: { spacing: { lineSpacing: 360 } } }],
+      textRuns: [],
+    },
+    documentStyle: {
+      pageSize: { width: 595, height: 842 }, // A4
+      marginTop: 72, marginBottom: 72, marginLeft: 90, marginRight: 90,
+    },
+    drawings: {},
+    drawingsOrder: [],
+    resources: '[]',
+  };
+}
+
+/** 创建空演示文稿模板 */
+function createEmptyPresentation(title) {
+  return {
+    id: 'ppt_' + Date.now(),
+    appVersion: '1.0.0',
+    name: title || '未命名演示文稿',
+    docType: 'presentation',
+    slideWidth: 960,
+    slideHeight: 540,
+    slides: [
+      {
+        id: 'slide_1',
+        title: '点击添加标题',
+        layout: 'title',
+        elements: [
+          {
+            id: 'title_1', type: 'text',
+            x: 100, y: 180, width: 760, height: 100,
+            content: '点击添加标题',
+            style: { fontSize: 44, fontWeight: 'bold', textAlign: 'center', color: '#333333' }
+          },
+          {
+            id: 'subtitle_1', type: 'text',
+            x: 100, y: 300, width: 760, height: 60,
+            content: '点击添加副标题',
+            style: { fontSize: 24, textAlign: 'center', color: '#666666' }
+          }
+        ],
+        background: '#ffffff'
+      }
+    ],
+    slideOrder: ['slide_1'],
+    masters: [],
+    themes: [{ name: '默认', primaryColor: '#4472C4', backgroundColor: '#ffffff' }],
+    resources: '[]',
+  };
+}
+
 module.exports = {
   PRESENCE_TTL_MS,
   CHANGE_TTL_MS,
@@ -238,6 +329,8 @@ module.exports = {
   broadcast,
   evictDoc,
   reloadDoc,
+  createEmptyDocument,
+  createEmptyPresentation,
   // 共享内存状态（路由直接读写，保证跨模块一致性）
   docCache,
   presenceMap,
