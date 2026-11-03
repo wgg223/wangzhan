@@ -279,12 +279,17 @@ function createEmptyDocument(title) {
   };
 }
 
-/** 创建空演示文稿模板 */
+/** 创建空演示文稿模板（版式与 public/js/ppt-scene.js 的 LAYOUTS 保持一致，改动需同步） */
+function pptElement(id, role, x, y, width, height, content, style) {
+  return { id: id, type: 'text', x: x, y: y, width: width, height: height, content: content, style: style, role: role };
+}
+
 function createEmptyPresentation(title) {
+  const name = title || '未命名演示文稿';
   return {
     id: 'ppt_' + Date.now(),
     appVersion: '1.0.0',
-    name: title || '未命名演示文稿',
+    name: name,
     docType: 'presentation',
     slideWidth: 960,
     slideHeight: 540,
@@ -293,24 +298,55 @@ function createEmptyPresentation(title) {
         id: 'slide_1',
         title: '点击添加标题',
         layout: 'title',
+        background: '#ffffff',
         elements: [
-          {
-            id: 'title_1', type: 'text',
-            x: 100, y: 180, width: 760, height: 100,
-            content: '点击添加标题',
-            style: { fontSize: 44, fontWeight: 'bold', textAlign: 'center', color: '#333333' }
-          },
-          {
-            id: 'subtitle_1', type: 'text',
-            x: 100, y: 300, width: 760, height: 60,
-            content: '点击添加副标题',
-            style: { fontSize: 24, textAlign: 'center', color: '#666666' }
-          }
+          pptElement('title_1', 'title', 80, 150, 800, 110, '点击添加标题', {
+            fontSize: 44, fontWeight: 'bold', textAlign: 'center', valign: 'middle', color: '#1f2937'
+          }),
+          pptElement('subtitle_1', 'subtitle', 140, 280, 680, 70, name, {
+            fontSize: 24, textAlign: 'center', valign: 'middle', color: '#6b7280'
+          })
         ],
-        background: '#ffffff'
+        notes: '开场页：介绍主题和演讲人。',
+        transition: { type: 'fade', duration: 400 },
+        hidden: false
+      },
+      {
+        id: 'slide_2',
+        title: '点击添加标题',
+        layout: 'title-content',
+        background: '#ffffff',
+        elements: [
+          pptElement('title_2', 'title', 60, 40, 840, 80, '点击添加标题', {
+            fontSize: 32, fontWeight: 'bold', textAlign: 'left', valign: 'middle', color: '#1f2937'
+          }),
+          pptElement('body_2', 'body', 60, 140, 840, 350, '点击输入内容', {
+            fontSize: 20, textAlign: 'left', valign: 'top', color: '#374151', lineHeight: 1.5
+          })
+        ],
+        notes: '',
+        transition: { type: 'fade', duration: 400 },
+        hidden: false
+      },
+      {
+        id: 'slide_3',
+        title: '点击添加章节标题',
+        layout: 'section',
+        background: '#4472C4',
+        elements: [
+          pptElement('title_3', 'title', 80, 200, 620, 100, '点击添加章节标题', {
+            fontSize: 40, fontWeight: 'bold', textAlign: 'left', valign: 'middle', color: '#ffffff'
+          }),
+          pptElement('subtitle_3', 'subtitle', 80, 310, 620, 60, '点击添加副标题', {
+            fontSize: 20, textAlign: 'left', valign: 'middle', color: '#e5e7eb'
+          })
+        ],
+        notes: '',
+        transition: { type: 'slide', duration: 400 },
+        hidden: false
       }
     ],
-    slideOrder: ['slide_1'],
+    slideOrder: ['slide_1', 'slide_2', 'slide_3'],
     masters: [],
     themes: [{ name: '默认', primaryColor: '#4472C4', backgroundColor: '#ffffff' }],
     resources: '[]',

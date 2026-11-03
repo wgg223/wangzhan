@@ -15,7 +15,8 @@
  *
  * 导入导出：
  *   POST   /api/spreadsheet/import              上传 .xlsx/.csv 创建新表格
- *   GET    /api/spreadsheet/:id/export          导出下载（xlsx/csv）
+ *   GET    /api/spreadsheet/:id/export          导出下载（表格 xlsx/csv · 文档 docx/html/md · 演示文稿 pptx/html）
+ *   POST   /api/spreadsheet/:id/media           幻灯片图片上传（返回可直接引用的 /uploads/office 地址）
  *
  * 版本历史：
  *   GET  /api/spreadsheet/:id/versions                    版本列表
@@ -60,6 +61,8 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { isAuthenticated, hasFrontendPermission } = require('../middlewares/auth');
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
@@ -67,9 +70,12 @@ const { createNotification } = require('./community');
 const { resolveModel, callChatCompletion } = require('../services/ai-chat/provider');
 const { createEmptyUniverDoc } = require('../utils/spreadsheet-migrate');
 const { exportUniverDoc } = require('../utils/spreadsheet-univer-io');
+const { exportPresentation } = require('../utils/pptx-export');
+const { exportOfficeDocument } = require('../utils/docx-export');
 const { importOfficeFile, decodeUploadName, SUPPORTED_EXTENSIONS, MAX_IMPORT_BYTES, MAX_IMPORT_MB } = require('../utils/office-import');
 const docStore = require('../utils/spreadsheet-doc-store');
 const { getClientIp } = require('../utils/client-ip');
+const { uploadsDir } = require('../config/app-root');
 const {
   PRESENCE_TTL_MS, CHANGE_TTL_MS, KEEP_VERSIONS,
   loadDoc, persistDocEntry, schedulePersist, writeSnapshot, shouldAutoSnapshot, broadcast, evictDoc,
@@ -478,27 +484,106 @@ router.post('/api/spreadsheet/import', isAuthenticated, hasFrontendPermission('s
     });
   });
 
-// 导出下载
+// 导出下载：按文档类型分派（演示文稿 → pptx/html，表格 → xlsx/csv，文档 → docx/html/md）
 router.get('/api/spreadsheet/:id(\\d+)/export', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(1), (req, res) => {
   const db = req.db;
   const sheetId = req.spreadsheet.id;
-  const format = req.query.format === 'csv' ? 'csv' : 'xlsx';
   // 下载能力：编辑权限或显式 download/copy 授权（permLevel>=2 覆盖 download/copy）
   if (req.docPermLevel < 2) {
-    return res.status(403).json({ success: false, error: '您没有导出此表格的权限' });
+    return res.status(403).json({ success: false, error: '您没有导出此文档的权限' });
   }
-  const entry = loadDoc(db, sheetId);
+  const docType = req.spreadsheet.doc_type || 'spreadsheet';
   let out;
+  let entry;
   try {
-    out = exportUniverDoc(entry.doc, format, { sheetId: req.query.sheetId });
+    entry = loadDoc(db, sheetId);
+    const wantFormat = String(req.query.format || '').toLowerCase();
+    if (docType === 'presentation') {
+      out = exportPresentation(entry.doc, { format: wantFormat || 'pptx', name: req.spreadsheet.name });
+    } else if (docType === 'document') {
+      out = exportOfficeDocument(entry.doc, wantFormat || 'docx');
+    } else {
+      out = exportUniverDoc(entry.doc, wantFormat === 'csv' ? 'csv' : 'xlsx', { sheetId: req.query.sheetId });
+    }
   } catch (e) {
     return res.status(400).json({ success: false, error: e.message || '导出失败' });
   }
-  const safeName = String(req.spreadsheet.name || '表格').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || '表格';
+  const buffer = Buffer.isBuffer(out.buffer) ? out.buffer : Buffer.from(out.buffer, 'utf-8');
+  const safeName = String(req.spreadsheet.name || '文档').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || '文档';
   res.setHeader('Content-Type', out.mime);
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeName + '.' + out.ext)}`);
-  res.send(out.buffer);
+  res.send(buffer);
 });
+
+// ============ 演示文稿媒体（图片）上传 ============
+
+const MEDIA_EXT_BY_MIME = {
+  'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+  'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp'
+};
+const mediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (!MEDIA_EXT_BY_MIME[file.mimetype]) {
+      return cb(new Error('只支持 JPG、PNG、GIF、WebP、BMP 图片'));
+    }
+    cb(null, true);
+  }
+});
+
+/** 从文件头读取像素尺寸，避免前端再次加载图片计算 */
+function imageDimensions(buffer, ext) {
+  if (ext === 'png' && buffer.length > 24) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  if ((ext === 'jpg' || ext === 'jpeg')) {
+    let i = 2;
+    while (i < buffer.length - 9 && buffer[i] === 0xFF) {
+      const marker = buffer[i + 1];
+      if (marker >= 0xC0 && marker <= 0xCF && ![0xC4, 0xC8, 0xCC].includes(marker)) {
+        return { height: buffer.readUInt16BE(i + 5), width: buffer.readUInt16BE(i + 7) };
+      }
+      i += 2 + buffer.readUInt16BE(i + 2);
+    }
+  }
+  if (ext === 'gif' && buffer.length > 10) {
+    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+  }
+  if (ext === 'webp') {
+    const vp8 = buffer.slice(12, 30).toString('latin1');
+    if (vp8.includes('VP8X') && buffer.length > 30) {
+      return { width: 1 + buffer.readUIntLE(24, 3), height: 1 + buffer.readUIntLE(27, 3) };
+    }
+  }
+  return { width: 0, height: 0 };
+}
+
+router.post('/api/spreadsheet/:id(\\d+)/media', isAuthenticated, hasFrontendPermission('spreadsheet.access'),
+  requireDocPerm(3), mediaUpload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: '请选择图片文件（≤8MB）' });
+    const ext = MEDIA_EXT_BY_MIME[req.file.mimetype];
+    const dir = path.join(uploadsDir, 'office', String(req.spreadsheet.id));
+    try {
+      // eslint-disable-next-line no-sync -- 目录已按文档隔离，创建一次即可
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: '无法创建上传目录' });
+    }
+    // 随机不可猜测文件名 + 由 mimetype 决定的扩展名，杜绝原始文件名带来的路径/扩展名风险
+    const filename = `m-${Date.now().toString(36)}-${crypto.randomBytes(8).toString('hex')}.${ext}`;
+    try {
+      // eslint-disable-next-line no-sync -- 图片已在内存（≤8MB），同步落盘避免半途失败时响应先返回
+      fs.writeFileSync(path.join(dir, filename), req.file.buffer);
+    } catch (e) {
+      return res.status(500).json({ success: false, error: '图片保存失败' });
+    }
+    const dim = imageDimensions(req.file.buffer, ext);
+    res.json({
+      success: true,
+      data: { url: `/uploads/office/${req.spreadsheet.id}/${filename}`, width: dim.width, height: dim.height, size: req.file.size }
+    });
+  });
 
 // ============ 版本历史 ============
 

@@ -1,6 +1,6 @@
 {
   "name": "website-with-admin",
-  "version": "8.9.3",
+  "version": "8.10.0",
   "description": "网站前端和后台管理系统 ",
   "main": "server/app.js",
   "scripts": {
@@ -16,8 +16,8 @@
     "health": "node -e \"fetch('http://localhost:3000/health').then(r=>r.json()).then(d=>console.log(JSON.stringify(d,null,2))).catch(e=>console.error('健康检查失败:',e.message))\"",
     "lint": "eslint . --ext .js,.mjs",
     "lint:fix": "eslint . --ext .js,.mjs --fix",
-    "lint:frontend": "eslint public/js/ -c .eslintrc-frontend.json --ext .js",
-    "lint:frontend:fix": "eslint public/js/ -c .eslintrc-frontend.json --ext .js --fix",
+    "lint:frontend": "eslint public/js/ --ext .js",
+    "lint:frontend:fix": "eslint public/js/ --ext .js --fix",
     "lint:server": "eslint server/ scripts/ --ext .js,.mjs",
     "lint:server:fix": "eslint server/ scripts/ --ext .js,.mjs --fix",
     "security:audit": "npm audit",

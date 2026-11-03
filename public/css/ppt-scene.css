@@ -1,0 +1,91 @@
+/* 幻灯片场景层：编辑器画布、放映层、分享页、缩略图共用（逻辑坐标 960x540） */
+
+.ppt-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 960px;
+  height: 540px;
+  transform-origin: top left;
+  background: #fff;
+  overflow: hidden;
+}
+
+.ppt-el {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.ppt-el-text {
+  padding: 2px 4px;
+}
+
+.ppt-el-text.ppt-clickable:hover .ppt-text-inner {
+  opacity: .8;
+}
+
+.ppt-shape-text {
+  user-select: none;
+}
+
+.ppt-table {
+  width: 100%;
+  height: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.ppt-table th,
+.ppt-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 编辑态：选中框与手柄（仅编辑器使用） */
+.ppt-canvas.is-editing .ppt-el:hover {
+  outline: 1px dashed rgba(99, 102, 241, .55);
+  outline-offset: 1px;
+}
+
+.ppt-el.is-selected {
+  outline: 1.5px solid #6366f1 !important;
+}
+
+.ppt-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1.5px solid #6366f1;
+  border-radius: 2px;
+  z-index: 30;
+}
+
+.ppt-handle-nw { cursor: nwse-resize; }
+.ppt-handle-n  { cursor: ns-resize; }
+.ppt-handle-ne { cursor: nesw-resize; }
+.ppt-handle-e  { cursor: ew-resize; }
+.ppt-handle-se { cursor: nwse-resize; }
+.ppt-handle-s  { cursor: ns-resize; }
+.ppt-handle-sw { cursor: nesw-resize; }
+.ppt-handle-w  { cursor: ew-resize; }
+.ppt-handle-rot { cursor: grab; border-radius: 50%; border-color: #ec4899; }
+
+/* 编辑态文本框：编辑时接管 contenteditable */
+.ppt-el-text[contenteditable="true"] {
+  cursor: text;
+  outline: 1.5px solid #ec4899;
+}
+
+/* 参考线与吸附提示 */
+.ppt-guide {
+  position: absolute;
+  background: #f43f5e;
+  z-index: 25;
+  pointer-events: none;
+}
+
+.ppt-guide-v { width: 1px; top: 0; bottom: 0; }
+.ppt-guide-h { height: 1px; left: 0; right: 0; }

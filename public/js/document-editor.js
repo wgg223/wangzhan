@@ -86,7 +86,8 @@
 
   function copyText(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+      return navigator.clipboard.writeText(text)
+        .then(function () { return true; }, function () { return legacyCopy(text); });
     }
     return Promise.resolve(legacyCopy(text));
   }
@@ -1027,14 +1028,22 @@
       }
     });
 
+    // 页签切到后台时停止轮询，回到前台恢复（小服务器减少无效请求）
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) { saveNow(false); stopPolling(); } else { startPolling(); }
+    });
+
     // 页面关闭前保存
-    window.addEventListener('beforeunload', function () {
+    window.addEventListener('pagehide', function () {
       if (state.dirty && CFG.canEdit && !state.locked) {
         var snapshot = extractDocSnapshot();
         if (snapshot) {
-          navigator.sendBeacon(API.doc, JSON.stringify({
-            doc: snapshot, baseVersion: state.version, structural: true, changeDesc: '页面关闭自动保存'
-          }));
+          // sendBeacon 无法自定义请求头：Content-Type 必须是 application/json 服务端才会解析，
+          // CSRF 令牌改由 body._csrf 携带
+          navigator.sendBeacon(API.doc, new Blob([JSON.stringify({
+            doc: snapshot, baseVersion: state.version, structural: true,
+            changeDesc: '页面关闭自动保存', _csrf: CFG.csrf || ''
+          })], { type: 'application/json' }));
         }
       }
     });

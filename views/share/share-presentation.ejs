@@ -32,13 +32,9 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #fdf5f9; color: #43303e; min-height: 100vh; }
     body.embed { background: #111; overflow: hidden; }
 
-    /* ---- 幻灯片舞台：按 960x540 逻辑尺寸等比缩放 ---- */
+    /* ---- 幻灯片舞台：960x540 逻辑画布整体缩放，渲染层与编辑器共用 /js/ppt-scene.js ---- */
     .stage { position: relative; width: 100%; overflow: hidden; border-radius: 10px; background: #e9edf3; }
-    .slide { position: absolute; inset: 0; background-size: contain; }
     .canvas { position: absolute; top: 0; left: 0; width: 960px; height: 540px; transform-origin: top left; }
-    .el { position: absolute; overflow: hidden; }
-    .el img { width: 100%; height: 100%; object-fit: contain; display: block; }
-    .el-text { white-space: pre-wrap; word-break: break-word; line-height: 1.45; padding: 4px 8px; }
 
     /* ---- 控件 ---- */
     .bar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 0 0; }
@@ -50,6 +46,7 @@
     .thumb { position: relative; flex-shrink: 0; width: 128px; height: 72px; border: 2px solid #e2e8f0; border-radius: 6px; background: #fff; cursor: pointer; overflow: hidden; font-size: 11px; color: #64748b; }
     .thumb.active { border-color: #ec4899; }
     .thumb .no { position: absolute; left: 4px; top: 2px; font-size: 11px; color: #94a3b8; z-index: 2; }
+    .thumb .hide-flag { position: absolute; right: 4px; top: 2px; font-size: 11px; color: #b45309; z-index: 2; }
     .thumb .mini { position: absolute; top: 0; left: 0; width: 960px; height: 540px; transform-origin: top left; transform: scale(.1333); pointer-events: none; }
 
     /* ---- 嵌入视图：铺满视口 ---- */
@@ -60,14 +57,6 @@
     body.embed #shareLoading, body.embed #shareError { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #111; z-index: 30; }
     body.embed #shareLoading p { color: #bbb; }
     body.embed #shareError p { color: #fca5a5; }
-
-    /* ---- 全屏放映 ---- */
-    body.showing .wrap-hide { display: none !important; }
-    body.showing .stage { position: fixed; inset: 0; width: 100vw; height: 100vh; border-radius: 0; background: #111; z-index: 40; }
-    body.showing .bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: rgba(17,17,17,.55); border-radius: 22px; padding: 6px 12px; z-index: 41; }
-    body.showing .counter { color: #eee; }
-    .exit-show { position: fixed; right: 18px; top: 14px; z-index: 42; border: 1px solid rgba(255,255,255,.3); background: rgba(17,17,17,.55); color: #fff; font-size: 13px; padding: 6px 14px; border-radius: 8px; cursor: pointer; display: none; }
-    body.showing .exit-show { display: block; }
 
     /* ---- 普通视图 ---- */
     .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px; }
@@ -96,7 +85,6 @@
 </head>
 <body class="<%= embed ? 'embed' : 'page' %>">
   <% if (state === 'ok') { %>
-    <button type="button" class="exit-show" id="btnExitShow">退出放映</button>
     <% if (!embed) { %>
     <div class="wrap">
       <div class="card head-card wrap-hide">
@@ -150,6 +138,7 @@
       <button type="button" class="nav-btn" id="btnPrev">‹</button>
       <span class="counter" id="pptCounter">- / -</span>
       <button type="button" class="nav-btn" id="btnNext">›</button>
+      <button type="button" class="nav-btn" id="btnShow" title="全屏放映（F）">▶ 放映</button>
     </div>
     <div id="shareLoading">
       <div class="spin"></div>
@@ -164,7 +153,8 @@
       // 分享页配置（后端注入）
       window.__SHARE__ = {
         dataUrl: <%- JSON.stringify(dataUrl).replace(/</g, '\\u003c') %>,
-        embed: <%= embed ? 'true' : 'false' %>
+        embed: <%= embed ? 'true' : 'false' %>,
+        title: <%- JSON.stringify(sheet.name || '演示文稿').replace(/</g, '\\u003c') %>
       };
       // 只读分享内容保护配置（防复制 + 访客 IP 水印溯源）
       window.__SS_PROTECT__ = {
@@ -173,12 +163,14 @@
       };
     </script>
     <script src="/js/ss-content-protect.js" defer></script>
+    <script src="/js/ppt-scene.js?v=20261103"></script>
+    <script src="/js/ppt-slideshow.js?v=20261103"></script>
     <script>
-      // 只读演示文稿查看器：自绘幻灯片（与编辑器同一数据模型，不使用 Univer）
+      // 只读演示文稿查看器：渲染层与放映引擎与编辑器共用（/js/ppt-scene.js、/js/ppt-slideshow.js）
       (function () {
         var CFG = window.__SHARE__ || {};
-        var LOGIC_W = 960, LOGIC_H = 540;
-        var slides = [];
+        var doc = null;
+        var slides = []; // 浏览模式看全部页（含隐藏页），放映时由 PPTShow 自动跳过隐藏页
         var idx = 0;
 
         var stage = document.getElementById('pptStage');
@@ -191,71 +183,68 @@
         var errBox = document.getElementById('shareError');
         var errMsg = document.getElementById('shareErrorMsg');
 
-        function esc(s) {
-          return String(s == null ? '' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        }
-
         function fail(msg) {
           if (mask) mask.hidden = true;
           if (errBox) errBox.hidden = false;
           if (errMsg && msg) errMsg.textContent = msg;
         }
 
-        // 画布按舞台尺寸等比缩放：页内模式按宽铺满；嵌入/放映模式按 contain 缩放并居中（避免非 16:9 视口下顶部对齐留黑）
+        // 嵌入模式整屏，需要 contain 缩放居中；页内浏览按宽铺满
         function fit() {
-          if (!stage || !canvas) return;
-          var sw = stage.clientWidth, sh = stage.clientHeight;
-          if (sw <= 0) return;
-          var letterbox = document.body.classList.contains('embed') || document.body.classList.contains('showing');
-          var scale = letterbox ? Math.min(sw / LOGIC_W, sh / LOGIC_H) : sw / LOGIC_W;
-          canvas.style.transform = 'scale(' + scale + ')';
-          canvas.style.left = letterbox ? Math.round((sw - LOGIC_W * scale) / 2) + 'px' : '0px';
-          canvas.style.top = letterbox ? Math.round((sh - LOGIC_H * scale) / 2) + 'px' : '0px';
-          if (!letterbox) stage.style.height = Math.round(sw * LOGIC_H / LOGIC_W) + 'px';
-        }
-
-        function elementsHtml(list) {
-          return (list || []).map(function (el) {
-            if (el.type === 'image') {
-              return '<div class="el" style="left:' + (el.x || 0) + 'px;top:' + (el.y || 0) + 'px;width:' + (el.width || 0) + 'px;height:' + (el.height || 0) + 'px;">'
-                + '<img src="' + esc(el.src) + '" alt="" draggable="false"></div>';
-            }
-            var st = el.style || {};
-            return '<div class="el el-text" style="left:' + (el.x || 0) + 'px;top:' + (el.y || 0) + 'px;width:' + (el.width || 0) + 'px;height:' + (el.height || 0) + 'px;'
-              + 'font-size:' + (parseInt(st.fontSize, 10) || 18) + 'px;'
-              + 'font-weight:' + esc(st.fontWeight || 'normal') + ';'
-              + 'text-align:' + esc(st.textAlign || 'left') + ';'
-              + 'color:' + esc(st.color || '#333') + ';">' + esc(el.content) + '</div>';
-          }).join('');
+          if (window.PPTScene) PPTScene.fit(stage, canvas, Boolean(CFG.embed));
         }
 
         function render() {
           if (!canvas) return;
-          var slide = slides[idx];
           counter.textContent = slides.length ? ((idx + 1) + ' / ' + slides.length) : '- / -';
           if (btnPrev) btnPrev.disabled = idx <= 0;
           if (btnNext) btnNext.disabled = idx >= slides.length - 1;
-          if (!slide) {
+          if (!slides.length) {
+            PPTScene.renderSlide(canvas, null);
             canvas.innerHTML = '<div class="empty">无幻灯片</div>';
-            canvas.style.background = '#fff';
-            renderThumbs();
             return;
           }
-          canvas.style.background = slide.background || '#ffffff';
-          canvas.innerHTML = elementsHtml(slide.elements);
+          PPTScene.renderSlide(canvas, slides[idx]);
+          bindLinks();
           renderThumbs();
+        }
+
+        // 页内浏览时超链接元素可点击（放映模式由 PPTShow 处理）
+        function bindLinks() {
+          var list = (slides[idx] && slides[idx].elements) || [];
+          canvas.querySelectorAll('.ppt-clickable').forEach(function (node) {
+            var el = list.filter(function (e) { return e.id === node.dataset.elId; })[0];
+            if (!el || !/^(https?:|mailto:)/i.test(String(el.link))) return;
+            node.addEventListener('click', function (ev) {
+              ev.stopPropagation();
+              window.open(el.link, '_blank', 'noopener');
+            });
+          });
         }
 
         function renderThumbs() {
           if (!thumbsBox) return;
-          thumbsBox.innerHTML = slides.map(function (s, i) {
-            return '<div class="thumb' + (i === idx ? ' active' : '') + '" data-i="' + i + '">'
-              + '<span class="no">' + (i + 1) + '</span>'
-              + '<div class="mini" style="background:' + esc(s.background || '#fff') + ';">' + elementsHtml(s.elements) + '</div>'
-              + '</div>';
-          }).join('');
+          thumbsBox.innerHTML = '';
+          slides.forEach(function (s, i) {
+            var box = document.createElement('div');
+            box.className = 'thumb' + (i === idx ? ' active' : '');
+            box.dataset.i = String(i);
+            var no = document.createElement('span');
+            no.className = 'no';
+            no.textContent = String(i + 1);
+            box.appendChild(no);
+            if (s.hidden) {
+              var flag = document.createElement('span');
+              flag.className = 'hide-flag';
+              flag.textContent = '隐藏';
+              box.appendChild(flag);
+            }
+            var mini = document.createElement('div');
+            mini.className = 'mini';
+            PPTScene.renderSlide(mini, s);
+            box.appendChild(mini);
+            thumbsBox.appendChild(box);
+          });
         }
 
         function go(n) {
@@ -266,15 +255,21 @@
           render();
         }
 
-        function setShowing(on) {
-          document.body.classList.toggle('showing', Boolean(on));
-          if (on && stage.requestFullscreen && !document.fullscreenElement) {
-            stage.requestFullscreen().catch(function () { /* 全屏被拒绝时仍以页内放映模式继续 */ });
-          }
-          if (!on && document.fullscreenElement && document.exitFullscreen) {
-            document.exitFullscreen().catch(function () { /* 忽略 */ });
-          }
-          setTimeout(fit, 60);
+        function startShow(fromIndex) {
+          if (!window.PPTShow || PPTShow.isRunning() || !doc) return;
+          PPTShow.start({
+            doc: doc,
+            index: fromIndex == null ? idx : fromIndex,
+            title: CFG.title,
+            settings: { mode: 'manual' },
+            onEvent: function (name, payload) {
+              // 放映进度同步回页面，退出放映后停在最后看的页
+              if (name === 'slidechange' && payload && payload.slide) {
+                var at = slides.indexOf(payload.slide);
+                if (at >= 0) { idx = at; render(); }
+              }
+            }
+          });
         }
 
         if (btnPrev) btnPrev.addEventListener('click', function () { go(idx - 1); });
@@ -284,27 +279,26 @@
           if (t && t.dataset.i != null) go(parseInt(t.dataset.i, 10));
         });
         var btnShow = document.getElementById('btnShow');
-        if (btnShow) btnShow.addEventListener('click', function () { setShowing(true); });
-        var btnExit = document.getElementById('btnExitShow');
-        if (btnExit) btnExit.addEventListener('click', function () { setShowing(false); });
+        if (btnShow) btnShow.addEventListener('click', function (e) {
+          e.stopPropagation();
+          startShow();
+        });
 
         document.addEventListener('keydown', function (e) {
+          if (window.PPTShow && PPTShow.isRunning()) return; // 放映中交给放映引擎
           if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(idx + 1); }
           else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(idx - 1); }
           else if (e.key === 'Home') go(0);
           else if (e.key === 'End') go(slides.length - 1);
-          else if (e.key === 'Escape') setShowing(false);
-          else if (e.key === 'f' || e.key === 'F') setShowing(!document.body.classList.contains('showing'));
+          else if (e.key === 'f' || e.key === 'F') startShow();
         });
-        // 放映时点击画面下一页
-        if (stage) stage.addEventListener('click', function () {
-          if (document.body.classList.contains('showing') || CFG.embed) go(idx + 1);
+        // 嵌入模式下点击画面下一页
+        if (stage && CFG.embed) stage.addEventListener('click', function (ev) {
+          if (window.PPTShow && PPTShow.isRunning()) return;
+          if (ev.target && ev.target.closest && ev.target.closest('.ppt-clickable')) return;
+          go(idx + 1);
         });
         window.addEventListener('resize', fit);
-        document.addEventListener('fullscreenchange', function () {
-          if (!document.fullscreenElement) document.body.classList.remove('showing');
-          setTimeout(fit, 60);
-        });
 
         function loadData() {
           fetch(CFG.dataUrl).then(function (r) {
@@ -314,8 +308,8 @@
             if (!json || !json.success || !json.data || !json.data.doc) {
               throw new Error((json && json.error) || '文档数据为空');
             }
-            var doc = json.data.doc;
-            slides = doc.slides || [];
+            doc = PPTScene.normalizeDoc(json.data.doc);
+            slides = PPTScene.ordered(doc);
             idx = 0;
             render();
             fit();
@@ -326,6 +320,7 @@
         }
 
         function boot() {
+          if (!window.PPTScene) { fail('渲染脚本加载失败，请刷新重试'); return; }
           fit();
           loadData();
         }

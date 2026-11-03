@@ -1,0 +1,492 @@
+/* 演示文稿编辑器骨架：功能区 / 幻灯片列表 / 画布 / 格式面板 / 备注栏 */
+
+.ppt-body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.ppt-ribbon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+.ppt-ribbon .ppt-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 10px;
+  border-right: 1px solid #edf1f6;
+}
+
+.ppt-ribbon .ppt-group:last-child {
+  border-right: none;
+}
+
+.ppt-rbtn {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ppt-rbtn:hover:not(:disabled) {
+  background: #eef2ff;
+  border-color: #e0e7ff;
+  color: #4338ca;
+}
+
+.ppt-rbtn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+.ppt-rbtn.is-on {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.ppt-menu-pop {
+  position: fixed;
+  z-index: 60;
+  min-width: 210px;
+  max-height: 380px;
+  overflow: auto;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .14);
+}
+
+.ppt-menu-pop button {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ppt-menu-pop button:hover {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.ppt-menu-pop button em {
+  font-style: normal;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.ppt-menu-pop hr {
+  border: none;
+  border-top: 1px solid #eef1f5;
+  margin: 5px 4px;
+}
+
+.ppt-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ---- 幻灯片列表 ---- */
+.ppt-panel {
+  width: 186px;
+  flex-shrink: 0;
+  background: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ppt-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #64748b;
+  border-bottom: 1px solid #e9eef5;
+}
+
+.ppt-thumb-list {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ppt-thumb {
+  position: relative;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  overflow: hidden;
+  padding-bottom: 20px;
+}
+
+.ppt-thumb.is-current {
+  border-color: #6366f1;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, .22);
+}
+
+.ppt-thumb.is-hidden {
+  opacity: .5;
+}
+
+.ppt-thumb.drag-over {
+  border-color: #ec4899;
+}
+
+.ppt-thumb-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #fff;
+}
+
+.ppt-thumb-no {
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  z-index: 3;
+  font-size: 10px;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, .75);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.ppt-thumb-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #f1f5f9;
+}
+
+.ppt-thumb-tools {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  z-index: 4;
+  display: none;
+  gap: 2px;
+}
+
+.ppt-thumb:hover .ppt-thumb-tools {
+  display: flex;
+}
+
+.ppt-thumb-tools button {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, .62);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+/* ---- 画布区 ---- */
+.ppt-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #e9edf3;
+}
+
+.ppt-canvas-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.ppt-canvas-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ppt-canvas-wrap .ppt-canvas {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform-origin: top left;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, .18);
+}
+
+.ppt-marquee {
+  position: absolute;
+  border: 1px dashed #6366f1;
+  background: rgba(99, 102, 241, .1);
+  z-index: 40;
+  pointer-events: none;
+}
+
+.ppt-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  font-size: 12px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.ppt-grow {
+  flex: 1;
+}
+
+.ppt-zoom-btn {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ppt-zoom-btn:hover {
+  background: #f1f5f9;
+}
+
+#pptZoomRange {
+  width: 110px;
+}
+
+/* ---- 备注栏 ---- */
+.ppt-notes {
+  flex-shrink: 0;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 6px 12px 10px;
+}
+
+.ppt-notes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.ppt-notes-hint {
+  color: #a3adbd;
+}
+
+#pptNotes {
+  width: 100%;
+  height: 76px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  box-sizing: border-box;
+  color: #334155;
+}
+
+/* ---- 格式面板 ---- */
+.ppt-props {
+  width: 258px;
+  flex-shrink: 0;
+  background: #fff;
+  border-left: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ppt-props-tabs {
+  display: flex;
+  border-bottom: 1px solid #e9eef5;
+}
+
+.ppt-props-tabs button {
+  flex: 1;
+  padding: 9px 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.ppt-props-tabs button.is-active {
+  color: #4338ca;
+  border-bottom: 2px solid #6366f1;
+  font-weight: 600;
+}
+
+.ppt-props-body {
+  flex: 1;
+  overflow: auto;
+  padding: 10px 12px 24px;
+}
+
+.ppt-prop-empty {
+  padding: 26px 8px;
+  text-align: center;
+  color: #a3adbd;
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+
+.ppt-sec {
+  margin-bottom: 14px;
+}
+
+.ppt-sec > h4 {
+  margin: 0 0 7px;
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.ppt-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.ppt-field > label {
+  width: 62px;
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+.ppt-field > .ppt-field-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.ppt-field input[type="text"],
+.ppt-field input[type="number"],
+.ppt-field select,
+.ppt-field textarea {
+  width: 100%;
+  padding: 4px 7px;
+  border: 1px solid #dbe2ea;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: #334155;
+  box-sizing: border-box;
+}
+
+.ppt-field input[type="number"] {
+  width: 66px;
+}
+
+.ppt-field input[type="color"] {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #dbe2ea;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ppt-mini {
+  height: 24px;
+  min-width: 26px;
+  padding: 0 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ppt-mini:hover {
+  background: #f1f5f9;
+}
+
+.ppt-mini.is-on {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.ppt-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid #dbe2ea;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* 只读模式：禁用编辑交互 */
+.ppt-body.is-readonly .ppt-ribbon,
+.ppt-body.is-readonly .ppt-props {
+  opacity: .96;
+}
+
+.ppt-body.is-readonly .ppt-canvas .ppt-el {
+  cursor: default !important;
+}
+
+@media (max-width: 1180px) {
+  .ppt-props {
+    width: 220px;
+  }
+  .ppt-panel {
+    width: 150px;
+  }
+}
