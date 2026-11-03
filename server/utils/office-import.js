@@ -89,28 +89,67 @@ const NAMED_STYLE = { TITLE: 2, SUBTITLE: 3, HEADING_1: 4, HEADING_5: 8 };
 const BULLET_LIST = 'BULLET_LIST'; // Univer 预设列表类型
 
 /**
- * 解析 mammoth 产出的 HTML，得到「段落 → 文本片段」结构
- * 只处理 Word 常见的块级与行内标签，其余标签按纯文本展开
- * @returns {Array<{runs: Array<{text, style}>, paragraphStyle: object}>}
+ * 解析 mammoth 产出的 HTML，得到「段落/表格 → 文本片段」结构
+ * 处理 Word 常见的块级与行内标签：h1-h6 / p / li / table / a / img
+ * @returns {{ blocks: Array, tables: Array, images: Array, hyperlinks: Array }}
  */
 function parseDocxHtml(html) {
   const blocks = [];
-  // 块级标签切分：h1-h6 / p / li / 表格单元格行 / 普通 div
-  const blockRe = /<(h[1-6]|p|li|td|th|div)[^>]*>([\s\S]*?)<\/\1>/gi;
+  const tables = [];
+  const images = [];
+  const hyperlinks = [];
+  let hyperlinkSeq = 0;
+  let imageSeq = 0;
+
+  // 先提取表格（避免被块级正则打散）
+  const tableRe = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+  let tableMatch;
+  const tablePositions = [];
+  while ((tableMatch = tableRe.exec(html)) !== null) {
+    const table = parseHtmlTable(tableMatch[1]);
+    if (table) {
+      tables.push({ position: tableMatch.index, table });
+      tablePositions.push({ start: tableMatch.index, end: tableMatch.index + tableMatch[0].length });
+    }
+  }
+
+  // 提取图片
+  const imgRe = /<img[^>]*\bsrc="([^"]*)"[^>]*\/?>/gi;
+  let imgMatch;
+  while ((imgMatch = imgRe.exec(html)) !== null) {
+    const src = imgMatch[1];
+    const widthMatch = /width="(\d+)"/.exec(imgMatch[0]);
+    const heightMatch = /height="(\d+)"/.exec(imgMatch[0]);
+    images.push({
+      position: imgMatch.index,
+      src,
+      width: widthMatch ? parseInt(widthMatch[1], 10) : 200,
+      height: heightMatch ? parseInt(heightMatch[1], 10) : 150,
+      id: `img-${++imageSeq}`
+    });
+  }
+
+  // 块级标签切分（跳过表格区域）
+  const blockRe = /<(h[1-6]|p|li|div)[^>]*>([\s\S]*?)<\/\1>/gi;
   let m;
   let matched = false;
   while ((m = blockRe.exec(html)) !== null) {
+    const match = m;
+    // 检查是否在表格区域内
+    const inTable = tablePositions.some(tp => match.index >= tp.start && match.index < tp.end);
+    if (inTable) continue;
+
     matched = true;
-    const tag = m[1].toLowerCase();
-    const inner = m[2];
-    const runs = parseInlineRuns(inner);
-    const text = runs.map(r => r.text).join('').trim();
-    if (!text && !runs.length) continue;
-    // <li> 嵌在 <ul>/<ol> 里会被上面的正则各取一次，无需额外处理
+    const tag = match[1].toLowerCase();
+    const inner = match[2];
+    const runs = parseInlineRuns(inner, hyperlinks, hyperlinkSeq);
+    hyperlinkSeq += runs.hyperlinkCount;
+    const text = runs.textRuns.map(r => r.text).join('').trim();
+    if (!text && !runs.textRuns.length) continue;
+
     const paragraphStyle = {};
     if (/^h[1-6]$/.test(tag)) {
       const level = parseInt(tag.slice(1), 10);
-      // h1 用作文档主标题；其余按层级映射（HEADING_1=4 对应 h2），超出 HEADING_5 的并入 HEADING_5
       paragraphStyle.namedStyleType = level === 1 ? NAMED_STYLE.TITLE
         : Math.min(NAMED_STYLE.HEADING_1 + level - 1, NAMED_STYLE.HEADING_5);
     } else if (tag === 'li') {
@@ -118,56 +157,114 @@ function parseDocxHtml(html) {
       paragraphStyle.hanging = { v: 21 };
       paragraphStyle.indentStart = { v: 21 };
     }
-    blocks.push({ runs, paragraphStyle });
+    blocks.push({ runs: runs.textRuns, paragraphStyle });
   }
-  // 没有识别出任何块（例如纯文本片段）时按换行分段，避免整篇丢空
-  if (!matched) {
+
+  // 没有识别出任何块时按换行分段
+  if (!matched && !tables.length) {
     const plain = decodeEntities(html.replace(/<[^>]+>/g, '')).split(/\r?\n/);
     for (const line of plain) {
       if (!line.trim()) continue;
       blocks.push({ runs: [{ text: line.trim(), style: {} }], paragraphStyle: {} });
     }
   }
-  return blocks;
+
+  return { blocks, tables, images, hyperlinks };
 }
 
-/** 行内标签 → 带样式的文本片段序列 */
-function parseInlineRuns(inner) {
-  const runs = [];
+/** 行内标签 → 带样式的文本片段序列，同时提取超链接 */
+function parseInlineRuns(inner, hyperlinks, hyperlinkSeq) {
+  const textRuns = [];
   const styleStack = [];
-  // 依次匹配标签与文本，标签栈维护加粗/斜体/下划线/颜色/链接
+  let localHyperlinkCount = 0;
   const tokenRe = /<([a-z]+)([^>]*)>|<\/([a-z]+)>|([^<]+)/gi;
   let t;
   while ((t = tokenRe.exec(inner)) !== null) {
-    if (t[3]) { // 闭合标签
+    if (t[3]) {
       const tag = t[3].toLowerCase();
       for (let i = styleStack.length - 1; i >= 0; i--) {
         if (styleStack[i].tag === tag) { styleStack.splice(i, 1); break; }
       }
       continue;
     }
-    if (t[1]) { // 开始标签
+    if (t[1]) {
       const tag = t[1].toLowerCase();
       const attrs = t[2] || '';
-      if (tag === 'br') { runs.push({ text: '\n', style: currentStyle(styleStack) }); continue; }
-      if (tag === 'img') { continue; } // 图片在 convertDocx 中单独统计并提示
+      if (tag === 'br') { textRuns.push({ text: '\n', style: currentStyle(styleStack) }); continue; }
+      if (tag === 'img') { continue; }
+      if (tag === 'a') {
+        const hrefMatch = /href="([^"]*)"/.exec(attrs);
+        if (hrefMatch) {
+          const href = decodeEntities(hrefMatch[1]);
+          if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
+            const linkId = `hl-${hyperlinkSeq + localHyperlinkCount + 1}`;
+            hyperlinks.push({ id: linkId, url: href });
+            styleStack.push({ tag: 'a', style: {}, linkId });
+            localHyperlinkCount++;
+            continue;
+          }
+        }
+      }
       const style = {};
       if (tag === 'strong' || tag === 'b') style.bl = 1;
       if (tag === 'em' || tag === 'i') style.it = 1;
       if (tag === 'u') style.ul = { tr: 1 };
       if (tag === 's' || tag === 'strike') style.st = { tr: 1 };
-      const colorMatch = /color:\s*#([0-9a-f]{6})/i.exec(attrs);
+      const colorMatch = /color:\s*#([0-9a-fA-F]{6})/i.exec(attrs);
       if (colorMatch) style.cl = hexToRgb(colorMatch[1]);
       const sizeMatch = /font-size:\s*(\d+(?:\.\d+)?)pt/i.exec(attrs);
-      // Univer 的 fs 与 Word 一样以磅为单位，直接沿用数值
       if (sizeMatch) style.fs = Math.round(parseFloat(sizeMatch[1]));
       styleStack.push({ tag, style });
       continue;
     }
     const text = decodeEntities(t[4]);
-    if (text) runs.push({ text, style: currentStyle(styleStack) });
+    if (text) {
+      const activeLink = styleStack.find(s => s.tag === 'a');
+      const runStyle = currentStyle(styleStack);
+      textRuns.push({ text, style: runStyle, linkId: activeLink ? activeLink.linkId : null });
+    }
   }
-  return runs.filter(r => r.text.length > 0);
+  return { textRuns: textRuns.filter(r => r.text.length > 0), hyperlinkCount: localHyperlinkCount };
+}
+
+/** 解析 HTML 表格为 Univer 表格结构 */
+function parseHtmlTable(tableHtml) {
+  const rows = [];
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch;
+  while ((rowMatch = rowRe.exec(tableHtml)) !== null) {
+    const cells = [];
+    const cellRe = /<(td|th)([^>]*)>([\s\S]*?)<\/\1>/gi;
+    let cellMatch;
+    while ((cellMatch = cellRe.exec(rowMatch[1])) !== null) {
+      const cellAttrs = cellMatch[2];
+      const cellContent = cellMatch[3];
+      const rowSpanMatch = /rowspan="(\d+)"/.exec(cellAttrs);
+      const colSpanMatch = /colspan="(\d+)"/.exec(cellAttrs);
+      const text = decodeEntities(cellContent.replace(/<[^>]+>/g, '')).trim();
+      cells.push({
+        text,
+        rowSpan: rowSpanMatch ? parseInt(rowSpanMatch[1], 10) : 1,
+        colSpan: colSpanMatch ? parseInt(colSpanMatch[1], 10) : 1,
+        style: {}
+      });
+    }
+    if (cells.length) rows.push({ cells });
+  }
+  if (!rows.length) return null;
+  const cols = rows.reduce((n, r) => Math.max(n, r.cells.length), 0);
+  return {
+    blockType: 'table',
+    table: {
+      rows: rows.map(r => {
+        const copy = r.cells.slice();
+        while (copy.length < cols) copy.push({ text: '', rowSpan: 1, colSpan: 1, style: {} });
+        return { cells: copy };
+      }),
+      colWidths: new Array(cols).fill(Math.round(100 / cols)),
+      style: { fontSize: 11, borderColor: '#999', color: '#333' }
+    }
+  };
 }
 
 function currentStyle(stack) {
@@ -207,23 +304,43 @@ const DOCX_STYLE_MAP = [
 
 /**
  * .docx → Univer Docs 快照
- * 说明：mammoth 只输出结构与 b/i/u/s，Word 里的字体颜色、字号等直接格式不会出现在 HTML 中，
- * 因此导入结果保留大纲层级与强调样式，不承诺像素级还原。
+ * 增强功能：支持表格、图片、超链接导入
  * @param {Buffer} buffer docx 内容
  * @param {string} docName 文档名
  */
 async function convertDocx(buffer, docName) {
-  const result = await mammoth.convertToHtml({ buffer }, { styleMap: DOCX_STYLE_MAP });
-  const blocks = parseDocxHtml(result.value || '');
+  // 图片提取：使用 mammoth 的 convertImage 选项
+  const mediaSink = createImportMediaSink();
+  const mammothOptions = {
+    styleMap: DOCX_STYLE_MAP,
+    convertImage: mammoth.images.imgElement(function(element) {
+      return element.read('base64').then(function(imageBuffer) {
+        const dataUri = 'data:' + element.contentType + ';base64,' + imageBuffer;
+        // 保存到本地（从 data URI 解码）
+        const base64Data = imageBuffer;
+        const ext = element.contentType.split('/')[1] || 'png';
+        const url = mediaSink.add(`image.${ext}`, Buffer.from(base64Data, 'base64'));
+        return { src: url || dataUri };
+      });
+    })
+  };
 
-  // 组装 dataStream：每个段落以 \r\n 结束（Univer 段落分隔符固定占 2 个字符）
+  const result = await mammoth.convertToHtml({ buffer }, mammothOptions);
+  const parsed = parseDocxHtml(result.value || '');
+  const { blocks, tables, images: parsedImages, hyperlinks } = parsed;
+
+  // 组装 dataStream
   let dataStream = '';
   const paragraphs = [];
   const sectionBreaks = [];
   const textRuns = [];
+  const customBlocks = [];
+  const customRanges = [];
   const styles = {};
   let styleSeq = 0;
+  let blockSeq = 0;
 
+  // 处理段落
   blocks.forEach((block) => {
     block.runs.forEach((run) => {
       const st = dataStream.length;
@@ -237,23 +354,85 @@ async function convertDocx(buffer, docName) {
           styles[tsId] = run.style;
         }
         textRuns.push(tsId ? { st, en, tsId } : { st, en });
+        // 处理超链接
+        if (run.linkId) {
+          const link = hyperlinks.find(h => h.id === run.linkId);
+          if (link) {
+            customRanges.push({
+              startIndex: st,
+              endIndex: en,
+              rangeId: run.linkId,
+              rangeType: 0, // HYPERLINK
+              properties: { url: link.url }
+            });
+          }
+        }
       }
     });
     dataStream += '\r\n';
     const breakIndex = dataStream.length - 2; // \r 所在位置
     paragraphs.push({ startIndex: breakIndex, paragraphStyle: block.paragraphStyle });
-    sectionBreaks.push({ startIndex: dataStream.length - 1 });
   });
 
+  // 表格作为 customBlock 落在文末，占位段落同样以 \r 位置登记
+  tables.forEach((t) => {
+    const position = dataStream.length;
+    customBlocks.push({
+      startIndex: position,
+      blockType: 'table',
+      table: t.table
+    });
+    dataStream += '\r\n';
+    paragraphs.push({ startIndex: dataStream.length - 2, paragraphStyle: {} });
+  });
+
+  // 图片同上：drawing 注册进 drawings，正文里留一个占位段落
+  const drawings = {};
+  const drawingsOrder = [];
+  parsedImages.forEach((img) => {
+    const drawingId = img.id || `drawing-${++blockSeq}`;
+    drawings[drawingId] = {
+      id: drawingId,
+      blockType: 'image',
+      url: img.src,
+      width: img.width,
+      height: img.height
+    };
+    drawingsOrder.push(drawingId);
+    const position = dataStream.length;
+    customBlocks.push({
+      startIndex: position,
+      blockType: 'image',
+      drawingId
+    });
+    dataStream += '\r\n';
+    paragraphs.push({ startIndex: dataStream.length - 2, paragraphStyle: {} });
+  });
+
+  // sectionBreaks 标记「节」的边界，整篇单节时只有末尾一个；
+  // 每个段落都塞一个会让渲染层把文档切成无数节
   if (!paragraphs.length) {
     dataStream = '\r\n';
     paragraphs.push({ startIndex: 0, paragraphStyle: {} });
-    sectionBreaks.push({ startIndex: 1 });
   }
+  sectionBreaks.push({ startIndex: dataStream.length - 1 });
 
-  const images = (result.value.match(/<img/gi) || []).length;
+  // 构建超链接注册表
+  const hyperLinksMap = {};
+  hyperlinks.forEach(h => { hyperLinksMap[h.id] = { url: h.url }; });
+
+  // 统计和警告
   const warnings = [];
-  if (images) warnings.push(`已忽略 ${images} 张图片（.docx 图片暂不支持导入）`);
+  const importedImages = mediaSink.commit();
+  if (mediaSink.skipped) {
+    warnings.push(`${mediaSink.skipped} 张图片超出限制，未导入`);
+  }
+  if (tables.length) {
+    warnings.push(`已导入 ${tables.length} 个表格`);
+  }
+  if (hyperlinks.length) {
+    warnings.push(`已导入 ${hyperlinks.length} 个超链接`);
+  }
   (result.messages || [])
     .filter(msg => msg && msg.type === 'warning')
     .slice(0, 3)
@@ -267,18 +446,25 @@ async function convertDocx(buffer, docName) {
       docType: 'document',
       body: {
         dataStream, sectionBreaks, paragraphs, textRuns,
-        hyperLinks: { hyperLinks: {} }, customRanges: [], customMarks: []
+        customBlocks, customRanges, customMarks: [],
+        hyperLinks: { hyperLinks: hyperLinksMap }
       },
       styles,
       documentStyle: {
         pageSize: { width: 595, height: 842 },
         marginTop: 72, marginBottom: 72, marginLeft: 90, marginRight: 90
       },
-      drawings: {},
-      drawingsOrder: [],
+      drawings,
+      drawingsOrder,
       resources: '[]'
     },
-    stats: { paragraphs: paragraphs.length, chars: dataStream.length, images },
+    stats: {
+      paragraphs: paragraphs.length,
+      chars: dataStream.length,
+      images: importedImages,
+      tables: tables.length,
+      hyperlinks: hyperlinks.length
+    },
     warnings
   };
 }

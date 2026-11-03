@@ -279,6 +279,106 @@ function createEmptyDocument(title) {
   };
 }
 
+// ============ 页面设置（纸张 / 页边距 / 页眉页脚 / 分栏） ============
+
+// Univer 自有的 documentStyle 只保证 pageSize 与边距，其余字段是本项目扩展的。
+// 编辑器每次保存都会回传 Univer 快照，扩展字段可能被丢掉，所以保存前先留住库里的版本。
+const PAGE_SETUP_KEYS = [
+  'pageSize', 'marginTop', 'marginBottom', 'marginLeft', 'marginRight',
+  'pageOrient', 'columnProperties', 'pageNumberStart', 'headerFooterConfig'
+];
+
+const PAGE_PRESETS = {
+  A4: { width: 595, height: 842 },
+  A5: { width: 420, height: 595 },
+  B5: { width: 499, height: 709 },
+  LETTER: { width: 612, height: 792 }
+};
+
+function num(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function readPageSetup(doc) {
+  const ds = (doc && doc.documentStyle) || {};
+  const size = ds.pageSize || PAGE_PRESETS.A4;
+  const cols = Array.isArray(ds.columnProperties) ? ds.columnProperties.length : 1;
+  const hf = ds.headerFooterConfig || {};
+  const orient = ds.pageOrient === 'landscape' || size.width > size.height ? 'landscape' : 'portrait';
+  return {
+    paper: nameOfPaper(size),
+    width: num(size.width, 595),
+    height: num(size.height, 842),
+    orientation: orient,
+    margins: {
+      top: num(ds.marginTop, 72), bottom: num(ds.marginBottom, 72),
+      left: num(ds.marginLeft, 90), right: num(ds.marginRight, 90),
+    },
+    columns: Math.max(1, Math.min(4, cols || 1)),
+    pageNumberStart: num(ds.pageNumberStart, 1),
+    header: { enabled: Boolean(hf.header && hf.header.enabled), content: (hf.header && hf.header.content) || '' },
+    footer: { enabled: Boolean(hf.footer && hf.footer.enabled), content: (hf.footer && hf.footer.content) || '' },
+  };
+}
+
+function nameOfPaper(size) {
+  const w = num(size.width, 0), h = num(size.height, 0);
+  const long = Math.max(w, h), short = Math.min(w, h);
+  let best = 'CUSTOM', bestDiff = Infinity;
+  Object.keys(PAGE_PRESETS).forEach(name => {
+    const p = PAGE_PRESETS[name];
+    const diff = Math.abs(p.height - long) + Math.abs(p.width - short);
+    if (diff <= 2 && diff < bestDiff) { best = name; bestDiff = diff; }
+  });
+  return best;
+}
+
+function applyPageSetup(doc, setup) {
+  if (!doc || !setup) return readPageSetup(doc);
+  const ds = doc.documentStyle || (doc.documentStyle = {});
+  const orient = setup.orientation === 'landscape' ? 'landscape' : 'portrait';
+  const preset = PAGE_PRESETS[String(setup.paper || 'A4').toUpperCase()] || PAGE_PRESETS.A4;
+  let w = preset.width, h = preset.height;
+  if (String(setup.paper || '').toUpperCase() === 'CUSTOM') {
+    const cur = ds.pageSize || {};
+    w = num(setup.width, num(cur.width, w));
+    h = num(setup.height, num(cur.height, h));
+  }
+  ds.pageSize = orient === 'landscape'
+    ? { width: Math.max(w, h), height: Math.min(w, h) }
+    : { width: Math.min(w, h), height: Math.max(w, h) };
+  ds.pageOrient = orient;
+  const m = setup.margins || {};
+  ds.marginTop = num(m.top, 72); ds.marginBottom = num(m.bottom, 72);
+  ds.marginLeft = num(m.left, 90); ds.marginRight = num(m.right, 90);
+  const colCount = Math.max(1, Math.min(4, num(setup.columns, 1)));
+  ds.columnProperties = [];
+  for (let i = 0; i < colCount; i++) ds.columnProperties.push({ width: 0, gap: 18 });
+  ds.pageNumberStart = num(setup.pageNumberStart, 1);
+  ds.headerFooterConfig = {
+    header: { enabled: Boolean(setup.header && setup.header.enabled), content: String((setup.header && setup.header.content) || '') },
+    footer: { enabled: Boolean(setup.footer && setup.footer.enabled), content: String((setup.footer && setup.footer.content) || '') },
+  };
+  return readPageSetup(doc);
+}
+
+/** 把库里已有的页面设置补回 Univer 回传的快照，避免编辑器保存后丢配置 */
+function preservePageSetup(incomingDoc, existingDoc) {
+  if (!incomingDoc || !existingDoc) return incomingDoc;
+  const from = existingDoc.documentStyle;
+  const to = incomingDoc.documentStyle;
+  if (!from) return incomingDoc;
+  if (!to) {
+    incomingDoc.documentStyle = from;
+    return incomingDoc;
+  }
+  PAGE_SETUP_KEYS.forEach(key => {
+    if (to[key] === undefined && from[key] !== undefined) to[key] = from[key];
+  });
+  return incomingDoc;
+}
+
 /** 创建空演示文稿模板（版式与 public/js/ppt-scene.js 的 LAYOUTS 保持一致，改动需同步） */
 function pptElement(id, role, x, y, width, height, content, style) {
   return { id: id, type: 'text', x: x, y: y, width: width, height: height, content: content, style: style, role: role };
@@ -390,6 +490,9 @@ module.exports = {
   reloadDoc,
   createEmptyDocument,
   createEmptyPresentation,
+  readPageSetup,
+  applyPageSetup,
+  preservePageSetup,
   insertDoc,
   // 共享内存状态（路由直接读写，保证跨模块一致性）
   docCache,

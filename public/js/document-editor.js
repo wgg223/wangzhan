@@ -337,6 +337,13 @@
     if (typeof docInstance.getSnapshot === 'function') {
       try { snap = docInstance.getSnapshot(); } catch (e) { snap = null; }
     }
+    // Univer 1.3 的 FDocument 只提供 save()，导入生成的快照没有段落 id， facade 段落 API 会抛错
+    if (!snap && typeof docInstance.save === 'function') {
+      try { snap = docInstance.save(); } catch (e) { snap = null; }
+    }
+    if (!snap && docInstance._documentDataModel && typeof docInstance._documentDataModel.getSnapshot === 'function') {
+      try { snap = docInstance._documentDataModel.getSnapshot(); } catch (e) { snap = null; }
+    }
     if (!snap && docInstance._document && typeof docInstance._document.getSnapshot === 'function') {
       try { snap = docInstance._document.getSnapshot(); } catch (e) { snap = null; }
     }
@@ -345,6 +352,32 @@
       try { snap = univerAPI.doc.getSnapshot(); } catch (e) { snap = null; }
     }
     return snap;
+  }
+
+  /**
+   * 从快照读出段落清单（含文本区间与命名样式）
+   * 段落区间：Univer 的 paragraph.startIndex 指向段尾 \r，正文是「上一段结束 → startIndex」
+   */
+  function snapshotParagraphs() {
+    var snap = extractDocSnapshot();
+    var body = (snap && snap.body) || null;
+    if (!body) return [];
+    var ds = String(body.dataStream || '');
+    var list = [];
+    var cursor = 0;
+    (body.paragraphs || []).forEach(function (p, i) {
+      var end = Number(p.startIndex);
+      if (!isFinite(end) || end < cursor) end = cursor;
+      list.push({
+        index: i,
+        start: cursor,
+        end: end,
+        text: ds.slice(cursor, end).replace(/\r\n$/, ''),
+        namedStyleType: numOf(p && p.paragraphStyle && p.paragraphStyle.namedStyleType, 1)
+      });
+      cursor = end + 2;
+    });
+    return list;
   }
 
   // ============ 保存（乐观锁） ============
@@ -982,6 +1015,831 @@
     document.body.removeChild(a);
   }
 
+  // ============ 视图层（页面视图 / 阅读视图 / 大纲窗格） ============
+
+  var layout = {
+    open: false,
+    mode: 'layout',
+    instance: null,
+    data: null,
+    setup: null,
+    zoom: 1,
+    ruler: true,
+    pages: 0,
+    outline: true,
+    fontSize: 17,
+    pageWidth: 0
+  };
+
+  function toggleLayoutView() { toggleView('layout'); }
+
+  function toggleReadingView() { toggleView('reading'); }
+
+  function toggleView(mode) {
+    if (layout.open && layout.mode === mode) { closeView(); return; }
+    if (layout.open) closeView();
+    openView(mode);
+  }
+
+  function openView(mode) {
+    var root = $('docLayoutRoot');
+    if (!root || !window.DocLayout) return;
+    layout.mode = mode;
+    root.hidden = false;
+    viewBar();
+    layout.open = true;
+    markViewActive();
+    if (CFG.canEdit && state.dirty) saveNow(false);
+    fetchPageView();
+  }
+
+  function closeView() {
+    var root = $('docLayoutRoot');
+    if (!root) return;
+    layout.open = false;
+    layout.mode = 'layout';
+    layout.data = null;
+    root.hidden = true;
+    root.innerHTML = '';
+    if (layout.instance) layout.instance.destroy();
+    layout.instance = null;
+    markViewActive();
+  }
+
+  function markViewActive() {
+    var lb = $('btnDocLayout');
+    var rb = $('btnDocReading');
+    if (lb) lb.classList.toggle('is-active', layout.open && layout.mode === 'layout');
+    if (rb) rb.classList.toggle('is-active', layout.open && layout.mode === 'reading');
+  }
+
+  function fetchPageView(useStoredDoc) {
+    var payload = {};
+    if (!useStoredDoc && CFG.canEdit) {
+      var snap = extractDocSnapshot();
+      if (snap && snap.body) payload.doc = snap;
+    }
+    return csrfFetch(API.pageView + '?mode=' + layout.mode, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }).then(function (json) {
+      layout.data = json.data;
+      mountView();
+    }).catch(function (err) {
+      showToast(err.message || '视图生成失败', 'error');
+      closeView();
+    });
+  }
+
+  function mountView() {
+    var host = $('dlViewer');
+    if (!host || !layout.data) return;
+    if (layout.instance) layout.instance.destroy();
+    var reading = layout.mode === 'reading';
+    var opts = {
+      onActiveAnchor: highlightOutline,
+      onReady: function (count, warnings) {
+        if (reading) {
+          layout.pages = 0;
+        } else {
+          layout.pages = count;
+        }
+        var info = $('dlBarInfo');
+        if (info) {
+          var toc = (layout.data && layout.data.toc) || [];
+          info.textContent = (reading ? '正文 ' + count + ' 段 · ' : '共 ' + count + ' 页 · ')
+            + toc.length + ' 个标题'
+            + (warnings && warnings.length ? ' · ' + warnings.join('；') : '');
+        }
+      }
+    };
+    if (reading) {
+      opts.fontSize = layout.fontSize;
+      opts.pageWidth = layout.pageWidth;
+      layout.instance = window.DocLayout.mountReading(host, layout.data, opts);
+    } else {
+      opts.zoom = layout.zoom;
+      opts.showRuler = layout.ruler;
+      opts.canEdit = CFG.canEdit && !state.locked;
+      opts.onEditHeaderFooter = openHeaderFooterEditor;
+      layout.instance = window.DocLayout.mount(host, layout.data, opts);
+    }
+    renderOutline((layout.data.toc || []));
+    setOutlineVisible(layout.outline);
+  }
+
+  // ============ 大纲 / 导航窗格 ============
+
+  function renderOutline(toc) {
+    var box = $('dlOutline');
+    if (!box) return;
+    box.textContent = '';
+    if (!toc.length) {
+      var hint = document.createElement('div');
+      hint.className = 'dl-outline-empty';
+      hint.textContent = '还没有标题。选中段落后用「🎨 样式」设为标题，即可在此导航。';
+      box.appendChild(hint);
+      return;
+    }
+    toc.forEach(function (item) {
+      var li = document.createElement('button');
+      li.type = 'button';
+      li.className = 'dl-ol-item dl-ol-lv' + Math.max(1, Math.min(6, item.level || 1));
+      li.dataset.anchor = item.anchor;
+      li.textContent = item.text || '（空标题）';
+      li.title = item.text || '';
+      li.addEventListener('click', function () {
+        if (layout.instance) layout.instance.goTo(this.dataset.anchor);
+      });
+      box.appendChild(li);
+    });
+  }
+
+  function highlightOutline(anchor) {
+    var box = $('dlOutline');
+    if (!box) return;
+    var items = box.querySelectorAll('.dl-ol-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.toggle('is-active', Boolean(anchor) && items[i].dataset.anchor === anchor);
+    }
+  }
+
+  function setOutlineVisible(visible) {
+    var side = $('dlSide');
+    if (side) side.style.display = visible ? '' : 'none';
+    var btn = $('dlOutlineBtn');
+    if (btn) btn.textContent = '🧭 大纲：' + (visible ? '开' : '关');
+  }
+
+  // ============ 视图工具栏 ============
+
+  function selectOptions(list, current) {
+    return list.map(function (it) {
+      var sel = String(it.v) === String(current) ? ' selected' : '';
+      return '<option value="' + it.v + '"' + sel + '>' + it.label + '</option>';
+    }).join('');
+  }
+
+  var FONT_SIZES = [
+    { v: 14, label: '14px' }, { v: 15, label: '15px' }, { v: 16, label: '16px' },
+    { v: 17, label: '17px' }, { v: 19, label: '19px' }, { v: 21, label: '21px' }, { v: 24, label: '24px' }
+  ];
+  var PAGE_WIDTHS = [
+    { v: 680, label: '窄栏' }, { v: 780, label: '标准' }, { v: 960, label: '宽栏' }, { v: 0, label: '自适应' }
+  ];
+
+  function viewBar() {
+    var root = $('docLayoutRoot');
+    if (!root) return null;
+    if (root.querySelector('.dl-bar')) return root;
+
+    var reading = layout.mode === 'reading';
+    var bar = document.createElement('div');
+    bar.className = 'dl-bar';
+    bar.innerHTML = ''
+      + '<button type="button" class="ss-btn" id="dlBack">← 返回编辑</button>'
+      + (reading
+        ? '<label class="dl-setup-field is-inline" style="flex-direction:row;align-items:center;gap:6px">字号'
+        + '<select class="ss-input" id="drFont" style="width:88px">' + selectOptions(FONT_SIZES, layout.fontSize) + '</select></label>'
+        + '<label class="dl-setup-field is-inline" style="flex-direction:row;align-items:center;gap:6px">页宽'
+        + '<select class="ss-input" id="drWidth" style="width:96px">' + selectOptions(PAGE_WIDTHS, layout.pageWidth) + '</select></label>'
+        : '<label class="dl-setup-field" style="flex-direction:row;align-items:center;gap:6px">缩放'
+        + '<select class="ss-input" id="dlZoom" style="width:96px">'
+        + '<option value="0.5">50%</option><option value="0.75">75%</option>'
+        + '<option value="1">100%</option><option value="1.25">125%</option>'
+        + '<option value="1.5">150%</option><option value="2">200%</option>'
+        + '</select></label>'
+        + '<button type="button" class="ss-btn" id="dlFit">适应宽度</button>'
+        + '<button type="button" class="ss-btn" id="dlRulerBtn">标尺：' + (layout.ruler ? '开' : '关') + '</button>'
+        + '<button type="button" class="ss-btn" id="dlSetup">📐 页面设置</button>')
+      + '<button type="button" class="ss-btn" id="dlOutlineBtn">🧭 大纲：' + (layout.outline ? '开' : '关') + '</button>'
+      + '<button type="button" class="ss-btn" id="dlTocBtn">📑 生成目录</button>'
+      + (reading
+        ? '<button type="button" class="ss-btn" id="drPrint">🖨️ 打印</button>'
+        : '<button type="button" class="ss-btn" id="dlPrint">🖨️ 打印 / PDF</button>')
+      + '<span class="dl-bar-info" id="dlBarInfo"></span>';
+
+    var body = document.createElement('div');
+    body.className = 'dl-body';
+    var side = document.createElement('aside');
+    side.className = 'dl-side';
+    side.id = 'dlSide';
+    side.innerHTML = '<div class="dl-side-head">大纲导航</div><div class="dl-outline" id="dlOutline"></div>';
+    var viewer = document.createElement('div');
+    viewer.className = 'dl-viewer';
+    viewer.id = 'dlViewer';
+    body.appendChild(side);
+    body.appendChild(viewer);
+    root.appendChild(bar);
+    root.appendChild(body);
+
+    function on(id, handler) {
+      var el = bar.querySelector('#' + id);
+      if (el) el.addEventListener('click', handler);
+    }
+    function onChange(id, handler) {
+      var el = bar.querySelector('#' + id);
+      if (el) el.addEventListener('change', handler);
+    }
+
+    on('dlBack', closeView);
+    on('dlOutlineBtn', function () {
+      layout.outline = !layout.outline;
+      setOutlineVisible(layout.outline);
+    });
+    on('dlTocBtn', generateToc);
+
+    if (reading) {
+      onChange('drFont', function () {
+        layout.fontSize = parseFloat(this.value) || 17;
+        if (layout.instance) layout.instance.setFontSize(layout.fontSize);
+      });
+      onChange('drWidth', function () {
+        layout.pageWidth = parseFloat(this.value) || 0;
+        if (layout.instance) layout.instance.setPageWidth(layout.pageWidth);
+      });
+      on('drPrint', function () { if (layout.instance) layout.instance.print(); });
+    } else {
+      onChange('dlZoom', function () {
+        layout.zoom = parseFloat(this.value) || 1;
+        if (layout.instance) layout.instance.setZoom(layout.zoom);
+      });
+      on('dlFit', function () {
+        if (!layout.instance) return;
+        var z = layout.instance.fitWidth();
+        var sel = bar.querySelector('#dlZoom');
+        if (sel) sel.value = '';
+        layout.zoom = z;
+      });
+      on('dlRulerBtn', function () {
+        layout.ruler = !layout.ruler;
+        this.textContent = '标尺：' + (layout.ruler ? '开' : '关');
+        if (layout.instance) layout.instance.setRuler(layout.ruler);
+      });
+      on('dlSetup', openPageSetupModal);
+      on('dlPrint', openPrintModal);
+    }
+    return root;
+  }
+
+  // ============ 段落样式（namedStyleType 与后端 doc-renderer 的映射保持一致） ============
+
+  var NAMED_STYLE_HEADING_LEVEL = { 2: 1, 3: 2, 4: 1, 5: 2, 6: 3, 7: 4, 8: 5 };
+  var NAMED_STYLES = [
+    { value: 1, label: '正文' },
+    { value: 4, label: '标题 1' },
+    { value: 5, label: '标题 2' },
+    { value: 6, label: '标题 3' },
+    { value: 7, label: '标题 4' },
+    { value: 8, label: '标题 5' },
+    { value: 2, label: '大标题' },
+    { value: 3, label: '副标题' }
+  ];
+
+  function numOf(v, d) {
+    var n = Number(v);
+    return isFinite(n) ? n : d;
+  }
+
+  function styleLabel(value) {
+    for (var i = 0; i < NAMED_STYLES.length; i++) if (NAMED_STYLES[i].value === value) return NAMED_STYLES[i].label;
+    return '正文';
+  }
+
+  /** 当前文档里的标题段落（大纲数据源，编辑态无需等后端） */
+  function docHeadings() {
+    var out = [];
+    snapshotParagraphs().forEach(function (p) {
+      var level = NAMED_STYLE_HEADING_LEVEL[p.namedStyleType] || 0;
+      if (!level) return;
+      var text = String(p.text || '').replace(/[\r\n]+/g, ' ').trim();
+      if (!text) return;
+      out.push({ index: p.index, level: level, text: text, start: p.start, end: p.end });
+    });
+    return out;
+  }
+
+  // ============ 样式面板 ============
+
+  var MAX_STYLE_PARAS = 300;
+
+  function paraPreview(item) {
+    var text = String(item.text || '').replace(/\s+/g, ' ').trim();
+    return {
+      index: item.index,
+      text: text ? (text.length > 34 ? text.slice(0, 34) + '…' : text) : '（空段落）',
+      style: styleLabel(item.namedStyleType)
+    };
+  }
+
+  function openStylesPanel() {
+    if (!CFG.canEdit || state.locked) {
+      showToast('您没有编辑权限，无法修改段落样式', 'error');
+      return;
+    }
+    var paras = snapshotParagraphs();
+    if (!paras.length) {
+      showToast('文档还没有内容', 'info');
+      return;
+    }
+    var picked = { index: 0 };
+    var box = document.createElement('div');
+    box.className = 'dl-styles';
+    box.innerHTML = ''
+      + '<div class="dl-styles-col">'
+      + '<div class="dl-styles-head">段落（共 ' + paras.length + ' 段，最多列 ' + MAX_STYLE_PARAS + ' 段）</div>'
+      + '<div class="dl-styles-list" id="stParaList"></div>'
+      + '</div>'
+      + '<div class="dl-styles-col">'
+      + '<div class="dl-styles-head">段落样式</div>'
+      + '<div class="dl-styles-grid">'
+      + NAMED_STYLES.map(function (s) {
+        return '<button type="button" class="ss-btn dl-style-btn" data-style="' + s.value + '">' + s.label + '</button>';
+      }).join('')
+      + '</div>'
+      + '<div class="dl-setup-hint">样式按段落即时应用。设为「标题」的段落会出现在大纲窗格里，'
+      + '并作为「📑 生成目录」的条目；正文样式用于取消标题。</div>'
+      + '</div>';
+    openModal({ title: '🎨 段落样式', large: true, body: box, actions: [{ label: '关闭' }] });
+
+    function refresh() {
+      paras = snapshotParagraphs();
+      if (picked.index >= paras.length) picked.index = 0;
+      var list = box.querySelector('#stParaList');
+      if (!list) return;
+      list.textContent = '';
+      var limit = Math.min(paras.length, MAX_STYLE_PARAS);
+      for (var i = 0; i < limit; i++) {
+        var meta = paraPreview(paras[i]);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'dl-para-item' + (meta.index === picked.index ? ' is-active' : '');
+        btn.dataset.index = String(meta.index);
+        btn.innerHTML = '<span class="dl-para-no">' + (meta.index + 1) + '</span>'
+          + '<span class="dl-para-text">' + escapeHtml(meta.text) + '</span>'
+          + '<span class="dl-para-style">' + escapeHtml(meta.style) + '</span>';
+        list.appendChild(btn);
+      }
+    }
+    refresh();
+
+    box.querySelector('#stParaList').addEventListener('click', function (ev) {
+      var target = ev.target && ev.target.closest ? ev.target.closest('.dl-para-item') : null;
+      if (!target) return;
+      picked.index = parseInt(target.dataset.index, 10) || 0;
+      refresh();
+    });
+
+    box.addEventListener('click', function (ev) {
+      var btn = ev.target && ev.target.closest ? ev.target.closest('.dl-style-btn') : null;
+      if (!btn) return;
+      var item = paras[picked.index];
+      if (!item) return;
+      applyNamedStyle(item, parseInt(btn.dataset.style, 10)).then(function (ok) {
+        if (!ok) { showToast('样式应用失败', 'error'); return; }
+        markDirty();
+        refresh();
+        if (layout.open) fetchPageView();
+      });
+    });
+  }
+
+  /**
+   * 按快照偏移量应用命名样式：导入文档没有段落 id，facade 的 getRange/setStyle 会抛错，
+   * 命令自带 outlineLevel，正文样式（1）会把它复位
+   */
+  function applyNamedStyle(item, value) {
+    if (!univerAPI || typeof univerAPI.executeCommand !== 'function') {
+      return Promise.resolve(false);
+    }
+    return Promise.resolve(univerAPI.executeCommand('doc.command.set-paragraph-named-style', {
+      value: value,
+      textRanges: [{ startOffset: item.start, endOffset: item.end }]
+    })).then(function (done) {
+      return done !== false;
+    }).catch(function () {
+      return false;
+    });
+  }
+
+  // ============ 目录自动生成 ============
+
+  var TOC_TITLE = '目录';
+  var TOC_ENTRY_RE = /\t第\s*\d+\s*页\s*$/;
+
+  function contentWidthPt() {
+    var sec = (layout.data && layout.data.sections && layout.data.sections[0]) || {};
+    var mg = sec.margins || {};
+    var w = numOf(sec.pageWidthPt, 595) - numOf(mg.left, 90) - numOf(mg.right, 90);
+    return Math.max(120, Math.round(w));
+  }
+
+  /** 在离屏容器里跑一遍页面视图，量出每个标题落在第几页 */
+  function measureAnchorPages() {
+    return new Promise(function (resolve, reject) {
+      var snap = extractDocSnapshot();
+      if (!snap || !snap.body) {
+        reject(new Error('文档内容尚未就绪'));
+        return;
+      }
+      var host = document.createElement('div');
+      host.className = 'dl-measure-host';
+      document.body.appendChild(host);
+      var settled = false;
+      var timer = null;
+
+      function finish(instance, payload) {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        var pages = {};
+        try { pages = instance.anchorPages() || {}; } catch (e) { pages = {}; }
+        try { instance.destroy(); } catch (e) { /* 忽略 */ }
+        if (host.parentNode) host.parentNode.removeChild(host);
+        resolve({ toc: (payload.data && payload.data.toc) || [], pages: pages });
+      }
+
+      // toc=0：只渲染文档真实内容，否则额外目录块会把后文挤到下页、页码偏大
+      csrfFetch(API.pageView + '?mode=layout&toc=0', {
+        method: 'POST',
+        body: JSON.stringify({ doc: snap })
+      }).then(function (json) {
+        if (!window.DocLayout) { reject(new Error('页面布局脚本未加载')); return; }
+        var instance = window.DocLayout.mount(host, json.data, {
+          zoom: 1,
+          showRuler: false,
+          onReady: function () { finish(instance, json); }
+        });
+        timer = setTimeout(function () { finish(instance, json); }, 20000);
+      }).catch(function (err) {
+        if (settled) return;
+        settled = true;
+        if (host.parentNode) host.parentNode.removeChild(host);
+        reject(err);
+      });
+    });
+  }
+
+  /** 删除上一次生成的目录块（开头的「目录」段 + 紧随其后带页码的条目段） */
+  function removeGeneratedToc() {
+    var paras = snapshotParagraphs();
+    if (!paras.length || String(paras[0].text || '').trim() !== TOC_TITLE) return 0;
+    var last = 0;
+    for (var i = 1; i < paras.length; i++) {
+      if (!TOC_ENTRY_RE.test(String(paras[i].text || ''))) break;
+      last = i;
+    }
+    // 只有「目录」两字、下面没有页码条目，那是作者自己写的标题，不动它
+    if (last < 1 || !docInstance || typeof docInstance.deleteRange !== 'function') return 0;
+    try {
+      // 段尾的 \r\n 也要一起删掉，否则会留下空段
+      if (!docInstance.deleteRange({ startOffset: 0, endOffset: paras[last].end + 2 })) return 0;
+    } catch (e) {
+      return 0;
+    }
+    return last + 1;
+  }
+
+  function insertTocLines(toc, pagesMap) {
+    var tabPt = contentWidthPt();
+    var lines = [{ head: true, level: 1, text: TOC_TITLE }];
+    toc.forEach(function (item) {
+      var level = Math.max(1, Math.min(6, numOf(item.level, 1)));
+      var page = numOf(pagesMap[item.anchor], 0);
+      lines.push({
+        head: false,
+        level: level,
+        text: page > 0 ? (item.text + '\t第 ' + page + ' 页') : String(item.text || '')
+      });
+    });
+    var inserted = 0;
+    // 倒序插入 index 0，最终顺序与 lines 一致
+    for (var i = lines.length - 1; i >= 0; i--) {
+      var line = lines[i];
+      var para = null;
+      try {
+        para = docInstance.insertParagraph(0, line.text);
+      } catch (e) {
+        para = null;
+      }
+      if (!para) continue;
+      inserted++;
+      if (typeof para.setStyle !== 'function') continue;
+      var style = { namedStyleType: 1, outlineLevel: 9 };
+      if (line.head) {
+        style.textStyle = { bl: 1, fs: 14 };
+      } else {
+        style.indentStart = { v: (line.level - 1) * 18, u: 0 };
+        style.tabStops = [{ offset: tabPt, alignment: 3, leader: 2 }];
+      }
+      try { para.setStyle(style); } catch (e) { /* 样式失败不影响目录可用 */ }
+    }
+    return inserted;
+  }
+
+  function generateToc() {
+    if (!CFG.canEdit || state.locked) {
+      showToast('您没有编辑权限，无法生成目录', 'error');
+      return;
+    }
+    if (!docInstance || typeof docInstance.insertParagraph !== 'function') {
+      showToast('文档编辑器尚未就绪', 'error');
+      return;
+    }
+    if (!docHeadings().length) {
+      showToast('文档里还没有标题：请用「🎨 样式」把段落设为标题', 'info');
+      return;
+    }
+    setLoading(true, '正在计算目录页码…');
+    measureAnchorPages().then(function (res) {
+      if (!res.toc.length) {
+        setLoading(false);
+        showToast('没有可用于目录的标题', 'info');
+        return;
+      }
+      var replaced = removeGeneratedToc();
+      var inserted = insertTocLines(res.toc, res.pages);
+      setLoading(false);
+      if (!inserted) {
+        showToast('目录插入失败，请刷新后重试', 'error');
+        return;
+      }
+      markDirty();
+      showToast((replaced ? '目录已更新' : '目录已生成') + '：' + res.toc.length + ' 条。改动正文后再次点击可刷新页码', 'success');
+      if (layout.open) fetchPageView();
+    }).catch(function (err) {
+      setLoading(false);
+      showToast(err.message || '目录生成失败', 'error');
+    });
+  }
+
+  function printFormHtml(total) {
+    return '<div class="dl-setup">'
+      + field('pRange', '页码范围', '<label style="display:flex;gap:6px;align-items:center">'
+        + '<input type="radio" name="dlRangeMode" value="all" checked> 全部（1–' + total + '）'
+        + '</label><label style="display:flex;gap:6px;align-items:center;margin-top:4px">'
+        + '<input type="radio" name="dlRangeMode" value="part"> 从'
+        + '<input class="ss-input" type="number" id="dlRangeFrom" min="1" max="' + total + '" value="1" style="width:64px">'
+        + '到<input class="ss-input" type="number" id="dlRangeTo" min="1" max="' + total + '" value="' + total + '" style="width:64px">'
+        + '</label>')
+      + field('pHf', '页眉页脚', '<label style="display:flex;gap:6px;align-items:center">'
+        + '<input type="checkbox" id="dlHf" checked> 包含页眉页脚</label>')
+      + '<div class="dl-setup-hint">打印 / 导出 PDF 都按页面视图的分页结果输出，两者版式一致。'
+        + '导出 PDF 需服务器安装 Chromium，未安装时请用「打印」并在对话框选择「另存为 PDF」。</div>'
+      + '</div>';
+  }
+
+  function collectPrintOpts(rootEl, total) {
+    var radios = rootEl.querySelectorAll('input[name="dlRangeMode"]');
+    var partial = false;
+    for (var i = 0; i < radios.length; i++) if (radios[i].checked && radios[i].value === 'part') partial = true;
+    var from = partial ? (parseInt((rootEl.querySelector('#dlRangeFrom') || {}).value, 10) || 1) : 1;
+    var to = partial ? (parseInt((rootEl.querySelector('#dlRangeTo') || {}).value, 10) || total) : total;
+    if (from > to) { var t = from; from = to; to = t; }
+    return {
+      from: Math.min(Math.max(1, from), total),
+      to: Math.min(Math.max(1, to), total),
+      headerFooter: (rootEl.querySelector('#dlHf') || {}).checked !== false
+    };
+  }
+
+  function openPrintModal() {
+    if (!layout.instance) { showToast('请先进入页面视图', 'info'); return; }
+    var total = layout.pages || 0;
+    if (!total) { showToast('文档暂无可打印内容', 'info'); return; }
+    var box = document.createElement('div');
+    box.innerHTML = printFormHtml(total);
+    openModal({
+      title: '打印 / 导出 PDF',
+      body: box,
+      actions: [
+        { label: '取消' },
+        {
+          label: '🖨️ 打印',
+          onClick: function (ctx) {
+            var opts = collectPrintOpts(box, total);
+            ctx.close();
+            layout.instance.print(opts);
+          }
+        },
+        {
+          label: '📄 导出 PDF',
+          className: 'ss-btn-primary',
+          onClick: function (ctx) {
+            var opts = collectPrintOpts(box, total);
+            ctx.close();
+            exportPdf(opts);
+          }
+        }
+      ]
+    });
+  }
+
+  function exportPdf(opts) {
+    if (!API.exportPdf) { showToast('导出地址未配置', 'error'); return; }
+    var payload = { from: opts.from, to: opts.to, headerFooter: opts.headerFooter };
+    if (CFG.canEdit) {
+      var snap = extractDocSnapshot();
+      if (snap && snap.body) payload.doc = snap;
+    }
+    setLoading(true, '正在生成 PDF…');
+    fetch(API.exportPdf, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CFG.csrf || '' },
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (json) {
+          throw Object.assign(new Error((json && json.error) || ('PDF 导出失败（' + res.status + '）')), { code: json && json.code });
+        });
+      }
+      return res.blob();
+    }).then(function (blob) {
+      setLoading(false);
+      downloadBlob(blob, (CFG.name || '文档') + '.pdf');
+      showToast('PDF 已导出', 'success');
+    }).catch(function (err) {
+      setLoading(false);
+      if (err.code === 'NO_BROWSER' && layout.instance) {
+        layout.instance.print(opts);
+      }
+      showToast(err.message || 'PDF 导出失败', 'error');
+    });
+  }
+
+  function downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function fetchPageSetup() {
+    return csrfFetch(API.pageSetup).then(function (json) {
+      layout.setup = (json.data && json.data.pageSetup) || null;
+      return layout.setup;
+    });
+  }
+
+  function paperOptions() {
+    return [
+      { value: 'A4', label: 'A4（210 × 297 mm）' },
+      { value: 'A5', label: 'A5（148 × 210 mm）' },
+      { value: 'B5', label: 'B5（176 × 250 mm）' },
+      { value: 'LETTER', label: 'Letter（216 × 279 mm）' },
+      { value: 'CUSTOM', label: '自定义' }
+    ];
+  }
+
+  function field(id, label, inputHtml, wide) {
+    return '<label class="dl-setup-field' + (wide ? ' is-wide' : '') + '">' + escapeHtml(label)
+      + '<span id="' + id + '">' + inputHtml + '</span></label>';
+  }
+
+  function setupFormHtml(s) {
+    var opts = paperOptions().map(function (p) {
+      return '<option value="' + p.value + '"' + (p.value === s.paper ? ' selected' : '') + '>' + p.label + '</option>';
+    }).join('');
+    return '<div class="dl-setup">'
+      + field('fPaper', '纸张', '<select class="ss-input" data-k="paper">' + opts + '</select>')
+      + field('fOrient', '方向', '<select class="ss-input" data-k="orientation">'
+        + '<option value="portrait"' + (s.orientation === 'portrait' ? ' selected' : '') + '>纵向</option>'
+        + '<option value="landscape"' + (s.orientation === 'landscape' ? ' selected' : '') + '>横向</option>'
+        + '</select>')
+      + field('fTop', '上边距（磅）', '<input class="ss-input" type="number" min="0" max="200" data-k="margins.top" value="' + s.margins.top + '">')
+      + field('fBottom', '下边距（磅）', '<input class="ss-input" type="number" min="0" max="200" data-k="margins.bottom" value="' + s.margins.bottom + '">')
+      + field('fLeft', '左边距（磅）', '<input class="ss-input" type="number" min="0" max="200" data-k="margins.left" value="' + s.margins.left + '">')
+      + field('fRight', '右边距（磅）', '<input class="ss-input" type="number" min="0" max="200" data-k="margins.right" value="' + s.margins.right + '">')
+      + field('fCols', '分栏', '<select class="ss-input" data-k="columns">'
+        + [1, 2, 3, 4].map(function (n) {
+          return '<option value="' + n + '"' + (n === s.columns ? ' selected' : '') + '>' + n + ' 栏</option>';
+        }).join('') + '</select>')
+      + field('fStart', '起始页码', '<input class="ss-input" type="number" min="1" max="9999" data-k="pageNumberStart" value="' + s.pageNumberStart + '">')
+      + field('fHeader', '页眉', '<input class="ss-input" type="text" maxlength="80" data-k="header.content" placeholder="留空则不显示页眉" value="' + escapeHtml(s.header.content) + '">', true)
+      + field('fFooter', '页脚', '<input class="ss-input" type="text" maxlength="80" data-k="footer.content" placeholder="可用 {PAGE} / {NUMPAGES} / {SECTION}" value="' + escapeHtml(s.footer.content) + '">', true)
+      + '<div class="dl-setup-hint">页眉页脚留空即不显示；页脚默认显示「第 {PAGE} 页 / 共 {NUMPAGES} 页」。</div>'
+      + '</div>';
+  }
+
+  function collectSetup(rootEl, base) {
+    var out = {
+      paper: base.paper, orientation: base.orientation,
+      margins: {
+        top: base.margins.top, bottom: base.margins.bottom,
+        left: base.margins.left, right: base.margins.right
+      },
+      columns: base.columns, pageNumberStart: base.pageNumberStart,
+      width: base.width, height: base.height,
+      header: { enabled: Boolean(base.header && base.header.content), content: (base.header && base.header.content) || '' },
+      footer: { enabled: Boolean(base.footer && base.footer.content), content: (base.footer && base.footer.content) || '' }
+    };
+    var nodes = rootEl.querySelectorAll('[data-k]');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var key = el.dataset.k;
+      var val = el.type === 'number' ? (parseFloat(el.value) || 0) : el.value;
+      if (key.indexOf('.') > 0) {
+        var parts = key.split('.');
+        if (!out[parts[0]]) out[parts[0]] = {};
+        out[parts[0]][parts[1]] = val;
+      } else {
+        out[key] = val;
+      }
+    }
+    out.header.enabled = Boolean(out.header.content);
+    out.footer.enabled = Boolean(out.footer.content);
+    return out;
+  }
+
+  function openPageSetupModal() {
+    if (!CFG.canEdit || state.locked) {
+      showToast('只读模式下不能修改页面设置', 'info');
+      return;
+    }
+    setLoading(true, '正在读取页面设置…');
+    fetchPageSetup().then(function (s) {
+      setLoading(false);
+      if (!s) { showToast('页面设置读取失败', 'error'); return; }
+      var box = document.createElement('div');
+      box.innerHTML = setupFormHtml(s);
+      openModal({
+        title: '页面设置',
+        body: box,
+        actions: [
+          { label: '取消' },
+          {
+            label: '保存',
+            className: 'ss-btn-primary',
+            onClick: function (ctx) {
+              var next = collectSetup(box, s);
+              ctx.close();
+              savePageSetup(next);
+            }
+          }
+        ]
+      });
+    }).catch(function (err) {
+      setLoading(false);
+      showToast(err.message || '页面设置读取失败', 'error');
+    });
+  }
+
+  function openHeaderFooterEditor(type, current) {
+    if (!CFG.canEdit || state.locked) return;
+    fetchPageSetup().then(function (s) {
+      if (!s) return;
+      var box = document.createElement('div');
+      box.innerHTML = '<label class="dl-setup-field is-wide">'
+        + (type === 'header' ? '页眉内容' : '页脚内容')
+        + '<input class="ss-input" type="text" maxlength="80" id="hfInput" value="'
+        + escapeHtml((s[type] && s[type].content) || current || '') + '">'
+        + '<span class="dl-setup-hint">可用 {PAGE} / {NUMPAGES} / {SECTION} 占位符，留空则不显示。</span></label>';
+      openModal({
+        title: type === 'header' ? '编辑页眉' : '编辑页脚',
+        body: box,
+        actions: [
+          { label: '取消' },
+          {
+            label: '保存',
+            className: 'ss-btn-primary',
+            onClick: function (ctx) {
+              var input = box.querySelector('#hfInput');
+              var next = JSON.parse(JSON.stringify(s));
+              next[type] = { enabled: Boolean(input && input.value), content: (input && input.value) || '' };
+              ctx.close();
+              savePageSetup(next);
+            }
+          }
+        ]
+      });
+      var focusEl = box.querySelector('#hfInput');
+      if (focusEl) focusEl.focus();
+    });
+  }
+
+  function savePageSetup(setup) {
+    return csrfFetch(API.pageSetup, {
+      method: 'PUT',
+      body: JSON.stringify(setup)
+    }).then(function (json) {
+      var data = json.data || {};
+      if (data.version) state.version = data.version;
+      layout.setup = data.pageSetup || setup;
+      setSaveStatus('is-saved', '已保存 v' + state.version);
+      showToast('页面设置已保存', 'success');
+      // 页面设置只影响版式，不需要同步回 Univer，直接按库里最新版本重绘
+      return fetchPageView(true);
+    }).catch(function (err) {
+      if (err.status === 409) handleConflict();
+      showToast(err.message || '页面设置保存失败', 'error');
+    });
+  }
+
   // ============ UI 绑定 ============
 
   function bindUi() {
@@ -1019,6 +1877,15 @@
 
     var exportBtn = $('btnSsExport');
     if (exportBtn) exportBtn.addEventListener('click', exportDoc);
+
+    var layoutBtn = $('btnDocLayout');
+    if (layoutBtn) layoutBtn.addEventListener('click', toggleLayoutView);
+
+    var readingBtn = $('btnDocReading');
+    if (readingBtn) readingBtn.addEventListener('click', toggleReadingView);
+
+    var stylesBtn = $('btnDocStyles');
+    if (stylesBtn) stylesBtn.addEventListener('click', openStylesPanel);
 
     // 快捷键 Ctrl+S / Cmd+S
     document.addEventListener('keydown', function (e) {

@@ -72,6 +72,8 @@ const { createEmptyUniverDoc } = require('../utils/spreadsheet-migrate');
 const { exportUniverDoc } = require('../utils/spreadsheet-univer-io');
 const { exportPresentation } = require('../utils/pptx-export');
 const { exportOfficeDocument } = require('../utils/docx-export');
+const { renderDocFlow } = require('../utils/doc-html-renderer');
+const docPdf = require('../utils/doc-pdf');
 const { importOfficeFile, decodeUploadName, SUPPORTED_EXTENSIONS, MAX_IMPORT_BYTES, MAX_IMPORT_MB } = require('../utils/office-import');
 const docStore = require('../utils/spreadsheet-doc-store');
 const { getClientIp } = require('../utils/client-ip');
@@ -351,6 +353,7 @@ router.put('/api/spreadsheet/:id(\\d+)/doc', isAuthenticated, hasFrontendPermiss
   }
 
   const structural = Boolean(req.body.structural);
+  if (docType === 'document') docStore.preservePageSetup(doc, entry.doc);
   entry.doc = doc;
   entry.version += 1;
   entry.dirty = false;
@@ -513,6 +516,128 @@ router.get('/api/spreadsheet/:id(\\d+)/export', isAuthenticated, hasFrontendPerm
   res.setHeader('Content-Type', out.mime);
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeName + '.' + out.ext)}`);
   res.send(buffer);
+});
+
+// 页面布局 / 阅读视图数据：把快照按 block 拆成 HTML 片段，前端实测分页
+// 传 doc 时用编辑器当前内容（含未保存改动），不传时用库里已保存的版本
+router.post('/api/spreadsheet/:id(\\d+)/page-view', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(1), (req, res) => {
+  const db = req.db;
+  const sheetId = req.spreadsheet.id;
+  if ((req.spreadsheet.doc_type || 'spreadsheet') !== 'document') {
+    return res.status(400).json({ success: false, error: '仅文档支持页面视图' });
+  }
+  const mode = String(req.query.mode || 'layout') === 'reading' ? 'reading' : 'layout';
+  let snapshot = req.body && req.body.doc;
+  if (!snapshot || !snapshot.body) {
+    try {
+      snapshot = loadDoc(db, sheetId).doc;
+    } catch (e) {
+      return res.status(404).json({ success: false, error: e.message || '文档不存在' });
+    }
+  }
+  let out;
+  try {
+    out = renderDocFlow(snapshot, {
+      name: req.spreadsheet.name,
+      readingMode: mode === 'reading',
+      // toc=0 只渲染文档真实内容：算目录页码时必须用它，否则额外目录会把后文顶到下页
+      includeToc: String(req.query.toc || '1') !== '0',
+    });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message || '页面渲染失败' });
+  }
+  res.json({
+    success: true,
+    data: { mode, css: out.css, sections: out.sections, toc: out.toc, warnings: out.warnings }
+  });
+});
+
+// PDF 导出：分页结果与页面视图同源（把同一份 doc-layout.js 内联进打印页，交无头浏览器落盘）
+// 服务器没装 Chromium 时不报 500，返回 NO_BROWSER 让前端引导用户走浏览器打印
+router.post('/api/spreadsheet/:id(\\d+)/export-pdf', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(1), async (req, res) => {
+  const db = req.db;
+  const sheetId = req.spreadsheet.id;
+  if ((req.spreadsheet.doc_type || 'spreadsheet') !== 'document') {
+    return res.status(400).json({ success: false, error: '仅文档支持导出 PDF' });
+  }
+  if (req.docPermLevel < 2) {
+    return res.status(403).json({ success: false, error: '您没有导出此文档的权限' });
+  }
+  if (!await docPdf.isAvailable()) {
+    return res.status(501).json({
+      success: false,
+      code: 'NO_BROWSER',
+      error: '服务器未安装 Chromium，无法生成 PDF。请在「页面视图」里用「打印 / PDF」，在打印对话框选择「另存为 PDF」',
+    });
+  }
+  let snapshot = req.body && req.body.doc;
+  if (!snapshot || !snapshot.body) {
+    try {
+      snapshot = loadDoc(db, sheetId).doc;
+    } catch (e) {
+      return res.status(404).json({ success: false, error: e.message || '文档不存在' });
+    }
+  }
+  const from = parseInt(req.body && req.body.from, 10);
+  const to = parseInt(req.body && req.body.to, 10);
+  let flow;
+  try {
+    flow = renderDocFlow(snapshot, { name: req.spreadsheet.name, includeToc: true });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message || '页面渲染失败' });
+  }
+  try {
+    const pdf = await docPdf.toPdf(flow, {
+      title: req.spreadsheet.name || '文档',
+      from: isNaN(from) ? 1 : from,
+      to: isNaN(to) ? 0 : to,
+      headerFooter: !(req.body && req.body.headerFooter === false),
+    });
+    const safeName = String(req.spreadsheet.name || '文档').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || '文档';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeName + '.pdf')}`);
+    res.send(pdf);
+  } catch (e) {
+    const busy = e.code === 'BUSY';
+    res.status(busy ? 429 : 500).json({ success: false, code: e.code || 'EXPORT_FAILED', error: e.message || 'PDF 导出失败' });
+  }
+});
+
+// 页面设置：纸张 / 页边距 / 分栏 / 页眉页脚（写入快照 documentStyle，随导出与页面视图生效）
+router.get('/api/spreadsheet/:id(\\d+)/page-setup', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(1), (req, res) => {
+  if ((req.spreadsheet.doc_type || 'spreadsheet') !== 'document') {
+    return res.status(400).json({ success: false, error: '仅文档支持页面设置' });
+  }
+  const entry = loadDoc(req.db, req.spreadsheet.id);
+  if (!entry || !entry.doc) return res.status(404).json({ success: false, error: '文档不存在' });
+  res.json({ success: true, data: { pageSetup: docStore.readPageSetup(entry.doc) } });
+});
+
+router.put('/api/spreadsheet/:id(\\d+)/page-setup', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(3), (req, res) => {
+  const db = req.db;
+  const sheetId = req.spreadsheet.id;
+  if ((req.spreadsheet.doc_type || 'spreadsheet') !== 'document') {
+    return res.status(400).json({ success: false, error: '仅文档支持页面设置' });
+  }
+  if (req.spreadsheet.is_locked === 1) {
+    return res.status(403).json({ success: false, error: '文档已锁定，无法修改页面设置' });
+  }
+  const entry = loadDoc(db, sheetId);
+  if (!entry || !entry.doc) return res.status(404).json({ success: false, error: '文档不存在' });
+
+  let setup;
+  try {
+    setup = docStore.applyPageSetup(entry.doc, req.body || {});
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message || '页面设置无效' });
+  }
+  entry.version += 1;
+  entry.dirty = false;
+  persistDocEntry(db, sheetId, entry);
+  writeSnapshot(db, sheetId, entry, '修改页面设置', req.session.user.id, req.session.user.username);
+  saveDatabase(db);
+  broadcast(sheetId, 'docReload', req.session.user.id, req.session.user.username, { version: entry.version });
+  res.json({ success: true, data: { version: entry.version, pageSetup: setup } });
 });
 
 // ============ 演示文稿媒体（图片）上传 ============

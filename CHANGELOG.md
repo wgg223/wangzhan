@@ -2,6 +2,37 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.11.0 (2026-11-03)
+
+**Word 文档：Office 功能对等实现（Stage 1-6）**
+
+- 共享渲染层 `doc-renderer.js`：把 Univer Docs 快照转换为格式无关的中间表示（IR），供 .docx 导出、HTML 导出、打印预览、阅读视图共用
+- HTML 渲染器 `doc-html-renderer.js`：富文本样式（加粗/斜体/下划线/删除线/颜色/字号/字体）、图片内联为 data URI（离线可用）、表格渲染（合并单元格、边框）、超链接渲染、页眉/页脚、页码、目录自动生成、脚注、分栏布局、列表（有序/无序）、打印优化 CSS（@page 规则）、阅读模式
+- `.docx` 导入增强：表格（解析 HTML 表格，转换为 Univer customBlocks，支持合并单元格）、图片（使用 mammoth 的 convertImage 选项提取并保存到 uploads）、超链接（解析 `<a>` 标签，转换为 customRanges）、样式增强（保留字体/颜色/字号/对齐）
+- `.docx` 导出增强：表格（生成 OOXML 表格，支持合并单元格和边框）、图片（嵌入到 docx media 目录，支持 PNG/JPG/GIF/WebP）、超链接（保留链接关系，应用 Hyperlink 样式）、页眉/页脚（生成 header/footer XML）、目录（生成 TOC 域代码，Word 中可更新）、样式（完整的 styles.xml，含内建标题样式和超链接样式）
+- HTML 导出增强：使用共享渲染层，支持所有 docx 导出功能，图片内联为 data URI，打印优化 CSS，阅读模式优化
+- 新增 `WORD-OFFICE-PARITY.md` 文档：详细记录 Word Office 功能对等实现的技术细节与剩余限制
+- 页面布局视图（📐 页面视图）：A4 纸分页预览，段落跨页按行边界实测拆分，加粗/颜色/超链接等内联样式在拆分后保持不变，支持 40%–250% 缩放、适应宽度与 cm 标尺（涂出页边距禁区）
+- 页面设置弹窗：纸张（A4/A5/B5/Letter/自定义）、纵横方向、四边边距、1–4 分栏、起始页码；新增 `GET/PUT /api/spreadsheet/:id/page-setup`，保存即写版本快照并广播 `docReload`
+- 页眉页脚编辑：布局视图内直接点击页眉/页脚区域编辑，支持 `{PAGE}` `{NUMPAGES}` `{SECTION}` 占位符，页脚默认「第 X 页 / 共 N 页」
+- 未保存预览：`POST /api/spreadsheet/:id/page-view` 接收编辑器当前快照，改动不必先落库就能看到分页效果；`?mode=layout|reading` 已为阅读视图预留
+- 打印 / 存为 PDF：布局视图内置 `@media print` 规则，隐藏标尺与页码提示，每页 `break-after: page`，走浏览器打印管线
+- 修复：Univer 回传的快照不含页面设置字段，编辑器保存一次就把刚配置的纸张/边距/分栏清空——新增 `preservePageSetup` 在落库前从原快照补回
+- 修复：页眉页脚只读分节符上的 `headerFooterConfig`，写在文档级页面设置里的页眉页脚始终不渲染
+- 打印对话框：页面视图「🖨️ 打印 / PDF」支持页码范围（全部 / 从 X 到 Y）与页眉页脚开关，范围外的页打印时整页移除，`afterprint` 后自动还原视图
+- 服务端导出 PDF：`POST /api/spreadsheet/:id/export-pdf`，打印页内联同一份 `doc-layout.js` 由浏览器实测分页，`@page` 按页面设置的磅值换算毫米，PDF 页面盒子与屏幕分页结果等大；输出内嵌中文字体子集与 `ToUnicode`，文字可选中搜索
+- Chromium 不随包分发（2 核 2G 服务器装不下），沿用 LibreOffice 的探测模式：`CHROMIUM_PATH` 或 PATH 里的 `chromium` / `chromium-browser` / `google-chrome` / `microsoft-edge`；未安装时返回 501 中文提示并自动改走浏览器打印另存 PDF
+- 小服务器保护：同一时刻只跑一个浏览器实例（并发返回「服务器正在生成其他 PDF」），独立 profile 目录、`--disable-dev-shm-usage`、临时文件用完即删
+- 修复：图片宽高与目录层级未校验数值区间，字符串值可撑破 `style` / `class` 属性
+- `deploy.py` 新增 `DEPLOY_INSTALL_CHROMIUM=1` 可选安装 Chromium 与 CJK 字体（默认关闭）
+- 阅读视图（📖 阅读）：连续排版不分页，复用服务端 readingMode 样式与同一份 `page-view` 数据，字号 14–24px、页宽（窄栏/标准/宽栏/自适应）即时生效，可直达打印
+- 大纲窗格（🧭 大纲）：按标题层级缩进列出全部标题，点击滚动定位并闪动高亮，滚动时自动跟随当前章节；编辑态大纲直接读本地快照，不必先保存
+- 段落样式面板（🎨 样式）：段落清单 + 「正文 / 标题 1–5 / 大标题 / 副标题」两列点选，按快照偏移量应用命名样式；设为标题的段落立刻进入大纲与目录数据源
+- 目录自动生成（📑 生成目录）：离屏挂载页面视图（`?mode=layout&toc=0`）实测每个标题的页码，在文档开头插入「目录 + 条目」，条目按级别缩进、制表符点线前导把页码推到右边界；再次点击先删旧块再插入，等价 Word「更新域」
+- 渲染层：段落内制表符统一渲染为弹性间隔 + `.doc-tab` 点线前导，页面视图/阅读视图/打印/PDF/HTML 导出共用；按 tab 切分文本片段套样式，避免加粗标签被劈开
+- 修复：Univer 1.3.1 的 `FDocument` 无 `getSnapshot`，编辑器取快照返回 null 导致页面视图与目录静默无数据——改走 `save()` 并逐级回退
+- 修复：导入文档段落不带 id，facade 的 `getText/getInfo/getRange/setStyle/remove` 全部抛「Multiple document paragraphs with id undefined found」——样式与目录改走「快照偏移量 + `doc.command.set-paragraph-named-style` + `deleteRange`」
+
 ## v8.10.0 (2026-11-03)
 
 **演示文稿：全功能放映 + 对齐 Office 的编辑、导入与导出**

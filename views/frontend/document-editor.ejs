@@ -11,6 +11,7 @@
   <script src="/js/font-switcher.js"></script>
   <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/univer/index.css') : '/vendor/univer/index.css' %>">
   <link rel="stylesheet" href="/css/spreadsheet-editor.css">
+  <link rel="stylesheet" href="/css/doc-layout.css?v=20261104a">
   <link rel="stylesheet" href="/css/anime-theme.css">
   <% if (permLevel === 1) { %>
   <link rel="stylesheet" href="/css/ss-content-protect.css">
@@ -47,6 +48,9 @@
       <button type="button" class="ss-btn" id="btnSsApplyPerm" title="申请更高权限">🔓 申请权限</button>
       <% } %>
       <button type="button" class="ss-btn" id="btnSsAi" title="AI 助手：润色 / 续写 / 翻译 / 总结">✨ AI</button>
+      <button type="button" class="ss-btn" id="btnDocStyles" title="段落样式：正文 / 标题，用于大纲与目录">🎨 样式</button>
+      <button type="button" class="ss-btn" id="btnDocLayout" title="页面视图：按 A4 分页预览与页面设置">📐 页面视图</button>
+      <button type="button" class="ss-btn" id="btnDocReading" title="阅读视图：连续排版与大纲导航">📖 阅读</button>
       <button type="button" class="ss-btn" id="btnSsExport" title="导出文档">⬇️ 导出</button>
       <div class="ss-user-chip">
         <img src="<%= user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="ss-user-avatar">
@@ -58,6 +62,7 @@
   <!-- Univer Docs 编辑器容器 -->
   <main class="ss-main">
     <div id="univer-container"></div>
+    <div id="docLayoutRoot" hidden></div>
     <div class="ss-loading-mask" id="ssLoadingMask">
       <div class="ss-loading-box">
         <div class="ss-spinner"></div>
@@ -101,6 +106,9 @@
         doc: '/api/spreadsheet/<%= doc.id %>/doc',
         meta: '/api/spreadsheet/<%= doc.id %>/meta',
         export: '/api/spreadsheet/<%= doc.id %>/export',
+        pageView: '/api/spreadsheet/<%= doc.id %>/page-view',
+        pageSetup: '/api/spreadsheet/<%= doc.id %>/page-setup',
+        exportPdf: '/api/spreadsheet/<%= doc.id %>/export-pdf',
         versions: '/api/spreadsheet/<%= doc.id %>/versions',
         comments: '/api/spreadsheet/<%= doc.id %>/comments',
         presence: '/api/spreadsheet/<%= doc.id %>/presence',
@@ -134,6 +142,7 @@
   </script>
   <script src="/js/ss-content-protect.js" defer></script>
   <% } %>
-  <script src="/js/document-editor.js?v=20261102" defer></script>
+  <script src="/js/doc-layout.js?v=20261104a" defer></script>
+  <script src="/js/document-editor.js?v=20261104a" defer></script>
 </body>
 </html>
