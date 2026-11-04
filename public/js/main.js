@@ -1,6 +1,22 @@
 // 前端主要JavaScript文件
 // 注意: escapeHtml, getCsrfToken, showToast 等工具函数已移至 utils.js
 
+// ============ 导航下拉菜单 ============
+function initNavDropdown() {
+  var dropdowns = document.querySelectorAll('.nav-dropdown');
+  dropdowns.forEach(function (dd) {
+    var btn = dd.querySelector('.nav-dropdown-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      dd.classList.toggle('open');
+    });
+  });
+  document.addEventListener('click', function () {
+    dropdowns.forEach(function (dd) { dd.classList.remove('open'); });
+  });
+}
+
 // ============ 移动端菜单 ============
 function initMobileMenu() {
   const menuBtn = document.getElementById('mobileMenuBtn');
@@ -120,6 +136,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 初始化移动端菜单（主题/语言由 site-settings.js 统一管理）
   initMobileMenu();
+  initNavDropdown();
 
   // 初始化图片懒加载
   initLazyLoading();

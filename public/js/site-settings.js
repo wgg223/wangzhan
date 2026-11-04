@@ -18,9 +18,10 @@
     'nav.community': { zh: '社区', en: 'Community' },
     'nav.novels': { zh: '小说', en: 'Novels' },
     'nav.images': { zh: '图片', en: 'Images' },
-    'nav.aiPrompts': { zh: 'AI提示词', en: 'AI Prompts' },
-    'nav.aiImage': { zh: 'AI生图', en: 'AI Images' },
-    'nav.aiChat': { zh: 'AI聊天', en: 'AI Chat' },
+    'nav.aiTools': { zh: '🤖 AI 工具', en: '🤖 AI Tools' },
+    'nav.aiPrompts': { zh: 'AI 提示词', en: 'AI Prompts' },
+    'nav.aiImage': { zh: 'AI 生图', en: 'AI Images' },
+    'nav.aiChat': { zh: 'AI 聊天', en: 'AI Chat' },
     'nav.spreadsheet': { zh: '在线Office', en: 'Office' },
     'nav.search': { zh: '搜索', en: 'Search' },
     // 用户菜单 / 按钮
