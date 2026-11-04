@@ -1583,7 +1583,7 @@
         changes.forEach(function (ch) {
           if (ch.seq <= state.lastSeq) return;
           state.lastSeq = ch.seq;
-          if (ch.kind === 'doc-reload' && !state.dirty && !state.editing) {
+          if (ch.kind === 'docReload' && !state.dirty && !state.editing) {
             csrfFetch(API.doc).then(function (j) {
               var d = j.data || {};
               state.version = d.version || 0;

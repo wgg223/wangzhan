@@ -482,7 +482,7 @@
     if (!ch || ch.seq <= state.lastSeq) return;
     state.lastSeq = ch.seq;
 
-    if (ch.kind === 'doc-reload') {
+    if (ch.kind === 'docReload') {
       // 其他人保存了文档 → 拉取最新版本
       if (!state.dirty && !state.saving) {
         reloadRemoteDoc();
