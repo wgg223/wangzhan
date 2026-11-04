@@ -345,10 +345,429 @@ button.sheet-tag.sheet-tag-apply:disabled {
   z-index: var(--z-toast);
 }
 
+/* ============ 在线Office 入口页 ============ */
+
+.of-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
+  background: linear-gradient(135deg, #f7f9ff 0%, #eef3fb 100%);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 14px);
+}
+
+.of-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xl, 24px);
+}
+
+.of-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.of-cap {
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, .8);
+  border: 1px solid #dfe6f2;
+  color: #475569;
+  font-size: var(--text-xs);
+}
+
+.of-hero-acts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.of-new,
+.of-import,
+.of-admin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+  transition: var(--transition-base);
+}
+
+.of-new:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.of-new-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 17px;
+  flex-shrink: 0;
+}
+
+.of-new-document .of-new-icon { background: #eef2ff; }
+.of-new-spreadsheet .of-new-icon { background: #e7f6ef; }
+.of-new-presentation .of-new-icon { background: #fff2e8; }
+
+.of-new-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.of-new-text em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.of-new-text strong {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+
+.of-new-text i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.of-import {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-base);
+  border-style: dashed;
+}
+
+.of-import span {
+  font-weight: var(--font-normal, 400);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.of-import:hover,
+.of-admin:hover {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+
+.of-admin {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.of-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.of-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: #eef1f6;
+  border-radius: var(--radius-full);
+}
+
+.of-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: var(--transition-base);
+}
+
+.of-tab em {
+  font-style: normal;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: #dfe4ec;
+  color: var(--text-muted);
+}
+
+.of-tab:hover {
+  color: var(--text-primary);
+}
+
+.of-tab.active {
+  background: var(--bg-card);
+  color: var(--primary-dark);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, .08));
+  font-weight: var(--font-semibold);
+}
+
+.of-tab.active em {
+  background: var(--primary);
+  color: #fff;
+}
+
+.of-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* 卡片：按文档类型着色，权限用右上角徽标 */
+.sheet-card {
+  position: relative;
+}
+
+.sheet-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--card-accent, #cbd5e1);
+}
+
+.sheet-card.type-document::before { --card-accent: #6366f1; background: #6366f1; }
+.sheet-card.type-spreadsheet::before { --card-accent: #10b981; background: #10b981; }
+.sheet-card.type-presentation::before { --card-accent: #f97316; background: #f97316; }
+
+.sheet-card.type-document .sheet-card-icon { background: #eef2ff; }
+.sheet-card.type-spreadsheet .sheet-card-icon { background: #e7f6ef; }
+.sheet-card.type-presentation .sheet-card-icon { background: #fff2e8; }
+
+.sheet-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sheet-card-top .sheet-card-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.sheet-card-top .sheet-tag {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.sheet-tag.tag-public {
+  background: #e6f4ff;
+  color: #0f6fb8;
+}
+
+.sheet-tag.tag-pending {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.sheet-tag.tag-apply {
+  background: transparent;
+  border: 1px dashed var(--primary-dark, #1e6bb8);
+  color: var(--primary-dark, #1e6bb8);
+}
+
+/* 待审批权限申请面板（入口页，跨文档） */
+.office-approvals {
+  margin: 0 0 var(--space-5);
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-lg, 12px);
+  background: #fffdf5;
+  overflow: hidden;
+}
+
+.office-approvals[hidden] {
+  display: none;
+}
+
+.oa-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px 14px;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+}
+
+.oa-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.oa-count {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #fff;
+  font-style: normal;
+  font-size: 12px;
+}
+
+.oa-toggle {
+  border: none;
+  background: transparent;
+  color: #92400e;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.oa-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.oa-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px 14px;
+  border-bottom: 1px dashed #f1e2b8;
+}
+
+.oa-item:last-child {
+  border-bottom: none;
+}
+
+.oa-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.oa-info strong {
+  font-size: 13px;
+  color: #374151;
+}
+
+.oa-doc,
+.oa-reason,
+.oa-time {
+  font-size: 12px;
+  color: #8a94a6;
+}
+
+.oa-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.oa-btn {
+  border: 1px solid #e0e4ea;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.oa-open {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.oa-approve {
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.oa-approve:hover {
+  background: #f0fdf4;
+}
+
+.oa-reject {
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.oa-reject:hover {
+  background: #fef2f2;
+}
+
+.oa-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.oa-done {
+  opacity: 0.62;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
   .sheet-grid {
     grid-template-columns: 1fr;
+  }
+
+  .of-hero {
+    flex-direction: column;
+  }
+
+  .of-hero-acts {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .of-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .of-tabs {
+    overflow-x: auto;
+  }
+
+  .of-filters {
+    width: 100%;
+  }
+
+  .oa-item {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .action-bar {

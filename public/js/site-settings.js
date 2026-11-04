@@ -21,7 +21,7 @@
     'nav.aiPrompts': { zh: 'AI提示词', en: 'AI Prompts' },
     'nav.aiImage': { zh: 'AI生图', en: 'AI Images' },
     'nav.aiChat': { zh: 'AI聊天', en: 'AI Chat' },
-    'nav.spreadsheet': { zh: '表格', en: 'Sheets' },
+    'nav.spreadsheet': { zh: '在线Office', en: 'Office' },
     'nav.search': { zh: '搜索', en: 'Search' },
     // 用户菜单 / 按钮
     'menu.myProfile': { zh: '👤 我的主页', en: '👤 My Profile' },

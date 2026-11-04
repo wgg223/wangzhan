@@ -456,7 +456,7 @@ async function convertDocx(buffer, docName) {
       },
       drawings,
       drawingsOrder,
-      resources: '[]'
+      resources: []
     },
     stats: {
       paragraphs: paragraphs.length,

@@ -94,6 +94,9 @@ const MAX_CELL_JSON = 4 * 1024; // 单格数据上限
 const PERM_LEVEL = { view: 1, comment: 2, download: 2, copy: 2, edit: 3, manage: 4 };
 const PERM_TYPES = ['view', 'comment', 'edit', 'download', 'copy'];
 const PERM_NAMES = { view: '查看', comment: '评论', edit: '编辑', download: '下载', copy: '创建副本' };
+// 文档类型中文名（三种类型共用 spreadsheets 表，提示文案需按类型区分）
+const DOC_TYPE_NAMES = { spreadsheet: '在线表格', document: '在线文档', presentation: '演示文稿' };
+function docTypeName(t) { return DOC_TYPE_NAMES[t] || DOC_TYPE_NAMES.spreadsheet; }
 
 // 全局管理权限（管理员或 spreadsheet.manage 权限持有者）
 function canManageSpreadsheet(req) {
@@ -205,10 +208,19 @@ router.get('/office', isAuthenticated, hasFrontendPermission('spreadsheet.access
     "SELECT s.id, s.name, s.description, s.created_by, s.status, s.doc_version, s.doc_type, s.updated_at, s.created_at, s.is_public_read, u.username AS creator_name FROM spreadsheets s LEFT JOIN users u ON s.created_by = u.id WHERE s.status = 'active' ORDER BY s.updated_at DESC"
   );
   const rows = sheets.map(s => ({ ...s, permLevel: getDocPermLevel(req, s.id, s) }));
+  // 我提交的待审批申请：列表页卡片标「⏳ 审批中」，避免重复申请
+  const pendingRows = queryAll(db,
+    "SELECT spreadsheet_id, perm_type FROM spreadsheet_permission_applications WHERE user_id = ? AND status = 'pending'",
+    [req.session.user.id]);
+  const myPending = {};
+  pendingRows.forEach(p => { myPending[p.spreadsheet_id] = p.perm_type; });
   res.render('frontend/office-list', {
     user: req.session.user,
     docs: rows,
+    myPending,
     canManage: canManageSpreadsheet(req),
+    // 进入本页说明已持有 spreadsheet.access，任何登录用户都可新建/导入自己的文档
+    canCreate: true,
     importLimits: { maxMb: MAX_IMPORT_MB, accept: SUPPORTED_EXTENSIONS.map(e => '.' + e) },
     settings: res.locals.settings || {}
   });
@@ -354,6 +366,8 @@ router.put('/api/spreadsheet/:id(\\d+)/doc', isAuthenticated, hasFrontendPermiss
 
   const structural = Boolean(req.body.structural);
   if (docType === 'document') docStore.preservePageSetup(doc, entry.doc);
+  // 旧客户端可能把 Univer 的 resources 回传成字符串，落库前收敛成数组
+  if (docType !== 'presentation') docStore.normalizeDocResources(doc);
   entry.doc = doc;
   entry.version += 1;
   entry.dirty = false;
@@ -741,11 +755,14 @@ router.post('/api/spreadsheet/:id(\\d+)/versions', isAuthenticated, hasFrontendP
 router.get('/api/spreadsheet/:id(\\d+)/versions/:version(\\d+)', isAuthenticated, hasFrontendPermission('spreadsheet.access'), requireDocPerm(1), (req, res) => {
   const v = queryOne(req.db, 'SELECT version, doc_data, change_desc, sheet_count, user_id, username, created_at FROM spreadsheet_versions WHERE spreadsheet_id = ? AND version = ?', [req.spreadsheet.id, parseInt(req.params.version, 10)]);
   if (!v || !v.doc_data) return res.status(404).json({ success: false, error: '版本不存在' });
+  const versionDoc = JSON.parse(v.doc_data);
+  // 旧版本快照里的 resources 可能是字符串，直接喂给 Univer 会崩
+  if ((req.spreadsheet.doc_type || 'spreadsheet') !== 'presentation') docStore.normalizeDocResources(versionDoc);
   res.json({
     success: true,
     data: {
       version: v.version,
-      doc: JSON.parse(v.doc_data),
+      doc: versionDoc,
       changeDesc: v.change_desc,
       username: v.username,
       createdAt: v.created_at
@@ -764,6 +781,7 @@ router.post('/api/spreadsheet/:id(\\d+)/versions/:version(\\d+)/restore', isAuth
   if (!v || !v.doc_data) return res.status(404).json({ success: false, error: '版本不存在' });
   try {
     const doc = JSON.parse(v.doc_data);
+    if ((req.spreadsheet.doc_type || 'spreadsheet') !== 'presentation') docStore.normalizeDocResources(doc);
     const entry = loadDoc(db, sheetId);
     entry.doc = doc;
     entry.version += 1;
@@ -1279,8 +1297,8 @@ router.post('/api/spreadsheet/:id(\\d+)/permission/apply', isAuthenticated, hasF
   `, [req.spreadsheet.created_by]);
   admins.forEach(admin => {
     createNotification(db, {
-      userId: admin.id, type: 'permission_apply', title: '表格权限申请',
-      content: `${req.session.user.username} 申请表格「${req.spreadsheet.name}」的${PERM_NAMES[perm_type]}权限${reason ? '：' + String(reason).slice(0, 100) : ''}`,
+      userId: admin.id, type: 'permission_apply', title: '在线Office权限申请',
+      content: `${req.session.user.username} 申请${docTypeName(req.spreadsheet.doc_type)}「${req.spreadsheet.name}」的${PERM_NAMES[perm_type]}权限${reason ? '：' + String(reason).slice(0, 100) : ''}`,
       fromUserId: userId, targetType: 'spreadsheet', targetId: String(sheetId)
     });
   });
@@ -1347,10 +1365,45 @@ router.post('/api/spreadsheet/:id(\\d+)/permission/approve', isAuthenticated, ha
   createNotification(db, {
     userId: app.user_id, type: 'permission_result',
     title: approved ? '权限申请已通过' : '权限申请被拒绝',
-    content: `您申请的表格「${req.spreadsheet.name}」的${PERM_NAMES[app.perm_type]}权限${approved ? '已通过' : '被拒绝'}`,
+    content: `您申请的${docTypeName(req.spreadsheet.doc_type)}「${req.spreadsheet.name}」的${PERM_NAMES[app.perm_type]}权限${approved ? '已通过' : '被拒绝'}`,
     fromUserId: req.session.user.id, targetType: 'spreadsheet', targetId: String(sheetId)
   });
   res.json({ success: true, message: approved ? '已通过申请' : '已拒绝申请' });
+});
+
+// 跨文档待审批申请（入口页审批面板）：管理员看全部，普通用户只看自己创建的文档
+router.get('/api/office/permission/pending', isAuthenticated, hasFrontendPermission('spreadsheet.access'), (req, res) => {
+  const db = req.db;
+  const manageAll = canManageSpreadsheet(req);
+  const where = manageAll ? '' : 'AND s.created_by = ?';
+  const apps = queryAll(db, `
+    SELECT a.id, a.spreadsheet_id, a.user_id, a.perm_type, a.reason, a.created_at,
+           s.name AS doc_name, s.doc_type,
+           COALESCE(NULLIF(u.nickname, ''), u.username, '') AS applicant
+    FROM spreadsheet_permission_applications a
+    JOIN spreadsheets s ON s.id = a.spreadsheet_id AND s.status = 'active'
+    LEFT JOIN users u ON u.id = a.user_id
+    WHERE a.status = 'pending' ${where}
+    ORDER BY a.created_at DESC LIMIT 100
+  `, manageAll ? [] : [req.session.user.id]);
+  res.json({
+    success: true,
+    data: {
+      scope: manageAll ? 'all' : 'own',
+      applications: apps.map(a => ({
+        id: a.id,
+        spreadsheetId: a.spreadsheet_id,
+        applicant: a.applicant || ('用户#' + a.user_id),
+        permType: a.perm_type,
+        permName: PERM_NAMES[a.perm_type] || a.perm_type,
+        reason: a.reason || '',
+        createdAt: a.created_at,
+        docName: a.doc_name,
+        docType: a.doc_type || 'spreadsheet',
+        docTypeName: docTypeName(a.doc_type)
+      }))
+    }
+  });
 });
 
 // 撤销用户权限
@@ -1416,7 +1469,7 @@ router.post('/api/spreadsheet/:id(\\d+)/permissions', isAuthenticated, hasFronte
   createNotification(db, {
     userId: target.id, type: 'permission_result',
     title: '权限已授予',
-    content: `您获得了表格「${req.spreadsheet.name}」的${PERM_NAMES[perm_type]}权限`,
+    content: `您获得了${docTypeName(req.spreadsheet.doc_type)}「${req.spreadsheet.name}」的${PERM_NAMES[perm_type]}权限`,
     fromUserId: req.session.user.id, targetType: 'spreadsheet', targetId: String(sheetId)
   });
   res.json({ success: true, message: `已授予 ${target.username} ${PERM_NAMES[perm_type]}权限` });

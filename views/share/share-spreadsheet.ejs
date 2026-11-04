@@ -1,7 +1,8 @@
 <%# ===== 页面模板：share/share-spreadsheet.ejs =====%>
-<%# 说明：分享-在线表格只读页（公开，无需登录；数据经 /share/:token/data 异步加载，Univer 只读渲染，不支持下载）；embed=true 时为 iframe 嵌入视图 %>
+<%# 说明：分享-在线表格只读页（公开，无需登录）。数据来自 /share/:token/sheet-view —— 服务端把快照排成静态表格 HTML，
+        前端不加载 Univer 引擎、也拿不到可编辑快照；查看者可用的能力仅「切换工作表」，无编辑、无筛选、无导出。
+        embed=true 时为 iframe 嵌入视图 %>
 <%
-  // 时间格式化（模板内联 helper）
   function fmtTime(t) {
     if (!t) return '-';
     var d = new Date(t);
@@ -9,8 +10,7 @@
     var p = function (n) { return (n < 10 ? '0' : '') + n; };
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
-  // iframe 嵌入代码（仅普通页展示）
-  var embedCode = '<iframe src="' + (baseUrl || '') + (embedUrl || '') + '" width="100%" height="560" frameborder="0" style="border:1px solid #e0e4ea;border-radius:12px;" loading="lazy" allowfullscreen></iframe>';
+  var embedCode = '<iframe src="' + (baseUrl || '') + (embedUrl || '') + '" width="100%" height="640" frameborder="0" style="border:1px solid #e0e4ea;border-radius:12px;" loading="lazy"></iframe>';
 %>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -24,21 +24,19 @@
     <meta property="og:description" content="<%= sheet.description ? String(sheet.description).slice(0, 100) : '一份在线表格分享' %>">
     <meta property="og:type" content="website">
   <% } %>
-  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/univer/index.css') : '/vendor/univer/index.css' %>">
   <% if (state === 'ok') { %>
   <link rel="stylesheet" href="/css/ss-content-protect.css">
   <% } %>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #fdf5f9; color: #43303e; min-height: 100vh; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f4f7f6; color: #22322c; min-height: 100vh; }
     body.embed { background: #fff; overflow: hidden; }
 
-    /* ---- 嵌入视图：仅画布 ---- */
-    body.embed #univer-container { width: 100vw; height: 100vh; }
-    body.embed #shareLoading, body.embed #shareError { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #fff; z-index: 30; }
+    /* ---- 嵌入视图：仅表格 ---- */
+    body.embed .sheet-host { position: fixed; inset: 0; overflow: auto; background: #fff; }
 
     /* ---- 普通视图 ---- */
-    .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px; }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 16px 40px; }
     .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.06); overflow: hidden; margin-bottom: 16px; }
     .head-card { padding: 18px 20px; }
     .head-card h1 { font-size: 18px; word-break: break-all; }
@@ -48,11 +46,25 @@
     .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
     .btn { display: inline-block; border: 1px solid #e0e4ea; background: #fff; color: #333; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; transition: background .15s, border-color .15s; }
     .btn:hover { background: #f3f6fa; border-color: #c8d0dc; }
-    .btn.primary { background: linear-gradient(135deg, #ec4899, #8b5cf6); border-color: transparent; color: #fff; }
-    .btn.primary:hover { background: linear-gradient(135deg, #be185d, #7c3aed); border-color: transparent; }
+    .badge-readonly { display: inline-block; background: #e8f5ee; color: #1f7a4d; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; vertical-align: 2px; }
 
-    .sheet-card { position: relative; }
-    #univer-container { width: 100%; height: 72vh; min-height: 420px; }
+    /* 工作表标签（只读：只做切换，不含增删改） */
+    .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px; border-bottom: 1px solid #e2e5ea; background: #fbfcfd; }
+    .tab { border: 1px solid #e0e4ea; border-radius: 6px 6px 0 0; background: #fff; color: #475569; font-size: 13px; padding: 5px 12px; cursor: pointer; font-family: inherit; }
+    .tab.is-active { background: #10715a; border-color: #10715a; color: #fff; font-weight: 600; }
+    .sheet-host { position: relative; min-height: 320px; max-height: 78vh; overflow: auto; }
+    .sheet-warn { padding: 8px 14px; font-size: 12px; color: #92400e; background: #fffbeb; border-bottom: 1px solid #fde68a; }
+
+    /* 服务端排好的表格 */
+    .sh-sheet { border-collapse: collapse; table-layout: fixed; font-size: 13px; color: #1f2937; }
+    .sh-sheet td, .sh-sheet th { border: 1px solid #e2e8f0; padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; word-break: break-word; }
+    .sh-sheet .sh-col, .sh-sheet .sh-row { background: #f5f7fa; color: #94a3b8; font-weight: 500; text-align: center; position: sticky; }
+    .sh-sheet .sh-col { top: 0; z-index: 2; min-width: 40px; }
+    .sh-sheet .sh-row { left: 0; z-index: 1; width: 44px; }
+    .sh-sheet .sh-corner { top: 0; left: 0; z-index: 3; width: 44px; }
+    .sh-sheet td { text-align: left; background: #fff; }
+    .sh-empty { padding: 40px 16px; text-align: center; color: #94a3b8; font-size: 13px; }
+
     .sheet-loading, .sheet-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(250, 251, 253, .95); z-index: 5; }
     .sheet-error p { font-size: 13px; color: #b91c1c; }
     .spin { width: 28px; height: 28px; border: 3px solid #dbe3ee; border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; }
@@ -64,19 +76,14 @@
     .embed-card textarea { width: 100%; height: 64px; font-size: 12px; font-family: Consolas, Monaco, monospace; color: #666; border: 1px solid #e0e4ea; border-radius: 8px; padding: 8px 10px; resize: none; background: #fafbfc; }
     .tip { font-size: 12px; color: #aaa; text-align: center; margin-top: 4px; }
     .footer { text-align: center; color: #aaa; font-size: 12px; padding: 12px 0; }
-
-    @media (max-width: 720px) {
-      #univer-container { height: 60vh; min-height: 360px; }
-    }
   </style>
-  <link rel="stylesheet" href="/css/anime-theme.css">
 </head>
 <body class="<%= embed ? 'embed' : 'page' %>">
   <% if (state === 'ok') { %>
     <% if (!embed) { %>
     <div class="wrap">
       <div class="card head-card">
-        <h1><%= sheet.name || '在线表格' %></h1>
+        <h1><%= sheet.name || '在线表格' %> <span class="badge-readonly">🔒 只读</span></h1>
         <div class="meta">
           <span>👤 <%= ownerName %></span>
           <% if (stats) { %>
@@ -91,15 +98,20 @@
         </div>
       </div>
 
-      <div class="card sheet-card">
-        <div id="univer-container"></div>
-        <div class="sheet-loading" id="shareLoading">
-          <div class="spin"></div>
-          <p style="font-size:13px;color:#888;">正在加载表格…</p>
+      <div class="card">
+        <div class="tabs" id="sheetTabs" hidden></div>
+        <div class="sheet-host" id="sheetHost">
+          <div class="sheet-loading" id="shareLoading">
+            <div class="spin"></div>
+            <p style="font-size:13px;color:#888;">正在加载表格…</p>
+          </div>
+          <div class="sheet-error" id="shareError" hidden>
+            <p>⚠️ 表格加载失败</p>
+            <p id="shareErrorMsg">请稍后刷新重试</p>
+          </div>
         </div>
-        <div class="sheet-error" id="shareError" hidden>
-          <p>⚠️ 表格加载失败</p>
-          <p id="shareErrorMsg">请稍后刷新重试</p>
+        <div class="tip" style="padding:10px 14px;text-align:left;color:#8a94a6;">
+          只读分享：公式按上次保存的结果显示，图表与条件格式不显示；不支持下载。
         </div>
       </div>
 
@@ -110,20 +122,20 @@
       <div class="tip">分享自 <%= baseUrl %> · 只读分享（不支持下载），如需编辑请向作者申请权限</div>
     </div>
     <% } else { %>
-    <div id="univer-container"></div>
-    <div id="shareLoading">
-      <div class="spin"></div>
-      <p style="font-size:13px;color:#888;">正在加载表格…</p>
-    </div>
-    <div id="shareError" hidden>
-      <p style="font-size:13px;color:#b91c1c;">⚠️ 表格加载失败</p>
+    <div class="sheet-host" id="sheetHost">
+      <div id="shareLoading">
+        <div class="spin"></div>
+        <p style="font-size:13px;color:#888;">正在加载表格…</p>
+      </div>
+      <div id="shareError" hidden>
+        <p style="font-size:13px;color:#b91c1c;">⚠️ 表格加载失败</p>
+      </div>
     </div>
     <% } %>
 
     <script>
-      // 分享页配置（后端注入）
       window.__SHARE__ = {
-        dataUrl: <%- JSON.stringify(dataUrl).replace(/</g, '\\u003c') %>,
+        viewUrl: <%- JSON.stringify('/share/' + share.share_token + '/sheet-view').replace(/</g, '\\u003c') %>,
         embed: <%= embed ? 'true' : 'false' %>
       };
       // 只读分享内容保护配置（防复制 + 访客 IP 水印溯源）
@@ -133,19 +145,17 @@
       };
     </script>
     <script src="/js/ss-content-protect.js" defer></script>
-    <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/univer/univer.min.js') : '/vendor/univer/univer.min.js' %>"></script>
     <script>
-      // 只读查看器：加载分享数据 → Univer 渲染 → 设为只读
+      // 只读表格查看器：服务端已把快照排成静态表格，这里只做工作表切换
+      // 表格 HTML 由服务端逐格转义后生成，前端只写入这一处，来源可控
       (function () {
-        /* global UniverBundle */
         var CFG = window.__SHARE__ || {};
-        var BUNDLE = window.UniverBundle;
-        var univerAPI = null;
-        var wb = null;
-
+        var host = document.getElementById('sheetHost');
+        var tabsBox = document.getElementById('sheetTabs');
         var mask = document.getElementById('shareLoading');
         var errBox = document.getElementById('shareError');
         var errMsg = document.getElementById('shareErrorMsg');
+        var sheets = [];
 
         function fail(msg) {
           if (mask) mask.hidden = true;
@@ -153,58 +163,64 @@
           if (errMsg && msg) errMsg.textContent = msg;
         }
 
-        function initUniver() {
-          if (!BUNDLE || typeof BUNDLE.createUniver !== 'function') {
-            fail('表格组件加载失败，请刷新重试');
-            return false;
-          }
-          var locale = BUNDLE.LocaleType ? BUNDLE.LocaleType.ZH_CN : undefined;
-          var locales = {};
-          if (locale !== undefined && BUNDLE.zhCN) locales[locale] = BUNDLE.zhCN;
-          var presets = [];
-          if (typeof BUNDLE.UniverSheetsCorePreset === 'function') {
-            presets.push(BUNDLE.UniverSheetsCorePreset({ container: 'univer-container' }));
-          }
-          if (typeof BUNDLE.UniverSheetsFilterPreset === 'function') presets.push(BUNDLE.UniverSheetsFilterPreset());
-          if (typeof BUNDLE.UniverSheetsFindReplacePreset === 'function') presets.push(BUNDLE.UniverSheetsFindReplacePreset());
-          var opts = { presets: presets };
-          if (locale !== undefined) opts.locale = locale;
-          if (Object.keys(locales).length) opts.locales = locales;
-          if (BUNDLE.defaultTheme) opts.theme = BUNDLE.defaultTheme;
-          var inst = BUNDLE.createUniver(opts);
-          if (!inst || !inst.univerAPI) {
-            fail('表格引擎初始化失败');
-            return false;
-          }
-          univerAPI = inst.univerAPI;
-          return true;
+        var tableHost = null;
+        function ensureTableHost() {
+          if (tableHost) return tableHost;
+          tableHost = document.createElement('div');
+          tableHost.id = 'sheetTable';
+          if (errBox) host.insertBefore(tableHost, errBox);
+          else host.appendChild(tableHost);
+          return tableHost;
         }
 
-        function loadData() {
-          fetch(CFG.dataUrl).then(function (r) {
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            return r.json();
-          }).then(function (json) {
-            if (!json || !json.success || !json.data || !json.data.doc) {
-              throw new Error((json && json.error) || '文档数据为空');
-            }
-            render(json.data.doc);
-          }).catch(function (e) {
-            fail(e.message || '数据加载失败，请刷新重试');
+        function showWarn(list) {
+          if (!list || !list.length || CFG.embed) return;
+          var bar = document.createElement('div');
+          bar.className = 'sheet-warn';
+          bar.textContent = '⚠️ ' + list.join('；');
+          host.parentNode.insertBefore(bar, host);
+        }
+
+        function select(index) {
+          var sheet = sheets[index];
+          if (!sheet) return;
+          // 内容只来自本服务的 /sheet-view（服务端已转义），此处是唯一的 HTML 写入点
+          ensureTableHost().innerHTML = sheet.html || '<p class="sh-empty">这个工作表是空的。</p>';
+          Array.prototype.forEach.call(tabsBox ? tabsBox.children : [], function (el, i) {
+            el.classList.toggle('is-active', i === index);
           });
         }
 
-        function render(doc) {
-          try {
-            wb = univerAPI.createWorkbook(doc);
-          } catch (e) {
-            fail('表格渲染失败：数据格式可能已损坏');
-            return;
-          }
-          if (wb) {
-            try { wb.setEditable(false); } catch (e) { /* 只读设置失败不影响查看 */ }
-          }
-          if (mask) mask.hidden = true;
+        function buildTabs() {
+          if (CFG.embed || sheets.length < 2 || !tabsBox) return;
+          tabsBox.hidden = false;
+          tabsBox.textContent = '';
+          sheets.forEach(function (s, i) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'tab';
+            btn.textContent = s.name;
+            btn.addEventListener('click', function () { select(i); });
+            tabsBox.appendChild(btn);
+          });
+        }
+
+        function load() {
+          fetch(CFG.viewUrl).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          }).then(function (json) {
+            if (!json || !json.success || !json.data || !json.data.sheets || !json.data.sheets.length) {
+              throw new Error((json && json.error) || '表格数据为空');
+            }
+            sheets = json.data.sheets;
+            buildTabs();
+            select(0);
+            showWarn(json.data.warnings);
+            if (mask) mask.hidden = true;
+          }).catch(function (e) {
+            fail(e.message || '表格加载失败，请刷新重试');
+          });
         }
 
         // 复制链接（分享页仅在线只读查看，不提供下载）
@@ -232,15 +248,11 @@
         });
         if (embedCode) embedCode.addEventListener('focus', function () { embedCode.select(); });
 
-        function boot() {
-          if (!initUniver()) return;
-          loadData();
-        }
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-        else boot();
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
+        else load();
       })();
     </script>
-    <% if (!embed) { %><div class="footer">在线表格分享</div><% } %>
+    <% if (!embed) { %><div class="footer">在线表格分享 · 只读</div><% } %>
   <% } else { %>
     <div class="wrap">
       <div class="card">

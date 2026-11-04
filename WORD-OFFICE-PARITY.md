@@ -146,6 +146,6 @@
 - `views/frontend/document-editor.ejs` - 视图容器、工具栏按钮与 API 地址
 
 ## 版本信息
-- **当前版本**: 8.11.0
-- **发布日期**: 2026-11-03
-- **主要变更**: Word 文档 Office 功能对等实现（Stage 1-6，全部完成）
+- **当前版本**: 8.11.1
+- **发布日期**: 2026-11-04
+- **主要变更**: Word 文档 Office 功能对等实现（Stage 1-6，全部完成）；v8.11.1 修复 `snapshot.resources` 被写成字符串导致 Univer 打开文档即抛「n.find is not a function」

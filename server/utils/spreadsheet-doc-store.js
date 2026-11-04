@@ -35,6 +35,22 @@ const changeQueues = new Map();
 const persistTimers = new Map();
 let changeSeq = Date.now(); // 单调递增序号（跨重启单调，避免旧序号覆盖）
 
+/**
+ * Univer 的 ResourceManagerService 会对 snapshot.resources 直接调 .find，
+ * 早期导入器与空文档模板把它写成了字符串 '[]'，编辑器于是抛
+ * 「n.find is not a function」。读的时候统一收敛成数组，落库时自然被纠正。
+ * 演示文稿走自研引擎、字段格式自定义，不参与归一化。
+ */
+function normalizeDocResources(doc) {
+  if (!doc || Array.isArray(doc.resources)) return doc;
+  let parsed = null;
+  if (typeof doc.resources === 'string' && doc.resources.trim()) {
+    try { parsed = JSON.parse(doc.resources); } catch (e) { parsed = null; }
+  }
+  doc.resources = Array.isArray(parsed) ? parsed : [];
+  return doc;
+}
+
 /** 获取文档（优先内存缓存，其次数据库/文件；Luckysheet 旧数据惰性迁移） */
 function loadDoc(db, sheetId) {
   const cached = docCache.get(sheetId);
@@ -82,6 +98,8 @@ function loadDoc(db, sheetId) {
       doc = createEmptyUniverDoc('');
     }
   }
+
+  if (docType !== 'presentation') normalizeDocResources(doc);
 
   const jsonStr = JSON.stringify(doc);
   const entry = {
@@ -275,7 +293,7 @@ function createEmptyDocument(title) {
     },
     drawings: {},
     drawingsOrder: [],
-    resources: '[]',
+    resources: [],
   };
 }
 
@@ -461,6 +479,7 @@ function createEmptyPresentation(title) {
  * @returns {number} 新文档 id
  */
 function insertDoc(db, opts) {
+  if (opts.docType !== 'presentation') normalizeDocResources(opts.doc);
   const json = JSON.stringify(opts.doc);
   const result = db.run(
     'INSERT INTO spreadsheets (name, description, created_by, doc_data, doc_version, doc_type) VALUES (?, ?, ?, ?, 1, ?)',
@@ -481,6 +500,7 @@ module.exports = {
   CHANGE_TTL_MS,
   KEEP_VERSIONS,
   loadDoc,
+  normalizeDocResources,
   persistDocEntry,
   schedulePersist,
   writeSnapshot,

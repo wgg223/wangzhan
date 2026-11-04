@@ -1,5 +1,7 @@
 <%# ===== 页面模板：share/share-document.ejs =====%>
-<%# 说明：分享-在线文档只读页（公开，无需登录；数据经 /share/:token/data 异步加载，Univer Docs 只读渲染，不支持下载）；embed=true 时为 iframe 嵌入视图 %>
+<%# 说明：分享-在线文档只读页（公开，无需登录）。数据来自 /share/:token/page-view —— 服务端用 renderDocFlow
+        把文档排成 HTML 片段，前端只负责分页展示，不下发可编辑快照、不加载 Univer 编辑器包；
+        查看者可用的能力仅「字号 / 页宽 / 大纲」，无编辑、无页面设置、无导出。embed=true 时为 iframe 嵌入视图 %>
 <%
   // 时间格式化（模板内联 helper）
   function fmtTime(t) {
@@ -24,7 +26,7 @@
     <meta property="og:description" content="<%= sheet.description ? String(sheet.description).slice(0, 100) : '一份在线文档分享' %>">
     <meta property="og:type" content="website">
   <% } %>
-  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/univer/index.css') : '/vendor/univer/index.css' %>">
+  <link rel="stylesheet" href="/css/doc-layout.css">
   <% if (state === 'ok') { %>
   <link rel="stylesheet" href="/css/ss-content-protect.css">
   <% } %>
@@ -33,9 +35,12 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #fdf5f9; color: #43303e; min-height: 100vh; }
     body.embed { background: #fff; overflow: hidden; }
 
-    /* ---- 嵌入视图：仅画布 ---- */
-    body.embed #univer-container { width: 100vw; height: 100vh; }
-    body.embed #shareLoading, body.embed #shareError { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #fff; z-index: 30; }
+    /* ---- 嵌入视图：仅阅读区 ---- */
+    body.embed .reader-only { position: fixed; inset: 0; }
+    body.embed #shareLoading, body.embed #shareError {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px; background: #fff; z-index: 30;
+    }
 
     /* ---- 普通视图 ---- */
     .wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px; }
@@ -48,12 +53,15 @@
     .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
     .btn { display: inline-block; border: 1px solid #e0e4ea; background: #fff; color: #333; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; transition: background .15s, border-color .15s; }
     .btn:hover { background: #f3f6fa; border-color: #c8d0dc; }
+    .badge-readonly { display: inline-block; background: #eef2ff; color: #4338ca; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; vertical-align: 2px; }
 
+    /* 只读阅读器：固定高度 + 内部滚动，避免出现任何编辑控件 */
     .doc-card { position: relative; }
-    #univer-container { width: 100%; height: 78vh; min-height: 460px; }
-    /* 只读分享页隐藏 Univer 顶部菜单与格式工具栏（编辑控件对查看者无意义，点击后无效易造成误解）。
-       仅命中外层工具栏 header：文档正文区自带的 sticky header 用相同标签，不能一并隐藏，否则画布高度塌陷。 */
-    #univer-container header.univer-overflow-hidden { display: none !important; }
+    .reader-host { position: relative; height: 78vh; min-height: 460px; background: #e8eaed; display: flex; flex-direction: column; }
+    .reader-host .dl-bar { flex: 0 0 auto; border-bottom: 1px solid #e2e5ea; }
+    .reader-host .dl-body { flex: 1 1 auto; min-height: 0; }
+    .reader-host select { padding: 4px 8px; border: 1px solid #d7dbe3; border-radius: 6px; font-size: 13px; background: #fff; color: #333; font-family: inherit; }
+    .reader-host label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; }
     .sheet-loading, .sheet-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(250, 251, 253, .95); z-index: 5; }
     .sheet-error p { font-size: 13px; color: #b91c1c; }
     .spin { width: 28px; height: 28px; border: 3px solid #dbe3ee; border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; }
@@ -67,17 +75,18 @@
     .footer { text-align: center; color: #aaa; font-size: 12px; padding: 12px 0; }
 
     @media (max-width: 720px) {
-      #univer-container { height: 68vh; min-height: 380px; }
+      .reader-host { height: 68vh; min-height: 380px; }
+      .reader-host .dl-body { top: 76px; }
+      .reader-host .dl-side { display: none; }
     }
   </style>
-  <link rel="stylesheet" href="/css/anime-theme.css">
 </head>
 <body class="<%= embed ? 'embed' : 'page' %>">
   <% if (state === 'ok') { %>
     <% if (!embed) { %>
     <div class="wrap">
       <div class="card head-card">
-        <h1><%= sheet.name || '在线文档' %></h1>
+        <h1><%= sheet.name || '在线文档' %> <span class="badge-readonly">🔒 只读</span></h1>
         <div class="meta">
           <span>👤 <%= ownerName %></span>
           <% if (stats) { %>
@@ -93,14 +102,18 @@
       </div>
 
       <div class="card doc-card">
-        <div id="univer-container"></div>
-        <div class="sheet-loading" id="shareLoading">
-          <div class="spin"></div>
-          <p style="font-size:13px;color:#888;">正在加载文档…</p>
+        <div class="reader-host" id="readerHost">
+          <div class="sheet-loading" id="shareLoading">
+            <div class="spin"></div>
+            <p style="font-size:13px;color:#888;">正在加载文档…</p>
+          </div>
+          <div class="sheet-error" id="shareError" hidden>
+            <p>⚠️ 文档加载失败</p>
+            <p id="shareErrorMsg">请稍后刷新重试</p>
+          </div>
         </div>
-        <div class="sheet-error" id="shareError" hidden>
-          <p>⚠️ 文档加载失败</p>
-          <p id="shareErrorMsg">请稍后刷新重试</p>
+        <div class="tip" style="padding:10px 14px;text-align:left;color:#8a94a6;">
+          只读分享：可调节字号与页宽、用大纲跳转；不含编辑、页面设置、打印与下载。
         </div>
       </div>
 
@@ -111,20 +124,21 @@
       <div class="tip">分享自 <%= baseUrl %> · 只读分享（不支持下载），如需编辑请向作者申请权限</div>
     </div>
     <% } else { %>
-    <div id="univer-container"></div>
-    <div id="shareLoading">
-      <div class="spin"></div>
-      <p style="font-size:13px;color:#888;">正在加载文档…</p>
-    </div>
-    <div id="shareError" hidden>
-      <p style="font-size:13px;color:#b91c1c;">⚠️ 文档加载失败</p>
+    <div class="reader-host reader-only" id="readerHost">
+      <div id="shareLoading">
+        <div class="spin"></div>
+        <p style="font-size:13px;color:#888;">正在加载文档…</p>
+      </div>
+      <div id="shareError" hidden>
+        <p style="font-size:13px;color:#b91c1c;">⚠️ 文档加载失败</p>
+      </div>
     </div>
     <% } %>
 
     <script>
       // 分享页配置（后端注入）
       window.__SHARE__ = {
-        dataUrl: <%- JSON.stringify(dataUrl).replace(/</g, '\\u003c') %>,
+        viewUrl: <%- JSON.stringify('/share/' + (share.share_token) + '/page-view').replace(/</g, '\\u003c') %>,
         embed: <%= embed ? 'true' : 'false' %>
       };
       // 只读分享内容保护配置（防复制 + 访客 IP 水印溯源）
@@ -134,19 +148,21 @@
       };
     </script>
     <script src="/js/ss-content-protect.js" defer></script>
-    <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/univer/univer.min.js') : '/vendor/univer/univer.min.js' %>"></script>
+    <script src="/js/doc-layout.js"></script>
     <script>
-      // 只读文档查看器：加载分享数据 → Univer Docs 渲染 → 设为只读
+      // 只读文档查看器：服务端已排好版，这里只挂阅读视图并暴露字号 / 页宽 / 大纲三个查看项
       (function () {
-        /* global UniverBundle */
+        /* global DocLayout */
         var CFG = window.__SHARE__ || {};
-        var BUNDLE = window.UniverBundle;
-        var univerAPI = null;
-        var docInstance = null;
-
+        var host = document.getElementById('readerHost');
         var mask = document.getElementById('shareLoading');
         var errBox = document.getElementById('shareError');
         var errMsg = document.getElementById('shareErrorMsg');
+
+        var FONT_SIZES = [14, 15, 16, 17, 19, 21, 24];
+        var PAGE_WIDTHS = [{ v: 680, label: '窄栏' }, { v: 780, label: '标准' }, { v: 960, label: '宽栏' }, { v: 0, label: '自适应' }];
+
+        var state = { instance: null, data: null, fontSize: 17, pageWidth: 780, outline: false };
 
         function fail(msg) {
           if (mask) mask.hidden = true;
@@ -154,88 +170,130 @@
           if (errMsg && msg) errMsg.textContent = msg;
         }
 
-        function initUniver() {
-          if (!BUNDLE || typeof BUNDLE.createUniver !== 'function') {
-            fail('文档组件加载失败，请刷新重试');
-            return false;
-          }
-          var locale = BUNDLE.LocaleType ? BUNDLE.LocaleType.ZH_CN : undefined;
-          var locales = {};
-          if (locale !== undefined && BUNDLE.zhCN) locales[locale] = BUNDLE.zhCN;
-          var presets = [];
-          if (typeof BUNDLE.UniverDocsCorePreset === 'function') {
-            presets.push(BUNDLE.UniverDocsCorePreset({ container: 'univer-container' }));
-          }
-          if (typeof BUNDLE.UniverDocsDrawingPreset === 'function') {
-            presets.push(BUNDLE.UniverDocsDrawingPreset());
-          }
-          if (presets.length === 0) {
-            fail('文档引擎预设加载失败');
-            return false;
-          }
-          var opts = { presets: presets };
-          if (locale !== undefined) opts.locale = locale;
-          if (Object.keys(locales).length) opts.locales = locales;
-          if (BUNDLE.defaultTheme) opts.theme = BUNDLE.defaultTheme;
-          var inst = BUNDLE.createUniver(opts);
-          if (!inst || !inst.univerAPI) {
-            fail('文档引擎初始化失败');
-            return false;
-          }
-          univerAPI = inst.univerAPI;
-          return true;
+        function options(list, current) {
+          return list.map(function (it) {
+            var v = typeof it === 'object' ? it.v : it;
+            var label = typeof it === 'object' ? it.label : it + 'px';
+            return '<option value="' + v + '"' + (String(v) === String(current) ? ' selected' : '') + '>' + label + '</option>';
+          }).join('');
         }
 
-        function loadData() {
-          fetch(CFG.dataUrl).then(function (r) {
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            return r.json();
-          }).then(function (json) {
-            if (!json || !json.success || !json.data || !json.data.doc) {
-              throw new Error((json && json.error) || '文档数据为空');
-            }
-            render(json.data.doc);
-          }).catch(function (e) {
-            fail(e.message || '数据加载失败，请刷新重试');
+        /** 阅读工具栏：仅查看类控件（嵌入视图不显示） */
+        function buildBar() {
+          if (CFG.embed) return null;
+          var bar = document.createElement('div');
+          bar.className = 'dl-bar';
+          bar.innerHTML = ''
+            + '<label>字号<select id="drFont">' + options(FONT_SIZES, state.fontSize) + '</select></label>'
+            + '<label>页宽<select id="drWidth">' + options(PAGE_WIDTHS, state.pageWidth) + '</select></label>'
+            + '<button type="button" class="btn" id="drOutline">🧭 大纲：关</button>'
+            + '<span class="dl-bar-info" id="drInfo"></span>';
+          host.insertBefore(bar, host.firstChild);
+          bar.querySelector('#drFont').addEventListener('change', function () {
+            state.fontSize = parseFloat(this.value) || 17;
+            if (state.instance) state.instance.setFontSize(state.fontSize);
+          });
+          bar.querySelector('#drWidth').addEventListener('change', function () {
+            state.pageWidth = parseFloat(this.value) || 0;
+            if (state.instance) state.instance.setPageWidth(state.pageWidth);
+          });
+          bar.querySelector('#drOutline').addEventListener('click', function () {
+            state.outline = !state.outline;
+            this.textContent = '🧭 大纲：' + (state.outline ? '开' : '关');
+            var side = document.getElementById('drSide');
+            // 显式写 block：窄屏样式里 .dl-side 默认 display:none，空串盖不住它
+            if (side) side.style.display = state.outline ? 'block' : 'none';
+          });
+          return bar;
+        }
+
+        function buildBody() {
+          var body = document.createElement('div');
+          body.className = 'dl-body';
+          if (CFG.embed) body.style.position = 'static';
+          var side = document.createElement('aside');
+          side.className = 'dl-side';
+          side.id = 'drSide';
+          side.style.display = 'none';
+          side.innerHTML = '<div class="dl-side-head">大纲导航</div><div class="dl-outline" id="drOutlineBox"></div>';
+          var viewer = document.createElement('div');
+          viewer.className = 'dl-viewer';
+          viewer.id = 'drViewer';
+          body.appendChild(side);
+          body.appendChild(viewer);
+          host.appendChild(body);
+          return viewer;
+        }
+
+        function renderOutline(toc) {
+          var box = document.getElementById('drOutlineBox');
+          if (!box) return;
+          box.textContent = '';
+          if (!toc.length) {
+            var hint = document.createElement('div');
+            hint.className = 'dl-outline-empty';
+            hint.textContent = '这份文档还没有设置标题，无法生成大纲。';
+            box.appendChild(hint);
+            return;
+          }
+          toc.forEach(function (item) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dl-ol-item dl-ol-lv' + Math.max(1, Math.min(6, item.level || 1));
+            btn.dataset.anchor = item.anchor;
+            btn.textContent = item.text || '（空标题）';
+            btn.title = item.text || '';
+            btn.addEventListener('click', function () {
+              if (state.instance) state.instance.goTo(this.dataset.anchor);
+            });
+            box.appendChild(btn);
           });
         }
 
-        function render(doc) {
-          try {
-            if (typeof univerAPI.createDocument === 'function') {
-              docInstance = univerAPI.createDocument(doc);
-            }
-            if (!docInstance && typeof univerAPI.getActiveDocument === 'function') {
-              docInstance = univerAPI.getActiveDocument();
-            }
-          } catch (e) {
-            fail('文档渲染失败：数据格式可能已损坏');
-            return;
+        function highlightOutline(anchor) {
+          var box = document.getElementById('drOutlineBox');
+          if (!box) return;
+          var items = box.querySelectorAll('.dl-ol-item');
+          for (var i = 0; i < items.length; i++) {
+            items[i].classList.toggle('is-active', Boolean(anchor) && items[i].dataset.anchor === anchor);
           }
-          if (!docInstance) {
-            fail('文档渲染失败：未获取到文档实例');
-            return;
-          }
-          // 只读：setEditable 在部分版本不可用，失败时退化为拦截编辑键与 contenteditable
-          try {
-            if (typeof docInstance.setEditable === 'function') docInstance.setEditable(false);
-          } catch (e) { /* 只读设置失败不影响查看 */ }
-          applyReadonlyFallback();
-          if (mask) mask.hidden = true;
         }
 
-        function applyReadonlyFallback() {
-          document.addEventListener('keydown', function (e) {
-            if (e.target && e.target.closest && e.target.closest('#univer-container')) {
-              if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key && e.key.length === 1) e.preventDefault();
+        function mount(data) {
+          var viewer = buildBody();
+          state.instance = DocLayout.mountReading(viewer, data, {
+            fontSize: state.fontSize,
+            pageWidth: state.pageWidth,
+            onActiveAnchor: highlightOutline,
+            onReady: function (count, warnings) {
+              var info = document.getElementById('drInfo');
+              if (info) {
+                info.textContent = '正文 ' + count + ' 段 · ' + ((data.toc || []).length) + ' 个标题'
+                  + (warnings && warnings.length ? ' · ' + warnings.join('；') : '');
+              }
+              if (mask) mask.hidden = true;
             }
-          }, true);
-          // 移除文档正文的可编辑属性（渲染完成后异步生效，多次尝试）
-          [0, 300, 1200].forEach(function (delay) {
-            setTimeout(function () {
-              var eds = document.querySelectorAll('#univer-container [contenteditable="true"]');
-              for (var i = 0; i < eds.length; i++) eds[i].setAttribute('contenteditable', 'false');
-            }, delay);
+          });
+          renderOutline(data.toc || []);
+        }
+
+        function load() {
+          if (typeof DocLayout === 'undefined' || !DocLayout.mountReading) {
+            fail('阅读组件加载失败，请刷新页面');
+            return;
+          }
+          buildBar();
+          fetch(CFG.viewUrl).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          }).then(function (json) {
+            if (!json || !json.success || !json.data || !json.data.sections) {
+              throw new Error((json && json.error) || '文档数据为空');
+            }
+            state.data = json.data;
+            mount(json.data);
+          }).catch(function (e) {
+            fail(e.message || '文档加载失败，请刷新重试');
           });
         }
 
@@ -264,15 +322,11 @@
         });
         if (embedCode) embedCode.addEventListener('focus', function () { embedCode.select(); });
 
-        function boot() {
-          if (!initUniver()) return;
-          loadData();
-        }
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-        else boot();
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
+        else load();
       })();
     </script>
-    <% if (!embed) { %><div class="footer">在线文档分享</div><% } %>
+    <% if (!embed) { %><div class="footer">在线文档分享 · 只读</div><% } %>
   <% } else { %>
     <div class="wrap">
       <div class="card">

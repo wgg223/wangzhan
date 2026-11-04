@@ -7,6 +7,8 @@
  *   GET  /share/:token       —— 公开分享页（无需登录，支持 AI 会话 / 在线 Office 只读页）
  *   GET  /share/:token/embed —— 在线 Office 嵌入页（iframe 网页嵌入）
  *   GET  /share/:token/data  —— 在线 Office 分享数据（公开 JSON，供只读页/嵌入页加载）
+ *   GET  /share/:token/page-view —— 在线文档只读视图数据（服务端排版好的 HTML 片段，不含编辑器快照）
+ *   GET  /share/:token/sheet-view —— 在线表格只读视图数据（服务端排好的静态表格 HTML，不含编辑器快照）
  *   GET  /share/:token/file  —— 分享图片文件流（供 <img> 与社交平台 og:image 抓取）
  *   GET  /share/:token/download —— 下载原图（需登录，任意登录用户；在线 Office 分享不支持下载）
  * 表格分享管理（创建/停用/取消）位于 server/routes/spreadsheet.js（文档管理权限），
@@ -28,6 +30,8 @@ const { doubleSubmitCookie } = require('../middlewares/security');
 const { publicDir } = require('../config/app-root');
 const docStore = require('../utils/spreadsheet-doc-store');
 const { getClientIp } = require('../utils/client-ip');
+const { renderDocFlow } = require('../utils/doc-html-renderer');
+const { renderWorkbook } = require('../utils/sheet-html-renderer');
 
 // 生成随机分享令牌
 function createShareToken() {
@@ -63,6 +67,15 @@ function isShareAvailable(share, source) {
     return source.status === 'active' && Boolean(source.doc_data || source.doc_file || source.luckysheet_data);
   }
   return false;
+}
+
+// 在线 Office 只读分享解析：token 有效、源为在线 Office 且可展示时返回 { share, source }，否则 null
+// 所有 Office 公开接口（页面 / 嵌入 / 数据 / 只读视图）共用这一道校验
+function resolveOfficeShare(db, token) {
+  const resolved = resolveShare(db, token);
+  if (!resolved || resolved.share.source_type !== 'spreadsheet') return null;
+  if (!isShareAvailable(resolved.share, resolved.source)) return null;
+  return resolved;
 }
 
 // 在线 Office 分享：表格 / 文档 / 演示文稿共用 source_type='spreadsheet'，
@@ -320,9 +333,8 @@ router.get('/:token', (req, res) => {
 
 // Office 嵌入页（公开，iframe 网页嵌入：去掉页面装饰，仅保留画布）
 router.get('/:token/embed', (req, res) => {
-  const db = req.db;
-  const resolved = resolveShare(db, req.params.token);
-  if (!resolved || !isShareAvailable(resolved.share, resolved.source) || resolved.share.source_type !== 'spreadsheet') {
+  const resolved = resolveOfficeShare(req.db, req.params.token);
+  if (!resolved) {
     return res.status(404).send('分享链接不存在或已失效');
   }
   // 嵌入页允许被任意站点 iframe（覆盖全局 X-Frame-Options 与 CSP frame-ancestors）
@@ -334,14 +346,13 @@ router.get('/:token/embed', (req, res) => {
 
 // 表格分享数据（公开 JSON，仅凭有效 token；只读快照，支持大文档异步加载）
 router.get('/:token/data', (req, res) => {
-  const db = req.db;
-  const resolved = resolveShare(db, req.params.token);
-  if (!resolved || !isShareAvailable(resolved.share, resolved.source) || resolved.share.source_type !== 'spreadsheet') {
+  const resolved = resolveOfficeShare(req.db, req.params.token);
+  if (!resolved) {
     return res.status(404).json({ error: '分享链接不存在或已失效' });
   }
   let entry;
   try {
-    entry = docStore.loadDoc(db, resolved.share.source_id);
+    entry = docStore.loadDoc(req.db, resolved.share.source_id);
   } catch (e) {
     return res.status(500).json({ error: '文档数据加载失败' });
   }
@@ -352,7 +363,6 @@ router.get('/:token/data', (req, res) => {
   res.json({
     success: true,
     data: {
-      id: resolved.source.id,
       name: resolved.source.name,
       docType: entry.docType || resolved.source.doc_type || 'spreadsheet',
       version: resolved.source.doc_version || entry.doc.rev || 1,
@@ -360,6 +370,77 @@ router.get('/:token/data', (req, res) => {
       doc: entry.doc
     }
   });
+});
+
+// 文档只读视图数据（公开，仅凭有效 token）
+// 与编辑器「阅读视图」走同一个服务端渲染层（renderDocFlow），分享页只拿排版好的 HTML 片段，
+// 不再向前端下发 Univer 可编辑快照，也不加载 Office 编辑器包
+router.get('/:token/page-view', (req, res) => {
+  const resolved = resolveOfficeShare(req.db, req.params.token);
+  if (!resolved) {
+    return res.status(404).json({ error: '分享链接不存在或已失效' });
+  }
+  if ((resolved.source.doc_type || 'spreadsheet') !== 'document') {
+    return res.status(400).json({ error: '仅文档支持只读视图' });
+  }
+  let entry;
+  try {
+    entry = docStore.loadDoc(req.db, resolved.share.source_id);
+  } catch (e) {
+    return res.status(500).json({ error: '文档数据加载失败' });
+  }
+  if (!entry || !entry.doc) {
+    return res.status(404).json({ error: '文档数据为空' });
+  }
+  let flow;
+  try {
+    flow = renderDocFlow(entry.doc, {
+      name: resolved.source.name,
+      readingMode: true,
+      includeToc: true,
+      publicDir,
+    });
+  } catch (e) {
+    return res.status(400).json({ error: e.message || '文档渲染失败' });
+  }
+  res.setHeader('Cache-Control', 'public, max-age=30');
+  res.json({
+    success: true,
+    data: {
+      mode: 'reading',
+      css: flow.css,
+      sections: flow.sections,
+      toc: flow.toc,
+      warnings: flow.warnings
+    }
+  });
+});
+
+// 表格只读视图数据（公开，仅凭有效 token）：服务端排好的静态表格 HTML
+// 与文档分享页同一思路——不下发可编辑快照，也不让访客加载约 14MB 的 Univer 引擎
+router.get('/:token/sheet-view', (req, res) => {
+  const resolved = resolveOfficeShare(req.db, req.params.token);
+  if (!resolved) {
+    return res.status(404).json({ error: '分享链接不存在或已失效' });
+  }
+  if ((resolved.source.doc_type || 'spreadsheet') !== 'spreadsheet') {
+    return res.status(400).json({ error: '仅表格支持只读视图' });
+  }
+  let entry;
+  try {
+    entry = docStore.loadDoc(req.db, resolved.share.source_id);
+  } catch (e) {
+    return res.status(500).json({ error: '表格数据加载失败' });
+  }
+  let out;
+  try {
+    const sheetId = String(req.query.sheetId || '');
+    out = renderWorkbook(entry.doc, { sheetId: sheetId || undefined });
+  } catch (e) {
+    return res.status(400).json({ error: e.message || '表格渲染失败' });
+  }
+  res.setHeader('Cache-Control', 'public, max-age=30');
+  res.json({ success: true, data: { name: resolved.source.name, sheets: out.sheets, warnings: out.warnings } });
 });
 
 // 分享图片文件流（公开，供页面 <img> 与微信/QQ og:image 抓取）

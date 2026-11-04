@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.11.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.12.0 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -307,6 +307,24 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.12.0 (2026-11-04)
+
+**在线Office 入口、权限审批与分享链路收口**
+- 分享彻底只读：文档分享不再加载 Univer Docs 编辑器，改走服务端 `renderDocFlow` 排版 + 阅读视图；表格分享不再加载约 14MB 的 Univer Sheets 引擎，改由新增 `sheet-html-renderer.js` 在服务端渲染静态表格
+- 新增公开接口 `GET /share/:token/page-view`、`GET /share/:token/sheet-view`，只返回渲染结果；不再向访客下发可编辑快照与内部文档 id
+- 分享页控件收口：文档仅保留字号 / 页宽 / 大纲，表格仅保留工作表切换，演示文稿仅保留放映 / 翻页；三类分享页统一「🔒 只读」徽标与能力说明，公开分享一律不可下载
+- 权限审批闭环：新增 `GET /api/office/permission/pending`（管理员全站 / 普通用户自己创建的文档），入口页顶部可直接通过或拒绝；无权限页按类型改写文案，申请可选 查看 / 评论 / 编辑
+- 入口页重构：导航「表格」→「在线Office」；页头能力条 + 三类快速新建 + 导入；带计数的类型分页 + 权限筛选 + 排序；卡片按类型着色、权限徽标、相对时间与「⏳ 审批中」标记
+- 修复：新建 / 导入入口此前只对全局管理权限用户可见，拥有 `spreadsheet.access` 的普通用户看不到任何创建入口
+
+### v8.11.1 (2026-11-04)
+
+**修复：打开导入/新建的在线文档时 Univer 抛「n.find is not a function」**
+- 根因：Univer 的 `ResourceManagerService.loadResources` 会对 `snapshot.resources` 直接调 `.find`，而空文档模板与 .docx 导入器把该字段写成了字符串 `'[]'`；用真实 Univer 包在浏览器里对照验证——字符串必崩，数组或缺省正常
+- 修复：两处模板与导入器改为输出数组，并在文档读写链路（`loadDoc` / `insertDoc` / `PUT /doc`）统一归一化，可解析的旧值还原为数组、非法值兜底为空数组；线上已入库的旧快照无需数据迁移即可打开，再次保存后自然纠正
+- 自研演示文稿格式里的同名字段含义不同，不参与归一化
+- 附带：CSP 增加 `upgrade-insecure-requests`，HTTPS 页面中 `http://` 的第三方头像（如 `thirdqq.qlogo.cn`）不再报混合内容
 
 ### v8.11.0 (2026-11-03)
 

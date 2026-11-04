@@ -156,6 +156,8 @@ app.use((req, res, next) => {
     if (cdnOrigin) cdnCspSrc = ' ' + cdnOrigin;
   }
   res.setHeader('Content-Security-Policy', [
+    // 头像等第三方资源常写成 http://，显式声明升级后浏览器静默改走 https，不再报混合内容
+    'upgrade-insecure-requests',
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net registry.npmmirror.com static.cloudflareinsights.com blob: data:" + cdnCspSrc,
     "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com cdn.tailwindcss.com unpkg.com cdn.jsdelivr.net cdn.bootcdn.net registry.npmmirror.com" + cdnCspSrc,

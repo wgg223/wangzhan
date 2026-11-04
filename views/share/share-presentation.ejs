@@ -80,6 +80,7 @@
     .tip { font-size: 12px; color: #aaa; text-align: center; margin-top: 4px; }
     .footer { text-align: center; color: #aaa; font-size: 12px; padding: 12px 0; }
     .doc-card { position: relative; padding: 14px; }
+    .badge-readonly { display: inline-block; background: #fff3e8; color: #b4530f; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; vertical-align: 2px; }
   </style>
   <link rel="stylesheet" href="/css/anime-theme.css">
 </head>
@@ -88,7 +89,7 @@
     <% if (!embed) { %>
     <div class="wrap">
       <div class="card head-card wrap-hide">
-        <h1><%= sheet.name || '演示文稿' %></h1>
+        <h1><%= sheet.name || '演示文稿' %> <span class="badge-readonly">🔒 只读</span></h1>
         <div class="meta">
           <span>👤 <%= ownerName %></span>
           <% if (stats) { %>
@@ -114,6 +115,9 @@
           <button type="button" class="nav-btn" id="btnNext">下一页 ›</button>
         </div>
         <div class="thumbs" id="pptThumbs"></div>
+        <div class="tip" style="padding:10px 4px 0;text-align:left;color:#8a94a6;">
+          只读分享：可放映、翻页和缩略图跳转；不含编辑、备注查看与下载。
+        </div>
         <div class="sheet-loading" id="shareLoading">
           <div class="spin"></div>
           <p style="font-size:13px;color:#888;">正在加载演示文稿…</p>

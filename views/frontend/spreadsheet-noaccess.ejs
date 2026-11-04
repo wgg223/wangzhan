@@ -1,30 +1,43 @@
 <%# ===== 页面模板：frontend/spreadsheet-noaccess.ejs =====%>
-<%# 说明：表格无权限访问页（私有权限模型）：提示 + 只读权限申请入口，提交走 /api/spreadsheet/:id/permission/apply %>
+<%# 说明：在线Office无权限访问页（私有权限模型，文档/表格/演示文稿共用）：按 doc_type 显示类型名，可申请查看/评论/编辑，提交走 /api/spreadsheet/:id/permission/apply %>
+<%
+  var typeNames = { spreadsheet: '在线表格', document: '在线文档', presentation: '演示文稿' };
+  var typeName = typeNames[sheet.doc_type] || typeNames.spreadsheet;
+  var permNames = { view: '查看', comment: '评论', edit: '编辑' };
+%>
 <div class="container">
   <div class="noaccess-card">
     <div class="noaccess-icon">🔒</div>
-    <h1>无权访问该表格</h1>
-    <p class="noaccess-desc">「<%= sheet.name %>」为私有表格，您尚未获得访问权限，可申请只读访问。</p>
+    <h1>无权访问该<%= typeName %></h1>
+    <p class="noaccess-desc">「<%= sheet.name %>」尚未对您开放，可向创建者或管理员申请访问权限。</p>
     <div class="noaccess-meta">
       <span>👤 创建者：<%= ownerName %></span>
+      <span>📄 类型：<%= typeName %></span>
       <% if (sheet.description) { %><span>📝 <%= sheet.description %></span><% } %>
     </div>
 
     <% if (pendingApp) { %>
     <div class="noaccess-pending">
       <span class="noaccess-pending-badge">⏳ 权限申请待审批</span>
-      <p>您已提交「只读访问」申请（<%= pendingApp.created_at ? new Date(pendingApp.created_at).toLocaleString('zh-CN') : '' %>），
+      <p>您已提交「<%= permNames[pendingApp.perm_type] || '查看' %>」申请（<%= pendingApp.created_at ? new Date(pendingApp.created_at).toLocaleString('zh-CN') : '' %>），
         请等待创建者或管理员审批，审批结果将通过站内通知告知。</p>
+      <% if (pendingApp.reason) { %><p class="noaccess-pending-reason">申请理由：<%= pendingApp.reason %></p><% } %>
     </div>
     <% } else { %>
     <div class="noaccess-form">
+      <label>申请权限</label>
+      <div class="noaccess-opts" id="applyOpts">
+        <label class="noaccess-opt"><input type="radio" name="applyPerm" value="view" checked><span>👁 查看</span><em>只读浏览内容</em></label>
+        <label class="noaccess-opt"><input type="radio" name="applyPerm" value="comment"><span>💬 评论</span><em>可查看并批注</em></label>
+        <label class="noaccess-opt"><input type="radio" name="applyPerm" value="edit"><span>✏️ 编辑</span><em>可修改并保存</em></label>
+      </div>
       <label for="applyReason">申请理由（选填，将展示给审批人）</label>
-      <input type="text" id="applyReason" maxlength="500" placeholder="请说明您需要查看此表格的原因…">
-      <button type="button" class="btn btn-primary" id="btnApplyView">📩 申请只读访问</button>
+      <input type="text" id="applyReason" maxlength="500" placeholder="请说明您需要访问此<%= typeName %>的原因…">
+      <button type="button" class="btn btn-primary" id="btnApplyView">📩 提交申请</button>
     </div>
     <% } %>
 
-    <a href="/spreadsheet" class="noaccess-back">← 返回表格列表</a>
+    <a href="/office" class="noaccess-back">← 返回在线Office</a>
   </div>
 </div>
 
@@ -36,25 +49,53 @@
 .noaccess-meta { display: flex; flex-direction: column; gap: 6px; color: #6b7280; font-size: 13px; margin-bottom: 22px; }
 .noaccess-form { display: flex; flex-direction: column; gap: 10px; text-align: left; }
 .noaccess-form label { font-size: 13px; color: #374151; font-weight: 600; }
-.noaccess-form input { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+.noaccess-form input[type=text] { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+.noaccess-opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.noaccess-opt { display: flex; flex-direction: column; gap: 2px; align-items: center; padding: 10px 6px; border: 1px solid #e5e7eb; border-radius: 10px; cursor: pointer; text-align: center; transition: border-color .15s, background .15s; }
+.noaccess-opt:hover { border-color: #b6c2d6; background: #f8fafc; }
+.noaccess-opt span { font-size: 13px; font-weight: 600; color: #374151; }
+.noaccess-opt em { font-style: normal; font-size: 11px; color: #94a3b8; }
+.noaccess-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+.noaccess-opt.active { border-color: #2563eb; background: #eff4ff; }
+.noaccess-opt.active span { color: #1d4ed8; }
 .noaccess-pending { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px 16px; text-align: left; }
 .noaccess-pending p { margin: 8px 0 0; font-size: 13px; color: #92400e; line-height: 1.7; }
+.noaccess-pending-reason { color: #b45309 !important; }
 .noaccess-pending-badge { display: inline-block; background: #fef3c7; color: #92400e; border-radius: 6px; padding: 4px 10px; font-size: 13px; font-weight: 600; }
 .noaccess-back { display: inline-block; margin-top: 22px; color: #6b7280; font-size: 14px; text-decoration: none; }
 .noaccess-back:hover { color: #111827; }
+@media (max-width: 520px) { .noaccess-opts { grid-template-columns: 1fr; } }
 </style>
 
 <script>
   (function () {
     var btn = document.getElementById('btnApplyView');
     if (!btn) return;
+    var box = document.getElementById('applyOpts');
+    var labelMap = { view: '查看', comment: '评论', edit: '编辑' };
+
+    function currentPerm() {
+      var checked = box ? box.querySelector('input[name=applyPerm]:checked') : null;
+      return checked ? checked.value : 'view';
+    }
+    function syncActive() {
+      if (!box) return;
+      Array.prototype.forEach.call(box.querySelectorAll('.noaccess-opt'), function (el) {
+        var input = el.querySelector('input');
+        el.classList.toggle('active', !!(input && input.checked));
+      });
+      btn.textContent = '📩 申请' + (labelMap[currentPerm()] || '查看') + '权限';
+    }
+    if (box) box.addEventListener('change', syncActive);
+    syncActive();
+
     btn.addEventListener('click', function () {
       btn.disabled = true;
       btn.textContent = '提交中…';
       var reasonInput = document.getElementById('applyReason');
       csrfFetch('/api/spreadsheet/<%= sheet.id %>/permission/apply', {
         method: 'POST',
-        body: JSON.stringify({ perm_type: 'view', reason: reasonInput ? reasonInput.value.trim() : '' })
+        body: JSON.stringify({ perm_type: currentPerm(), reason: reasonInput ? reasonInput.value.trim() : '' })
       }).then(function (json) {
         if (json && json.success) {
           showToast(json.message || '申请已提交，等待审批', 'success');
@@ -62,12 +103,12 @@
         } else {
           showToast((json && json.error) || '提交失败', 'error');
           btn.disabled = false;
-          btn.textContent = '📩 申请只读访问';
+          syncActive();
         }
       }).catch(function (err) {
         showToast('网络错误：' + (err && err.message ? err.message : '提交失败'), 'error');
         btn.disabled = false;
-        btn.textContent = '📩 申请只读访问';
+        syncActive();
       });
     });
   })();
