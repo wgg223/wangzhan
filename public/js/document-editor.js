@@ -30,6 +30,7 @@
 
   var univerAPI = null;
   var docInstance = null;
+  var cmdServiceWired = false;
   var state = {
     version: CFG.version || 0,
     locked: Boolean(CFG.isLocked),
@@ -300,26 +301,20 @@
   }
 
   function wireDocument() {
-    if (!docInstance) return;
-    // 监听命令执行（标记脏数据）
-    if (typeof docInstance.onCommandExecuted === 'function') {
-      docInstance.onCommandExecuted(function (cmd) {
-        if (state.applyingRemote) return;
-        var id = (cmd && cmd.id) || '';
-        // 过滤非数据变更
-        if (id.indexOf('doc.') === -1 && id.indexOf('document.') === -1) return;
-        markDirty(true);
-      });
-    }
-    // 备选：通过 univerAPI 全局监听
-    if (typeof univerAPI.onCommandExecuted === 'function') {
-      univerAPI.onCommandExecuted(function (cmd) {
-        if (state.applyingRemote) return;
-        var id = (cmd && cmd.id) || '';
-        if (id.indexOf('.mutation.') === -1 && id.indexOf('doc.') === -1 && id.indexOf('document.') === -1) return;
-        markDirty(true);
-      });
-    }
+    if (!docInstance || cmdServiceWired) return;
+    // Univer 1.3.1 实测：FDocument 与 univerAPI 都没有 onCommandExecuted，
+    // 真实可用的订阅点是 _commandService（浏览器 harness 验证，且为全局单例，只挂一次）
+    var svc = docInstance._commandService ||
+      (typeof docInstance.commandService === 'object' ? docInstance.commandService : null);
+    if (!svc || typeof svc.onCommandExecuted !== 'function') return;
+    cmdServiceWired = true;
+    svc.onCommandExecuted(function (cmd) {
+      if (state.applyingRemote) return;
+      var id = (cmd && cmd.id) || '';
+      // 只关心会改数据的 command / mutation；光标、选区等 operation 不置脏
+      if (/^doc(ument)?\.(command|mutation)\./.test(id) === false) return;
+      markDirty();
+    });
   }
 
   function applyEditable() {
