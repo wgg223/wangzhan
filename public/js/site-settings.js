@@ -22,7 +22,7 @@
     'nav.aiPrompts': { zh: 'AI 提示词', en: 'AI Prompts' },
     'nav.aiImage': { zh: 'AI 生图', en: 'AI Images' },
     'nav.aiChat': { zh: 'AI 聊天', en: 'AI Chat' },
-    'nav.spreadsheet': { zh: '在线Office', en: 'Office' },
+    'nav.spreadsheet': { zh: '在线文档', en: 'Docs' },
     'nav.search': { zh: '搜索', en: 'Search' },
     // 用户菜单 / 按钮
     'menu.myProfile': { zh: '👤 我的主页', en: '👤 My Profile' },
