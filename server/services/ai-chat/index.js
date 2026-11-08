@@ -63,12 +63,12 @@ function renameConversation(db, conv, title) {
   saveDatabase();
 }
 
-// 群聊成员校验：仅官方或本人角色，去重，上限 8 个
+// 群聊成员校验：仅官方或本人角色，去重，上限 16 个
 function validateGroupMembers(db, user, ids) {
   const out = [];
   (Array.isArray(ids) ? ids : []).forEach(v => {
     const id = parseInt(v, 10);
-    if (!id || out.indexOf(id) !== -1 || out.length >= 8) return;
+    if (!id || out.indexOf(id) !== -1 || out.length >= 16) return;
     const role = queryOne(db, 'SELECT id FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [id, user.id]);
     if (role) out.push(id);
   });

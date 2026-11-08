@@ -225,6 +225,9 @@
     </tbody>
   </table>
   <button type="button" class="btn btn-primary" onclick="editDefaultWorldBook(0)" style="margin-top:8px;">＋ 新增条目</button>
+  <button type="button" class="btn" onclick="document.getElementById('dwbImportFile').click()" style="margin-top:8px;">📥 导入世界书</button>
+  <input type="file" id="dwbImportFile" accept=".json,.md,.markdown" multiple style="display:none;" onchange="importDefaultWorldBook(this.files)">
+  <span class="ai-chat-msg" id="dwbImportMsg" style="margin-left:10px;"></span>
   <div id="dwbFormWrap" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--border-color); border-radius:10px; background: var(--bg-card);">
     <h3 style="margin-bottom:12px; font-size:15px;" id="dwbFormTitle">新增默认世界书条目</h3>
     <div class="ai-chat-form" id="dwbForm">
@@ -771,6 +774,26 @@
       .catch(function (err) { alert(err.message || '删除失败'); });
   };
 
+  window.importDefaultWorldBook = function (files) {
+    if (!files || !files.length) return;
+    var msg = document.getElementById('dwbImportMsg');
+    msg.className = 'ai-chat-msg';
+    msg.textContent = '导入中…';
+    var fd = new FormData();
+    Array.prototype.forEach.call(files, function (f) { fd.append('files', f); });
+    csrfFetch('/admin/ai-chat/world-book-defaults/import', { method: 'POST', body: fd }, 60000)
+      .then(function (json) {
+        document.getElementById('dwbImportFile').value = '';
+        if (json.success) {
+          var d = json.data;
+          msg.textContent = '导入 ' + d.imported + ' 条，跳过 ' + d.skipped + ' 条' + (d.errors && d.errors.length ? '。' + d.errors.join('；') : '');
+          msg.className = 'ai-chat-msg ok';
+          if (d.imported) setTimeout(function () { location.reload(); }, 1500);
+        } else { msg.textContent = json.error || '导入失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function (err) { msg.textContent = err.message || '导入失败'; msg.className = 'ai-chat-msg err'; });
+  };
+
   // ============ 配额统计 ============
   function loadQuota() {
     var wrap = document.getElementById('quotaWrap');
@@ -811,7 +834,7 @@
   };
 
   // ============ 生成预设 ============
-  var presetsData = <%- JSON.stringify(presets) %>;
+  var presetsData = <%- JSON.stringify(presets).replace(/</g, '\\u003c') %>;
 
   window.editPreset = function (id) {
     var wrap = document.getElementById('presetFormWrap');
@@ -875,7 +898,7 @@
   };
 
   // ============ 提示词模板 ============
-  var templatesData = <%- JSON.stringify(promptTemplates) %>;
+  var templatesData = <%- JSON.stringify(promptTemplates).replace(/</g, '\\u003c') %>;
 
   window.editTemplate = function (id) {
     var wrap = document.getElementById('templateFormWrap');

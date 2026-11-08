@@ -12,6 +12,9 @@ const { searchRag, buildRagBlock } = require('./rag');
 const HISTORY_TOKEN_WINDOW = 3000;
 // 世界书触发词扫描深度：同时检查当前消息与最近 N 条消息，避免关键词出现在上一条就失配
 const WORLD_SCAN_DEPTH = 6;
+// 群聊其余成员卡注入总预算（字符）：按人数均分，避免大群撑爆上下文。
+// 10500 = 7 × 1500，保证 8 人及以下群聊每成员仍可获得完整 1500 字摘要（与旧行为一致）。
+const GROUP_CARD_BUDGET = 10500;
 
 function getRole(db, roleId) {
   if (!roleId) return null;
@@ -112,9 +115,11 @@ function buildContext(db, conv, userMsg, opts = {}) {
   if (isGroup && members.length) {
     const groupLines = ['【群聊设定】这是多角色群聊。你现在扮演「' + (role ? role.name : '未知角色') + '」，只以该角色的身份回复，不要替其他角色或用户发言，回复不要带名字前缀。'];
     groupLines.push('群成员：' + members.map(m => m.name).join('、'));
-    members.filter(m => !role || m.id !== role.id).forEach(m => {
+    const others = members.filter(m => !role || m.id !== role.id);
+    const perCard = others.length ? Math.min(1500, Math.floor(GROUP_CARD_BUDGET / others.length)) : 1500;
+    others.forEach(m => {
       const card = [m.system_prompt, m.personality, m.description].filter(Boolean).join('\n');
-      if (card) groupLines.push('成员「' + m.name + '」的设定：\n' + card.slice(0, 1500));
+      if (card) groupLines.push('成员「' + m.name + '」的设定：\n' + card.slice(0, perCard));
     });
     systemParts.push(groupLines.join('\n'));
   }

@@ -1244,6 +1244,7 @@
       members.push(parseInt(cb.value, 10));
     });
     if (members.length < 2) { showToast('群聊至少需要 2 个角色', 'error'); return; }
+    if (members.length > 16) { showToast('群聊最多 16 个角色', 'error'); return; }
     var payload = {
       title: els.acGroupName.value.trim() || (groupEditId ? undefined : '新群聊'),
       members: members,
@@ -1561,6 +1562,7 @@
       examples: els.acNewRoleExamples.value.trim(),
       avatar: els.acNewRoleAvatar ? els.acNewRoleAvatar.value.trim() : ''
     }).then(function (json) {
+      if (!json.success || !json.data) { showToast(json.error || '角色创建失败', 'error'); return; }
       state.roles.push(json.data);
       els.acNewRoleName.value = '';
       els.acNewRolePrompt.value = '';
@@ -1713,6 +1715,7 @@
       examples: examples,
       avatar: avatar
     }).then(function (json) {
+      if (!json.success || !json.data) { showToast(json.error || '角色导入失败', 'error'); return; }
       state.roles.push(json.data);
       renderRoleList();
       showToast('角色「' + name + '」已导入', 'success');
@@ -1764,6 +1767,7 @@
               scenario: json.data.scenario || '',
               examples: json.data.examples || ''
             }).then(function (createJson) {
+              if (!createJson.success || !createJson.data) { showToast(createJson.error || '角色创建失败', 'error'); return; }
               state.roles.push(createJson.data);
               renderRoleList();
               showToast('角色「' + json.data.name + '」已从 URL 导入', 'success');

@@ -8,6 +8,7 @@
  *   - 角色卡导出    GET  /admin/ai-chat/roles/export[?id]           （单角色/全部，chara_card_v2 JSON）
  *                   GET  /admin/ai-chat/roles/export-png?id         （SillyTavern 兼容 PNG 角色卡）
  *   - 角色批量管理  POST /admin/ai-chat/roles/{batch-delete,duplicate,move,avatar}
+ *   - 默认世界书    POST /admin/ai-chat/world-book-defaults/{save,delete,import} （全局模板；import 支持 lorebook JSON / Markdown 批量）
  *   - 系统设置      POST /admin/ai-chat/settings/save               （开关/配额/RAG/记忆/Embedding/流式）
  *   - 知识库 RAG    POST /admin/ai-chat/knowledge/{upload,delete,reembed} （txt/md≤2MB，上传即分块嵌入）
  *   - 配额管理      GET /admin/ai-chat/quota  POST /admin/ai-chat/quota/update
@@ -30,6 +31,7 @@ const { getSettings, upsertSettings } = require('../../utils/settings');
 const { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings } = require('../../services/ai-chat/provider');
 const { embedDocument, invalidateRagCache } = require('../../services/ai-chat/rag');
 const { normalizeError } = require('../../services/ai-chat/utils');
+const { parseWorldBook } = require('../../utils/world-book-parse');
 
 // ============ AI 聊天管理（模型/角色/设置/知识库/配额） ============
 
@@ -559,6 +561,52 @@ router.post('/ai-chat/world-book-defaults/delete', isAuthenticated, hasPermissio
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'delete', target_type: 'ai_default_world_book', target_title: row.key || '（常驻）', detail: `删除默认世界书条目：${row.key || '（常驻）'}`, ip: req.ip });
   res.json({ success: true });
+});
+
+// 默认世界书文件导入（SillyTavern lorebook JSON / Markdown，支持多文件批量，按 key 去重）
+const worldBookImportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 20 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (ext !== '.json' && ext !== '.md' && ext !== '.markdown') return cb(new Error('仅支持 .json / .md 世界书文件'));
+    cb(null, true);
+  }
+});
+
+router.post('/ai-chat/world-book-defaults/import', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  worldBookImportUpload.array('files', 20)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    const db = req.db;
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: '请选择世界书文件' });
+    const existing = new Set(queryAll(db, 'SELECT key FROM ai_default_world_book').map(r => String(r.key).trim().toLowerCase()));
+    let imported = 0;
+    let skipped = 0;
+    const errors = [];
+    files.forEach(file => {
+      const fname = file.originalname || 'file';
+      let entries = [];
+      try { entries = parseWorldBook(file.buffer, fname); } catch (e) { errors.push(fname + '：解析失败（' + e.message + '）'); return; }
+      if (!entries.length) { errors.push(fname + '：未找到可导入的条目'); return; }
+      entries.forEach((e, i) => {
+        const key = String(e.key || '').trim().slice(0, 200);
+        const content = String(e.content || '').trim().slice(0, 8000);
+        if (!content || (key && existing.has(key.toLowerCase()))) { skipped++; return; }
+        const position = DEFAULT_WORLD_BOOK_POSITIONS.indexOf(e.position) !== -1 ? e.position : 'before_char';
+        const enabled = e.enabled === 0 ? 0 : 1;
+        const constant = e.constant === 1 ? 1 : 0;
+        const sortOrder = parseInt(e.sort_order, 10) || i;
+        db.run('INSERT INTO ai_default_world_book (key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?)',
+          [key, content, position, sortOrder, enabled, constant]);
+        if (key) existing.add(key.toLowerCase());
+        imported++;
+      });
+    });
+    saveDatabase();
+    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'ai_default_world_book', target_title: '批量导入', detail: `导入默认世界书：成功 ${imported}，跳过 ${skipped}`, ip: req.ip });
+    res.json({ success: true, data: { imported, skipped, errors } });
+  });
 });
 
 // ============ 系统设置 ============

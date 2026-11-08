@@ -950,7 +950,7 @@ const { resolveModel, fetchModelList } = require('../services/ai-chat/provider')
 // AI 聊天接口限流
 const aiChatSendLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 6, keyGenerator: r => `aichat:send:${r.session.user.id}`, message: '发送过于频繁，请稍后再试' });
 const aiChatOpLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30, keyGenerator: r => `aichat:op:${r.session.user.id}`, message: '操作过于频繁，请稍后再试' });
-const aiChatRoleLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 10, keyGenerator: r => `aichat:role:${r.session.user.id}`, message: '操作过于频繁，请稍后再试' });
+const aiChatRoleLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30, keyGenerator: r => `aichat:role:${r.session.user.id}`, message: '操作过于频繁，请稍后再试' });
 const aiChatModelLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 10, keyGenerator: r => `aichat:model:${r.session.user.id}`, message: '操作过于频繁，请稍后再试' });
 
 // CSRF 校验（本模块约定：POST 头 X-CSRF-Token === session.doubleSubmitToken）
