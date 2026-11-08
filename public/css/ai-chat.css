@@ -387,6 +387,9 @@ a:hover { text-decoration: underline; }
 .ac-input-bar textarea:focus { border-color: var(--primary); }
 .ac-input-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .ac-input-tip { flex: 1; font-size: 12px; color: var(--text-muted); }
+.ac-input-tokens { font-size: 12px; color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ac-input-tokens.warn { color: var(--warning); }
+.ac-input-tokens.over { color: var(--danger); }
 
 /* ---------- 按钮 ---------- */
 .ac-btn {

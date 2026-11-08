@@ -50,7 +50,8 @@
     'acRoleImportUrl', 'acRoleUrlModal', 'acRoleUrlInput', 'acRoleUrlFetch',
     'acRoleSearch', 'acRoleFilter', 'acChatExport', 'acChatImport', 'acChatFileInput',
     'acNewRoleAvatar', 'acNewRoleAvatarFile', 'acNewRoleAvatarBtn', 'acNewRoleAvatarPreview',
-    'acWorldSearch', 'acWorldCount', 'acWorldEnableAll', 'acWorldDisableAll', 'acWorldDeleteAll']
+    'acWorldSearch', 'acWorldCount', 'acWorldEnableAll', 'acWorldDisableAll', 'acWorldDeleteAll',
+    'acInputTokens']
     .forEach(function (id) { els[id] = document.getElementById(id); });
 
   // ============ 通用请求 ============
@@ -879,6 +880,7 @@
     convPromise.then(function (conv) {
       els.acInput.value = '';
       els.acInput.style.height = 'auto';
+      updateTokenEstimate();
       // 用户消息立即上屏
       var userMsg = { id: 'u' + Date.now(), role: 'user', content: content, branch_id: conv.current_branch_id || 0 };
       state.messages.push(userMsg);
@@ -1990,10 +1992,21 @@
     }
   });
 
-  // 输入框自适应高度
+  // 输入框自适应高度 + token 估算
   function autoResizeInput() {
     els.acInput.style.height = 'auto';
     els.acInput.style.height = Math.min(els.acInput.scrollHeight, 180) + 'px';
+    updateTokenEstimate();
+  }
+  function updateTokenEstimate() {
+    if (!els.acInputTokens) return;
+    var text = els.acInput.value || '';
+    if (!text.trim()) { els.acInputTokens.textContent = ''; return; }
+    var tokens = estimateTokens(text);
+    els.acInputTokens.textContent = '≈ ' + tokens + ' tokens';
+    els.acInputTokens.classList.remove('warn', 'over');
+    if (tokens > 4000) els.acInputTokens.classList.add('over');
+    else if (tokens > 2000) els.acInputTokens.classList.add('warn');
   }
   els.acInput.addEventListener('input', autoResizeInput);
 

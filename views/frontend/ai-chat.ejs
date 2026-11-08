@@ -6,7 +6,7 @@
   <title>AI 聊天 - <%= settings.site_name || '我的网站' %></title>
   <meta name="csrf-token" content="<%= csrfToken %>">
   <meta name="theme-color" content="#ec4899">
-  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-chat.css') : '/css/ai-chat.css' %>?v=20261108e">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-chat.css') : '/css/ai-chat.css' %>?v=20261108f">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 </head>
@@ -99,6 +99,7 @@
       <textarea id="acInput" rows="3" placeholder="输入消息，Enter 发送，Shift+Enter 换行" maxlength="8000"></textarea>
       <div class="ac-input-foot">
         <span class="ac-input-tip">Enter 发送 · Shift+Enter 换行</span>
+        <span class="ac-input-tokens" id="acInputTokens"></span>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acTtsToggle" title="语音朗读">🔊 朗读</button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acPickPrompt" style="display:none;">📚 从提示词库选择</button>
         <button type="button" class="ac-btn ac-btn-primary" id="acSend">发送</button>
@@ -366,6 +367,6 @@
   prompts: canPickPrompt ? prompts.map(function(p) { return { id: p.id, title: p.title, excerpt: p.excerpt || '' }; }) : []
 }).replace(/</g, '\\u003c') %></script>
 <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/utils.js') : '/js/utils.js' %>"></script>
-<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-chat.js') : '/js/ai-chat.js' %>?v=20261108e" defer></script>
+<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-chat.js') : '/js/ai-chat.js' %>?v=20261108f" defer></script>
 </body>
 </html>

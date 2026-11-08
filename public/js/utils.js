@@ -153,10 +153,18 @@ function closeModal(id) {
 }
 
 /**
- * 格式化相对时间
- * @param {string|number} timestamp
- * @returns {string}
+ * 估算 token 消耗（CJK 约 1 字 ≈ 1 token，其他约 4 字符 ≈ 1 token）
+ * @param {string} text
+ * @returns {number}
  */
+function estimateTokens(text) {
+  if (!text) return 0;
+  var str = String(text);
+  var cjk = (str.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
+  var rest = str.length - cjk;
+  return Math.ceil(cjk + rest / 4);
+}
+
 function formatTime(timestamp) {
   var date = new Date(timestamp);
   var now = new Date();
