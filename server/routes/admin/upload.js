@@ -198,4 +198,48 @@ const dbUpload = multer({
   }
 });
 
-module.exports = { upload, imageUpload, novelUpload, dbUpload };
+// 音频文件上传（存入 uploads/music/，仅允许常见音频格式）
+const ALLOWED_AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.aac', '.ogg', '.wav', '.flac'];
+const ALLOWED_AUDIO_MIME_TYPES = [
+  'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/aac',
+  'audio/ogg', 'application/ogg', 'audio/wav', 'audio/x-wav', 'audio/flac', 'audio/x-flac'
+];
+
+const audioStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(publicDir, 'uploads', 'music');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = getFileExtension(file.originalname);
+    cb(null, 'music-' + uniqueSuffix + ext);
+  }
+});
+
+const audioUpload = multer({
+  storage: audioStorage,
+  limits: {
+    fileSize: 30 * 1024 * 1024,
+    files: 1
+  },
+  fileFilter: function (req, file, cb) {
+    const ext = getFileExtension(file.originalname);
+    const mime = file.mimetype;
+
+    if (!ALLOWED_AUDIO_EXTENSIONS.includes(ext)) {
+      return cb(new Error('只允许上传 MP3、M4A、AAC、OGG、WAV、FLAC 格式音频'), false);
+    }
+
+    if (!ALLOWED_AUDIO_MIME_TYPES.includes(mime)) {
+      return cb(new Error('文件MIME类型不匹配，可能不是音频文件'), false);
+    }
+
+    cb(null, true);
+  }
+});
+
+module.exports = { upload, imageUpload, novelUpload, dbUpload, audioUpload, ALLOWED_AUDIO_EXTENSIONS };

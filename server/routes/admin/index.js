@@ -43,6 +43,7 @@ const aiImageRouter = require('./ai-image');
 const aiChatRouter = require('./ai-chat');
 const sharesRouter = require('./shares');
 const spreadsheetsRouter = require('./spreadsheets');
+const musicRouter = require('./music');
 
 // ---------- Admin 全局中间件 ----------
 router.use(isAuthenticated);
@@ -86,6 +87,7 @@ router.use('/settings/basic', isSuperAdmin, settingsBasicRouter);
 router.use('/settings/smtp', isSuperAdmin, settingsSmtpRouter);
 router.use('/settings/agreement', isSuperAdmin, settingsAgreementRouter);
 router.use('/settings/popup', isSuperAdmin, settingsPopupRouter);
+router.use('/music', isSuperAdmin, musicRouter);
 router.use(articlesRouter);
 router.use(promptsRouter);
 router.use(aiImageRouter);

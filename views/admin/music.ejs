@@ -1,0 +1,133 @@
+<div class="page-header">
+  <h1>🎵 音乐播放管理</h1>
+  <p class="page-desc">前台右下角悬浮窗播放器自动读取以下三种音源，默认播放《明天会更好》</p>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <h3>当前歌单（<span id="musicCount"><%= tracks.length %></span> 首）</h3>
+  <table class="table">
+    <thead>
+      <tr><th>歌曲</th><th>音源</th><th>地址</th><th style="width:80px;">操作</th></tr>
+    </thead>
+    <tbody id="musicList">
+      <% tracks.forEach(function (t) { %>
+      <tr>
+        <td><%= t.title %></td>
+        <td>
+          <% if (t.source === 'file') { %><span class="badge">目录文件</span>
+          <% } else if (t.source === 'upload') { %><span class="badge">后台上传</span>
+          <% } else { %><span class="badge">外链</span><% } %>
+        </td>
+        <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<%= t.src %>"><%= t.src %></td>
+        <td>
+          <% if (t.source !== 'file' && t.id.indexOf('db:') === 0) { %>
+          <button type="button" class="btn btn-sm btn-danger" data-del-music="<%= t.id.slice(3) %>">删除</button>
+          <% } else { %><span style="color:#999;font-size:12px;">—</span><% } %>
+        </td>
+      </tr>
+      <% }); %>
+      <% if (tracks.length === 0) { %>
+      <tr><td colspan="4" style="text-align:center;color:#888;padding:24px;">暂无歌曲，可上传音频、添加外链，或把文件放到服务器的 music 目录</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <h3>上传音频</h3>
+  <div class="form-group">
+    <input type="file" id="musicFileInput" accept=".mp3,.m4a,.aac,.ogg,.wav,.flac,audio/*">
+  </div>
+  <div class="form-group">
+    <label for="musicUploadTitle">歌曲名称（留空则用文件名）</label>
+    <input type="text" id="musicUploadTitle" maxlength="100" class="form-control" placeholder="例如：明天会更好">
+  </div>
+  <button type="button" class="btn btn-primary" id="btnMusicUpload">上传</button>
+  <span style="color:#888;font-size:12px;margin-left:8px;">支持 MP3 / M4A / AAC / OGG / WAV / FLAC，最大 30MB</span>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <h3>添加外链音乐</h3>
+  <div class="form-group">
+    <label for="musicUrlTitle">歌曲名称</label>
+    <input type="text" id="musicUrlTitle" maxlength="100" class="form-control" placeholder="例如：明天会更好">
+  </div>
+  <div class="form-group">
+    <label for="musicUrlSrc">音频直链 URL</label>
+    <input type="text" id="musicUrlSrc" class="form-control" placeholder="https://…/xxx.mp3">
+  </div>
+  <button type="button" class="btn btn-primary" id="btnMusicUrl">添加</button>
+  <span style="color:#888;font-size:12px;margin-left:8px;">必须是可直接播放的音频文件地址（非网页链接）</span>
+</div>
+
+<div class="card">
+  <h3>music 目录说明</h3>
+  <p style="font-size:13px;color:#666;line-height:1.8;">
+    把音频文件直接放进服务器的 <code><%= musicDir %></code> 目录即可自动出现在歌单中（文件名即歌曲名）。<br>
+    默认播放的歌曲名为《明天会更好》，请把对应音频命名为 <code>明天会更好.mp3</code>。<br>
+    请仅放置您拥有版权或已获授权的音乐文件。
+  </p>
+</div>
+
+<script>
+(function () {
+  function notify(msg, ok) {
+    if (typeof showToast === 'function') showToast(msg, ok ? 'success' : 'error');
+    else alert(msg);
+  }
+  function reload() { location.reload(); }
+
+  document.getElementById('btnMusicUpload').addEventListener('click', function () {
+    var input = document.getElementById('musicFileInput');
+    if (!input.files || !input.files[0]) { notify('请先选择音频文件', false); return; }
+    var fd = new FormData();
+    fd.append('musicFile', input.files[0]);
+    fd.append('title', document.getElementById('musicUploadTitle').value.trim());
+    this.disabled = true;
+    var btn = this;
+    fetch('/admin/music/upload', { method: 'POST', body: fd })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        btn.disabled = false;
+        if (!res.ok) { notify(res.j.error || '上传失败', false); return; }
+        notify('上传成功', true);
+        setTimeout(reload, 600);
+      })
+      .catch(function () { btn.disabled = false; notify('上传失败', false); });
+  });
+
+  document.getElementById('btnMusicUrl').addEventListener('click', function () {
+    var title = document.getElementById('musicUrlTitle').value.trim();
+    var url = document.getElementById('musicUrlSrc').value.trim();
+    if (!title || !url) { notify('请填写歌曲名称和链接', false); return; }
+    fetch('/admin/music/url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title, url: url })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { notify(res.j.error || '添加失败', false); return; }
+        notify('添加成功', true);
+        setTimeout(reload, 600);
+      })
+      .catch(function () { notify('添加失败', false); });
+  });
+
+  document.getElementById('musicList').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-del-music]');
+    if (!btn) return;
+    if (!confirm('确定删除这首歌曲？')) return;
+    fetch('/admin/music/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: parseInt(btn.getAttribute('data-del-music'), 10) })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { notify(res.j.error || '删除失败', false); return; }
+        notify('已删除', true);
+        setTimeout(reload, 600);
+      })
+      .catch(function () { notify('删除失败', false); });
+  });
+})();
+</script>

@@ -1,0 +1,207 @@
+/* 全站音乐悬浮播放器 */
+#mpRoot {
+  position: fixed;
+  z-index: 9800;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.mp-ball {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 22px;
+  color: #fff;
+  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mp-ball:hover {
+  transform: scale(1.06);
+}
+
+.mp-ball.mp-playing {
+  animation: mp-spin 6s linear infinite;
+}
+
+.mp-ball.mp-ask::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(236, 72, 153, 0.65);
+  animation: mp-pulse 1.4s ease-out infinite;
+}
+
+.mp-ball {
+  position: relative;
+}
+
+@keyframes mp-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes mp-pulse {
+  0% { transform: scale(0.9); opacity: 1; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+
+.mp-panel {
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.mp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  color: #fff;
+}
+
+.mp-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.mp-body {
+  padding: 12px 14px 14px;
+}
+
+.mp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-time {
+  font-size: 11px;
+  color: #888;
+  min-width: 34px;
+  text-align: center;
+}
+
+.mp-seek {
+  flex: 1;
+}
+
+.mp-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mp-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mp-btn:hover {
+  background: #f3e8ff;
+}
+
+.mp-play {
+  width: 42px;
+  height: 42px;
+  font-size: 15px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  color: #fff;
+  border: none;
+}
+
+.mp-vol-ico {
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.mp-vol {
+  width: 70px;
+}
+
+.mp-tip {
+  font-size: 12px;
+  color: #d97706;
+  min-height: 16px;
+  margin-top: 6px;
+}
+
+.mp-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border-top: 1px solid #f0f0f0;
+}
+
+.mp-item {
+  padding: 8px 6px;
+  font-size: 13px;
+  color: #444;
+  cursor: pointer;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-item:hover {
+  background: #f5f3ff;
+}
+
+.mp-item.mp-active {
+  color: #7c3aed;
+  font-weight: 600;
+  background: #f3e8ff;
+}
+
+input[type='range'].mp-seek,
+input[type='range'].mp-vol {
+  accent-color: #8b5cf6;
+  cursor: pointer;
+  height: 4px;
+}
+
+@media (max-width: 480px) {
+  .mp-panel {
+    width: calc(100vw - 32px);
+  }
+}

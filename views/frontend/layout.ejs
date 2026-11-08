@@ -261,6 +261,8 @@
 
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/utils.js') : '/js/utils.js' %>"></script>
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/main.js') : '/js/main.js' %>"></script>
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/music-player.css') : '/css/music-player.css' %>?v=20261108a">
+  <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/music-player.js') : '/js/music-player.js' %>?v=20261108a" defer></script>
   <% if (typeof user !== 'undefined' && user) { %>
   <script>
     // 通知下拉面板

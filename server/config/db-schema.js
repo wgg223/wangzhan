@@ -1245,6 +1245,15 @@ function createTables(db) {
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_ss_edits_sheet_cell ON spreadsheet_cell_edits(spreadsheet_id, sheet_index, row, col, id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ss_edits_sheet_time ON spreadsheet_cell_edits(spreadsheet_id, id)');
+
+  // 音乐播放曲目表（后台上传 / 外链；public/music 目录文件为运行时扫描，不入库）
+  db.run(`CREATE TABLE IF NOT EXISTS music_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    src TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'url',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 }
 
 module.exports = { createTables };
