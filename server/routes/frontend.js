@@ -1438,25 +1438,49 @@ router.post('/ai-chat/api/roles/fetch-url', isAuthenticated, hasFrontendPermissi
     const client = url.startsWith('https') ? https : http;
 
     const body = await new Promise((resolve, reject) => {
-      const httpReq = client.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }, (resp) => {
-        if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
-          const redirectUrl = resp.headers.location;
-          const rClient = redirectUrl.startsWith('https') ? https : http;
-          rClient.get(redirectUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }, (r2) => {
-            let data = '';
-            r2.on('data', chunk => data += chunk);
-            r2.on('end', () => resolve(data));
-            r2.on('error', reject);
-          }).on('error', reject);
-          return;
-        }
-        let data = '';
-        resp.on('data', chunk => data += chunk);
-        resp.on('end', () => resolve(data));
-        resp.on('error', reject);
-      });
-      httpReq.on('error', reject);
-      httpReq.on('timeout', () => { httpReq.destroy(); reject(new Error('请求超时')); });
+      const doRequest = (reqUrl, reqClient) => {
+        const req = reqClient.get(reqUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }, (resp) => {
+          if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+            const redirectUrl = resp.headers.location;
+            const rClient = redirectUrl.startsWith('https') ? https : http;
+            doRequest(redirectUrl, rClient);
+            return;
+          }
+          const chunks = [];
+          resp.on('data', chunk => chunks.push(chunk));
+          resp.on('end', () => {
+            const buf = Buffer.concat(chunks);
+            const ct = (resp.headers['content-type'] || '').toLowerCase();
+            let encoding = 'utf-8';
+            const charsetMatch = ct.match(/charset=([^\s;]+)/);
+            if (charsetMatch) {
+              const detected = charsetMatch[1].replace(/['"]/g, '').toLowerCase();
+              if (detected === 'gbk' || detected === 'gb2312' || detected === 'gb18030') encoding = 'gbk';
+              else if (detected === 'latin1' || detected === 'iso-8859-1') encoding = 'latin1';
+            }
+            if (encoding !== 'utf-8') {
+              try {
+                const iconv = require('iconv-lite');
+                resolve(iconv.decode(buf, encoding));
+              } catch (e) { resolve(buf.toString('utf-8')); }
+            } else {
+              const raw = buf.toString('utf-8');
+              const metaCharset = raw.match(/<meta[^>]+charset=["']?([^"'\s;>]+)/i);
+              if (metaCharset) {
+                const mc = metaCharset[1].toLowerCase();
+                if (mc === 'gbk' || mc === 'gb2312' || mc === 'gb18030') {
+                  try { const iconv = require('iconv-lite'); resolve(iconv.decode(buf, 'gbk')); return; } catch (e) { /* fallback */ }
+                }
+              }
+              resolve(raw);
+            }
+          });
+          resp.on('error', reject);
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('请求超时')); });
+      };
+      doRequest(url, client);
     });
 
     let charData = null;

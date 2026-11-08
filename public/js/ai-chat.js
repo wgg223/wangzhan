@@ -1354,7 +1354,7 @@
         }
         createRoleFromCard(card, file.name);
       };
-      textReader.readAsText(file);
+      textReader.readAsText(file, 'UTF-8');
     }
     // 重置 input 以便重复导入同一文件
     if (els.acRoleFileInput) els.acRoleFileInput.value = '';
@@ -1389,7 +1389,15 @@
             for (var k = 0; k < textBytes.length; k++) {
               base64Str += String.fromCharCode(textBytes[k]);
             }
-            try { return atob(base64Str); } catch (e) { return null; }
+            try {
+              // atob 返回 Latin-1 二进制字符串，需转 UTF-8
+              var binary = atob(base64Str);
+              var bytes = new Uint8Array(binary.length);
+              for (var m = 0; m < binary.length; m++) {
+                bytes[m] = binary.charCodeAt(m);
+              }
+              return new TextDecoder('utf-8').decode(bytes);
+            } catch (e) { return null; }
           }
         }
       }
@@ -1645,7 +1653,7 @@
           showToast('JSON 解析失败：' + ex.message, 'error');
         }
       };
-      reader.readAsText(file);
+      reader.readAsText(file, 'UTF-8');
     });
   }
 
