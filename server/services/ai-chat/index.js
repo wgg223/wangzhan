@@ -6,7 +6,7 @@ const { queryOne, queryAll, saveDatabase } = require('../../config/database');
 const { getSettings } = require('../../utils/settings');
 const { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings } = require('./provider');
 const { checkQuota, consumeQuota } = require('./quota');
-const { buildContext } = require('./context');
+const { buildContext, getGroupMembers } = require('./context');
 const { maybeSummarize, embedRecentPairs } = require('./memory');
 const { estimateTokens, normalizeError } = require('./utils');
 
@@ -16,13 +16,19 @@ function createConversation(db, user, data = {}) {
   // 新会话默认知识库开关：跟随全局 RAG 设置
   const ragSetting = queryOne(db, "SELECT value FROM ai_settings WHERE key = 'ai_rag_enabled'");
   const ragEnabled = ragSetting && String(ragSetting.value) === '1' ? 1 : 0;
-  db.run(`INSERT INTO ai_conversations (user_id, title, model, system_prompt, role_id, rag_enabled)
-    VALUES (?, ?, ?, ?, ?, ?)`,
-  [user.id, String(data.title || '新对话').slice(0, 100),
+  const isGroup = data.is_group ? 1 : 0;
+  const members = isGroup ? validateGroupMembers(db, user, data.group_members) : [];
+  if (isGroup && members.length < 2) {
+    throw Object.assign(new Error('群聊至少需要 2 个角色'), { status: 400 });
+  }
+  db.run(`INSERT INTO ai_conversations (user_id, title, model, system_prompt, role_id, rag_enabled, is_group, group_members, group_mode)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [user.id, String(data.title || (isGroup ? '新群聊' : '新对话')).trim().slice(0, 100),
     String(data.model || '').slice(0, 100),
     String(data.system_prompt || '').slice(0, 4000),
-    data.role_id ? parseInt(data.role_id, 10) : null,
-    ragEnabled]);
+    !isGroup && data.role_id ? parseInt(data.role_id, 10) : null,
+    ragEnabled, isGroup, JSON.stringify(members),
+    data.group_mode === 'manual' ? 'manual' : 'round']);
   const conv = queryOne(db, 'SELECT * FROM ai_conversations WHERE id = last_insert_rowid()');
 
   // 默认世界书：新会话自动复制启用中的全局默认条目（副本，会话内可自由编辑）
@@ -53,8 +59,32 @@ function getOwnConversation(db, user, convId) {
 }
 
 function renameConversation(db, conv, title) {
-  db.run('UPDATE ai_conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [String(title || '').slice(0, 100), conv.id]);
+  db.run('UPDATE ai_conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [String(title || '').trim().slice(0, 100), conv.id]);
   saveDatabase();
+}
+
+// 群聊成员校验：仅官方或本人角色，去重，上限 8 个
+function validateGroupMembers(db, user, ids) {
+  const out = [];
+  (Array.isArray(ids) ? ids : []).forEach(v => {
+    const id = parseInt(v, 10);
+    if (!id || out.indexOf(id) !== -1 || out.length >= 8) return;
+    const role = queryOne(db, 'SELECT id FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [id, user.id]);
+    if (role) out.push(id);
+  });
+  return out;
+}
+
+function updateGroup(db, user, conv, data = {}) {
+  if (!conv.is_group) throw Object.assign(new Error('该会话不是群聊'), { status: 400 });
+  const members = validateGroupMembers(db, user, data.members);
+  if (members.length < 2) throw Object.assign(new Error('群聊至少需要 2 个角色'), { status: 400 });
+  const mode = data.mode === 'manual' ? 'manual' : 'round';
+  const title = data.title ? String(data.title).trim().slice(0, 100) : conv.title;
+  db.run('UPDATE ai_conversations SET group_members = ?, group_mode = ?, title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [JSON.stringify(members), mode, title, conv.id]);
+  saveDatabase();
+  return queryOne(db, 'SELECT * FROM ai_conversations WHERE id = ?', [conv.id]);
 }
 
 function deleteConversation(db, conv) {
@@ -160,20 +190,20 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
   } catch (err) {
     // 主动停止：保留半截内容，status=stopped，不计配额
     if (signal && signal.aborted) {
-      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '');
+      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '', opts.speakerRoleId);
       return {
         messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true,
         model: modelInfo.model_key, quota: quotaCheck.quota
       };
     }
     const reason = normalizeError(err);
-    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason);
+    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason, opts.speakerRoleId);
     consumeQuota(db, user, { tokens: 0, count: true }); // 失败计次数
     throw Object.assign(new Error(reason), { status: 502, messageId: msgId });
   }
 
   const tokens = estimateTokens(full);
-  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '');
+  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '', opts.speakerRoleId);
   consumeQuota(db, user, { tokens, count: true });
   return {
     messageId: msgId, content: full, tokens, aborted: false,
@@ -223,6 +253,18 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
   // 向量记忆 / RAG 用：对用户消息做嵌入（配置缺失自动跳过）
   const { embCfg, queryEmbedding } = await embedUserMessage(db, conv, settings, content);
 
+  // 群聊：round=成员按序各回一条；manual=仅落用户消息，由用户点角色触发回复
+  if (conv.is_group) {
+    if (conv.group_mode === 'manual' && !opts.speakerRoleId) {
+      db.run('UPDATE ai_conversations SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
+      saveDatabase();
+      return { noReply: true, aborted: false };
+    }
+    return sendGroupRound(db, user, conv, content, opts, {
+      excludeMsgId: userMsg.id, embCfg, queryEmbedding
+    });
+  }
+
   const messages = buildContext(db, conv, content, {
     excludeMsgId: userMsg.id,
     embCfg,
@@ -247,11 +289,63 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
   return result;
 }
 
-function saveAssistantMessage(db, conv, content, modelInfo, status, error) {
-  db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status, error)
-    VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?)`,
+/**
+ * 群聊一轮：按成员顺序（或指定说话人）逐个生成回复，SSE 通过 onSpeaker/onResult 上报
+ */
+async function sendGroupRound(db, user, conv, userMsg, opts, ctxOpts) {
+  const members = getGroupMembers(db, conv);
+  if (!members.length) throw Object.assign(new Error('群聊没有可用成员，请先添加角色'), { status: 400 });
+  const speakers = opts.speakerRoleId ? members.filter(m => m.id === opts.speakerRoleId) : members;
+  if (!speakers.length) throw Object.assign(new Error('指定的角色不在群成员中'), { status: 400 });
+  let last = null;
+  for (const sp of speakers) {
+    if (opts.signal && opts.signal.aborted) break;
+    const quotaCheck = checkQuota(db, user);
+    if (!quotaCheck.ok) {
+      if (!last) throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
+      break;
+    }
+    if (opts.onSpeaker) opts.onSpeaker({ role_id: sp.id, name: sp.name, avatar: sp.avatar || '' });
+    const modelInfo = resolveModel(db, user.id, conv.model);
+    const messages = buildContext(db, conv, userMsg, Object.assign({}, ctxOpts, { speakerRoleId: sp.id }));
+    last = await runCompletion(db, user, conv, modelInfo, messages,
+      Object.assign({}, opts, { speakerRoleId: sp.id }), quotaCheck);
+    if (opts.onResult) opts.onResult(last, sp);
+    if (last.aborted) break;
+  }
+  if (!last) throw Object.assign(new Error('没有生成任何回复'), { status: 502 });
+  return last;
+}
+
+/**
+ * 群聊手动顶帖：不新增用户消息，指定角色对当前上下文回复一条
+ */
+async function groupReply(db, user, conv, roleId, opts = {}) {
+  const settings = getSettings(db);
+  if (String(settings.ai_enabled ?? '1') === '0') {
+    throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });
+  }
+  if (!conv.is_group) throw Object.assign(new Error('该会话不是群聊'), { status: 400 });
+  const members = getGroupMembers(db, conv);
+  const sp = members.find(m => m.id === parseInt(roleId, 10));
+  if (!sp) throw Object.assign(new Error('指定的角色不在群成员中'), { status: 400 });
+  const quotaCheck = checkQuota(db, user);
+  if (!quotaCheck.ok) throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
+  const lastUser = queryOne(db, "SELECT content FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1",
+    [conv.id, conv.current_branch_id || 0]);
+  const modelInfo = resolveModel(db, user.id, conv.model);
+  const messages = buildContext(db, conv, lastUser ? lastUser.content : '', { speakerRoleId: sp.id, noUserMsg: true });
+  if (opts.onSpeaker) opts.onSpeaker({ role_id: sp.id, name: sp.name, avatar: sp.avatar || '' });
+  const result = await runCompletion(db, user, conv, modelInfo, messages,
+    Object.assign({}, opts, { speakerRoleId: sp.id }), quotaCheck);
+  return { result, speaker: sp };
+}
+
+function saveAssistantMessage(db, conv, content, modelInfo, status, error, speakerRoleId) {
+  db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status, error, speaker_role_id)
+    VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, ?)`,
   [conv.id, conv.current_branch_id || 0, content, estimateTokens(content),
-    modelInfo ? modelInfo.model_key : '', status, error]);
+    modelInfo ? modelInfo.model_key : '', status, error, speakerRoleId || null]);
   const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
   db.run('UPDATE ai_conversations SET message_count = message_count + 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
   saveDatabase();
@@ -279,20 +373,22 @@ async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
   if (!prevUser) throw Object.assign(new Error('找不到对应的用户消息'), { status: 400 });
 
   const modelInfo = resolveModel(db, user.id, conv.model);
-  // 与 sendMessage 一致：重新生成同样做向量记忆/RAG 检索
+  // 与 sendMessage 一致：重新生成同样做向量记忆/RAG 检索；群聊保留原说话人
   const { embCfg, queryEmbedding } = await embedUserMessage(db, conv, settings, prevUser.content);
   const messages = buildContext(db, conv, prevUser.content, {
     excludeMsgId: prevUser.id,
     embCfg,
-    queryEmbedding
+    queryEmbedding,
+    speakerRoleId: target.speaker_role_id || undefined
   });
 
-  return runCompletion(db, user, conv, modelInfo, messages, opts, quotaCheck);
+  return runCompletion(db, user, conv, modelInfo, messages,
+    Object.assign({}, opts, { speakerRoleId: target.speaker_role_id || undefined }), quotaCheck);
 }
 
 module.exports = {
   createConversation, getOwnConversation, renameConversation, deleteConversation,
-  getOwnMessage, deleteMessage, editMessage,
+  updateGroup, getOwnMessage, deleteMessage, editMessage,
   forkConversation, switchBranch, deleteBranch,
-  sendMessage, regenerateMessage, extractGenParams
+  sendMessage, regenerateMessage, groupReply, extractGenParams
 };

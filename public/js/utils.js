@@ -95,7 +95,20 @@ function csrfFetch(url, options, timeoutMs) {
   timeoutMs = timeoutMs || 15000;
   options = options || {};
   options.headers = options.headers || {};
-  options.headers['Content-Type'] = options.headers['Content-Type'] || 'application/json';
+  // 纯字段 FormData 转 urlencoded（服务端常规路由不解析 multipart）；含文件时保留 multipart 并由浏览器生成 boundary
+  if (typeof FormData !== 'undefined' && options.body instanceof FormData) {
+    var hasFile = false;
+    options.body.forEach(function (v) { if (typeof v !== 'string') hasFile = true; });
+    if (hasFile) {
+      delete options.headers['Content-Type'];
+    } else {
+      var params = new URLSearchParams();
+      options.body.forEach(function (v, k) { params.append(k, v); });
+      options.body = params;
+    }
+  } else {
+    options.headers['Content-Type'] = options.headers['Content-Type'] || 'application/json';
+  }
   options.headers['X-CSRF-Token'] = getCsrfToken();
   // AJAX 标识：服务端依赖 X-Requested-With 区分 JSON 响应与页面重定向
   options.headers['X-Requested-With'] = 'XMLHttpRequest';

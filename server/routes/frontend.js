@@ -13,7 +13,7 @@ const express = require('express');
 const path = require('path');
 const router = express.Router();
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
-const { isAuthenticated, canEditArticle, hasFrontendPermission, isAdminRole } = require('../middlewares/auth');
+const { isAuthenticated, canEditArticle, hasFrontendPermission, isAdminRole, hasPermKey } = require('../middlewares/auth');
 const { settingsCache, queryCache } = require('../config/cache');
 const { createNotification } = require('./community');
 const { logActivity } = require('../config/activity');
@@ -988,12 +988,16 @@ router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (re
   const canShareLink = user.role === 'super_admin' || user.role === 'admin' ||
     userPerms.indexOf('image-share.share') !== -1 || userPerms.indexOf('image-share.*') !== -1;
 
+  // 导出为独立高危权限，普通用户默认无导出权限
+  const canExport = user.role === 'super_admin' || hasPermKey(userPerms, 'aichat.export');
+
   res.render('frontend/ai-chat', {
     user,
     settings,
     csrfToken: req.session.doubleSubmitToken,
     canPickPrompt,
     canShareLink,
+    canExport,
     prompts
   });
 });
@@ -1006,7 +1010,7 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
   const conversations = queryAll(db, `SELECT id, title, model, role_id, system_prompt, message_count,
       memory_enabled, memory_mode, rag_enabled, current_branch_id, updated_at,
       gen_temperature, gen_top_p, gen_top_k, gen_frequency_penalty, gen_presence_penalty, gen_max_tokens,
-      author_note, author_note_depth, prompt_template_id
+      author_note, author_note_depth, prompt_template_id, is_group, group_members, group_mode
     FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC, id DESC`, [user.id]);
   const roles = queryAll(db, `SELECT id, name, avatar, description, category, is_official, user_id,
       greeting, personality, scenario, examples
@@ -1038,15 +1042,34 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
         interval: parseInt(settings.ai_memory_interval, 10) || 10
       },
       conversations, roles, models, globalModels, providers, presets, promptTemplates,
-      quota: quota.quota, quotaOk: quota.ok, quotaUnlimited: quota.unlimited
+      quota: quota.quota, quotaOk: quota.ok, quotaUnlimited: quota.unlimited,
+      canExport: user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'aichat.export')
     }
   });
 });
 
 // 新建会话
 router.post('/ai-chat/api/conversations', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
-  const conv = aiChatService.createConversation(req.db, req.session.user, req.body);
-  res.json({ success: true, data: conv });
+  try {
+    const conv = aiChatService.createConversation(req.db, req.session.user, req.body);
+    res.json({ success: true, data: conv });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// 群聊成员/模式管理
+router.post('/ai-chat/api/conversations/group', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const conv = aiChatService.getOwnConversation(req.db, req.session.user, parseInt(req.body.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  try {
+    const updated = aiChatService.updateGroup(req.db, req.session.user, conv, {
+      members: req.body.members, mode: req.body.mode, title: req.body.title
+    });
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
 });
 
 // 重命名会话
@@ -1163,7 +1186,7 @@ router.get('/ai-chat/api/conversations/:id/messages', isAuthenticated, hasFronte
   const conv = aiChatService.getOwnConversation(db, user, parseInt(req.params.id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const branchId = conv.current_branch_id || 0;
-  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, model, status, error, is_pinned, created_at, alternate_of, is_active FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY id ASC', [conv.id, branchId]);
+  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, model, status, error, is_pinned, created_at, alternate_of, is_active, speaker_role_id FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY id ASC', [conv.id, branchId]);
   const branches = queryAll(db, 'SELECT id, name, parent_message_id, created_at FROM ai_branches WHERE conversation_id = ? ORDER BY id ASC', [conv.id]);
   const worldBook = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
   const summaries = queryAll(db, "SELECT id, content, created_at FROM ai_memories WHERE conversation_id = ? AND type = 'summary' ORDER BY id ASC", [conv.id]);
@@ -1210,13 +1233,48 @@ router.post('/ai-chat/api/send', isAuthenticated, hasFrontendPermission('aichat.
   if (!conv) return res.status(404).json({ error: '会话不存在' });
 
   const streamEnabled = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  const isGroup = !!conv.is_group;
   streamCompletionResponse(req, res, async (signal, sendEvent) => {
     const result = await aiChatService.sendMessage(db, user, conv, String(req.body.content || ''), {
       stream: streamEnabled,
       signal,
-      onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined
+      speakerRoleId: parseInt(req.body.speaker_role_id, 10) || undefined,
+      onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined,
+      onSpeaker: isGroup ? sp => sendEvent('speaker', sp) : undefined,
+      onResult: isGroup ? (r, sp) => sendEvent('message', {
+        id: r.messageId, content: r.content, tokens: r.tokens, model: r.model, quota: r.quota,
+        speaker_role_id: sp.id, speaker_name: sp.name
+      }) : undefined
     });
-    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, model: result.model, quota: result.quota });
+    if (result.noReply) {
+      sendEvent('done', { noReply: true });
+      return;
+    }
+    if (!isGroup) {
+      sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, model: result.model, quota: result.quota });
+    }
+    sendEvent('done', { aborted: !!result.aborted });
+  });
+});
+
+// 群聊手动顶帖：指定成员对当前上下文回复（SSE 流式）
+router.post('/ai-chat/api/group/reply', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatSendLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const streamEnabled = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  streamCompletionResponse(req, res, async (signal, sendEvent) => {
+    const { result, speaker } = await aiChatService.groupReply(db, user, conv, req.body.role_id, {
+      stream: streamEnabled,
+      signal,
+      onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined,
+      onSpeaker: sp => sendEvent('speaker', sp)
+    });
+    sendEvent('message', {
+      id: result.messageId, content: result.content, tokens: result.tokens, model: result.model, quota: result.quota,
+      speaker_role_id: speaker.id, speaker_name: speaker.name
+    });
     sendEvent('done', { aborted: !!result.aborted });
   });
 });
@@ -1353,6 +1411,34 @@ router.post('/ai-chat/api/world-book/import-defaults', isAuthenticated, hasFront
   });
   saveDatabase();
   res.json({ success: true, data: { imported, total: defaults.length } });
+});
+
+// 世界书文件导入（SillyTavern lorebook / 自有格式 / Markdown 解析后的条目批量写入）
+router.post('/ai-chat/api/world-book/import', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const entries = Array.isArray(req.body.entries) ? req.body.entries.slice(0, 500) : [];
+  if (!entries.length) return res.status(400).json({ error: '没有可导入的条目' });
+  const existing = new Set(queryAll(db, 'SELECT key FROM ai_world_book WHERE conversation_id = ?', [conv.id]).map(r => String(r.key).trim().toLowerCase()));
+  let imported = 0;
+  let skipped = 0;
+  entries.forEach((e, i) => {
+    if (!e || typeof e !== 'object') { skipped++; return; }
+    const key = String(e.key || '').trim().slice(0, 100);
+    const content = String(e.content || '').trim().slice(0, 20000);
+    if (!content || (key && existing.has(key.toLowerCase()))) { skipped++; return; }
+    const position = WORLD_BOOK_POSITIONS.indexOf(e.position) !== -1 ? e.position : 'before_char';
+    const enabled = e.enabled === 0 || e.enabled === false ? 0 : 1;
+    const constant = e.constant === 1 || e.constant === true || e.constant === '1' ? 1 : 0;
+    const sortOrder = parseInt(e.sort_order, 10) || i;
+    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [conv.id, key, content, position, sortOrder, enabled, constant]);
+    if (key) existing.add(key.toLowerCase());
+    imported++;
+  });
+  saveDatabase();
+  res.json({ success: true, data: { imported, skipped } });
 });
 
 // 会话级知识库（RAG）开关

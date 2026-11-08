@@ -6,7 +6,7 @@
   <title>AI 聊天 - <%= settings.site_name || '我的网站' %></title>
   <meta name="csrf-token" content="<%= csrfToken %>">
   <meta name="theme-color" content="#ec4899">
-  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-chat.css') : '/css/ai-chat.css' %>?v=20261108i">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-chat.css') : '/css/ai-chat.css' %>?v=20261109a">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 </head>
@@ -14,11 +14,11 @@
 <div class="ac-app" id="acApp">
   <aside class="ac-sidebar" id="acSidebar">
     <div class="ac-brand">
-      <div class="ac-brand-mark">🤖</div>
-      <h1>AI聊天</h1>
-      <a class="ac-back" href="/">← 返回首页</a>
+      <img class="ac-user-avatar" src="<%= user.avatar %>" alt="">
+      <h1 class="ac-user-name"><%= user.nickname || user.username %></h1>
     </div>
     <button class="ac-btn ac-btn-primary ac-new-chat" id="acNewChat">＋ 新对话</button>
+    <button class="ac-btn ac-new-chat ac-new-group" id="acNewGroup">👥 新群聊</button>
     <div class="ac-conv-search"><input type="search" id="acConvSearch" placeholder="搜索会话…" autocomplete="off" spellcheck="false"></div>
     <div class="ac-conv-list" id="acConvList"></div>
     <div class="ac-sidebar-foot">
@@ -39,6 +39,11 @@
         <button class="ac-tool" id="acPanelToggle" title="设置面板">🎛️ <span>设置</span></button>
       </div>
     </header>
+
+    <div class="ac-group-bar" id="acGroupBar" hidden>
+      <div class="ac-group-members" id="acGroupMembers"></div>
+      <button type="button" class="ac-btn ac-btn-sm" id="acGroupEdit">👥 成员</button>
+    </div>
 
     <div class="ac-models-card" id="acModelsCard">
       <div class="ac-models-head">
@@ -154,6 +159,8 @@
           </div>
           <div style="display:flex;gap:6px;margin-top:8px;">
             <button type="button" class="ac-btn ac-btn-sm" id="acWorldImport">⤵ 模板</button>
+            <button type="button" class="ac-btn ac-btn-sm" id="acWorldFileImport">📥 导入</button>
+            <input type="file" id="acWorldFileInput" accept=".json,.md,.markdown" hidden>
             <button type="button" class="ac-btn ac-btn-primary ac-btn-sm" id="acWorldAdd" style="flex:1;">＋ 添加</button>
           </div>
         </div>
@@ -193,11 +200,11 @@
         <div class="ac-panel-section">
           <h4>操作</h4>
           <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            <button class="ac-btn ac-btn-sm" id="acChatExport">📥 导出</button>
+            <button class="ac-btn ac-btn-sm" id="acChatExport" <%= canExport ? '' : 'style="display:none"' %>>📥 导出</button>
             <button class="ac-btn ac-btn-sm" id="acChatImport">📤 导入</button>
-            <input type="file" id="acChatFileInput" accept=".json" hidden>
+            <input type="file" id="acChatFileInput" accept=".json,.jsonl" hidden>
             <button class="ac-btn ac-btn-sm" id="acRoleImport">⤵ 导入角色</button>
-            <button class="ac-btn ac-btn-sm" id="acRoleExport">⤴ 导出角色</button>
+            <button class="ac-btn ac-btn-sm" id="acRoleExport" <%= canExport ? '' : 'style="display:none"' %>>⤴ 导出角色</button>
             <button class="ac-btn ac-btn-sm" id="acRoleImportUrl">🌐 抓取</button>
           </div>
         </div>
@@ -215,6 +222,8 @@
 <div class="ac-modal-overlay" id="acRoleUrlModal" hidden><div class="ac-modal"><div class="ac-modal-head"><h2>🌐 抓取角色卡</h2><button class="ac-modal-close" data-ac-close="acRoleUrlModal">×</button></div><div class="ac-modal-body"><label class="ac-field">URL<input id="acRoleUrlInput" type="url" placeholder="https://example.com/characters/xxx" maxlength="500"></label></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-sm" data-ac-close="acRoleUrlModal">取消</button><span style="flex:1"></span><button class="ac-btn ac-btn-primary ac-btn-sm" id="acRoleUrlFetch">抓取并导入</button></div></div></div>
 
 <div class="ac-modal-overlay" id="acRoleCreateModal" hidden><div class="ac-modal"><div class="ac-modal-head"><h2>创建角色</h2><button class="ac-modal-close" data-ac-close="acRoleCreateModal">×</button></div><div class="ac-modal-body"><div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;"><div class="ac-role-card-avatar" id="acNewRoleAvatarPreview" style="width:56px;height:56px;font-size:24px;cursor:pointer;">🎭</div><div style="flex:1;"><label class="ac-field" style="margin-bottom:4px;">头像<input type="text" id="acNewRoleAvatar" placeholder="URL（可选）" maxlength="500" class="ac-model-input" style="margin-top:4px;"></label><input type="file" id="acNewRoleAvatarFile" accept="image/*" style="display:none;"><button type="button" class="ac-btn ac-btn-sm" id="acNewRoleAvatarBtn" style="font-size:11px;">📁 上传</button></div></div><label class="ac-field">名称<input id="acNewRoleName" maxlength="50"></label><label class="ac-field">设定<textarea id="acNewRolePrompt" rows="5" maxlength="4000"></textarea></label><label class="ac-field">开场白<textarea id="acNewRoleGreeting" rows="2" maxlength="1000"></textarea></label><label class="ac-field">简介<textarea id="acNewRoleDesc" rows="2" maxlength="200"></textarea></label><details class="ac-field ac-role-advanced"><summary>高级</summary><label class="ac-field">性格<textarea id="acNewRolePersonality" rows="2" maxlength="2000"></textarea></label><label class="ac-field">场景<textarea id="acNewRoleScenario" rows="2" maxlength="2000"></textarea></label><label class="ac-field">示例<textarea id="acNewRoleExamples" rows="3" maxlength="4000"></textarea></label></details></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-sm" data-ac-close="acRoleCreateModal">取消</button><button class="ac-btn ac-btn-primary ac-btn-sm" id="acRoleSave">保存</button></div></div></div>
+
+<div class="ac-modal-overlay" id="acGroupModal" hidden><div class="ac-modal"><div class="ac-modal-head"><h2 id="acGroupModalTitle">新建群聊</h2><button class="ac-modal-close" data-ac-close="acGroupModal">×</button></div><div class="ac-modal-body"><label class="ac-field">群聊名称<input id="acGroupName" maxlength="100" placeholder="如：主角小队"></label><label class="ac-field">回复模式<select id="acGroupMode"><option value="round">轮流发言（每轮所有成员依次回复）</option><option value="manual">手动指定（点击成员头像触发回复）</option></select></label><label class="ac-field">群成员（2–8 个）</label><div class="ac-group-member-list" id="acGroupMemberList"></div></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-sm" data-ac-close="acGroupModal">取消</button><button class="ac-btn ac-btn-primary ac-btn-sm" id="acGroupSave">创建</button></div></div></div>
 
 <div class="ac-modal-overlay" id="acWorldEditModal" hidden><div class="ac-modal ac-modal-lg"><div class="ac-modal-head"><h2 id="acWorldEditTitle">世界书条目</h2><button class="ac-modal-close" data-ac-close="acWorldEditModal">×</button></div><div class="ac-modal-body"><div class="ac-field-row"><label class="ac-field">触发词<input id="acWorldKey" maxlength="100" placeholder="逗号分隔，留空=常驻"></label><label class="ac-field">位置<select id="acWorldPos"><option value="system_top">系统前</option><option value="before_char">角色前</option><option value="after_char">角色后</option><option value="user_top">用户消息</option><option value="assistant_top">AI前</option></select></label></div><label class="ac-field ac-check"><input type="checkbox" id="acWorldConstant"> 常驻</label><label class="ac-field">内容<textarea id="acWorldContent" rows="8" maxlength="20000"></textarea></label></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-danger ac-btn-sm" id="acWorldDelete" style="display:none;">删除</button><span style="flex:1"></span><button class="ac-btn ac-btn-sm" data-ac-close="acWorldEditModal">取消</button><button class="ac-btn ac-btn-primary ac-btn-sm" id="acWorldSave">保存</button></div></div></div>
 
@@ -236,9 +245,10 @@
   siteName: settings.site_name || '',
   canPickPrompt: !!canPickPrompt,
   canShareLink: !!canShareLink,
+  canExport: !!canExport,
   prompts: canPickPrompt ? prompts.map(function(p) { return { id: p.id, title: p.title, excerpt: p.excerpt || '' }; }) : []
 }).replace(/</g, '\\u003c') %></script>
 <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/utils.js') : '/js/utils.js' %>"></script>
-<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-chat.js') : '/js/ai-chat.js' %>?v=20261108i" defer></script>
+<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-chat.js') : '/js/ai-chat.js' %>?v=20261109a" defer></script>
 </body>
 </html>

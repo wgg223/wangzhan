@@ -168,6 +168,7 @@ function insertDefaultDataIfNeeded(db) {
     // ---- ai AI 应用 ----
     ['imagegen.manage', 'AI生图管理', '后台配置AI生图服务商、密钥与每日限额，管理生成记录', 'ai', 1, 1],
     ['aichat.manage', 'AI聊天管理', '后台配置AI聊天模型、角色、知识库与配额', 'ai', 1, 2],
+    ['aichat.export', 'AI聊天导出', '导出角色卡与聊天记录（高危：内容可被带离站点）', 'ai', 1, 3],
     // ---- spreadsheet 在线表格 ----
     ['spreadsheet.manage', '在线表格管理', '创建、编辑、删除在线表格，管理行列数据与列显示', 'spreadsheet', 1, 1],
     // ---- system 系统管理 ----

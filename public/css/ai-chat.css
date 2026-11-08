@@ -209,18 +209,17 @@ a:hover { text-decoration: underline; }
   display: flex; flex-direction: column;
 }
 .ac-brand { padding: 18px 16px 12px; display: flex; align-items: center; gap: 10px; }
-.ac-brand-mark {
-  width: 40px; height: 40px; border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; color: #fff;
-  box-shadow: var(--primary-shadow);
+.ac-user-avatar {
+  width: 38px; height: 38px; border-radius: 50%; object-fit: cover;
+  border: 1px solid var(--border-color); background: var(--bg-primary);
 }
-.ac-brand h1 { font-size: 17px; color: var(--text-primary); }
-.ac-back { display: block; margin-left: auto; font-size: 12px; color: var(--text-secondary); text-decoration: none; white-space: nowrap; }
-.ac-back:hover { color: var(--primary); }
+.ac-user-name {
+  font-size: 15px; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .ac-new-chat { margin: 0 14px 12px; }
+.ac-new-group { margin-top: -4px; }
 .ac-conv-search { padding: 0 14px 10px; }
 .ac-conv-search input {
   width: 100%; padding: 8px 11px; border-radius: var(--radius-sm);
@@ -239,9 +238,10 @@ a:hover { text-decoration: underline; }
 .ac-conv-item:hover { background: var(--primary-focus); color: var(--text-primary); }
 .ac-conv-item.active { background: var(--primary-bg); color: var(--primary); font-weight: var(--font-medium); }
 .ac-conv-item .ac-conv-title-sm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ac-conv-item .ac-conv-del { opacity: 0; border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 13px; }
-.ac-conv-item:hover .ac-conv-del { opacity: 1; }
+.ac-conv-item .ac-conv-del, .ac-conv-item .ac-conv-rename { opacity: 0; border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 13px; }
+.ac-conv-item:hover .ac-conv-del, .ac-conv-item:hover .ac-conv-rename { opacity: 1; }
 .ac-conv-item .ac-conv-del:hover { color: var(--danger); }
+.ac-conv-item .ac-conv-rename:hover { color: var(--primary); }
 
 .ac-sidebar-foot { padding: 10px 14px; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted); }
 .ac-quota-badge { display: inline-block; margin-bottom: 4px; padding: 3px 9px; border-radius: var(--radius-full); background: var(--success-bg); color: var(--success); font-size: 12px; }
@@ -266,6 +266,40 @@ a:hover { text-decoration: underline; }
 }
 .ac-tool:hover { color: var(--primary); border-color: var(--primary); }
 .ac-tool.active { color: var(--primary); border-color: var(--primary); background: var(--primary-bg); }
+
+/* ---------- 群聊 ---------- */
+.ac-group-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+.ac-group-bar[hidden] { display: none; }
+.ac-group-members { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ac-group-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px 3px 4px; border-radius: var(--radius-full);
+  border: 1px solid var(--border-color); background: var(--bg-card);
+  color: var(--text-secondary); font-size: 12px; cursor: pointer;
+  transition: var(--transition-fast); max-width: 160px;
+}
+.ac-group-chip:hover { color: var(--primary); border-color: var(--primary); }
+.ac-group-chip.speaking { color: var(--primary); border-color: var(--primary); background: var(--primary-bg); }
+.ac-group-chip img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; flex: 0 0 20px; }
+.ac-group-chip .ac-group-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-group-mode { font-size: 11px; color: var(--text-muted); padding: 2px 8px; border-radius: var(--radius-full); background: var(--primary-focus); white-space: nowrap; }
+.ac-group-member-list {
+  max-height: 300px; overflow-y: auto; border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); padding: 6px;
+}
+.ac-group-member-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-radius: var(--radius-sm); cursor: pointer; font-size: 13px;
+  color: var(--text-primary);
+}
+.ac-group-member-item:hover { background: var(--primary-focus); }
+.ac-group-member-item input { width: auto; margin: 0; }
+.ac-group-member-item img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.ac-group-member-item small { color: var(--text-muted); margin-left: auto; }
 
 /* ---------- 我的 API 模型卡片 ---------- */
 .ac-models-card { border-bottom: 1px solid var(--border-color); background: var(--bg-secondary); }
@@ -337,6 +371,7 @@ a:hover { text-decoration: underline; }
   background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff;
 }
 .ac-msg.user .ac-msg-avatar { background: var(--info); }
+.ac-msg-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .ac-msg-body { flex: 1; min-width: 0; max-width: 860px; }
 .ac-msg-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; color: var(--text-muted); }
 .ac-msg-actions { display: inline-flex; gap: 4px; margin-left: 6px; opacity: 0; transition: var(--transition-fast); }

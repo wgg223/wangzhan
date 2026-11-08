@@ -18,6 +18,14 @@ function getRole(db, roleId) {
   return queryOne(db, 'SELECT * FROM ai_roles WHERE id = ?', [roleId]);
 }
 
+// 群聊成员（按 group_members JSON 顺序，过滤已删除角色）
+function getGroupMembers(db, conv) {
+  let ids = [];
+  try { ids = JSON.parse(conv.group_members || '[]'); } catch (e) { ids = []; }
+  if (!Array.isArray(ids)) return [];
+  return ids.map(id => getRole(db, parseInt(id, 10))).filter(Boolean);
+}
+
 function getWorldBook(db, convId) {
   return queryAll(db, 'SELECT * FROM ai_world_book WHERE conversation_id = ? AND enabled = 1 ORDER BY sort_order ASC, id ASC', [convId]);
 }
@@ -52,9 +60,12 @@ function matchWorldBook(entries, userMsg, recentMsgs, positions) {
  * @param {Object} opts - { excludeMsgId, modelInfo, embCfg, queryEmbedding }
  */
 function buildContext(db, conv, userMsg, opts = {}) {
-  const { excludeMsgId, embCfg, queryEmbedding } = opts;
+  const { excludeMsgId, embCfg, queryEmbedding, speakerRoleId, noUserMsg } = opts;
   const settings = getSettings(db);
-  const role = getRole(db, conv.role_id);
+  const isGroup = !!conv.is_group;
+  const members = isGroup ? getGroupMembers(db, conv) : [];
+  const speaker = isGroup ? (members.find(m => m.id === speakerRoleId) || members[0] || null) : null;
+  const role = isGroup ? speaker : getRole(db, conv.role_id);
   const entries = getWorldBook(db, conv.id);
 
   // ---- 当前分支历史（先取历史，供世界书触发词扫描与对话窗口复用） ----
@@ -96,6 +107,17 @@ function buildContext(db, conv, userMsg, opts = {}) {
     }
   }
   if (conv.system_prompt) systemParts.push(conv.system_prompt);
+
+  // 群聊框架：扮演当前说话人，其余成员卡摘要注入（SillyTavern Group Chats 语义）
+  if (isGroup && members.length) {
+    const groupLines = ['【群聊设定】这是多角色群聊。你现在扮演「' + (role ? role.name : '未知角色') + '」，只以该角色的身份回复，不要替其他角色或用户发言，回复不要带名字前缀。'];
+    groupLines.push('群成员：' + members.map(m => m.name).join('、'));
+    members.filter(m => !role || m.id !== role.id).forEach(m => {
+      const card = [m.system_prompt, m.personality, m.description].filter(Boolean).join('\n');
+      if (card) groupLines.push('成员「' + m.name + '」的设定：\n' + card.slice(0, 1500));
+    });
+    systemParts.push(groupLines.join('\n'));
+  }
 
   // 记忆块（会话开启记忆时）
   const memoryEnabled = conv.memory_enabled !== 0 && String(settings.ai_memory_enabled ?? '1') !== '0';
@@ -148,20 +170,28 @@ function buildContext(db, conv, userMsg, opts = {}) {
       messages.push({ role: 'system', content: '[Author\'s Note: ' + authorNote + ']' });
       noteInserted = true;
     }
-    messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') });
+    // 群聊中其他角色的发言归入 user 侧并带名字前缀，当前说话人的历史保持 assistant
+    if (isGroup && m.role === 'assistant' && m.speaker_role_id && role && m.speaker_role_id !== role.id) {
+      const sp = members.find(x => x.id === m.speaker_role_id);
+      messages.push({ role: 'user', content: (sp ? sp.name : '角色') + ': ' + String(m.content || '') });
+    } else {
+      messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') });
+    }
   });
   // 如果历史太短没插入，放在历史最前面
   if (authorNote && !noteInserted) {
     messages.splice(1, 0, { role: 'system', content: '[Author\'s Note: ' + authorNote + ']' });
   }
 
-  // ---- 用户消息（user_top 世界书条目附加到消息尾部） ----
-  const topEntries = matchWorldBook(entries, userMsg, recentForScan, ['user_top']);
-  let finalUserMsg = String(userMsg || '');
-  if (topEntries.length) finalUserMsg += '\n\n（附加设定）\n' + topEntries.map(e => e.content).join('\n');
-  messages.push({ role: 'user', content: finalUserMsg });
+  // ---- 用户消息（user_top 世界书条目附加到消息尾部；noUserMsg 用于群聊手动顶帖） ----
+  if (!noUserMsg) {
+    const topEntries = matchWorldBook(entries, userMsg, recentForScan, ['user_top']);
+    let finalUserMsg = String(userMsg || '');
+    if (topEntries.length) finalUserMsg += '\n\n（附加设定）\n' + topEntries.map(e => e.content).join('\n');
+    messages.push({ role: 'user', content: finalUserMsg });
+  }
 
   return messages;
 }
 
-module.exports = { buildContext, getRole, getWorldBook, matchWorldBook, HISTORY_TOKEN_WINDOW };
+module.exports = { buildContext, getRole, getGroupMembers, getWorldBook, matchWorldBook, HISTORY_TOKEN_WINDOW };

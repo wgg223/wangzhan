@@ -4,6 +4,10 @@
  *   - 总览页        GET  /admin/ai-chat                     （模型/官方角色/知识库/配额一览）
  *   - 模型管理      POST /admin/ai-chat/models/{save,delete,test}  （全局模型 CRUD + 连通性测试，Key 加密存储）
  *   - 角色管理      POST /admin/ai-chat/roles/{save,delete}         （官方角色 CRUD，system_prompt≤4000字）
+ *   - 角色卡导入    POST /admin/ai-chat/roles/import                （PNG chara / JSON，支持多文件批量）
+ *   - 角色卡导出    GET  /admin/ai-chat/roles/export[?id]           （单角色/全部，chara_card_v2 JSON）
+ *                   GET  /admin/ai-chat/roles/export-png?id         （SillyTavern 兼容 PNG 角色卡）
+ *   - 角色批量管理  POST /admin/ai-chat/roles/{batch-delete,duplicate,move,avatar}
  *   - 系统设置      POST /admin/ai-chat/settings/save               （开关/配额/RAG/记忆/Embedding/流式）
  *   - 知识库 RAG    POST /admin/ai-chat/knowledge/{upload,delete,reembed} （txt/md≤2MB，上传即分块嵌入）
  *   - 配额管理      GET /admin/ai-chat/quota  POST /admin/ai-chat/quota/update
@@ -14,6 +18,9 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
+const zlib = require('zlib');
+const crypto = require('crypto');
 const router = express.Router();
 const { isAuthenticated, hasPermission, isAdminRole } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
@@ -43,6 +50,7 @@ router.get('/ai-chat', isAuthenticated, hasPermission('aichat.manage'), (req, re
   const models = queryAll(db, "SELECT * FROM ai_models WHERE user_id IS NULL ORDER BY is_default DESC, sort_order ASC, id ASC");
   models.forEach(m => { m.has_key = Boolean(m.api_key && m.api_key.indexOf('ENC:') === 0); });
   const roles = queryAll(db, "SELECT * FROM ai_roles WHERE is_official = 1 ORDER BY sort_order ASC, id ASC");
+  const roleCategories = Array.from(new Set(roles.map(r => r.category || 'default')));
   const defaultWorldBook = queryAll(db, 'SELECT * FROM ai_default_world_book ORDER BY sort_order ASC, id ASC');
   const docs = queryAll(db, 'SELECT * FROM ai_knowledge_docs ORDER BY id DESC');
   const quotaRows = queryAll(db, `
@@ -58,6 +66,7 @@ router.get('/ai-chat', isAuthenticated, hasPermission('aichat.manage'), (req, re
     aiSettings: settings,
     models,
     roles,
+    roleCategories,
     defaultWorldBook,
     docs,
     quotaRows,
@@ -146,6 +155,7 @@ router.post('/ai-chat/roles/save', isAuthenticated, hasPermission('aichat.manage
   const personality = (first(req.body.personality) || '').trim().slice(0, 2000);
   const scenario = (first(req.body.scenario) || '').trim().slice(0, 2000);
   const examples = (first(req.body.examples) || '').trim().slice(0, 4000);
+  const avatar = (first(req.body.avatar) || '').trim().slice(0, 2000);
   if (!name) return res.status(400).json({ error: '角色名称不能为空' });
   if (!systemPrompt && !greeting) return res.status(400).json({ error: '角色设定或开场白至少填写一项' });
   // 官方角色去重：与其他官方角色同名（大小写不敏感，排除自身）时拒绝
@@ -154,11 +164,11 @@ router.post('/ai-chat/roles/save', isAuthenticated, hasPermission('aichat.manage
 
   const existing = id ? queryOne(db, 'SELECT id FROM ai_roles WHERE id = ? AND is_official = 1', [id]) : null;
   if (existing) {
-    db.run('UPDATE ai_roles SET name = ?, category = ?, description = ?, system_prompt = ?, greeting = ?, personality = ?, scenario = ?, examples = ? WHERE id = ?',
-      [name, category, description, systemPrompt, greeting, personality, scenario, examples, existing.id]);
+    db.run('UPDATE ai_roles SET name = ?, category = ?, description = ?, system_prompt = ?, greeting = ?, personality = ?, scenario = ?, examples = ?, avatar = ? WHERE id = ?',
+      [name, category, description, systemPrompt, greeting, personality, scenario, examples, avatar, existing.id]);
   } else {
-    db.run('INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, is_official, user_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, 0)',
-      [name, description, systemPrompt, greeting, personality, scenario, examples, category]);
+    db.run('INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, avatar, is_official, user_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, 0)',
+      [name, description, systemPrompt, greeting, personality, scenario, examples, category, avatar]);
   }
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'ai_role', target_title: name, detail: `保存 AI 聊天角色：${name}`, ip: req.ip });
@@ -173,6 +183,343 @@ router.post('/ai-chat/roles/delete', isAuthenticated, hasPermission('aichat.mana
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'delete', target_type: 'ai_role', target_title: row.name, detail: `删除 AI 聊天角色：${row.name}`, ip: req.ip });
   res.json({ success: true });
+});
+
+// ============ 角色卡导入 / 导出 / 批量管理 ============
+
+const ROLE_AVATAR_DIR = path.join(__dirname, '../../../public/uploads/avatars');
+const PNG_SIG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+// CRC32（PNG chunk 校验）
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function pngChunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+}
+
+// 从 PNG tEXt chunk 提取 chara 字段（base64 JSON，SillyTavern 角色卡标准）
+function extractPngChara(buf) {
+  if (!buf || buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIG)) return null;
+  let offset = 8;
+  while (offset + 8 <= buf.length) {
+    const len = buf.readUInt32BE(offset);
+    const type = buf.toString('ascii', offset + 4, offset + 8);
+    const start = offset + 8;
+    if (start + len > buf.length) break;
+    if (type === 'tEXt') {
+      const data = buf.subarray(start, start + len);
+      const idx = data.indexOf(0);
+      if (idx > 0 && data.toString('latin1', 0, idx) === 'chara') {
+        try { return Buffer.from(data.toString('latin1', idx + 1), 'base64').toString('utf8'); } catch (e) { return null; }
+      }
+    }
+    offset = start + len + 4;
+    if (type === 'IEND') break;
+  }
+  return null;
+}
+
+// 重建 PNG：移除旧 chara tEXt，在 IEND 前嵌入新 chara
+function rebuildPngWithChara(buf, jsonStr) {
+  const payload = Buffer.concat([
+    Buffer.from('chara\0', 'latin1'),
+    Buffer.from(Buffer.from(jsonStr, 'utf8').toString('base64'), 'latin1')
+  ]);
+  const chunk = pngChunk('tEXt', payload);
+  const parts = [buf.subarray(0, 8)];
+  let offset = 8;
+  let inserted = false;
+  while (offset + 8 <= buf.length) {
+    const len = buf.readUInt32BE(offset);
+    const type = buf.toString('ascii', offset + 4, offset + 8);
+    const end = offset + 8 + len + 4;
+    if (end > buf.length) break;
+    const isChara = type === 'tEXt' && buf.toString('latin1', offset + 8, offset + 8 + Math.min(len, 6)) === 'chara\0';
+    if (!isChara) {
+      if (type === 'IEND' && !inserted) { parts.push(chunk); inserted = true; }
+      parts.push(buf.subarray(offset, end));
+    }
+    offset = end;
+  }
+  if (!inserted) parts.push(chunk);
+  return Buffer.concat(parts);
+}
+
+// 无头像时的占位 PNG（128x128 粉色纯色图）
+let placeholderPngCache = null;
+function placeholderPng() {
+  if (placeholderPngCache) return placeholderPngCache;
+  const w = 128, h = 128;
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;  // bit depth
+  ihdr[9] = 2;  // color type RGB
+  const row = Buffer.alloc(1 + w * 3);
+  for (let x = 0; x < w; x++) { row[1 + x * 3] = 236; row[2 + x * 3] = 72; row[3 + x * 3] = 153; }
+  const raw = Buffer.concat(Array.from({ length: h }, () => row));
+  placeholderPngCache = Buffer.concat([
+    PNG_SIG, pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0))
+  ]);
+  return placeholderPngCache;
+}
+
+// 头像二进制落盘（校验 magic，防任意文件写入），返回 URL
+function saveRoleAvatarBuffer(buf) {
+  if (!buf || buf.length < 12 || buf.length > 5 * 1024 * 1024) return '';
+  let ext = '';
+  if (buf.subarray(0, 8).equals(PNG_SIG)) ext = '.png';
+  else if (buf[0] === 0xff && buf[1] === 0xd8) ext = '.jpg';
+  else if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') ext = '.webp';
+  else return '';
+  if (!fs.existsSync(ROLE_AVATAR_DIR)) fs.mkdirSync(ROLE_AVATAR_DIR, { recursive: true });
+  const fname = 'role-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex') + ext;
+  fs.writeFileSync(path.join(ROLE_AVATAR_DIR, fname), buf);
+  return '/uploads/avatars/' + fname;
+}
+
+// 导入头像解析：data URL 落盘；本地/远程 URL 直接保留；其余回退 fallback
+function resolveImportAvatar(raw, fallback) {
+  const v = String(raw || '').trim();
+  if (v.indexOf('data:image/') === 0) {
+    const m = v.match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (m) {
+      const url = saveRoleAvatarBuffer(Buffer.from(m[2], 'base64'));
+      if (url) return url;
+    }
+    return fallback || '';
+  }
+  if (v && v.length <= 2000 && (v.indexOf('/') === 0 || v.indexOf('https://') === 0 || v.indexOf('http://') === 0)) return v;
+  return fallback || '';
+}
+
+// 角色卡字段归一（兼容 SillyTavern v1/v2 与本项目格式，限额与 roles/save 一致）
+function normalizeRoleCard(card, fileName) {
+  const data = card && card.data ? card.data : card;
+  if (!data || typeof data !== 'object') return null;
+  const name = String(data.name || '').trim().slice(0, 50) ||
+    String(fileName || '').replace(/\.(json|png)$/i, '').trim().slice(0, 50);
+  const systemPrompt = String(data.system_prompt || data.system || data.personality || '').trim().slice(0, 4000);
+  const greeting = String(data.first_mes || data.greeting || '').trim().slice(0, 1000);
+  if (!name || (!systemPrompt && !greeting)) return null;
+  const tags = Array.isArray(data.tags) && data.tags.length ? String(data.tags[0]).trim().slice(0, 50) : '';
+  return {
+    name,
+    description: String(data.description || data.char_desc || '').trim().slice(0, 200),
+    system_prompt: systemPrompt,
+    greeting,
+    personality: String(data.personality || '').trim().slice(0, 2000),
+    scenario: String(data.scenario || '').trim().slice(0, 2000),
+    examples: String(data.mes_example || data.examples || data.mesExample || '').trim().slice(0, 4000),
+    category: String(data.category || tags || 'default').trim().slice(0, 50) || 'default',
+    avatar: String(data.avatar || data.avatar_url || data.image || '').trim()
+  };
+}
+
+// 导出格式（与前台 exportRole 一致，chara_card_v2）
+function roleToCard(row) {
+  return {
+    spec: 'chara_card_v2',
+    spec_version: '2.0',
+    data: {
+      name: row.name,
+      description: row.description || '',
+      personality: row.personality || '',
+      scenario: row.scenario || '',
+      first_mes: row.greeting || '',
+      mes_example: row.examples || '',
+      system_prompt: row.system_prompt || '',
+      avatar: row.avatar || '',
+      category: row.category || 'default',
+      tags: [row.category || 'default'],
+      creator_notes: 'Exported from Website Admin',
+      character_version: '1.0'
+    }
+  };
+}
+
+function sendAttachment(res, filename, mime) {
+  const fallback = filename.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, "'");
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Content-Disposition', "attachment; filename=\"" + fallback + "\"; filename*=UTF-8''" + encodeURIComponent(filename));
+}
+
+// 导出 PNG 的底图：本地头像 PNG > data URL PNG > 占位图（不 fetch 远程 URL，防 SSRF）
+function loadRolePngBase(row) {
+  const av = String(row.avatar || '');
+  const publicDir = path.join(__dirname, '../../../public');
+  if (av.indexOf('/uploads/') === 0) {
+    const p = path.resolve(publicDir, '.' + av);
+    if (p.startsWith(publicDir + path.sep) && fs.existsSync(p)) {
+      const buf = fs.readFileSync(p);
+      if (buf.subarray(0, 8).equals(PNG_SIG)) return buf;
+    }
+  } else if (av.indexOf('data:image/png;base64,') === 0) {
+    const buf = Buffer.from(av.slice('data:image/png;base64,'.length), 'base64');
+    if (buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIG)) return buf;
+  }
+  return placeholderPng();
+}
+
+const roleImportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 20 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (ext !== '.json' && ext !== '.png') return cb(new Error('仅支持 .json / .png 角色卡'));
+    cb(null, true);
+  }
+});
+
+router.post('/ai-chat/roles/import', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  roleImportUpload.array('files', 20)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    const db = req.db;
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: '请选择角色卡文件' });
+    const existingNames = new Set(queryAll(db, 'SELECT name FROM ai_roles WHERE is_official = 1').map(r => r.name.toLowerCase()));
+    let imported = 0;
+    let skipped = 0;
+    const errors = [];
+    files.forEach(file => {
+      const fname = file.originalname || 'file';
+      const ext = path.extname(fname).toLowerCase();
+      let cards = [];
+      let pngAvatarUrl = '';
+      try {
+        if (ext === '.png') {
+          const json = extractPngChara(file.buffer);
+          if (!json) { errors.push(fname + '：PNG 不含 chara 字段，不是角色卡'); return; }
+          cards = [JSON.parse(json)];
+          pngAvatarUrl = saveRoleAvatarBuffer(file.buffer);
+        } else {
+          const parsed = JSON.parse(file.buffer.toString('utf8'));
+          if (Array.isArray(parsed)) cards = parsed;
+          else if (parsed && Array.isArray(parsed.roles)) cards = parsed.roles;
+          else if (parsed && Array.isArray(parsed.characters)) cards = parsed.characters;
+          else cards = [parsed];
+        }
+      } catch (e) { errors.push(fname + '：解析失败（' + e.message + '）'); return; }
+      cards.forEach(card => {
+        const norm = normalizeRoleCard(card, fname);
+        if (!norm) { skipped++; errors.push(fname + '：缺少名称或设定/开场白，跳过'); return; }
+        if (existingNames.has(norm.name.toLowerCase())) { skipped++; return; }
+        existingNames.add(norm.name.toLowerCase());
+        const avatar = resolveImportAvatar(norm.avatar, pngAvatarUrl);
+        db.run('INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, avatar, is_official, user_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, 0)',
+          [norm.name, norm.description, norm.system_prompt, norm.greeting, norm.personality, norm.scenario, norm.examples, norm.category, avatar]);
+        imported++;
+      });
+    });
+    saveDatabase();
+    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'ai_role', target_title: '批量导入', detail: `导入角色卡：成功 ${imported}，跳过 ${skipped}`, ip: req.ip });
+    res.json({ success: true, data: { imported, skipped, errors } });
+  });
+});
+
+router.get('/ai-chat/roles/export', isAuthenticated, hasPermission('aichat.export'), (req, res) => {
+  const db = req.db;
+  const id = toInt(req.query.id, 0);
+  if (id) {
+    const row = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ? AND is_official = 1', [id]);
+    if (!row) return res.status(404).json({ error: '角色不存在' });
+    sendAttachment(res, (row.name || 'character') + '.json', 'application/json');
+    return res.send(JSON.stringify(roleToCard(row), null, 2));
+  }
+  const rows = queryAll(db, 'SELECT * FROM ai_roles WHERE is_official = 1 ORDER BY sort_order ASC, id ASC');
+  sendAttachment(res, 'ai-roles-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json');
+  res.send(JSON.stringify(rows.map(roleToCard), null, 2));
+});
+
+router.get('/ai-chat/roles/export-png', isAuthenticated, hasPermission('aichat.export'), (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ? AND is_official = 1', [toInt(req.query.id, 0)]);
+  if (!row) return res.status(404).json({ error: '角色不存在' });
+  const png = rebuildPngWithChara(loadRolePngBase(row), JSON.stringify(roleToCard(row)));
+  sendAttachment(res, (row.name || 'character') + '.png', 'image/png');
+  res.send(png);
+});
+
+router.post('/ai-chat/roles/batch-delete', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const raw = Array.isArray(req.body.ids) ? req.body.ids : String(req.body.ids || '').split(',');
+  const ids = raw.map(v => toInt(v, 0)).filter(v => v > 0);
+  if (!ids.length) return res.status(400).json({ error: '请选择要删除的角色' });
+  const rows = queryAll(db, 'SELECT id, name FROM ai_roles WHERE is_official = 1 AND id IN (' + ids.map(() => '?').join(',') + ')', ids);
+  rows.forEach(r => db.run('DELETE FROM ai_roles WHERE id = ?', [r.id]));
+  saveDatabase();
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'delete', target_type: 'ai_role', target_title: '批量删除', detail: `批量删除角色 ${rows.length} 个：${rows.map(r => r.name).join('、')}`, ip: req.ip });
+  res.json({ success: true, data: { deleted: rows.length } });
+});
+
+router.post('/ai-chat/roles/duplicate', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ? AND is_official = 1', [toInt(first(req.body.id), 0)]);
+  if (!row) return res.status(404).json({ error: '角色不存在' });
+  let name = row.name + '（副本）';
+  let n = 2;
+  while (queryOne(db, 'SELECT id FROM ai_roles WHERE LOWER(name) = LOWER(?) AND is_official = 1', [name])) {
+    name = row.name + '（副本' + n + '）';
+    n++;
+  }
+  db.run('INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, avatar, is_official, user_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?)',
+    [name, row.description, row.system_prompt, row.greeting, row.personality, row.scenario, row.examples, row.category, row.avatar, row.sort_order]);
+  saveDatabase();
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'ai_role', target_title: name, detail: `复制角色：${row.name} → ${name}`, ip: req.ip });
+  res.json({ success: true, data: { name } });
+});
+
+router.post('/ai-chat/roles/move', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const id = toInt(first(req.body.id), 0);
+  const dir = first(req.body.dir) === 'up' ? -1 : 1;
+  const rows = queryAll(db, 'SELECT id FROM ai_roles WHERE is_official = 1 ORDER BY sort_order ASC, id ASC');
+  const idx = rows.findIndex(r => r.id === id);
+  const target = idx + dir;
+  if (idx === -1 || target < 0 || target >= rows.length) return res.json({ success: true });
+  const tmp = rows[idx];
+  rows[idx] = rows[target];
+  rows[target] = tmp;
+  rows.forEach((r, i) => db.run('UPDATE ai_roles SET sort_order = ? WHERE id = ?', [i, r.id]));
+  saveDatabase();
+  res.json({ success: true });
+});
+
+const roleAvatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (['.png', '.jpg', '.jpeg', '.webp'].indexOf(ext) === -1) return cb(new Error('仅支持 png / jpg / webp 图片'));
+    cb(null, true);
+  }
+});
+
+router.post('/ai-chat/roles/avatar', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  roleAvatarUpload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: '请选择图片' });
+    const url = saveRoleAvatarBuffer(req.file.buffer);
+    if (!url) return res.status(400).json({ error: '图片格式无效' });
+    res.json({ success: true, data: { url } });
+  });
 });
 
 // ============ 默认世界书（全局模板，新会话自动复制） ============

@@ -10,6 +10,7 @@
   var csrfToken = page.csrfToken || getCsrfToken() || '';
   var canPickPrompt = !!page.canPickPrompt;
   var canShareLink = !!page.canShareLink;
+  var canExport = !!page.canExport;
   var prompts = page.prompts || [];
 
   var state = {
@@ -53,6 +54,7 @@
     'acRoleSearch', 'acRoleFilter', 'acChatExport', 'acChatImport', 'acChatFileInput',
     'acNewRoleAvatar', 'acNewRoleAvatarFile', 'acNewRoleAvatarBtn', 'acNewRoleAvatarPreview',
     'acWorldSearch', 'acWorldCount', 'acWorldEnableAll', 'acWorldDisableAll', 'acWorldDeleteAll',
+    'acWorldFileImport', 'acWorldFileInput',
     'acInputTokens',
     'acPanel', 'acPanelToggle', 'acPanelRoleAvatar', 'acPanelRoleName', 'acPanelRoleDesc', 'acPanelRoleSwitch', 'acPanelBranchList',
     'acPresetSelect', 'acPresetSave', 'acPresetDelete',
@@ -64,7 +66,9 @@
     'acTemplateModal', 'acTemplateList', 'acTemplateName', 'acTemplateContent', 'acTemplateSave',
     'acPresetSaveModal', 'acPresetName', 'acPresetDefault', 'acPresetSaveConfirm',
     'acContextModal', 'acContextInfo', 'acContextMessages',
-    'acBranchModal']
+    'acBranchModal',
+    'acNewGroup', 'acGroupBar', 'acGroupMembers', 'acGroupEdit',
+    'acGroupModal', 'acGroupModalTitle', 'acGroupName', 'acGroupMode', 'acGroupMemberList', 'acGroupSave']
     .forEach(function (id) { els[id] = document.getElementById(id); });
 
   // ============ 通用请求 ============
@@ -163,6 +167,8 @@
         };
         state.quota = d.quota || null;
         state.quotaUnlimited = !!d.quotaUnlimited;
+        canExport = !!d.canExport;
+        applyExportVisibility();
         state.presets = d.presets || [];
         state.promptTemplates = d.promptTemplates || [];
         renderConversations();
@@ -534,6 +540,17 @@
 
   // ============ 渲染：会话栏 ============
 
+  function renameConversation(c) {
+    var title = window.prompt('重命名会话', c.title || '');
+    if (title && title.trim() && title.trim() !== c.title) {
+      api('/ai-chat/api/conversations/rename', { id: c.id, title: title.trim() }).then(function () {
+        c.title = title.trim();
+        if (state.currentConv && state.currentConv.id === c.id) els.acConvTitle.textContent = c.title;
+        renderConversations();
+      }).catch(function (err) { showToast(err.message, 'error'); });
+    }
+  }
+
   function renderConversations() {
     var kw = state.convSearch.toLowerCase();
     var list = state.conversations.filter(function (c) {
@@ -547,21 +564,17 @@
     list.forEach(function (c) {
       var item = document.createElement('div');
       item.className = 'ac-conv-item' + (state.currentConv && state.currentConv.id === c.id ? ' active' : '');
-      item.innerHTML = '<span class="ac-conv-title-sm"></span><button type="button" class="ac-conv-del" title="删除会话">✕</button>';
-      item.querySelector('.ac-conv-title-sm').textContent = c.title || '新对话';
+      item.innerHTML = '<span class="ac-conv-title-sm"></span><button type="button" class="ac-conv-rename" title="重命名">✎</button><button type="button" class="ac-conv-del" title="删除会话">✕</button>';
+      item.querySelector('.ac-conv-title-sm').textContent = (c.is_group ? '👥 ' : '') + (c.title || '新对话');
       item.addEventListener('click', function (e) {
-        if (e.target.classList.contains('ac-conv-del')) return;
+        if (e.target.classList.contains('ac-conv-del') || e.target.classList.contains('ac-conv-rename')) return;
         selectConversation(c.id);
       });
-      item.addEventListener('dblclick', function () {
-        var title = window.prompt('重命名会话', c.title || '');
-        if (title && title.trim() && title.trim() !== c.title) {
-          api('/ai-chat/api/conversations/rename', { id: c.id, title: title.trim() }).then(function () {
-            c.title = title.trim();
-            renderConversations();
-          }).catch(function (err) { showToast(err.message, 'error'); });
-        }
+      item.querySelector('.ac-conv-rename').addEventListener('click', function (e) {
+        e.stopPropagation();
+        renameConversation(c);
       });
+      item.addEventListener('dblclick', function () { renameConversation(c); });
       item.querySelector('.ac-conv-del').addEventListener('click', function (e) {
         e.stopPropagation();
         if (!window.confirm('确定删除该会话？所有消息将一并删除')) return;
@@ -604,6 +617,7 @@
     updateRoleLabel();
     updateModelLabel();
     updateShareBtn();
+    renderGroupBar();
     closeAllModals();
     fetch('/ai-chat/api/conversations/' + conv.id + '/messages', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.json(); })
@@ -620,6 +634,11 @@
   }
 
   function updateRoleLabel() {
+    if (state.currentConv && state.currentConv.is_group) {
+      els.acRoleLabel.textContent = '群聊';
+      els.acRoleBtn.classList.add('active');
+      return;
+    }
     var role = null;
     if (state.currentConv && state.currentConv.role_id) {
       role = state.roles.filter(function (r) { return r.id === state.currentConv.role_id; })[0] || null;
@@ -745,9 +764,21 @@
     el.className = 'ac-msg ' + (m.role === 'user' ? 'user' : 'assistant');
     el.dataset.id = m.id;
 
+    var speaker = m.speaker_role_id ? state.roles.filter(function (r) { return r.id === m.speaker_role_id; })[0] : null;
+    var avatarSrc = speaker ? speaker.avatar : (m.speaker_avatar || '');
     var avatar = document.createElement('div');
     avatar.className = 'ac-msg-avatar';
-    avatar.textContent = m.role === 'user' ? '🧑' : '🤖';
+    if (m.role === 'user') {
+      avatar.textContent = '🧑';
+    } else if (avatarSrc) {
+      var avImg = document.createElement('img');
+      avImg.src = avatarSrc;
+      avImg.alt = '';
+      avImg.onerror = function () { avatar.textContent = '🎭'; };
+      avatar.appendChild(avImg);
+    } else {
+      avatar.textContent = (speaker || m.speaker_name) ? '🎭' : '🤖';
+    }
 
     var body = document.createElement('div');
     body.className = 'ac-msg-body';
@@ -755,7 +786,7 @@
     var meta = document.createElement('div');
     meta.className = 'ac-msg-meta';
     var name = document.createElement('span');
-    name.textContent = m.role === 'user' ? '我' : (getCurrentRoleName() || 'AI');
+    name.textContent = m.role === 'user' ? '我' : (speaker ? speaker.name : (m.speaker_name || getCurrentRoleName() || 'AI'));
     meta.appendChild(name);
     if (m.branch_id && m.branch_id !== 0) {
       var tag = document.createElement('span');
@@ -908,10 +939,14 @@
       scrollToBottom(true);
 
       // AI 回复占位气泡：流式增量写入此条，避免 AI 内容追加到用户消息里
-      var assistantMsg = { id: 'a' + Date.now(), role: 'assistant', content: '', status: 'streaming', branch_id: conv.current_branch_id || 0 };
-      state.messages.push(assistantMsg);
-      appendMessageEl(assistantMsg, true);
-      scrollToBottom(true);
+      // 群聊手动模式仅落用户消息，由成员芯片触发回复，不建占位气泡
+      var assistantMsg = null;
+      if (!(conv.is_group && conv.group_mode === 'manual')) {
+        assistantMsg = { id: 'a' + Date.now(), role: 'assistant', content: '', status: 'streaming', branch_id: conv.current_branch_id || 0 };
+        state.messages.push(assistantMsg);
+        appendMessageEl(assistantMsg, true);
+        scrollToBottom(true);
+      }
 
       startStream('/ai-chat/api/send', { conversation_id: conv.id, content: content }, assistantMsg);
     }).catch(function (err) {
@@ -983,7 +1018,7 @@
       .catch(function (err) { showToast(err.message, 'error'); });
   }
 
-  // 流式发送核心：管理中止、增量渲染、结束落库
+  // 流式发送核心：管理中止、增量渲染、结束落库；群聊支持多说话人顺序切换
   function startStream(url, body, placeholderMsg) {
     state.streaming = true;
     els.acSend.style.display = 'none';
@@ -991,8 +1026,10 @@
     var controller = new AbortController();
     state.abortController = controller;
 
+    var currentMsg = placeholderMsg;
+    var lastEl = placeholderMsg ? els.acMessages.lastElementChild : null;
     var typingEl = appendTypingDots();
-    var lastEl = els.acMessages.lastElementChild;
+    var noReply = false;
 
     function updateContent(text) {
       var contentEl = lastEl && lastEl.querySelector('.ac-msg-content');
@@ -1003,31 +1040,65 @@
       }
     }
 
+    // 说话人切换时把上一条占位气泡就地定稿
+    function settleCurrent() {
+      if (!currentMsg) return;
+      if (currentMsg.content) {
+        currentMsg.status = currentMsg.status === 'error' ? 'error' : 'done';
+        if (lastEl && lastEl.parentNode) lastEl.remove();
+        appendMessageEl(currentMsg, false);
+      } else {
+        if (lastEl && lastEl.parentNode) lastEl.remove();
+        state.messages = state.messages.filter(function (x) { return x !== currentMsg; });
+      }
+      currentMsg = null;
+      lastEl = null;
+    }
+
     streamFetch(url, body, function (event, data) {
-      if (event === 'delta') {
-        placeholderMsg.content = (placeholderMsg.content || '') + (data.delta || '');
-        updateContent(placeholderMsg.content);
+      if (event === 'speaker') {
+        settleCurrent();
+        if (typingEl) { typingEl.remove(); typingEl = null; }
+        currentMsg = {
+          id: 'g' + Date.now(), role: 'assistant', content: '', status: 'streaming',
+          speaker_role_id: data.role_id, speaker_name: data.name, speaker_avatar: data.avatar,
+          branch_id: state.currentConv ? (state.currentConv.current_branch_id || 0) : 0
+        };
+        state.messages.push(currentMsg);
+        lastEl = appendMessageEl(currentMsg, true);
+        typingEl = appendTypingDots();
+        scrollToBottom(true);
+      } else if (event === 'delta') {
+        if (!currentMsg) return;
+        currentMsg.content = (currentMsg.content || '') + (data.delta || '');
+        updateContent(currentMsg.content);
       } else if (event === 'message') {
-        placeholderMsg.id = data.id;
-        placeholderMsg.content = data.content || placeholderMsg.content;
-        placeholderMsg.tokens = data.tokens;
-        if (data.model) placeholderMsg.model = data.model;
+        if (!currentMsg) return;
+        currentMsg.id = data.id;
+        currentMsg.content = data.content || currentMsg.content;
+        currentMsg.tokens = data.tokens;
+        if (data.model) currentMsg.model = data.model;
+        if (data.speaker_role_id) currentMsg.speaker_role_id = data.speaker_role_id;
+        if (data.speaker_name) currentMsg.speaker_name = data.speaker_name;
         if (data.quota) state.quota = data.quota;
         renderQuota();
       } else if (event === 'error') {
-        placeholderMsg.status = 'error';
-        placeholderMsg.content = data.message || '生成失败';
-        if (data.messageId) placeholderMsg.id = data.messageId;
+        if (!currentMsg) return;
+        currentMsg.status = 'error';
+        currentMsg.content = data.message || '生成失败';
+        if (data.messageId) currentMsg.id = data.messageId;
       } else if (event === 'done') {
-        placeholderMsg.status = placeholderMsg.status === 'error' ? 'error' : (data.aborted ? 'stopped' : 'done');
+        noReply = !!data.noReply;
+        if (currentMsg) currentMsg.status = currentMsg.status === 'error' ? 'error' : (data.aborted ? 'stopped' : 'done');
       }
     }, controller.signal)
       .catch(function (err) {
+        if (!currentMsg) return;
         if (err && err.name === 'AbortError') {
-          placeholderMsg.status = 'stopped';
+          currentMsg.status = 'stopped';
         } else {
-          placeholderMsg.status = 'error';
-          placeholderMsg.content = (err && err.message) || '网络请求失败';
+          currentMsg.status = 'error';
+          currentMsg.content = (err && err.message) || '网络请求失败';
         }
       })
       .then(function () {
@@ -1035,7 +1106,17 @@
         els.acSend.style.display = '';
         els.acStop.style.display = 'none';
         if (typingEl) typingEl.remove();
-        finalizeMessage(placeholderMsg, lastEl);
+        if (noReply) {
+          if (lastEl && lastEl.parentNode) lastEl.remove();
+          state.messages = state.messages.filter(function (x) { return x !== currentMsg; });
+          if (state.currentConv) selectConversation(state.currentConv.id);
+          return;
+        }
+        if (!currentMsg) {
+          if (state.currentConv) selectConversation(state.currentConv.id);
+          return;
+        }
+        finalizeMessage(currentMsg, lastEl);
       });
   }
 
@@ -1073,6 +1154,120 @@
   function stopStream() {
     if (!state.streaming || !state.abortController) return;
     state.abortController.abort();
+  }
+
+  // ============ 群聊（SillyTavern Group Chats） ============
+
+  var groupEditId = null;
+
+  function groupMemberIds(conv) {
+    try {
+      var ids = JSON.parse(conv.group_members || '[]');
+      return Array.isArray(ids) ? ids : [];
+    } catch (e) { return []; }
+  }
+
+  function renderGroupBar() {
+    if (!els.acGroupBar) return;
+    var conv = state.currentConv;
+    if (!conv || !conv.is_group) {
+      els.acGroupBar.hidden = true;
+      return;
+    }
+    els.acGroupBar.hidden = false;
+    els.acGroupMembers.innerHTML = '';
+    var ids = groupMemberIds(conv);
+    ids.forEach(function (id) {
+      var role = state.roles.filter(function (r) { return r.id === id; })[0];
+      if (!role) return;
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ac-group-chip';
+      chip.title = '让「' + role.name + '」回复';
+      if (role.avatar) {
+        var img = document.createElement('img');
+        img.src = role.avatar;
+        img.alt = '';
+        img.onerror = function () { chip.textContent = '🎭 ' + role.name; };
+        chip.appendChild(img);
+      }
+      chip.appendChild(document.createTextNode(role.name));
+      chip.addEventListener('click', function () { groupReplyAs(role); });
+      els.acGroupMembers.appendChild(chip);
+    });
+    var modeTag = document.createElement('span');
+    modeTag.className = 'ac-group-mode';
+    modeTag.textContent = conv.group_mode === 'manual' ? '手动' : '轮流';
+    els.acGroupMembers.appendChild(modeTag);
+  }
+
+  function groupReplyAs(role) {
+    if (state.streaming) return;
+    if (!state.currentConv || !state.currentConv.is_group) return;
+    var placeholder = {
+      id: 'gr' + Date.now(), role: 'assistant', content: '', status: 'streaming',
+      speaker_role_id: role.id, speaker_name: role.name, speaker_avatar: role.avatar || '',
+      branch_id: state.currentConv.current_branch_id || 0
+    };
+    state.messages.push(placeholder);
+    els.acEmpty.style.display = 'none';
+    appendMessageEl(placeholder, true);
+    scrollToBottom(true);
+    startStream('/ai-chat/api/group/reply', { conversation_id: state.currentConv.id, role_id: role.id }, placeholder);
+  }
+
+  function openGroupModal(conv) {
+    groupEditId = conv ? conv.id : null;
+    els.acGroupModalTitle.textContent = conv ? '管理群聊' : '创建群聊';
+    els.acGroupSave.textContent = conv ? '保存' : '创建';
+    els.acGroupName.value = conv ? (conv.title || '') : '';
+    els.acGroupMode.value = conv && conv.group_mode === 'manual' ? 'manual' : 'round';
+    var selected = conv ? groupMemberIds(conv) : [];
+    els.acGroupMemberList.innerHTML = '';
+    state.roles.forEach(function (r) {
+      var label = document.createElement('label');
+      label.className = 'ac-group-member-item';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = r.id;
+      cb.checked = selected.indexOf(r.id) !== -1;
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode((r.is_official ? '🎭 ' : '👤 ') + r.name));
+      els.acGroupMemberList.appendChild(label);
+    });
+    showModal('acGroupModal');
+  }
+
+  function saveGroup() {
+    var members = [];
+    els.acGroupMemberList.querySelectorAll('input[type="checkbox"]:checked').forEach(function (cb) {
+      members.push(parseInt(cb.value, 10));
+    });
+    if (members.length < 2) { showToast('群聊至少需要 2 个角色', 'error'); return; }
+    var payload = {
+      title: els.acGroupName.value.trim() || (groupEditId ? undefined : '新群聊'),
+      members: members,
+      mode: els.acGroupMode.value
+    };
+    var promise;
+    if (groupEditId) {
+      payload.id = groupEditId;
+      promise = api('/ai-chat/api/conversations/group', payload);
+    } else {
+      promise = api('/ai-chat/api/conversations', {
+        is_group: 1, group_members: members, group_mode: els.acGroupMode.value,
+        title: els.acGroupName.value.trim() || '新群聊'
+      });
+    }
+    promise.then(function (json) {
+      if (!json.success) { showToast(json.error || '操作失败', 'error'); return; }
+      closeAllModals();
+      showToast(groupEditId ? '群聊已更新' : '群聊已创建', 'success');
+      var id = json.data.id;
+      loadBootstrap({ autoSelect: false }).then(function () {
+        selectConversation(id);
+      });
+    }).catch(function (err) { showToast(err.message || '操作失败', 'error'); });
   }
 
   // ============ 消息操作 ============
@@ -1384,8 +1579,16 @@
 
   // ============ 角色卡导入/导出 ============
 
+  // 导出为独立高危权限（aichat.export），无权限隐藏入口
+  function applyExportVisibility() {
+    if (els.acChatExport) els.acChatExport.style.display = canExport ? '' : 'none';
+    if (els.acRoleExport) els.acRoleExport.style.display = canExport ? '' : 'none';
+  }
+  applyExportVisibility();
+
   // 导出当前会话角色为 JSON（兼容 SillyTavern V2 格式）
   function exportCurrentRole() {
+    if (!canExport) { showToast('无导出权限，请先申请 AI聊天导出 权限', 'error'); return; }
     if (!state.currentConv || !state.currentConv.role_id) {
       showToast('当前会话未选择角色', 'error');
       return;
@@ -1649,6 +1852,7 @@
   }
 
   function exportChatHistory() {
+    if (!canExport) { showToast('无导出权限，请先申请 AI聊天导出 权限', 'error'); return; }
     if (!state.currentConv) { showToast('请先选择一个会话', 'error'); return; }
     if (!state.messages.length) { showToast('该会话没有消息', 'error'); return; }
 
@@ -1707,29 +1911,56 @@
       els.acChatFileInput.value = '';
       var reader = new FileReader();
       reader.onload = function (e) {
-        try {
-          var data = JSON.parse(e.target.result);
-          if (!data.chat_export || !Array.isArray(data.messages)) {
-            showToast('无效的聊天记录文件', 'error');
-            return;
-          }
-          api('/ai-chat/api/conversations/import', data).then(function (json) {
-            if (json.success && json.data) {
-              showToast('聊天记录已导入（' + data.messages.length + ' 条消息）', 'success');
-              loadBootstrap({ autoSelect: false }).then(function () {
-                var newConv = state.conversations.filter(function (c) { return c.id === json.data.id; })[0];
-                if (newConv) selectConversation(newConv.id);
-              });
-            } else {
-              showToast(json.error || '导入失败', 'error');
-            }
-          }).catch(function (err) { showToast(err.message || '导入失败', 'error'); });
-        } catch (ex) {
-          showToast('JSON 解析失败：' + ex.message, 'error');
+        var text = e.target.result;
+        var data = null;
+        try { data = JSON.parse(text); } catch (ex) { data = null; }
+        if (data && data.chat_export && Array.isArray(data.messages)) {
+          postChatImport(data);
+          return;
         }
+        // SillyTavern 聊天记录：JSONL（每行一条 mes/is_user）或对象数组
+        var lines = Array.isArray(data) ? data : String(text).split(/\r?\n/);
+        var msgs = [];
+        var charName = '';
+        lines.forEach(function (ln) {
+          var obj = ln;
+          if (typeof ln === 'string') {
+            if (!ln.trim()) return;
+            try { obj = JSON.parse(ln); } catch (ex2) { return; }
+          }
+          if (!obj || typeof obj !== 'object') return;
+          var content = String(obj.mes || obj.content || '').trim();
+          if (!content) return;
+          if (!charName && obj.character_name) charName = String(obj.character_name);
+          msgs.push({ role: obj.is_user ? 'user' : (obj.is_system ? 'system' : 'assistant'), content: content });
+        });
+        if (!msgs.length) {
+          showToast('无效的聊天记录文件（支持本站 JSON 与 SillyTavern JSONL）', 'error');
+          return;
+        }
+        postChatImport({
+          chat_export: true,
+          title: file.name.replace(/\.(jsonl|json)$/i, ''),
+          character: charName ? { name: charName } : null,
+          messages: msgs
+        });
       };
       reader.readAsText(file, 'UTF-8');
     });
+  }
+
+  function postChatImport(data) {
+    api('/ai-chat/api/conversations/import', data).then(function (json) {
+      if (json.success && json.data) {
+        showToast('聊天记录已导入（' + data.messages.length + ' 条消息）', 'success');
+        loadBootstrap({ autoSelect: false }).then(function () {
+          var newConv = state.conversations.filter(function (c) { return c.id === json.data.id; })[0];
+          if (newConv) selectConversation(newConv.id);
+        });
+      } else {
+        showToast(json.error || '导入失败', 'error');
+      }
+    }).catch(function (err) { showToast(err.message || '导入失败', 'error'); });
   }
 
   // ============ 世界书 ============
@@ -1831,6 +2062,79 @@
         showToast('默认模板中无新条目可导入（可能已全部存在）', 'info');
       }
     }).catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  // 世界书文件导入：SillyTavern lorebook JSON（entries 对象/数组）或 Markdown（按标题拆条目）
+  function parseWorldJson(data) {
+    var raw = [];
+    if (Array.isArray(data)) raw = data;
+    else if (data && typeof data === 'object') {
+      if (Array.isArray(data.entries)) raw = data.entries;
+      else if (data.entries && typeof data.entries === 'object') raw = Object.keys(data.entries).map(function (k) { return data.entries[k]; });
+      else if (data.content) raw = [data];
+    }
+    // SillyTavern position 数值 → 本站位置
+    var posMap = { 0: 'system_top', 1: 'before_char', 2: 'after_char', 3: 'after_char', 4: 'user_top', 5: 'assistant_top' };
+    var positions = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top'];
+    var out = [];
+    raw.forEach(function (e, i) {
+      if (!e || typeof e !== 'object') return;
+      var keys = Array.isArray(e.key) ? e.key : String(e.key || '').split(/[,，]/);
+      var key = keys.map(function (k) { return String(k).trim(); }).filter(Boolean).join(',');
+      if (!key && e.comment) key = String(e.comment).trim();
+      var content = String(e.content || '').trim();
+      if (!content) return;
+      out.push({
+        key: key,
+        content: content,
+        position: positions.indexOf(e.position) !== -1 ? e.position : (posMap[Number(e.position)] || 'before_char'),
+        enabled: (e.disable === true || e.enabled === false || e.enabled === 0) ? 0 : 1,
+        constant: e.constant ? 1 : 0,
+        sort_order: parseInt(e.order, 10) || parseInt(e.sort_order, 10) || i
+      });
+    });
+    return out;
+  }
+
+  function parseWorldMarkdown(text, fileName) {
+    var parts = String(text).split(/^#{1,3}[ \t]+(.+)$/m);
+    var base = String(fileName || '').replace(/\.(md|markdown)$/i, '');
+    var out = [];
+    if (parts[0] && parts[0].trim()) out.push({ key: base, content: parts[0].trim() });
+    for (var i = 1; i + 1 < parts.length; i += 2) {
+      var body = (parts[i + 1] || '').trim();
+      if (body) out.push({ key: parts[i].trim(), content: body });
+    }
+    if (!out.length && String(text).trim()) out.push({ key: base, content: String(text).trim() });
+    return out;
+  }
+
+  function importWorldFile(file) {
+    if (!file) return;
+    if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var text = String(e.target.result);
+      var entries;
+      if (/\.(md|markdown)$/i.test(file.name)) {
+        entries = parseWorldMarkdown(text, file.name);
+      } else {
+        var data;
+        try { data = JSON.parse(text); } catch (err) { showToast('JSON 解析失败：' + err.message, 'error'); return; }
+        entries = parseWorldJson(data);
+      }
+      if (!entries.length) { showToast('未找到可导入的世界书条目', 'error'); return; }
+      api('/ai-chat/api/world-book/import', { conversation_id: state.currentConv.id, entries: entries }).then(function (json) {
+        if (json.success) {
+          showToast('世界书已导入 ' + json.data.imported + ' 条' + (json.data.skipped ? '，跳过 ' + json.data.skipped + ' 条' : ''), 'success');
+          return fetch('/ai-chat/api/world-book?conversation_id=' + state.currentConv.id, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (j) { if (j.success) { state.worldBook = j.data || []; renderWorldList(); } });
+        }
+        showToast(json.error || '导入失败', 'error');
+      }).catch(function (err) { showToast(err.message || '导入失败', 'error'); });
+    };
+    reader.readAsText(file, 'UTF-8');
   }
 
   function openWorldEdit(w) {
@@ -2053,6 +2357,15 @@
     }).catch(function (err) { showToast(err.message, 'error'); });
   });
 
+  els.acNewGroup.addEventListener('click', function () {
+    if (state.streaming) return;
+    openGroupModal(null);
+  });
+  els.acGroupEdit.addEventListener('click', function () {
+    if (state.currentConv && state.currentConv.is_group) openGroupModal(state.currentConv);
+  });
+  els.acGroupSave.addEventListener('click', saveGroup);
+
   els.acConvSearch.addEventListener('input', function () {
     // 浏览器自动填充用户名时也会触发 input 事件，但输入框不会获得焦点；此时清空，避免列表被过滤为空
     if (els.acConvSearch.value && document.activeElement !== els.acConvSearch) {
@@ -2107,13 +2420,26 @@
   }
   els.acInput.addEventListener('input', autoResizeInput);
 
-  els.acRoleBtn.addEventListener('click', openRoleModal);
+  els.acRoleBtn.addEventListener('click', function () {
+    if (state.currentConv && state.currentConv.is_group) openGroupModal(state.currentConv);
+    else openRoleModal();
+  });
   els.acModelBtn.addEventListener('click', openModelModal);
   els.acRoleCreate.addEventListener('click', function () { showModal('acRoleCreateModal'); });
   els.acRoleSave.addEventListener('click', createRole);
 
   els.acWorldAdd.addEventListener('click', function () { openWorldEdit(null); });
   els.acWorldImport.addEventListener('click', importDefaultWorldBook);
+  if (els.acWorldFileImport) {
+    els.acWorldFileImport.addEventListener('click', function () { if (els.acWorldFileInput) els.acWorldFileInput.click(); });
+  }
+  if (els.acWorldFileInput) {
+    els.acWorldFileInput.addEventListener('change', function () {
+      var f = els.acWorldFileInput.files && els.acWorldFileInput.files[0];
+      els.acWorldFileInput.value = '';
+      importWorldFile(f);
+    });
+  }
   els.acWorldSave.addEventListener('click', saveWorldEntry);
   els.acWorldDelete.addEventListener('click', deleteWorldEntry);
 

@@ -103,22 +103,44 @@
 
 <!-- ============ 角色 ============ -->
 <div class="ai-chat-panel" id="tab-roles">
-  <div class="ai-chat-hint">官方角色对全部用户可见，可在前台一键选用。</div>
+  <div class="ai-chat-hint">官方角色对全部用户可见，可在前台一键选用。支持 SillyTavern 角色卡（PNG / JSON）导入导出。</div>
+  <div class="ai-chat-actions" style="margin-bottom:10px; flex-wrap:wrap;">
+    <input id="roleSearch" placeholder="搜索角色…" oninput="filterRoles()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-card);color:inherit;font-size:13px;">
+    <select id="roleCategoryFilter" onchange="filterRoles()" style="padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-card);color:inherit;font-size:13px;">
+      <option value="">全部分类</option>
+      <% roleCategories.forEach(c => { %><option value="<%= c %>"><%= c %></option><% }) %>
+    </select>
+    <button type="button" class="btn" onclick="document.getElementById('roleImportFile').click()">📥 导入 PNG/JSON</button>
+    <input type="file" id="roleImportFile" accept=".json,.png" multiple style="display:none;" onchange="importRoles(this.files)">
+    <button type="button" class="btn" onclick="location.href='/admin/ai-chat/roles/export'">📦 导出全部 JSON</button>
+    <button type="button" class="btn btn-danger" id="roleBatchDeleteBtn" style="display:none;" onclick="batchDeleteRoles()">批量删除</button>
+    <button type="button" class="btn btn-primary" onclick="editRole(0)">＋ 新增角色</button>
+    <span class="ai-chat-msg" id="roleImportMsg"></span>
+  </div>
   <div id="roleList">
     <% roles.forEach(r => { %>
-    <div class="ai-chat-role-card" data-role-id="<%= r.id %>" data-greeting="<%= r.greeting || '' %>" data-personality="<%= r.personality || '' %>" data-scenario="<%= r.scenario || '' %>" data-examples="<%= r.examples || '' %>">
-      <h3>🎭 <%= r.name %> <span style="font-size:12px; color:var(--gray-500);">#<%= r.category %></span></h3>
-      <p><%= r.description || r.personality || r.system_prompt.slice(0, 120) %></p>
-      <div class="ai-chat-actions">
+    <div class="ai-chat-role-card" data-role-id="<%= r.id %>" data-category="<%= r.category || 'default' %>" data-name="<%= r.name %>">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" class="role-select" value="<%= r.id %>" onchange="updateBatchBtn()" style="width:auto;margin:0;">
+        <% if (r.avatar) { %><img src="<%= r.avatar %>" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;"><% } else { %><span style="font-size:22px;">🎭</span><% } %>
+        <h3 style="margin:0;"><%= r.name %> <span style="font-size:12px; color:var(--gray-500);">#<%= r.category || 'default' %></span></h3>
+      </div>
+      <p><%= r.description || r.personality || (r.system_prompt || '').slice(0, 120) %></p>
+      <div class="ai-chat-actions" style="flex-wrap:wrap;">
+        <button type="button" class="btn btn-sm" title="上移" onclick="moveRole(<%= r.id %>,'up')">▲</button>
+        <button type="button" class="btn btn-sm" title="下移" onclick="moveRole(<%= r.id %>,'down')">▼</button>
         <button type="button" class="btn btn-sm" onclick="editRole(<%= r.id %>)">编辑</button>
+        <button type="button" class="btn btn-sm" onclick="duplicateRole(<%= r.id %>)">复制</button>
+        <button type="button" class="btn btn-sm" onclick="location.href='/admin/ai-chat/roles/export?id=<%= r.id %>'">导出 JSON</button>
+        <button type="button" class="btn btn-sm" onclick="location.href='/admin/ai-chat/roles/export-png?id=<%= r.id %>'">导出 PNG</button>
         <button type="button" class="btn btn-sm btn-danger" onclick="deleteRole(<%= r.id %>)">删除</button>
       </div>
     </div>
     <% }) %>
-    <% if (!roles.length) { %><p class="text-muted" style="font-size:13px;">暂无官方角色</p><% } %>
+    <% if (!roles.length) { %><p class="text-muted" style="font-size:13px;">暂无官方角色，可通过「导入 PNG/JSON」批量导入角色卡。</p><% } %>
   </div>
-  <button type="button" class="btn btn-primary" onclick="editRole(0)" style="margin-top:8px;">＋ 新增角色</button>
 </div>
+<script type="application/json" id="rolesDataJson"><%- JSON.stringify(roles).replace(/</g, '\\u003c') %></script>
 
 <!-- 角色编辑表单（隐藏） -->
 <div id="roleFormWrap" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--border-color); border-radius:10px; background: var(--bg-card);">
@@ -133,6 +155,13 @@
     <label class="full">性格<textarea id="r_personality" placeholder="角色性格特征、口头禅、喜好…（并入角色上下文）"></textarea></label>
     <label class="full">场景<textarea id="r_scenario" placeholder="当前剧情场景、环境设定…（并入角色上下文）"></textarea></label>
     <label class="full">示例对话<textarea id="r_examples" placeholder="展示角色说话风格的对话示例（仅供模仿风格，并入角色上下文）"></textarea></label>
+    <label class="full">头像 URL<input id="r_avatar" placeholder="可留空；支持图片 URL，或点右侧按钮上传" oninput="updateRoleAvatarPreview()"></label>
+    <div class="full" style="display:flex;align-items:center;gap:10px;">
+      <img id="r_avatar_preview" src="" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;display:none;">
+      <button type="button" class="btn btn-sm" onclick="document.getElementById('r_avatar_file').click()">上传头像</button>
+      <input type="file" id="r_avatar_file" accept=".png,.jpg,.jpeg,.webp" style="display:none;" onchange="uploadRoleAvatar(this.files[0])">
+      <span class="ai-chat-msg" id="r_avatar_msg"></span>
+    </div>
   </div>
   <div class="ai-chat-actions">
     <button type="button" class="btn btn-primary" onclick="saveRole()">保存</button>
@@ -409,9 +438,18 @@
   window.saveModel = function () {
     var msg = document.getElementById('modelFormMsg');
     msg.textContent = '';
+    // modelForm 是 div 而非 form，不能直接 new FormData(div)
+    var fd = new FormData();
+    [['id', 'm_id'], ['name', 'm_name'], ['model_key', 'm_model_key'], ['provider', 'm_provider'],
+      ['api_endpoint', 'm_api_endpoint'], ['api_key', 'm_api_key'], ['max_tokens', 'm_max_tokens'],
+      ['temperature', 'm_temperature']].forEach(function (p) {
+      fd.append(p[0], document.getElementById(p[1]).value);
+    });
+    fd.append('is_default', document.getElementById('m_is_default').checked ? '1' : '0');
+    fd.append('enabled', document.getElementById('m_enabled').checked ? '1' : '0');
     csrfFetch('/admin/ai-chat/models/save', {
       method: 'POST',
-      body: new FormData(document.getElementById('modelForm'))
+      body: fd
     }, 30000).then(function (json) {
       if (json.success) { msg.textContent = '保存成功'; setTimeout(function () { location.reload(); }, 600); }
       else { msg.textContent = json.error || '保存失败'; msg.className = 'ai-chat-msg err'; }
@@ -443,34 +481,130 @@
   };
 
   // ============ 角色 ============
+  var rolesData = JSON.parse(document.getElementById('rolesDataJson').textContent);
+
+  window.filterRoles = function () {
+    var kw = (document.getElementById('roleSearch').value || '').toLowerCase();
+    var cat = document.getElementById('roleCategoryFilter').value;
+    document.querySelectorAll('#roleList .ai-chat-role-card').forEach(function (card) {
+      var name = (card.getAttribute('data-name') || '').toLowerCase();
+      var c = card.getAttribute('data-category') || '';
+      card.style.display = (!kw || name.indexOf(kw) !== -1) && (!cat || c === cat) ? '' : 'none';
+    });
+  };
+
+  window.updateBatchBtn = function () {
+    var n = document.querySelectorAll('#roleList .role-select:checked').length;
+    document.getElementById('roleBatchDeleteBtn').style.display = n ? '' : 'none';
+  };
+
+  window.importRoles = function (files) {
+    if (!files || !files.length) return;
+    var msg = document.getElementById('roleImportMsg');
+    msg.className = 'ai-chat-msg';
+    msg.textContent = '导入中…';
+    var fd = new FormData();
+    Array.prototype.forEach.call(files, function (f) { fd.append('files', f); });
+    csrfFetch('/admin/ai-chat/roles/import', { method: 'POST', body: fd }, 60000)
+      .then(function (json) {
+        document.getElementById('roleImportFile').value = '';
+        if (json.success) {
+          var d = json.data;
+          msg.textContent = '导入 ' + d.imported + ' 个，跳过 ' + d.skipped + ' 个' + (d.errors && d.errors.length ? '。' + d.errors.join('；') : '');
+          if (d.imported) setTimeout(function () { location.reload(); }, 1500);
+        } else { msg.textContent = json.error || '导入失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function (err) { msg.textContent = err.message || '导入失败'; msg.className = 'ai-chat-msg err'; });
+  };
+
+  window.batchDeleteRoles = function () {
+    var ids = Array.prototype.map.call(document.querySelectorAll('#roleList .role-select:checked'), function (c) { return c.value; });
+    if (!ids.length) return;
+    if (!window.confirm('确定删除选中的 ' + ids.length + ' 个角色？')) return;
+    csrfFetch('/admin/ai-chat/roles/batch-delete', { method: 'POST', body: JSON.stringify({ ids: ids }) }, 20000)
+      .then(function (json) {
+        if (json.success) location.reload();
+        else alert(json.error || '删除失败');
+      })
+      .catch(function (err) { alert(err.message || '删除失败'); });
+  };
+
+  window.duplicateRole = function (id) {
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/roles/duplicate', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) location.reload();
+        else alert(json.error || '复制失败');
+      })
+      .catch(function (err) { alert(err.message || '复制失败'); });
+  };
+
+  window.moveRole = function (id, dir) {
+    var fd = new FormData();
+    fd.append('id', id);
+    fd.append('dir', dir);
+    csrfFetch('/admin/ai-chat/roles/move', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) location.reload();
+        else alert(json.error || '移动失败');
+      })
+      .catch(function (err) { alert(err.message || '移动失败'); });
+  };
+
+  window.updateRoleAvatarPreview = function () {
+    var url = (document.getElementById('r_avatar').value || '').trim();
+    var img = document.getElementById('r_avatar_preview');
+    if (url) { img.src = url; img.style.display = ''; }
+    else { img.style.display = 'none'; }
+  };
+
+  window.uploadRoleAvatar = function (file) {
+    if (!file) return;
+    var msg = document.getElementById('r_avatar_msg');
+    msg.className = 'ai-chat-msg';
+    msg.textContent = '上传中…';
+    var fd = new FormData();
+    fd.append('file', file);
+    csrfFetch('/admin/ai-chat/roles/avatar', { method: 'POST', body: fd }, 30000)
+      .then(function (json) {
+        document.getElementById('r_avatar_file').value = '';
+        if (json.success) {
+          document.getElementById('r_avatar').value = json.data.url;
+          updateRoleAvatarPreview();
+          msg.textContent = '上传成功';
+        } else { msg.textContent = json.error || '上传失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function (err) { msg.textContent = err.message || '上传失败'; msg.className = 'ai-chat-msg err'; });
+  };
+
   window.editRole = function (id) {
     var wrap = document.getElementById('roleFormWrap');
     wrap.style.display = 'block';
     wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     document.getElementById('roleFormMsg').textContent = '';
+    var fields = ['r_id', 'r_name', 'r_category', 'r_description', 'r_system_prompt',
+      'r_greeting', 'r_personality', 'r_scenario', 'r_examples', 'r_avatar'];
     if (!id) {
       document.getElementById('roleFormTitle').textContent = '新增角色';
-      ['r_id', 'r_name', 'r_category', 'r_description', 'r_system_prompt',
-        'r_greeting', 'r_personality', 'r_scenario', 'r_examples'].forEach(function (f) {
-        document.getElementById(f).value = '';
-      });
+      fields.forEach(function (f) { document.getElementById(f).value = ''; });
+      updateRoleAvatarPreview();
       return;
     }
-    var card = document.querySelector('.ai-chat-role-card[data-role-id="' + id + '"]');
-    if (!card) return;
+    var role = rolesData.filter(function (r) { return r.id === id; })[0];
+    if (!role) return;
     document.getElementById('roleFormTitle').textContent = '编辑角色 #' + id;
     document.getElementById('r_id').value = id;
-    var h3 = card.querySelector('h3').textContent;
-    document.getElementById('r_name').value = h3.replace(/^🎭\s*/, '').replace(/\s*#.*$/, '');
-    var m = h3.match(/#(\S+)/);
-    document.getElementById('r_category').value = m ? m[1] : '';
-    var p = card.querySelector('p').textContent;
-    document.getElementById('r_system_prompt').value = p;
-    document.getElementById('r_description').value = p;
-    // 新字段：从卡片 data-* 读取（无则留空）
-    ['greeting', 'personality', 'scenario', 'examples'].forEach(function (f) {
-      document.getElementById('r_' + f).value = card.getAttribute('data-' + f) || '';
-    });
+    document.getElementById('r_name').value = role.name || '';
+    document.getElementById('r_category').value = role.category || '';
+    document.getElementById('r_description').value = role.description || '';
+    document.getElementById('r_system_prompt').value = role.system_prompt || '';
+    document.getElementById('r_greeting').value = role.greeting || '';
+    document.getElementById('r_personality').value = role.personality || '';
+    document.getElementById('r_scenario').value = role.scenario || '';
+    document.getElementById('r_examples').value = role.examples || '';
+    document.getElementById('r_avatar').value = role.avatar || '';
+    updateRoleAvatarPreview();
   };
 
   window.cancelRoleForm = function () { document.getElementById('roleFormWrap').style.display = 'none'; };
@@ -478,7 +612,13 @@
   window.saveRole = function () {
     var msg = document.getElementById('roleFormMsg');
     msg.textContent = '';
-    csrfFetch('/admin/ai-chat/roles/save', { method: 'POST', body: new FormData(document.getElementById('roleForm')) }, 20000)
+    // roleForm 是 div 而非 form，不能直接 new FormData(div)
+    var fd = new FormData();
+    ['id', 'name', 'category', 'description', 'system_prompt',
+      'greeting', 'personality', 'scenario', 'examples', 'avatar'].forEach(function (f) {
+      fd.append(f, document.getElementById('r_' + f).value);
+    });
+    csrfFetch('/admin/ai-chat/roles/save', { method: 'POST', body: fd }, 20000)
       .then(function (json) {
         if (json.success) { msg.textContent = '保存成功'; setTimeout(function () { location.reload(); }, 600); }
         else { msg.textContent = json.error || '保存失败'; msg.className = 'ai-chat-msg err'; }
