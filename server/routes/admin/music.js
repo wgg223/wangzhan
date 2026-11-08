@@ -14,6 +14,7 @@ const { isSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { audioUpload } = require('./upload');
+const { decodeUploadName } = require('../../utils/office-import');
 const { buildPlaylist } = require('../music');
 
 router.get('/music', isSuperAdmin, (req, res) => {
@@ -25,7 +26,7 @@ router.get('/music', isSuperAdmin, (req, res) => {
   });
 });
 
-router.post('/music/upload', isSuperAdmin, audioUpload.single('musicFile'), (req, res) => {
+router.post('/music/upload', isSuperAdmin, audioUpload.single('musicFile'), decodeUploadName, (req, res) => {
   const db = req.db;
   if (!req.file) {
     return res.status(400).json({ error: '请选择音频文件' });
