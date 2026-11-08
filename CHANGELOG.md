@@ -2,6 +2,15 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.13.4 (2026-11-08)
+
+**修复：角色卡导入中文乱码**
+
+- PNG 角色卡：`extractPngChara` 改用 `TextDecoder('utf-8')` 解码（`atob` 返回 Latin-1 字符串，中文会乱码）
+- JSON 角色卡：`readAsText` 显式指定 UTF-8 编码
+- URL 抓取：收集 Buffer 后按 Content-Type / HTML meta charset 检测编码，用 iconv-lite 解码 GBK/Latin-1
+- 聊天记录导入：`readAsText` 显式指定 UTF-8
+
 ## v8.13.3 (2026-11-08)
 
 **AI 聊天全面优化：SillyTavern 风格功能增强**

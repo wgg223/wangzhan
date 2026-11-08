@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.13.3 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.13.4 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -307,6 +307,13 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.13.4 (2026-11-08)
+
+**修复：角色卡导入中文乱码**
+- PNG 角色卡改用 TextDecoder UTF-8 解码（atob 返回 Latin-1）
+- JSON/聊天记录导入显式指定 UTF-8 编码
+- URL 抓取支持 Content-Type/meta charset 编码检测，iconv-lite 解码 GBK
 
 ### v8.13.3 (2026-11-08)
 
