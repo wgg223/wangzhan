@@ -43,7 +43,14 @@
     'acmProvider', 'acmKey', 'acmEndpoint', 'acmApiKey', 'acmDefault', 'acmSave', 'acmCancel', 'acmGetWrap', 'acmGetLink',
     'acmFetch', 'acmFetchWrap', 'acmFetchList', 'acmFetchUse', 'acmFetchTip',
     'acShareBtn', 'acShareModal', 'acShareUrl', 'acShareCopy', 'acShareToggle',
-    'acPickPrompt', 'acPromptModal', 'acPromptSearch', 'acPromptList', 'acPromptCount', 'acPromptMore']
+    'acPickPrompt', 'acPromptModal', 'acPromptSearch', 'acPromptList', 'acPromptCount', 'acPromptMore',
+    'acFullscreenBtn', 'acApp',
+    'acTtsSettings', 'acTtsVoice', 'acTtsRate', 'acTtsRateVal', 'acTtsPitch', 'acTtsPitchVal', 'acTtsToggle',
+    'acRoleImport', 'acRoleExport', 'acRoleFileInput',
+    'acRoleImportUrl', 'acRoleUrlModal', 'acRoleUrlInput', 'acRoleUrlFetch',
+    'acRoleSearch', 'acRoleFilter', 'acChatExport', 'acChatImport', 'acChatFileInput',
+    'acNewRoleAvatar', 'acNewRoleAvatarFile', 'acNewRoleAvatarBtn', 'acNewRoleAvatarPreview',
+    'acWorldSearch', 'acWorldCount', 'acWorldEnableAll', 'acWorldDisableAll', 'acWorldDeleteAll']
     .forEach(function (id) { els[id] = document.getElementById(id); });
 
   // ============ 通用请求 ============
@@ -800,6 +807,20 @@
       addAction(container, '复制', function (e) { e.stopPropagation(); copyToClipboard(m.content || '', '已复制'); });
       addAction(container, '删除', function (e) { e.stopPropagation(); deleteMessage(m); });
     } else {
+      // TTS 朗读按钮
+      if (tts.synth && tts.enabled && m.content) {
+        var ttsBtn = document.createElement('button');
+        ttsBtn.type = 'button';
+        ttsBtn.className = 'ac-tts-btn';
+        ttsBtn.textContent = '🔊';
+        ttsBtn.title = '朗读消息';
+        ttsBtn.dataset.msgId = m.id;
+        ttsBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          speakMessage(m.id, m.content || '');
+        });
+        container.appendChild(ttsBtn);
+      }
       addAction(container, '重生成', function (e) { e.stopPropagation(); regenerateMessage(m); });
       addAction(container, '分叉', function (e) { e.stopPropagation(); forkAt(m); });
       addAction(container, '复制', function (e) { e.stopPropagation(); copyToClipboard(m.content || '', '已复制'); });
@@ -1057,33 +1078,125 @@
     showModal('acRoleModal');
   }
 
+  var roleFilter = { category: '', search: '', favOnly: false };
+
+  function getRoleFavs() {
+    try { return JSON.parse(localStorage.getItem('ac_role_favs') || '[]'); } catch (e) { return []; }
+  }
+  function setRoleFavs(arr) {
+    try { localStorage.setItem('ac_role_favs', JSON.stringify(arr)); } catch (e) { /* ignore */ }
+  }
+  function toggleRoleFav(roleId) {
+    var favs = getRoleFavs();
+    var idx = favs.indexOf(roleId);
+    if (idx >= 0) favs.splice(idx, 1); else favs.push(roleId);
+    setRoleFavs(favs);
+    renderRoleList();
+  }
+
   function renderRoleList() {
     els.acRoleList.innerHTML = '';
-    if (!state.roles.length) {
-      els.acRoleList.innerHTML = '<p style="grid-column:1/-1;font-size:13px;color:var(--ac-muted);">暂无角色</p>';
+    var kw = roleFilter.search.toLowerCase();
+    var favs = getRoleFavs();
+
+    var filtered = state.roles.filter(function (r) {
+      if (roleFilter.favOnly && favs.indexOf(r.id) < 0) return false;
+      if (roleFilter.category === 'my' && r.is_official) return false;
+      if (roleFilter.category === 'fav') return favs.indexOf(r.id) >= 0;
+      if (roleFilter.category && roleFilter.category !== 'my' && roleFilter.category !== 'fav' && r.category !== roleFilter.category) return false;
+      if (kw) {
+        var hay = (r.name + ' ' + (r.description || '') + ' ' + (r.personality || '')).toLowerCase();
+        if (hay.indexOf(kw) < 0) return false;
+      }
+      return true;
+    });
+
+    if (!filtered.length) {
+      els.acRoleList.innerHTML = '<p style="grid-column:1/-1;font-size:13px;color:var(--ac-muted);text-align:center;padding:20px 0;">' +
+        (kw ? '未找到匹配的角色' : '该分类下暂无角色') + '</p>';
       return;
     }
-    state.roles.forEach(function (r) {
+
+    filtered.forEach(function (r) {
       var card = document.createElement('div');
       card.className = 'ac-role-card' + (state.currentConv && state.currentConv.role_id === r.id ? ' active' : '');
+
+      // 收藏按钮
+      var isFav = favs.indexOf(r.id) >= 0;
+      var favBtn = document.createElement('button');
+      favBtn.type = 'button';
+      favBtn.className = 'ac-role-fav' + (isFav ? ' active' : '');
+      favBtn.textContent = isFav ? '⭐' : '☆';
+      favBtn.title = isFav ? '取消收藏' : '收藏角色';
+      favBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleRoleFav(r.id);
+      });
+      card.appendChild(favBtn);
+
+      // 头像 + 名称
+      var header = document.createElement('div');
+      header.className = 'ac-role-card-header';
+      var avatar = document.createElement('div');
+      avatar.className = 'ac-role-card-avatar';
+      if (r.avatar) {
+        var img = document.createElement('img');
+        img.src = r.avatar;
+        img.alt = r.name;
+        img.onerror = function () { this.style.display = 'none'; this.parentNode.textContent = '🎭'; };
+        avatar.appendChild(img);
+      } else {
+        avatar.textContent = r.is_official ? '🎭' : '⭐';
+      }
       var h = document.createElement('h3');
-      h.textContent = (r.is_official ? '🎭 ' : '⭐ ') + r.name;
+      h.textContent = r.name;
+      header.appendChild(avatar);
+      header.appendChild(h);
+      card.appendChild(header);
+
       var p = document.createElement('p');
       p.textContent = r.description || r.personality || r.system_prompt || '';
+      card.appendChild(p);
+
       var foot = document.createElement('div');
       foot.className = 'ac-role-card-foot';
       var tag = document.createElement('span');
       tag.className = 'ac-role-tag';
       tag.textContent = r.is_official ? '官方' : '我的';
       foot.appendChild(tag);
+      if (r.category && r.category !== 'default') {
+        var catTag = document.createElement('span');
+        catTag.className = 'ac-role-tag';
+        catTag.textContent = r.category;
+        foot.appendChild(catTag);
+      }
       if (r.greeting) {
         var g = document.createElement('span');
         g.className = 'ac-role-tag ac-role-tag-greeting';
         g.textContent = '有开场白';
         foot.appendChild(g);
       }
-      card.appendChild(h);
-      card.appendChild(p);
+      // 用户自建角色：导出和删除
+      if (!r.is_official) {
+        var actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:4px;margin-left:auto;';
+        var expBtn = document.createElement('button');
+        expBtn.type = 'button';
+        expBtn.className = 'ac-role-tag';
+        expBtn.textContent = '⤴';
+        expBtn.title = '导出角色卡';
+        expBtn.addEventListener('click', function (e) { e.stopPropagation(); exportRole(r); });
+        var delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'ac-role-tag';
+        delBtn.textContent = '✕';
+        delBtn.title = '删除角色';
+        delBtn.style.color = 'var(--danger)';
+        delBtn.addEventListener('click', function (e) { e.stopPropagation(); deleteRole(r); });
+        actions.appendChild(expBtn);
+        actions.appendChild(delBtn);
+        foot.appendChild(actions);
+      }
       card.appendChild(foot);
       card.addEventListener('click', function () {
         hideModal('acRoleModal');
@@ -1091,6 +1204,46 @@
       });
       els.acRoleList.appendChild(card);
     });
+  }
+
+  // 导出指定角色卡
+  function exportRole(role) {
+    var card = {
+      spec: 'chara_card_v2',
+      spec_version: '2.0',
+      data: {
+        name: role.name,
+        description: role.description || '',
+        personality: role.personality || '',
+        scenario: role.scenario || '',
+        first_mes: role.greeting || '',
+        mes_example: role.examples || '',
+        system_prompt: role.system_prompt || '',
+        avatar: role.avatar || '',
+        creator_notes: 'Exported from AI Chat',
+        character_version: '1.0'
+      }
+    };
+    var blob = new Blob([JSON.stringify(card, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (role.name || 'character') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('角色卡已导出', 'success');
+  }
+
+  // 删除用户自建角色
+  function deleteRole(role) {
+    if (!window.confirm('确定删除角色「' + role.name + '」？')) return;
+    api('/ai-chat/api/roles/delete', { id: role.id }).then(function () {
+      state.roles = state.roles.filter(function (r) { return r.id !== role.id; });
+      renderRoleList();
+      showToast('角色已删除', 'success');
+    }).catch(function (err) { showToast(err.message, 'error'); });
   }
 
   // 选择角色 → 开启新会话（沿用旧会话若为空则复用）
@@ -1135,7 +1288,8 @@
       description: els.acNewRoleDesc.value.trim(),
       personality: els.acNewRolePersonality.value.trim(),
       scenario: els.acNewRoleScenario.value.trim(),
-      examples: els.acNewRoleExamples.value.trim()
+      examples: els.acNewRoleExamples.value.trim(),
+      avatar: els.acNewRoleAvatar ? els.acNewRoleAvatar.value.trim() : ''
     }).then(function (json) {
       state.roles.push(json.data);
       els.acNewRoleName.value = '';
@@ -1145,10 +1299,354 @@
       els.acNewRolePersonality.value = '';
       els.acNewRoleScenario.value = '';
       els.acNewRoleExamples.value = '';
+      if (els.acNewRoleAvatar) els.acNewRoleAvatar.value = '';
+      updateAvatarPreview('');
       hideModal('acRoleCreateModal');
       renderRoleList();
       showToast('角色已创建', 'success');
     }).catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  // ============ 角色卡导入/导出 ============
+
+  // 导出当前会话角色为 JSON（兼容 SillyTavern V2 格式）
+  function exportCurrentRole() {
+    if (!state.currentConv || !state.currentConv.role_id) {
+      showToast('当前会话未选择角色', 'error');
+      return;
+    }
+    var role = state.roles.filter(function (r) { return r.id === state.currentConv.role_id; })[0];
+    if (!role) { showToast('角色不存在', 'error'); return; }
+    exportRole(role);
+  }
+
+  // 导入角色卡（JSON 或 PNG 文件）
+  function importRoleFile(file) {
+    if (!file) return;
+    var isPng = /\.png$/i.test(file.name) || file.type === 'image/png';
+
+    if (isPng) {
+      // PNG 角色卡：从 tEXt chunk 提取 chara 字段（base64 JSON）
+      var bufReader = new FileReader();
+      bufReader.onload = function (e) {
+        var buffer = e.target.result;
+        var charaJson = extractPngChara(buffer);
+        if (!charaJson) {
+          showToast('该 PNG 文件中未找到角色卡数据', 'error');
+          return;
+        }
+        var card;
+        try { card = JSON.parse(charaJson); } catch (err) {
+          showToast('角色卡 JSON 解析失败：' + err.message, 'error');
+          return;
+        }
+        createRoleFromCard(card, file.name);
+      };
+      bufReader.readAsArrayBuffer(file);
+    } else {
+      // JSON 角色卡
+      var textReader = new FileReader();
+      textReader.onload = function (e) {
+        var card;
+        try { card = JSON.parse(e.target.result); } catch (err) {
+          showToast('JSON 解析失败：' + err.message, 'error');
+          return;
+        }
+        createRoleFromCard(card, file.name);
+      };
+      textReader.readAsText(file);
+    }
+    // 重置 input 以便重复导入同一文件
+    if (els.acRoleFileInput) els.acRoleFileInput.value = '';
+  }
+
+  // 从 PNG 二进制数据中提取 tEXt chunk 的 chara 字段
+  function extractPngChara(buffer) {
+    var bytes = new Uint8Array(buffer);
+    // 验证 PNG 签名
+    var pngSig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    for (var i = 0; i < 8; i++) {
+      if (bytes[i] !== pngSig[i]) return null;
+    }
+    var offset = 8;
+    while (offset < bytes.length) {
+      if (offset + 8 > bytes.length) break;
+      var len = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+      var type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+      offset += 8;
+      if (type === 'tEXt' && len > 0 && offset + len <= bytes.length) {
+        var chunkData = bytes.subarray(offset, offset + len);
+        // 找 null 分隔符
+        var nullIdx = -1;
+        for (var j = 0; j < chunkData.length; j++) {
+          if (chunkData[j] === 0) { nullIdx = j; break; }
+        }
+        if (nullIdx > 0) {
+          var keyword = String.fromCharCode.apply(null, chunkData.subarray(0, nullIdx));
+          if (keyword === 'chara') {
+            var textBytes = chunkData.subarray(nullIdx + 1);
+            var base64Str = '';
+            for (var k = 0; k < textBytes.length; k++) {
+              base64Str += String.fromCharCode(textBytes[k]);
+            }
+            try { return atob(base64Str); } catch (e) { return null; }
+          }
+        }
+      }
+      offset += len + 4; // 跳过数据 + CRC
+    }
+    return null;
+  }
+
+  // 从角色卡对象创建角色（JSON / PNG 通用）
+  function createRoleFromCard(card, fileName) {
+    var data = card.data || card;
+    var name = (data.name || '').trim().slice(0, 50);
+    var systemPrompt = (data.system_prompt || data.system || data.personality || '').trim();
+    var greeting = (data.first_mes || data.greeting || '').trim().slice(0, 2000);
+    var description = (data.description || data.char_desc || '').trim().slice(0, 500);
+    var personality = (data.personality || '').trim().slice(0, 4000);
+    var scenario = (data.scenario || '').trim().slice(0, 4000);
+    var examples = (data.mes_example || data.examples || data.mesExample || '').trim().slice(0, 8000);
+    var avatar = (data.avatar || data.avatar_url || data.image || '').trim();
+
+    if (!name) {
+      // 尝试从文件名推断
+      name = (fileName || '').replace(/\.(json|png)$/i, '').trim().slice(0, 50);
+    }
+    if (!name) { showToast('角色卡缺少名称', 'error'); return; }
+    if (!systemPrompt && !greeting) { showToast('角色卡缺少设定或开场白', 'error'); return; }
+
+    api('/ai-chat/api/roles', {
+      name: name,
+      system_prompt: systemPrompt,
+      greeting: greeting,
+      description: description,
+      personality: personality,
+      scenario: scenario,
+      examples: examples,
+      avatar: avatar
+    }).then(function (json) {
+      state.roles.push(json.data);
+      renderRoleList();
+      showToast('角色「' + name + '」已导入', 'success');
+    }).catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  // 角色卡导入/导出事件绑定
+  if (els.acRoleExport) {
+    els.acRoleExport.addEventListener('click', exportCurrentRole);
+  }
+  if (els.acRoleImport) {
+    els.acRoleImport.addEventListener('click', function () {
+      if (els.acRoleFileInput) els.acRoleFileInput.click();
+    });
+  }
+  if (els.acRoleFileInput) {
+    els.acRoleFileInput.addEventListener('change', function () {
+      var file = els.acRoleFileInput.files && els.acRoleFileInput.files[0];
+      if (file) importRoleFile(file);
+    });
+  }
+
+  // 从 URL 抓取角色卡
+  if (els.acRoleImportUrl) {
+    els.acRoleImportUrl.addEventListener('click', function () {
+      if (els.acRoleUrlInput) els.acRoleUrlInput.value = '';
+      showModal('acRoleUrlModal');
+      if (els.acRoleUrlInput) els.acRoleUrlInput.focus();
+    });
+  }
+  if (els.acRoleUrlFetch) {
+    els.acRoleUrlFetch.addEventListener('click', function () {
+      var url = (els.acRoleUrlInput && els.acRoleUrlInput.value || '').trim();
+      if (!url) { showToast('请输入角色卡页面 URL', 'error'); return; }
+      var btn = els.acRoleUrlFetch;
+      btn.disabled = true;
+      btn.textContent = '抓取中…';
+      api('/ai-chat/api/roles/fetch-url', { url: url })
+        .then(function (json) {
+          if (json.success && json.data && json.data.name) {
+            hideModal('acRoleUrlModal');
+            // 用抓取到的数据创建角色
+            return api('/ai-chat/api/roles', {
+              name: json.data.name,
+              system_prompt: json.data.system_prompt || '',
+              greeting: json.data.greeting || '',
+              description: json.data.description || '',
+              personality: json.data.personality || '',
+              scenario: json.data.scenario || '',
+              examples: json.data.examples || ''
+            }).then(function (createJson) {
+              state.roles.push(createJson.data);
+              renderRoleList();
+              showToast('角色「' + json.data.name + '」已从 URL 导入', 'success');
+            });
+          } else {
+            showToast(json.error || '抓取失败', 'error');
+          }
+        })
+        .catch(function (err) { showToast(err.message || '抓取失败', 'error'); })
+        .then(function () {
+          btn.disabled = false;
+          btn.textContent = '抓取并导入';
+        });
+    });
+  }
+
+  // ============ 角色分类筛选 ============
+  if (els.acRoleFilter) {
+    els.acRoleFilter.addEventListener('click', function (e) {
+      var tag = e.target.closest('.ac-role-filter-tag');
+      if (!tag) return;
+      var cat = tag.dataset.cat || '';
+      roleFilter.favOnly = cat === 'fav';
+      roleFilter.category = cat === 'fav' ? '' : cat;
+      els.acRoleFilter.querySelectorAll('.ac-role-filter-tag').forEach(function (t) {
+        t.classList.toggle('active', t === tag);
+      });
+      renderRoleList();
+    });
+  }
+  if (els.acRoleSearch) {
+    els.acRoleSearch.addEventListener('input', function () {
+      roleFilter.search = els.acRoleSearch.value;
+      renderRoleList();
+    });
+  }
+
+  // ============ 头像上传 ============
+  if (els.acNewRoleAvatarBtn) {
+    els.acNewRoleAvatarBtn.addEventListener('click', function () {
+      if (els.acNewRoleAvatarFile) els.acNewRoleAvatarFile.click();
+    });
+  }
+  if (els.acNewRoleAvatarPreview) {
+    els.acNewRoleAvatarPreview.addEventListener('click', function () {
+      if (els.acNewRoleAvatarFile) els.acNewRoleAvatarFile.click();
+    });
+  }
+  if (els.acNewRoleAvatarFile) {
+    els.acNewRoleAvatarFile.addEventListener('change', function () {
+      var file = els.acNewRoleAvatarFile.files && els.acNewRoleAvatarFile.files[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { showToast('图片不能超过 2MB', 'error'); return; }
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var dataUrl = e.target.result;
+        if (els.acNewRoleAvatar) els.acNewRoleAvatar.value = dataUrl;
+        updateAvatarPreview(dataUrl);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  if (els.acNewRoleAvatar) {
+    els.acNewRoleAvatar.addEventListener('input', function () {
+      updateAvatarPreview(els.acNewRoleAvatar.value);
+    });
+  }
+  function updateAvatarPreview(src) {
+    var preview = els.acNewRoleAvatarPreview;
+    if (!preview) return;
+    if (src) {
+      preview.textContent = '';
+      var img = document.createElement('img');
+      img.src = src;
+      img.alt = '头像预览';
+      img.onerror = function () { preview.textContent = '🎭'; };
+      preview.appendChild(img);
+    } else {
+      preview.textContent = '🎭';
+    }
+  }
+
+  // ============ 聊天记录导出 ============
+  if (els.acChatExport) {
+    els.acChatExport.addEventListener('click', exportChatHistory);
+  }
+
+  function exportChatHistory() {
+    if (!state.currentConv) { showToast('请先选择一个会话', 'error'); return; }
+    if (!state.messages.length) { showToast('该会话没有消息', 'error'); return; }
+
+    var conv = state.currentConv;
+    var role = null;
+    if (conv.role_id) {
+      role = state.roles.filter(function (r) { return r.id === conv.role_id; })[0] || null;
+    }
+
+    var chatData = {
+      chat_export: true,
+      export_date: new Date().toISOString(),
+      title: conv.title || '新对话',
+      character: role ? {
+        name: role.name,
+        description: role.description || '',
+        personality: role.personality || '',
+        scenario: role.scenario || '',
+        first_mes: role.greeting || '',
+        mes_example: role.examples || '',
+        system_prompt: role.system_prompt || '',
+        avatar: role.avatar || ''
+      } : null,
+      messages: state.messages.map(function (m) {
+        return {
+          role: m.role,
+          content: m.content || '',
+          created_at: m.created_at || null,
+          model: m.model || null
+        };
+      })
+    };
+
+    var blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (conv.title || 'chat') + '_' + Date.now() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('聊天记录已导出', 'success');
+  }
+
+  // 聊天记录导入
+  if (els.acChatImport) {
+    els.acChatImport.addEventListener('click', function () {
+      if (els.acChatFileInput) els.acChatFileInput.click();
+    });
+  }
+  if (els.acChatFileInput) {
+    els.acChatFileInput.addEventListener('change', function () {
+      var file = els.acChatFileInput.files && els.acChatFileInput.files[0];
+      if (!file) return;
+      els.acChatFileInput.value = '';
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          var data = JSON.parse(e.target.result);
+          if (!data.chat_export || !Array.isArray(data.messages)) {
+            showToast('无效的聊天记录文件', 'error');
+            return;
+          }
+          api('/ai-chat/api/conversations/import', data).then(function (json) {
+            if (json.success && json.data) {
+              showToast('聊天记录已导入（' + data.messages.length + ' 条消息）', 'success');
+              loadConversations().then(function () {
+                var newConv = state.conversations.filter(function (c) { return c.id === json.data.id; })[0];
+                if (newConv) selectConversation(newConv);
+              });
+            } else {
+              showToast(json.error || '导入失败', 'error');
+            }
+          }).catch(function (err) { showToast(err.message || '导入失败', 'error'); });
+        } catch (ex) {
+          showToast('JSON 解析失败：' + ex.message, 'error');
+        }
+      };
+      reader.readAsText(file);
+    });
   }
 
   // ============ 世界书 ============
@@ -1161,11 +1659,26 @@
 
   function renderWorldList() {
     els.acWorldList.innerHTML = '';
-    if (!state.worldBook.length) {
-      els.acWorldList.innerHTML = '<p style="font-size:13px;color:var(--ac-muted);padding:8px 0;">还没有世界书条目，点击「添加条目」创建。</p>';
+    var kw = (els.acWorldSearch && els.acWorldSearch.value || '').toLowerCase();
+    var list = state.worldBook.filter(function (w) {
+      if (!kw) return true;
+      return (w.key || '').toLowerCase().indexOf(kw) !== -1 ||
+        (w.content || '').toLowerCase().indexOf(kw) !== -1;
+    });
+
+    // 更新计数
+    if (els.acWorldCount) {
+      var total = state.worldBook.length;
+      var enabled = state.worldBook.filter(function (w) { return w.enabled; }).length;
+      els.acWorldCount.textContent = (kw ? list.length + '/' : '') + total + ' 条（' + enabled + ' 启用）';
+    }
+
+    if (!list.length) {
+      els.acWorldList.innerHTML = '<p style="font-size:13px;color:var(--ac-muted);padding:8px 0;">' +
+        (kw ? '未找到匹配的条目' : '还没有世界书条目，点击「添加条目」创建。') + '</p>';
       return;
     }
-    state.worldBook.forEach(function (w) {
+    list.forEach(function (w) {
       var item = document.createElement('div');
       item.className = 'ac-world-item' + (w.enabled ? '' : ' off') + (w.constant ? ' constant' : '');
       var key = document.createElement('span');
@@ -1276,6 +1789,58 @@
     }).catch(function (err) { showToast(err.message, 'error'); });
   }
 
+  // 批量启用/停用/删除世界书条目
+  function batchWorldAction(action) {
+    if (!state.currentConv) return;
+    var convId = state.currentConv.id;
+
+    if (action === 'deleteAll') {
+      if (!window.confirm('确定清空所有世界书条目？此操作不可恢复')) return;
+    }
+
+    var promises = state.worldBook.map(function (w) {
+      if (action === 'enableAll' && !w.enabled) {
+        return api('/ai-chat/api/world-book', {
+          conversation_id: convId, id: w.id, key: w.key || '', content: w.content || '',
+          position: w.position || 'before_char', enabled: 1, constant: w.constant ? 1 : 0
+        }).then(function () { w.enabled = 1; });
+      } else if (action === 'disableAll' && w.enabled) {
+        return api('/ai-chat/api/world-book', {
+          conversation_id: convId, id: w.id, key: w.key || '', content: w.content || '',
+          position: w.position || 'before_char', enabled: 0, constant: w.constant ? 1 : 0
+        }).then(function () { w.enabled = 0; });
+      } else if (action === 'deleteAll') {
+        return api('/ai-chat/api/world-book/delete', { conversation_id: convId, id: w.id });
+      }
+      return Promise.resolve();
+    });
+
+    Promise.all(promises).then(function () {
+      if (action === 'deleteAll') {
+        state.worldBook = [];
+      }
+      renderWorldList();
+      showToast(action === 'enableAll' ? '已全部启用' : action === 'disableAll' ? '已全部停用' : '已清空', 'success');
+    }).catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  // 世界书搜索
+  if (els.acWorldSearch) {
+    els.acWorldSearch.addEventListener('input', function () {
+      renderWorldList();
+    });
+  }
+  // 世界书批量操作
+  if (els.acWorldEnableAll) {
+    els.acWorldEnableAll.addEventListener('click', function () { batchWorldAction('enableAll'); });
+  }
+  if (els.acWorldDisableAll) {
+    els.acWorldDisableAll.addEventListener('click', function () { batchWorldAction('disableAll'); });
+  }
+  if (els.acWorldDeleteAll) {
+    els.acWorldDeleteAll.addEventListener('click', function () { batchWorldAction('deleteAll'); });
+  }
+
   // ============ 记忆 ============
 
   function openMemoryModal() {
@@ -1380,7 +1945,7 @@
   }
 
   function closeAllModals() {
-    ['acRoleModal', 'acRoleCreateModal', 'acWorldModal', 'acWorldEditModal', 'acMemoryModal', 'acBranchModal',
+    ['acRoleModal', 'acRoleCreateModal', 'acRoleUrlModal', 'acWorldModal', 'acWorldEditModal', 'acMemoryModal', 'acBranchModal',
       'acShareModal', 'acPromptModal', 'acModelModal']
       .forEach(hideModal);
   }
@@ -1584,6 +2149,242 @@
   if (els.acShareToggle) {
     els.acShareToggle.addEventListener('click', toggleShare);
   }
+
+  // ============ 全屏聊天模式 ============
+  var fullscreenState = false;
+
+  function toggleFullscreen() {
+    fullscreenState = !fullscreenState;
+    var app = els.acApp || document.getElementById('acApp');
+    if (!app) return;
+    app.classList.toggle('fullscreen', fullscreenState);
+    els.acFullscreenBtn.innerHTML = fullscreenState ? '⛶ <span>退出</span>' : '⛶ <span>全屏</span>';
+    els.acFullscreenBtn.title = fullscreenState ? '退出全屏' : '全屏聊天';
+    try { localStorage.setItem('ac_fullscreen', fullscreenState ? '1' : '0'); } catch (e) { /* ignore */ }
+    if (fullscreenState) {
+      scrollToBottom(true);
+      els.acInput && els.acInput.focus();
+    }
+  }
+
+  // 恢复上次全屏状态
+  try {
+    if (localStorage.getItem('ac_fullscreen') === '1') {
+      fullscreenState = false;
+      toggleFullscreen();
+    }
+  } catch (e) { /* ignore */ }
+
+  if (els.acFullscreenBtn) {
+    els.acFullscreenBtn.addEventListener('click', toggleFullscreen);
+  }
+
+  // ESC 退出全屏
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && fullscreenState) {
+      var anyModalOpen = document.querySelector('.ac-modal-overlay:not([hidden])');
+      if (!anyModalOpen) {
+        toggleFullscreen();
+      }
+    }
+  });
+
+  // ============ TTS 语音朗读 ============
+  var tts = {
+    synth: window.speechSynthesis || null,
+    voices: [],
+    currentUtterance: null,
+    speakingMsgId: null,
+    enabled: false,
+    selectedVoice: '',
+    rate: 1,
+    pitch: 1
+  };
+
+  function initTts() {
+    if (!tts.synth) return;
+    // 恢复 TTS 设置
+    try {
+      tts.enabled = localStorage.getItem('ac_tts_enabled') === '1';
+      tts.selectedVoice = localStorage.getItem('ac_tts_voice') || '';
+      tts.rate = parseFloat(localStorage.getItem('ac_tts_rate')) || 1;
+      tts.pitch = parseFloat(localStorage.getItem('ac_tts_pitch')) || 1;
+    } catch (e) { /* ignore */ }
+
+    function loadVoices() {
+      tts.voices = tts.synth.getVoices();
+      if (!tts.voices.length) return;
+      renderVoiceSelect();
+      // 恢复设置值
+      if (tts.rate !== 1) {
+        els.acTtsRate.value = tts.rate;
+        els.acTtsRateVal.textContent = tts.rate.toFixed(1);
+      }
+      if (tts.pitch !== 1) {
+        els.acTtsPitch.value = tts.pitch;
+        els.acTtsPitchVal.textContent = tts.pitch.toFixed(1);
+      }
+      if (tts.selectedVoice) {
+        els.acTtsVoice.value = tts.selectedVoice;
+      }
+      if (tts.enabled) {
+        els.acTtsSettings.style.display = '';
+      }
+    }
+
+    loadVoices();
+    if (tts.synth.onvoiceschanged !== undefined) {
+      tts.synth.onvoiceschanged = loadVoices;
+    }
+  }
+
+  function renderVoiceSelect() {
+    if (!els.acTtsVoice) return;
+    els.acTtsVoice.innerHTML = '';
+    var defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = '默认';
+    els.acTtsVoice.appendChild(defaultOpt);
+
+    var zhVoices = tts.voices.filter(function (v) { return /zh|cmn|中文|普通话|国语/i.test(v.lang + ' ' + v.name); });
+    var otherVoices = tts.voices.filter(function (v) { return !/zh|cmn|中文|普通话|国语/i.test(v.lang + ' ' + v.name); });
+
+    function addVoiceOption(parent, v) {
+      var opt = document.createElement('option');
+      opt.value = v.name;
+      opt.textContent = v.name + ' (' + v.lang + ')';
+      parent.appendChild(opt);
+    }
+
+    if (zhVoices.length) {
+      var grp = document.createElement('optgroup');
+      grp.label = '中文';
+      zhVoices.forEach(function (v) { addVoiceOption(grp, v); });
+      els.acTtsVoice.appendChild(grp);
+    }
+    if (otherVoices.length) {
+      var grp2 = document.createElement('optgroup');
+      grp2.label = '其他语言';
+      otherVoices.forEach(function (v) { addVoiceOption(grp2, v); });
+      els.acTtsVoice.appendChild(grp2);
+    }
+  }
+
+  function saveTtsSettings() {
+    try {
+      localStorage.setItem('ac_tts_enabled', tts.enabled ? '1' : '0');
+      localStorage.setItem('ac_tts_voice', tts.selectedVoice);
+      localStorage.setItem('ac_tts_rate', String(tts.rate));
+      localStorage.setItem('ac_tts_pitch', String(tts.pitch));
+    } catch (e) { /* ignore */ }
+  }
+
+  function toggleTtsEnabled() {
+    tts.enabled = !tts.enabled;
+    els.acTtsSettings.style.display = tts.enabled ? '' : 'none';
+    if (!tts.enabled) {
+      stopSpeaking();
+    }
+    saveTtsSettings();
+  }
+
+  function speakMessage(msgId, text) {
+    if (!tts.synth || !tts.enabled) return;
+    // 如果正在朗读同一条消息，停止
+    if (tts.speakingMsgId === msgId) {
+      stopSpeaking();
+      return;
+    }
+    // 停止当前朗读
+    stopSpeaking();
+
+    var utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = tts.rate;
+    utterance.pitch = tts.pitch;
+    if (tts.selectedVoice) {
+      var voice = tts.voices.filter(function (v) { return v.name === tts.selectedVoice; })[0];
+      if (voice) utterance.voice = voice;
+    }
+    utterance.onend = function () {
+      tts.speakingMsgId = null;
+      updateTtsButton(msgId, false);
+    };
+    utterance.onerror = function () {
+      tts.speakingMsgId = null;
+      updateTtsButton(msgId, false);
+    };
+
+    tts.currentUtterance = utterance;
+    tts.speakingMsgId = msgId;
+    updateTtsButton(msgId, true);
+    tts.synth.speak(utterance);
+  }
+
+  function stopSpeaking() {
+    if (tts.synth) {
+      tts.synth.cancel();
+    }
+    if (tts.speakingMsgId) {
+      updateTtsButton(tts.speakingMsgId, false);
+      tts.speakingMsgId = null;
+    }
+    tts.currentUtterance = null;
+  }
+
+  function updateTtsButton(msgId, speaking) {
+    var btn = document.querySelector('.ac-tts-btn[data-msg-id="' + msgId + '"]');
+    if (btn) {
+      btn.classList.toggle('speaking', speaking);
+      btn.textContent = speaking ? '⏹' : '🔊';
+      btn.title = speaking ? '停止朗读' : '朗读消息';
+    }
+  }
+
+  // TTS 事件绑定
+  if (els.acTtsVoice) {
+    els.acTtsVoice.addEventListener('change', function () {
+      tts.selectedVoice = els.acTtsVoice.value;
+      saveTtsSettings();
+    });
+  }
+  if (els.acTtsRate) {
+    els.acTtsRate.addEventListener('input', function () {
+      tts.rate = parseFloat(els.acTtsRate.value);
+      els.acTtsRateVal.textContent = tts.rate.toFixed(1);
+      saveTtsSettings();
+    });
+  }
+  if (els.acTtsPitch) {
+    els.acTtsPitch.addEventListener('input', function () {
+      tts.pitch = parseFloat(els.acTtsPitch.value);
+      els.acTtsPitchVal.textContent = tts.pitch.toFixed(1);
+      saveTtsSettings();
+    });
+  }
+  if (els.acTtsToggle) {
+    els.acTtsToggle.addEventListener('click', function () {
+      if (!tts.synth) {
+        showToast('当前浏览器不支持语音朗读', 'error');
+        return;
+      }
+      toggleTtsEnabled();
+      els.acTtsToggle.classList.toggle('active', tts.enabled);
+      els.acTtsToggle.innerHTML = tts.enabled ? '🔊 <span>朗读中</span>' : '🔊 <span>朗读</span>';
+      // 重新渲染消息以显示/隐藏 TTS 按钮
+      if (state.messages.length) {
+        renderMessages();
+      }
+      showToast(tts.enabled ? '语音朗读已开启' : '语音朗读已关闭', 'success');
+    });
+    // 恢复 TTS 按钮状态
+    if (tts.enabled) {
+      els.acTtsToggle.classList.add('active');
+      els.acTtsToggle.innerHTML = '🔊 <span>朗读中</span>';
+    }
+  }
+
+  // 初始化 TTS
+  initTts();
 
   // 初始化
   loadBootstrap().catch(function (err) {

@@ -1,6 +1,6 @@
 <%# ===== 页面模板：frontend/ai-chat.ejs =====%>
 <%# 说明：AI聊天页：对话界面、额度提示（EJS 服务端模板，由 Express 渲染，变量与部分逻辑见对应路由） %>
-<link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-chat.css') : '/css/ai-chat.css' %>">
+<link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-chat.css') : '/css/ai-chat.css' %>?v=20261108c">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
@@ -29,6 +29,7 @@
       <button class="ac-menu-btn" id="acMenuBtn" aria-label="菜单">☰</button>
       <div class="ac-conv-title" id="acConvTitle">新对话</div>
       <div class="ac-toolbar">
+        <button class="ac-tool" id="acFullscreenBtn" title="全屏聊天">⛶ <span>全屏</span></button>
         <button class="ac-tool" id="acShareBtn" title="生成分享链接（免登录查看）" style="display:none;">🔗 <span>分享</span></button>
         <button class="ac-tool" id="acModelBtn" title="切换模型">⚙️ <span id="acModelLabel">自动</span></button>
         <button class="ac-tool" id="acRoleBtn" title="角色预设">🎭 <span id="acRoleLabel">角色</span></button>
@@ -71,6 +72,13 @@
       </div>
     </div>
 
+    <!-- TTS 语音设置 -->
+    <div class="ac-tts-settings" id="acTtsSettings" style="display:none;">
+      <label>🔊 语音：<select id="acTtsVoice"></select></label>
+      <label>语速：<input type="range" id="acTtsRate" min="0.5" max="2" step="0.1" value="1"><span id="acTtsRateVal">1.0</span></label>
+      <label>音调：<input type="range" id="acTtsPitch" min="0" max="2" step="0.1" value="1"><span id="acTtsPitchVal">1.0</span></label>
+    </div>
+
     <div class="ac-messages" id="acMessages">
       <div class="ac-empty" id="acEmpty">
         <div class="ac-empty-icon">🤖</div>
@@ -84,6 +92,7 @@
       <textarea id="acInput" rows="3" placeholder="输入消息，Enter 发送，Shift+Enter 换行" maxlength="8000"></textarea>
       <div class="ac-input-foot">
         <span class="ac-input-tip">Enter 发送 · Shift+Enter 换行</span>
+        <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acTtsToggle" title="语音朗读">🔊 朗读</button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acPickPrompt" style="display:none;">📚 从提示词库选择</button>
         <button type="button" class="ac-btn ac-btn-primary" id="acSend">发送</button>
         <button type="button" class="ac-btn ac-btn-danger" id="acStop" style="display:none;">停止</button>
@@ -108,15 +117,57 @@
 
 <!-- 角色选择弹窗 -->
 <div class="ac-modal-overlay" id="acRoleModal" hidden>
-  <div class="ac-modal">
+  <div class="ac-modal ac-modal-lg">
     <div class="ac-modal-head">
       <h2>选择角色</h2>
       <button class="ac-modal-close" data-ac-close="acRoleModal">×</button>
     </div>
-    <div class="ac-modal-body ac-role-grid" id="acRoleList"></div>
+    <div class="ac-modal-body" style="display:flex;flex-direction:column;max-height:65vh;">
+      <div class="ac-role-filter" id="acRoleFilter">
+        <input type="text" class="ac-role-filter-search" id="acRoleSearch" placeholder="搜索角色…">
+        <button class="ac-role-filter-tag active" data-cat="">全部</button>
+        <button class="ac-role-filter-tag" data-cat="default">通用</button>
+        <button class="ac-role-filter-tag" data-cat="rp">RP</button>
+        <button class="ac-role-filter-tag" data-cat="honkai_sr">星铁</button>
+        <button class="ac-role-filter-tag" data-cat="writing">写作</button>
+        <button class="ac-role-filter-tag" data-cat="my">我的</button>
+        <button class="ac-role-filter-tag" data-cat="fav">⭐ 收藏</button>
+      </div>
+      <div class="ac-role-grid" id="acRoleList"></div>
+    </div>
     <div class="ac-modal-foot">
       <span class="ac-modal-hint">官方角色由管理员维护，你也可以创建自己的角色</span>
-      <button class="ac-btn ac-btn-sm" id="acRoleCreate">＋ 创建角色</button>
+      <div style="display:flex;gap:6px;">
+        <button class="ac-btn ac-btn-sm" id="acRoleImportUrl" title="从 URL 抓取角色卡">🌐 抓取</button>
+        <button class="ac-btn ac-btn-sm" id="acRoleImport" title="从 JSON/PNG 文件导入角色卡">⤵ 导入</button>
+        <button class="ac-btn ac-btn-sm" id="acRoleExport" title="导出当前角色为 JSON">⤴ 导出</button>
+        <button class="ac-btn ac-btn-sm" id="acChatExport" title="导出聊天历史">📥 聊天记录</button>
+        <button class="ac-btn ac-btn-sm" id="acChatImport" title="导入聊天历史 JSON">📤 导入记录</button>
+        <input type="file" id="acChatFileInput" accept=".json" hidden>
+        <button class="ac-btn ac-btn-sm" id="acRoleCreate">＋ 创建角色</button>
+      </div>
+    </div>
+  </div>
+</div>
+<input type="file" id="acRoleFileInput" accept=".json,.png" style="display:none;">
+
+<!-- 从 URL 抓取角色卡弹窗 -->
+<div class="ac-modal-overlay" id="acRoleUrlModal" hidden>
+  <div class="ac-modal">
+    <div class="ac-modal-head">
+      <h2>🌐 从 URL 抓取角色卡</h2>
+      <button class="ac-modal-close" data-ac-close="acRoleUrlModal">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <label class="ac-field">角色卡页面 URL
+        <input id="acRoleUrlInput" type="url" placeholder="https://example.com/characters/xxx" maxlength="500" autocomplete="off">
+      </label>
+      <p class="ac-modal-hint">支持从角色卡网站直接抓取。部分网站使用客户端渲染可能无法抓取，此时请手动下载 JSON 文件后使用「导入」功能。</p>
+    </div>
+    <div class="ac-modal-foot">
+      <button class="ac-btn ac-btn-sm" data-ac-close="acRoleUrlModal">取消</button>
+      <span style="flex:1"></span>
+      <button class="ac-btn ac-btn-primary ac-btn-sm" id="acRoleUrlFetch">抓取并导入</button>
     </div>
   </div>
 </div>
@@ -129,6 +180,16 @@
       <button class="ac-modal-close" data-ac-close="acRoleCreateModal">×</button>
     </div>
     <div class="ac-modal-body">
+      <div class="ac-role-avatar-upload" style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+        <div class="ac-role-card-avatar" id="acNewRoleAvatarPreview" style="width:56px;height:56px;font-size:24px;cursor:pointer;" title="点击上传头像">🎭</div>
+        <div style="flex:1;">
+          <label class="ac-field" style="margin-bottom:4px;">角色头像
+            <input type="text" id="acNewRoleAvatar" placeholder="头像图片 URL（可选）" maxlength="500" class="ac-model-input" style="margin-top:4px;">
+          </label>
+          <input type="file" id="acNewRoleAvatarFile" accept="image/*" style="display:none;">
+          <button type="button" class="ac-btn ac-btn-sm" id="acNewRoleAvatarBtn" style="font-size:11px;">📁 上传图片</button>
+        </div>
+      </div>
       <label class="ac-field">角色名称<input id="acNewRoleName" maxlength="50" placeholder="如：冷面侦探"></label>
       <label class="ac-field">角色设定（system prompt）<textarea id="acNewRolePrompt" rows="5" maxlength="4000" placeholder="描述角色的性格、身份、说话方式…"></textarea></label>
       <label class="ac-field">开场白（角色对你说的第一句话）<textarea id="acNewRoleGreeting" rows="2" maxlength="1000" placeholder="选此角色开新对话时自动发出，可留空"></textarea></label>
@@ -154,9 +215,18 @@
       <h2>世界书（World Book）</h2>
       <button class="ac-modal-close" data-ac-close="acWorldModal">×</button>
     </div>
-    <div class="ac-modal-body">
+    <div class="ac-modal-body" style="display:flex;flex-direction:column;max-height:65vh;">
       <p class="ac-modal-hint">设定条目按「触发词」注入对话上下文。触发词为空则常驻注入。</p>
+      <div class="ac-world-toolbar">
+        <input type="text" id="acWorldSearch" class="ac-model-input" placeholder="搜索条目…" autocomplete="off" style="flex:1;">
+        <span id="acWorldCount" class="ac-world-count">0 条</span>
+      </div>
       <div id="acWorldList" class="ac-world-list"></div>
+      <div class="ac-world-batch">
+        <button type="button" class="ac-btn ac-btn-sm" id="acWorldEnableAll">全部启用</button>
+        <button type="button" class="ac-btn ac-btn-sm" id="acWorldDisableAll">全部停用</button>
+        <button type="button" class="ac-btn ac-btn-danger ac-btn-sm" id="acWorldDeleteAll">清空全部</button>
+      </div>
     </div>
     <div class="ac-modal-foot">
       <button class="ac-btn ac-btn-sm" id="acWorldImport">⤵ 从默认模板添加</button>
@@ -287,4 +357,4 @@
   canShareLink: !!canShareLink,
   prompts: canPickPrompt ? prompts.map(function(p) { return { id: p.id, title: p.title, excerpt: p.excerpt || '' }; }) : []
 }).replace(/</g, '\\u003c') %></script>
-<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-chat.js') : '/js/ai-chat.js' %>" defer></script>
+<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-chat.js') : '/js/ai-chat.js' %>?v=20261108c" defer></script>

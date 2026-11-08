@@ -1108,6 +1108,50 @@ router.post('/ai-chat/api/conversations/delete', isAuthenticated, hasFrontendPer
   res.json({ success: true });
 });
 
+// 导入聊天记录（JSON）
+router.post('/ai-chat/api/conversations/import', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const data = req.body;
+  if (!data || !data.chat_export || !Array.isArray(data.messages)) {
+    return res.status(400).json({ error: '无效的聊天记录格式' });
+  }
+  const title = String(data.title || '导入的对话').trim().slice(0, 100);
+  const { estimateTokens } = require('../services/ai-chat/utils');
+
+  // 如果导出包含角色信息，尝试查找或忽略
+  let roleId = null;
+  if (data.character && data.character.name) {
+    const role = queryOne(db, 'SELECT id FROM ai_roles WHERE LOWER(name) = LOWER(?) AND (is_official = 1 OR user_id = ?)',
+      [data.character.name, user.id]);
+    if (role) roleId = role.id;
+  }
+
+  const conv = aiChatService.createConversation(db, user, { title: title, role_id: roleId });
+
+  // 批量插入消息
+  const stmt = db.prepare('INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status) VALUES (?, 0, ?, ?, ?, ?, ?)');
+  let msgCount = 0;
+  data.messages.forEach(function (m) {
+    var role = String(m.role || 'user').trim();
+    if (role !== 'user' && role !== 'assistant' && role !== 'system') role = 'user';
+    var content = String(m.content || '').trim();
+    if (!content) return;
+    content = content.slice(0, 32000);
+    var model = String(m.model || '').slice(0, 100);
+    stmt.run([conv.id, role, content, estimateTokens(content), model, 'done']);
+    msgCount++;
+  });
+
+  if (msgCount > 0) {
+    db.run('UPDATE ai_conversations SET message_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [msgCount, conv.id]);
+  }
+  saveDatabase();
+
+  const full = queryOne(db, 'SELECT * FROM ai_conversations WHERE id = ?', [conv.id]);
+  res.json({ success: true, data: full });
+});
+
 // 会话消息列表（当前分支 + 分支列表 + 世界书 + 摘要记忆）
 router.get('/ai-chat/api/conversations/:id/messages', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
   const db = req.db;
@@ -1348,23 +1392,24 @@ router.post('/ai-chat/api/roles', isAuthenticated, hasFrontendPermission('aichat
   const db = req.db;
   const user = req.session.user;
   const name = String(req.body.name || '').trim().slice(0, 50);
-  const systemPrompt = String(req.body.system_prompt || '').trim().slice(0, 4000);
-  const greeting = String(req.body.greeting || '').trim().slice(0, 1000);
+  const systemPrompt = String(req.body.system_prompt || '').trim().slice(0, 32000);
+  const greeting = String(req.body.greeting || '').trim().slice(0, 2000);
   if (!name) return res.status(400).json({ error: '角色名称不能为空' });
   if (!systemPrompt && !greeting) return res.status(400).json({ error: '角色设定或开场白至少填写一项' });
   // 角色去重：与官方角色或本人已有角色同名（大小写不敏感）时拒绝
   const dup = queryOne(db, 'SELECT id, name FROM ai_roles WHERE LOWER(name) = LOWER(?) AND (is_official = 1 OR user_id = ?)', [name, user.id]);
   if (dup) return res.status(400).json({ error: '同名角色「' + dup.name + '」已存在（官方角色或您的角色），请换一个名称' });
-  db.run(`INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, is_official, user_id, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)`,
+  db.run(`INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, avatar, is_official, user_id, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)`,
   [name,
-    String(req.body.description || '').slice(0, 200),
+    String(req.body.description || '').slice(0, 500),
     systemPrompt,
     greeting,
-    String(req.body.personality || '').slice(0, 2000),
-    String(req.body.scenario || '').slice(0, 2000),
-    String(req.body.examples || '').slice(0, 4000),
+    String(req.body.personality || '').slice(0, 4000),
+    String(req.body.scenario || '').slice(0, 4000),
+    String(req.body.examples || '').slice(0, 8000),
     String(req.body.category || 'default').slice(0, 50),
+    String(req.body.avatar || '').slice(0, 2000),
     user.id]);
   const role = queryOne(db, 'SELECT * FROM ai_roles WHERE id = last_insert_rowid()');
   saveDatabase();
@@ -1379,6 +1424,106 @@ router.post('/ai-chat/api/roles/delete', isAuthenticated, hasFrontendPermission(
   db.run('DELETE FROM ai_roles WHERE id = ?', [role.id]);
   saveDatabase();
   res.json({ success: true });
+});
+
+// 从外部 URL 获取角色卡数据（best-effort 抓取 Next.js / 静态 JSON 页面）
+router.post('/ai-chat/api/roles/fetch-url', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatRoleLimiter, async (req, res) => {
+  const url = String(req.body.url || '').trim();
+  if (!url) return res.status(400).json({ error: '请提供角色卡页面 URL' });
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'URL 格式不正确' });
+
+  try {
+    const https = require('https');
+    const http = require('http');
+    const client = url.startsWith('https') ? https : http;
+
+    const body = await new Promise((resolve, reject) => {
+      const httpReq = client.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }, (resp) => {
+        if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+          const redirectUrl = resp.headers.location;
+          const rClient = redirectUrl.startsWith('https') ? https : http;
+          rClient.get(redirectUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }, (r2) => {
+            let data = '';
+            r2.on('data', chunk => data += chunk);
+            r2.on('end', () => resolve(data));
+            r2.on('error', reject);
+          }).on('error', reject);
+          return;
+        }
+        let data = '';
+        resp.on('data', chunk => data += chunk);
+        resp.on('end', () => resolve(data));
+        resp.on('error', reject);
+      });
+      httpReq.on('error', reject);
+      httpReq.on('timeout', () => { httpReq.destroy(); reject(new Error('请求超时')); });
+    });
+
+    let charData = null;
+
+    // 1. Next.js __NEXT_DATA__
+    const nextDataMatch = body.match(/<script\s+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+    if (nextDataMatch) {
+      try {
+        const nextData = JSON.parse(nextDataMatch[1]);
+        const props = nextData && nextData.props && nextData.props.pageProps;
+        if (props) {
+          charData = props.character || props.char || props.data || props.characterData || null;
+        }
+      } catch (e) { /* JSON parse failed */ }
+    }
+
+    // 2. Embedded JSON script
+    if (!charData) {
+      const jsonScriptMatch = body.match(/<script\s+type="application\/json"[^>]*>([\s\S]*?)<\/script>/i);
+      if (jsonScriptMatch) {
+        try {
+          const jsonData = JSON.parse(jsonScriptMatch[1]);
+          charData = jsonData.character || jsonData.char || jsonData.data || jsonData;
+        } catch (e) { /* ignore */ }
+      }
+    }
+
+    // 3. Meta tags
+    if (!charData) {
+      const metaName = body.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
+      const metaDesc = body.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i);
+      if (metaName || metaDesc) {
+        charData = { name: metaName ? metaName[1] : '', description: metaDesc ? metaDesc[1] : '' };
+      }
+    }
+
+    // 4. HTML title / h1
+    if (!charData) {
+      const titleMatch = body.match(/<title>([^<]+)<\/title>/i);
+      const h1Match = body.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+      if (titleMatch || h1Match) {
+        charData = { name: h1Match ? h1Match[1].trim() : (titleMatch ? titleMatch[1].trim() : ''), description: '' };
+      }
+    }
+
+    if (!charData || !charData.name) {
+      return res.json({
+        success: false,
+        error: '无法从该页面提取角色数据。建议手动下载 JSON 文件后通过「导入」功能添加。',
+        hint: '该网站可能使用客户端渲染，无法直接抓取。'
+      });
+    }
+
+    const result = {
+      name: String(charData.name || '').trim().slice(0, 50),
+      description: String(charData.description || charData.summary || '').trim().slice(0, 200),
+      system_prompt: String(charData.system_prompt || charData.system || charData.personality || '').trim().slice(0, 4000),
+      greeting: String(charData.first_mes || charData.greeting || charData.first_message || '').trim().slice(0, 1000),
+      personality: String(charData.personality || '').trim().slice(0, 2000),
+      scenario: String(charData.scenario || '').trim().slice(0, 2000),
+      examples: String(charData.mes_example || charData.examples || charData.mesExample || '').trim().slice(0, 4000)
+    };
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.json({ success: false, error: '抓取失败：' + (err.message || '网络错误') });
+  }
 });
 
 // 保存用户自建模型（id 存在则更新，否则新建；仅本人；我的模型优先于站长全局模型）

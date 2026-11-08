@@ -2,6 +2,22 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.13.3 (2026-11-08)
+
+**AI 聊天全面优化：SillyTavern 风格功能增强**
+
+- 全屏聊天模式：一键切换全屏，ESC 退出，状态持久化到 localStorage
+- TTS 语音朗读：基于 Web Speech API，支持音色选择、语速/音调调节、中文语音优先，每条消息独立控制
+- 角色卡导入/导出：支持 PNG（SillyTavern tEXt chunk 解析）和 JSON（V2 格式）导入，导出兼容 SillyTavern
+- 角色卡头像：创建/导入/导出均支持 avatar 字段，角色列表显示头像
+- 角色卡分类筛选 + 收藏：搜索框、分类标签（全部/通用/RP/星铁/写作/我的/收藏），localStorage 持久化收藏
+- 聊天记录导出/导入：导出为 JSON 文件，支持导入恢复（新建会话 + 批量插入消息）
+- 从外部 URL 抓取角色卡：多策略解析（Next.js __NEXT_DATA__、嵌入 JSON、meta 标签、HTML 提取）
+- 世界书优化：搜索过滤、批量启用/禁用/删除、条目计数
+- 新增官方角色「昔涟/Cyrene」（崩坏：星穹铁道），完整 ~8000 字角色设定
+- 角色卡去重：种子数据改为显式名称去重，清理存量重复官方角色
+- 后端字段限制放宽：system_prompt 32000、greeting 2000、description 500、personality/scenario 4000、examples 8000
+
 ## v8.12.0 (2026-11-04)
 
 **在线Office 入口、权限审批与分享链路收口**

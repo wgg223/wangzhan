@@ -253,15 +253,70 @@
 
 /* 角色网格 */
 .ac-role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.ac-role-filter {
+  display: flex;
+  gap: 6px;
+  padding: 0 0 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ac-role-filter-tag {
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.ac-role-filter-tag:hover, .ac-role-filter-tag.active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+.ac-role-filter-search {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+}
+.ac-role-filter-search:focus { border-color: var(--primary); }
 .ac-role-card {
   padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);
   background: var(--bg-secondary); cursor: pointer; text-align: left; transition: var(--transition-fast);
+  position: relative;
 }
 .ac-role-card:hover { border-color: var(--primary); background: var(--primary-bg); }
 .ac-role-card.active { border-color: var(--primary); background: var(--primary-bg); }
-.ac-role-card h3 { font-size: 14px; margin-bottom: 4px; color: var(--text-primary); }
+.ac-role-card-avatar {
+  width: 48px; height: 48px; border-radius: 50%; object-fit: cover;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: #fff; flex: 0 0 48px;
+  overflow: hidden;
+}
+.ac-role-card-avatar img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.ac-role-card-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+}
+.ac-role-card h3 { font-size: 14px; margin-bottom: 0; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ac-role-card p { font-size: 11.5px; color: var(--text-secondary); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .ac-role-card .ac-role-tag { display: inline-block; font-size: 10px; color: var(--text-secondary); background: var(--bg-tertiary); padding: 1px 6px; border-radius: var(--radius-full); margin-top: 6px; }
+.ac-role-fav {
+  position: absolute; top: 6px; right: 6px;
+  border: none; background: none; font-size: 14px; cursor: pointer;
+  opacity: 0.3; transition: opacity .15s ease;
+  padding: 2px;
+}
+.ac-role-fav:hover, .ac-role-fav.active { opacity: 1; }
 
 /* 模型选择 */
 .ac-model-pick-item {
@@ -279,6 +334,24 @@
 .ac-model-pick-tag { font-size: 10px; color: var(--text-secondary); background: var(--bg-tertiary); padding: 1px 6px; border-radius: var(--radius-full); white-space: nowrap; }
 
 /* 世界书 */
+.ac-world-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.ac-world-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.ac-world-batch {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 0;
+  border-top: 1px dashed var(--border-color);
+  margin-top: 8px;
+}
 .ac-world-item { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); margin-bottom: 8px; cursor: pointer; }
 .ac-world-item:hover { border-color: var(--primary); }
 .ac-world-item .ac-world-key { font-weight: var(--font-semibold); font-size: 13px; min-width: 80px; color: var(--text-primary); }
@@ -375,9 +448,94 @@
 }
 .ac-world-toggle:hover { color: var(--primary); border-color: var(--primary); }
 
+/* ---------- 全屏聊天模式 ---------- */
+.ac-app.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 99990;
+  max-width: none;
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  height: 100vh;
+  box-shadow: none;
+}
+.ac-app.fullscreen .ac-sidebar {
+  display: none;
+}
+.ac-app.fullscreen .ac-menu-btn {
+  display: none;
+}
+.ac-app.fullscreen .ac-main {
+  border-radius: 0;
+}
+
+/* ---------- TTS 朗读按钮 ---------- */
+.ac-tts-btn {
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.ac-tts-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.ac-tts-btn.speaking {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+/* TTS 工具栏按钮激活态 */
+#acTtsToggle.active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+/* ---------- TTS 设置面板 ---------- */
+.ac-tts-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.ac-tts-settings select {
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  max-width: 200px;
+}
+.ac-tts-settings select:focus {
+  border-color: var(--primary);
+}
+.ac-tts-settings label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.ac-tts-settings input[type="range"] {
+  width: 60px;
+}
+
 /* 键盘可达性 */
 .ac-btn:focus-visible, .ac-tool:focus-visible, .ac-model-input:focus-visible,
-.ac-conv-item:focus-visible, .ac-world-toggle:focus-visible, .ac-code-copy:focus-visible {
+.ac-conv-item:focus-visible, .ac-world-toggle:focus-visible, .ac-code-copy:focus-visible,
+.ac-tts-btn:focus-visible {
   outline: 2px solid var(--primary); outline-offset: 2px;
 }
 
