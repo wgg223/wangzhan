@@ -28,30 +28,43 @@
     summaries: [],
     streaming: false,
     abortController: null,
-    convSearch: ''
+    convSearch: '',
+    presets: [],
+    promptTemplates: []
   };
 
   var els = {};
   ['acConvList', 'acConvSearch', 'acNewChat', 'acQuotaBadge', 'acConvTitle', 'acMessages', 'acEmpty',
-    'acInput', 'acSend', 'acStop', 'acRoleBtn', 'acRoleLabel', 'acWorldBtn', 'acMemoryBtn', 'acBranchBtn',
+    'acInput', 'acSend', 'acStop', 'acRoleBtn', 'acRoleLabel',
     'acModelBtn', 'acModelLabel', 'acModelModal', 'acModelList',
     'acRoleModal', 'acRoleList', 'acRoleCreate', 'acRoleCreateModal', 'acNewRoleName', 'acNewRolePrompt', 'acNewRoleGreeting', 'acNewRoleDesc', 'acNewRolePersonality', 'acNewRoleScenario', 'acNewRoleExamples', 'acRoleSave',
-    'acWorldModal', 'acWorldList', 'acWorldAdd', 'acWorldImport', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
-    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acMemoryModal', 'acMemoryEnabled', 'acRagEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
-    'acBranchModal', 'acBranchList', 'acMsgMenu', 'acMenuBtn', 'acSidebar',
+    'acWorldList', 'acWorldAdd', 'acWorldImport', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
+    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acMemoryEnabled', 'acRagEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
+    'acBranchList', 'acMenuBtn', 'acSidebar',
     'acModelsToggle', 'acModelsBody', 'acMyModels', 'acGlobalModels', 'acModelAddBtn', 'acModelAddRow',
     'acmProvider', 'acmKey', 'acmEndpoint', 'acmApiKey', 'acmDefault', 'acmSave', 'acmCancel', 'acmGetWrap', 'acmGetLink',
     'acmFetch', 'acmFetchWrap', 'acmFetchList', 'acmFetchUse', 'acmFetchTip',
     'acShareBtn', 'acShareModal', 'acShareUrl', 'acShareCopy', 'acShareToggle',
     'acPickPrompt', 'acPromptModal', 'acPromptSearch', 'acPromptList', 'acPromptCount', 'acPromptMore',
     'acFullscreenBtn', 'acApp',
-    'acTtsSettings', 'acTtsVoice', 'acTtsRate', 'acTtsRateVal', 'acTtsPitch', 'acTtsPitchVal', 'acTtsToggle',
+    'acTtsVoice', 'acTtsRate', 'acTtsRateVal', 'acTtsPitch', 'acTtsPitchVal', 'acTtsToggle',
     'acRoleImport', 'acRoleExport', 'acRoleFileInput',
     'acRoleImportUrl', 'acRoleUrlModal', 'acRoleUrlInput', 'acRoleUrlFetch',
     'acRoleSearch', 'acRoleFilter', 'acChatExport', 'acChatImport', 'acChatFileInput',
     'acNewRoleAvatar', 'acNewRoleAvatarFile', 'acNewRoleAvatarBtn', 'acNewRoleAvatarPreview',
     'acWorldSearch', 'acWorldCount', 'acWorldEnableAll', 'acWorldDisableAll', 'acWorldDeleteAll',
-    'acInputTokens']
+    'acInputTokens',
+    'acPanel', 'acPanelToggle', 'acPanelRoleAvatar', 'acPanelRoleName', 'acPanelRoleDesc', 'acPanelRoleSwitch', 'acPanelBranchList',
+    'acPresetSelect', 'acPresetSave', 'acPresetDelete',
+    'acGenTemp', 'acGenTempVal', 'acGenTopP', 'acGenTopPVal', 'acGenTopK', 'acGenTopKVal',
+    'acGenFreq', 'acGenFreqVal', 'acGenPres', 'acGenPresVal', 'acGenMax', 'acGenMaxVal', 'acGenSave',
+    'acAuthorNote', 'acAuthorNoteDepth', 'acAuthorNoteDepthVal',
+    'acPromptTemplate', 'acPromptTemplateManage',
+    'acContextPreview', 'acContinueBtn', 'acImpersonateBtn',
+    'acTemplateModal', 'acTemplateList', 'acTemplateName', 'acTemplateContent', 'acTemplateSave',
+    'acPresetSaveModal', 'acPresetName', 'acPresetDefault', 'acPresetSaveConfirm',
+    'acContextModal', 'acContextInfo', 'acContextMessages',
+    'acBranchModal']
     .forEach(function (id) { els[id] = document.getElementById(id); });
 
   // ============ 通用请求 ============
@@ -150,10 +163,14 @@
         };
         state.quota = d.quota || null;
         state.quotaUnlimited = !!d.quotaUnlimited;
+        state.presets = d.presets || [];
+        state.promptTemplates = d.promptTemplates || [];
         renderConversations();
         renderQuota();
         renderMyModels();
         renderProviderOptions();
+        renderPresetSelect();
+        renderPromptTemplateSelect();
         if (autoSelect && state.conversations.length) {
           selectConversation(state.conversations[0].id);
         }
@@ -597,6 +614,7 @@
         state.worldBook = json.data.worldBook || [];
         state.summaries = json.data.summaries || [];
         renderMessages();
+        populatePanel();
       })
       .catch(function (err) { showToast(err.message, 'error'); });
   }
@@ -823,6 +841,7 @@
         container.appendChild(ttsBtn);
       }
       addAction(container, '重生成', function (e) { e.stopPropagation(); regenerateMessage(m); });
+      addAction(container, '滑动', function (e) { e.stopPropagation(); showSwipeUI(m, container); });
       addAction(container, '分叉', function (e) { e.stopPropagation(); forkAt(m); });
       addAction(container, '复制', function (e) { e.stopPropagation(); copyToClipboard(m.content || '', '已复制'); });
       addAction(container, '删除', function (e) { e.stopPropagation(); deleteMessage(m); });
@@ -908,6 +927,60 @@
     appendMessageEl(placeholder, true);
     scrollToBottom(true);
     startStream('/ai-chat/api/messages/regenerate', { conversation_id: state.currentConv.id, message_id: m.id }, placeholder);
+  }
+
+  function showSwipeUI(m, container) {
+    fetch('/ai-chat/api/messages/' + m.id + '/alternates', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (json) {
+        if (!json.success) throw new Error(json.error || '加载失败');
+        var alts = json.data || [];
+        if (alts.length <= 1) {
+          showToast('暂无备选回复，可点「重生成」创建', 'info');
+          return;
+        }
+        var activeIdx = 0;
+        alts.forEach(function (a, i) { if (a.is_active) activeIdx = i; });
+        var existing = container.querySelector('.ac-msg-swipe');
+        if (existing) existing.remove();
+        var swipe = document.createElement('span');
+        swipe.className = 'ac-msg-swipe';
+        var prev = document.createElement('button');
+        prev.textContent = '◀';
+        var count = document.createElement('span');
+        count.className = 'ac-swipe-count';
+        count.textContent = (activeIdx + 1) + '/' + alts.length;
+        var next = document.createElement('button');
+        next.textContent = '▶';
+        var regen = document.createElement('button');
+        regen.textContent = '＋';
+        regen.title = '生成新备选';
+        function navigate(idx) {
+          if (idx < 0 || idx >= alts.length) return;
+          api('/ai-chat/api/messages/swipe', { message_id: m.id, target_id: alts[idx].id }).then(function () {
+            activeIdx = idx;
+            count.textContent = (idx + 1) + '/' + alts.length;
+            selectConversation(state.currentConv.id);
+          }).catch(function (err) { showToast(err.message, 'error'); });
+        }
+        prev.addEventListener('click', function (e) { e.stopPropagation(); navigate(activeIdx - 1); });
+        next.addEventListener('click', function (e) { e.stopPropagation(); navigate(activeIdx + 1); });
+        regen.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (state.streaming) return;
+          var placeholder = { id: 'sw' + Date.now(), role: 'assistant', content: '', status: 'streaming', branch_id: m.branch_id || 0 };
+          state.messages.push(placeholder);
+          appendMessageEl(placeholder, true);
+          scrollToBottom(true);
+          startStream('/ai-chat/api/messages/swipe-regenerate', { conversation_id: state.currentConv.id, message_id: m.id }, placeholder);
+        });
+        swipe.appendChild(prev);
+        swipe.appendChild(count);
+        swipe.appendChild(next);
+        swipe.appendChild(regen);
+        container.appendChild(swipe);
+      })
+      .catch(function (err) { showToast(err.message, 'error'); });
   }
 
   // 流式发送核心：管理中止、增量渲染、结束落库
@@ -1643,9 +1716,9 @@
           api('/ai-chat/api/conversations/import', data).then(function (json) {
             if (json.success && json.data) {
               showToast('聊天记录已导入（' + data.messages.length + ' 条消息）', 'success');
-              loadConversations().then(function () {
+              loadBootstrap({ autoSelect: false }).then(function () {
                 var newConv = state.conversations.filter(function (c) { return c.id === json.data.id; })[0];
-                if (newConv) selectConversation(newConv);
+                if (newConv) selectConversation(newConv.id);
               });
             } else {
               showToast(json.error || '导入失败', 'error');
@@ -1664,7 +1737,8 @@
   function openWorldModal() {
     if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
     renderWorldList();
-    showModal('acWorldModal');
+    switchPanelTab('worldbook');
+    showPanel();
   }
 
   function renderWorldList() {
@@ -1858,7 +1932,8 @@
     els.acMemoryEnabled.checked = state.currentConv.memory_enabled !== 0;
     els.acRagEnabled.checked = state.currentConv.rag_enabled !== 0;
     els.acMemoryMode.value = state.currentConv.memory_mode || 'summary';
-    showModal('acMemoryModal');
+    switchPanelTab('memory');
+    showPanel();
   }
 
   function saveMemorySettings() {
@@ -1876,7 +1951,6 @@
       });
     }).then(function () {
       state.currentConv.rag_enabled = els.acRagEnabled.checked ? 1 : 0;
-      hideModal('acMemoryModal');
       showToast('记忆与知识库设置已保存', 'success');
     }).catch(function (err) { showToast(err.message, 'error'); });
   }
@@ -1895,7 +1969,8 @@
   function openBranchModal() {
     if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
     renderBranchList();
-    showModal('acBranchModal');
+    switchPanelTab('character');
+    showPanel();
   }
 
   function renderBranchList() {
@@ -1955,8 +2030,8 @@
   }
 
   function closeAllModals() {
-    ['acRoleModal', 'acRoleCreateModal', 'acRoleUrlModal', 'acWorldModal', 'acWorldEditModal', 'acMemoryModal', 'acBranchModal',
-      'acShareModal', 'acPromptModal', 'acModelModal']
+    ['acRoleModal', 'acRoleCreateModal', 'acRoleUrlModal', 'acWorldEditModal', 'acBranchModal',
+      'acShareModal', 'acPromptModal', 'acModelModal', 'acTemplateModal', 'acPresetSaveModal', 'acContextModal']
       .forEach(hideModal);
   }
 
@@ -2015,17 +2090,13 @@
   els.acRoleCreate.addEventListener('click', function () { showModal('acRoleCreateModal'); });
   els.acRoleSave.addEventListener('click', createRole);
 
-  els.acWorldBtn.addEventListener('click', openWorldModal);
   els.acWorldAdd.addEventListener('click', function () { openWorldEdit(null); });
   els.acWorldImport.addEventListener('click', importDefaultWorldBook);
   els.acWorldSave.addEventListener('click', saveWorldEntry);
   els.acWorldDelete.addEventListener('click', deleteWorldEntry);
 
-  els.acMemoryBtn.addEventListener('click', openMemoryModal);
   els.acMemorySave.addEventListener('click', saveMemorySettings);
   els.acMemoryRefresh.addEventListener('click', refreshMemory);
-
-  els.acBranchBtn.addEventListener('click', openBranchModal);
 
   // 弹窗关闭（点击 × / 遮罩）
   document.querySelectorAll('[data-ac-close]').forEach(function (btn) {
@@ -2249,7 +2320,7 @@
         els.acTtsVoice.value = tts.selectedVoice;
       }
       if (tts.enabled) {
-        els.acTtsSettings.style.display = '';
+        els.acTtsToggle.classList.add('active');
       }
     }
 
@@ -2302,7 +2373,6 @@
 
   function toggleTtsEnabled() {
     tts.enabled = !tts.enabled;
-    els.acTtsSettings.style.display = tts.enabled ? '' : 'none';
     if (!tts.enabled) {
       stopSpeaking();
     }
@@ -2402,6 +2472,343 @@
       els.acTtsToggle.classList.add('active');
       els.acTtsToggle.innerHTML = '🔊 <span>朗读中</span>';
     }
+  }
+
+  // ============ 右侧设置面板 ============
+
+  function showPanel() {
+    if (els.acPanel) els.acPanel.classList.remove('collapsed');
+    if (els.acPanelToggle) els.acPanelToggle.classList.add('active');
+  }
+  function hidePanel() {
+    if (els.acPanel) els.acPanel.classList.add('collapsed');
+    if (els.acPanelToggle) els.acPanelToggle.classList.remove('active');
+  }
+  function switchPanelTab(name) {
+    document.querySelectorAll('.ac-panel-tab').forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-panel') === name);
+    });
+    document.querySelectorAll('.ac-panel-page').forEach(function (p) {
+      p.classList.toggle('active', p.id === 'panel-' + name);
+    });
+    if (name === 'worldbook') renderWorldList();
+    if (name === 'character') renderPanelBranches();
+  }
+
+  if (els.acPanelToggle) {
+    els.acPanelToggle.addEventListener('click', function () {
+      if (els.acPanel.classList.contains('collapsed')) { showPanel(); } else { hidePanel(); }
+    });
+  }
+  document.querySelectorAll('.ac-panel-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () { switchPanelTab(tab.getAttribute('data-panel')); });
+  });
+
+  // 面板默认折叠（移动端）
+  if (window.innerWidth <= 820) hidePanel();
+
+  function populatePanel() {
+    var conv = state.currentConv;
+    if (!conv) return;
+    // 角色信息
+    var role = conv.role_id ? state.roles.filter(function (r) { return r.id === conv.role_id; })[0] : null;
+    if (els.acPanelRoleName) els.acPanelRoleName.textContent = role ? role.name : '未选择角色';
+    if (els.acPanelRoleDesc) els.acPanelRoleDesc.textContent = role ? (role.description || role.system_prompt || '').slice(0, 80) : '选择角色开始对话';
+    if (els.acPanelRoleAvatar) {
+      if (role && role.avatar) {
+        els.acPanelRoleAvatar.innerHTML = '<img src="' + escapeHtml(role.avatar) + '" alt="">';
+      } else {
+        els.acPanelRoleAvatar.textContent = '🎭';
+      }
+    }
+    // 生成参数
+    setSlider('acGenTemp', 'acGenTempVal', conv.gen_temperature != null ? conv.gen_temperature : 0.7);
+    setSlider('acGenTopP', 'acGenTopPVal', conv.gen_top_p != null ? conv.gen_top_p : 1);
+    setSlider('acGenTopK', 'acGenTopKVal', conv.gen_top_k != null ? conv.gen_top_k : 0);
+    setSlider('acGenFreq', 'acGenFreqVal', conv.gen_frequency_penalty != null ? conv.gen_frequency_penalty : 0);
+    setSlider('acGenPres', 'acGenPresVal', conv.gen_presence_penalty != null ? conv.gen_presence_penalty : 0);
+    setSlider('acGenMax', 'acGenMaxVal', conv.gen_max_tokens != null ? conv.gen_max_tokens : 4096);
+    // 作者注释
+    if (els.acAuthorNote) els.acAuthorNote.value = conv.author_note || '';
+    setSlider('acAuthorNoteDepth', 'acAuthorNoteDepthVal', conv.author_note_depth != null ? conv.author_note_depth : 4);
+    // 模板
+    if (els.acPromptTemplate) els.acPromptTemplate.value = conv.prompt_template_id || '';
+    // 记忆
+    if (els.acMemoryEnabled) els.acMemoryEnabled.checked = conv.memory_enabled !== 0;
+    if (els.acRagEnabled) els.acRagEnabled.checked = conv.rag_enabled !== 0;
+    if (els.acMemoryMode) els.acMemoryMode.value = conv.memory_mode || 'summary';
+    // 分支
+    renderPanelBranches();
+    // 世界书
+    renderWorldList();
+  }
+
+  function setSlider(inputId, valId, value) {
+    if (els[inputId]) els[inputId].value = value;
+    if (els[valId]) els[valId].textContent = value;
+  }
+
+  function renderPanelBranches() {
+    if (!els.acPanelBranchList || !state.currentConv) return;
+    els.acPanelBranchList.innerHTML = '';
+    var main = document.createElement('div');
+    main.className = 'ac-branch-item' + ((state.currentConv.current_branch_id || 0) === 0 ? ' active' : '');
+    main.innerHTML = '<span class="ac-branch-name">主分支</span>';
+    main.addEventListener('click', function () { switchBranch(0); });
+    els.acPanelBranchList.appendChild(main);
+    state.branches.forEach(function (b) {
+      var item = document.createElement('div');
+      item.className = 'ac-branch-item' + (state.currentConv.current_branch_id === b.id ? ' active' : '');
+      item.innerHTML = '<span class="ac-branch-name">' + escapeHtml(b.name) + '（#' + b.id + '）</span>';
+      item.addEventListener('click', function () { switchBranch(b.id); });
+      els.acPanelBranchList.appendChild(item);
+    });
+  }
+
+  if (els.acPanelRoleSwitch) {
+    els.acPanelRoleSwitch.addEventListener('click', openRoleModal);
+  }
+
+  // ============ 生成参数滑块 ============
+
+  var genSliders = [
+    ['acGenTemp', 'acGenTempVal'], ['acGenTopP', 'acGenTopPVal'], ['acGenTopK', 'acGenTopKVal'],
+    ['acGenFreq', 'acGenFreqVal'], ['acGenPres', 'acGenPresVal'], ['acGenMax', 'acGenMaxVal'],
+    ['acAuthorNoteDepth', 'acAuthorNoteDepthVal']
+  ];
+  genSliders.forEach(function (pair) {
+    if (els[pair[0]]) {
+      els[pair[0]].addEventListener('input', function () {
+        if (els[pair[1]]) els[pair[1]].textContent = els[pair[0]].value;
+      });
+    }
+  });
+
+  if (els.acGenSave) {
+    els.acGenSave.addEventListener('click', function () {
+      if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+      api('/ai-chat/api/conversations/gen-settings', {
+        conversation_id: state.currentConv.id,
+        gen_temperature: parseFloat(els.acGenTemp.value),
+        gen_top_p: parseFloat(els.acGenTopP.value),
+        gen_top_k: parseInt(els.acGenTopK.value, 10),
+        gen_frequency_penalty: parseFloat(els.acGenFreq.value),
+        gen_presence_penalty: parseFloat(els.acGenPres.value),
+        gen_max_tokens: parseInt(els.acGenMax.value, 10),
+        author_note: els.acAuthorNote ? els.acAuthorNote.value : '',
+        author_note_depth: parseInt(els.acAuthorNoteDepth.value, 10),
+        prompt_template_id: els.acPromptTemplate ? (parseInt(els.acPromptTemplate.value, 10) || null) : null
+      }).then(function () {
+        var conv = state.currentConv;
+        conv.gen_temperature = parseFloat(els.acGenTemp.value);
+        conv.gen_top_p = parseFloat(els.acGenTopP.value);
+        conv.gen_top_k = parseInt(els.acGenTopK.value, 10);
+        conv.gen_frequency_penalty = parseFloat(els.acGenFreq.value);
+        conv.gen_presence_penalty = parseFloat(els.acGenPres.value);
+        conv.gen_max_tokens = parseInt(els.acGenMax.value, 10);
+        conv.author_note = els.acAuthorNote ? els.acAuthorNote.value : '';
+        conv.author_note_depth = parseInt(els.acAuthorNoteDepth.value, 10);
+        conv.prompt_template_id = els.acPromptTemplate ? (parseInt(els.acPromptTemplate.value, 10) || null) : null;
+        showToast('参数已保存到会话', 'success');
+      }).catch(function (err) { showToast(err.message, 'error'); });
+    });
+  }
+
+  // ============ 预设管理 ============
+
+  function renderPresetSelect() {
+    if (!els.acPresetSelect) return;
+    var cur = els.acPresetSelect.value;
+    els.acPresetSelect.innerHTML = '<option value="">自定义</option>';
+    state.presets.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = (p.is_global ? '🌐 ' : '') + p.name + (p.is_default ? ' ★' : '');
+      els.acPresetSelect.appendChild(opt);
+    });
+    if (cur) els.acPresetSelect.value = cur;
+  }
+
+  if (els.acPresetSelect) {
+    els.acPresetSelect.addEventListener('change', function () {
+      var id = parseInt(els.acPresetSelect.value, 10);
+      if (!id) return;
+      var p = state.presets.filter(function (x) { return x.id === id; })[0];
+      if (!p) return;
+      setSlider('acGenTemp', 'acGenTempVal', p.temperature);
+      setSlider('acGenTopP', 'acGenTopPVal', p.top_p);
+      setSlider('acGenTopK', 'acGenTopKVal', p.top_k);
+      setSlider('acGenFreq', 'acGenFreqVal', p.frequency_penalty);
+      setSlider('acGenPres', 'acGenPresVal', p.presence_penalty);
+      setSlider('acGenMax', 'acGenMaxVal', p.max_tokens);
+      showToast('已加载预设：' + p.name, 'success');
+    });
+  }
+  if (els.acPresetSave) {
+    els.acPresetSave.addEventListener('click', function () {
+      if (els.acPresetName) els.acPresetName.value = '';
+      if (els.acPresetDefault) els.acPresetDefault.checked = false;
+      showModal('acPresetSaveModal');
+    });
+  }
+  if (els.acPresetSaveConfirm) {
+    els.acPresetSaveConfirm.addEventListener('click', function () {
+      var name = (els.acPresetName.value || '').trim();
+      if (!name) { showToast('请输入预设名称', 'error'); return; }
+      api('/ai-chat/api/presets', {
+        name: name,
+        temperature: parseFloat(els.acGenTemp.value),
+        top_p: parseFloat(els.acGenTopP.value),
+        top_k: parseInt(els.acGenTopK.value, 10),
+        frequency_penalty: parseFloat(els.acGenFreq.value),
+        presence_penalty: parseFloat(els.acGenPres.value),
+        max_tokens: parseInt(els.acGenMax.value, 10),
+        is_default: els.acPresetDefault.checked ? 1 : 0
+      }).then(function () {
+        hideModal('acPresetSaveModal');
+        showToast('预设已保存', 'success');
+        return fetch('/ai-chat/api/presets', { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(function (r) { return r.json(); });
+      }).then(function (json) {
+        if (json.success) { state.presets = json.data || []; renderPresetSelect(); }
+      }).catch(function (err) { showToast(err.message, 'error'); });
+    });
+  }
+  if (els.acPresetDelete) {
+    els.acPresetDelete.addEventListener('click', function () {
+      var id = parseInt(els.acPresetSelect.value, 10);
+      if (!id) { showToast('请先选择一个预设', 'error'); return; }
+      if (!window.confirm('删除该预设？')) return;
+      api('/ai-chat/api/presets/delete', { id: id }).then(function () {
+        showToast('预设已删除', 'success');
+        state.presets = state.presets.filter(function (p) { return p.id !== id; });
+        renderPresetSelect();
+      }).catch(function (err) { showToast(err.message, 'error'); });
+    });
+  }
+
+  // ============ 提示词模板管理 ============
+
+  function renderPromptTemplateSelect() {
+    if (!els.acPromptTemplate) return;
+    var cur = els.acPromptTemplate.value;
+    els.acPromptTemplate.innerHTML = '<option value="">无模板</option>';
+    state.promptTemplates.forEach(function (t) {
+      var opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = (t.is_global ? '🌐 ' : '') + t.name;
+      els.acPromptTemplate.appendChild(opt);
+    });
+    if (cur) els.acPromptTemplate.value = cur;
+  }
+
+  function renderTemplateList() {
+    if (!els.acTemplateList) return;
+    els.acTemplateList.innerHTML = '';
+    if (!state.promptTemplates.length) {
+      els.acTemplateList.innerHTML = '<p style="font-size:12px;color:var(--text-muted);">暂无模板</p>';
+      return;
+    }
+    state.promptTemplates.forEach(function (t) {
+      var item = document.createElement('div');
+      item.className = 'ac-prompt-item';
+      item.style.cssText = 'display:flex;align-items:center;gap:8px;';
+      var info = document.createElement('div');
+      info.style.flex = '1';
+      info.innerHTML = '<div class="ac-prompt-item-title">' + escapeHtml(t.name) + (t.is_global ? ' 🌐' : '') + '</div>' +
+        '<div class="ac-prompt-item-excerpt">' + escapeHtml((t.content || '').slice(0, 100)) + '</div>';
+      item.appendChild(info);
+      if (!t.is_global) {
+        var del = document.createElement('button');
+        del.className = 'ac-btn ac-btn-danger ac-btn-sm';
+        del.textContent = '删除';
+        del.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (!window.confirm('删除模板「' + t.name + '」？')) return;
+          api('/ai-chat/api/prompt-templates/delete', { id: t.id }).then(function () {
+            state.promptTemplates = state.promptTemplates.filter(function (x) { return x.id !== t.id; });
+            renderTemplateList();
+            renderPromptTemplateSelect();
+            showToast('已删除', 'success');
+          }).catch(function (err) { showToast(err.message, 'error'); });
+        });
+        item.appendChild(del);
+      }
+      els.acTemplateList.appendChild(item);
+    });
+  }
+
+  if (els.acPromptTemplateManage) {
+    els.acPromptTemplateManage.addEventListener('click', function () {
+      renderTemplateList();
+      showModal('acTemplateModal');
+    });
+  }
+  if (els.acTemplateSave) {
+    els.acTemplateSave.addEventListener('click', function () {
+      var name = (els.acTemplateName.value || '').trim();
+      var content = (els.acTemplateContent.value || '').trim();
+      if (!name || !content) { showToast('请填写名称和内容', 'error'); return; }
+      api('/ai-chat/api/prompt-templates', { name: name, content: content }).then(function () {
+        els.acTemplateName.value = '';
+        els.acTemplateContent.value = '';
+        showToast('模板已保存', 'success');
+        return fetch('/ai-chat/api/prompt-templates', { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(function (r) { return r.json(); });
+      }).then(function (json) {
+        if (json.success) { state.promptTemplates = json.data || []; renderTemplateList(); renderPromptTemplateSelect(); }
+      }).catch(function (err) { showToast(err.message, 'error'); });
+    });
+  }
+
+  // ============ 上下文预览 ============
+
+  if (els.acContextPreview) {
+    els.acContextPreview.addEventListener('click', function () {
+      if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+      els.acContextInfo.textContent = '加载中…';
+      els.acContextMessages.innerHTML = '';
+      showModal('acContextModal');
+      fetch('/ai-chat/api/conversations/' + state.currentConv.id + '/context-preview', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (json) {
+          if (!json.success) throw new Error(json.error || '加载失败');
+          var d = json.data;
+          els.acContextInfo.textContent = '共 ' + (d.messages || []).length + ' 条消息 · 估算 ' + (d.totalTokens || 0) + ' tokens';
+          els.acContextMessages.innerHTML = '';
+          (d.messages || []).forEach(function (m) {
+            var div = document.createElement('div');
+            div.className = 'ac-context-msg ' + (m.role || 'system');
+            div.innerHTML = '<div class="ac-context-msg-role">' + escapeHtml(m.role || 'system') + '</div>' +
+              '<div class="ac-context-msg-content">' + escapeHtml(m.content || '') + '</div>';
+            els.acContextMessages.appendChild(div);
+          });
+        })
+        .catch(function (err) { els.acContextInfo.textContent = err.message; });
+    });
+  }
+
+  // ============ 继续生成 / 模仿用户 ============
+
+  if (els.acContinueBtn) {
+    els.acContinueBtn.addEventListener('click', function () {
+      if (!state.currentConv || state.streaming) return;
+      var lastAssistant = null;
+      for (var i = state.messages.length - 1; i >= 0; i--) {
+        if (state.messages[i].role === 'assistant') { lastAssistant = state.messages[i]; break; }
+      }
+      if (!lastAssistant) { showToast('没有可继续的 AI 消息', 'error'); return; }
+      var placeholder = { id: lastAssistant.id, role: 'assistant', content: lastAssistant.content || '', status: 'streaming', branch_id: lastAssistant.branch_id || 0 };
+      startStream('/ai-chat/api/messages/continue', { conversation_id: state.currentConv.id }, placeholder);
+    });
+  }
+  if (els.acImpersonateBtn) {
+    els.acImpersonateBtn.addEventListener('click', function () {
+      if (!state.currentConv || state.streaming) return;
+      var placeholder = { id: 'imp' + Date.now(), role: 'user', content: '', status: 'streaming', branch_id: state.currentConv.current_branch_id || 0 };
+      state.messages.push(placeholder);
+      appendMessageEl(placeholder, true);
+      scrollToBottom(true);
+      startStream('/ai-chat/api/messages/impersonate', { conversation_id: state.currentConv.id }, placeholder);
+    });
   }
 
   // 初始化 TTS

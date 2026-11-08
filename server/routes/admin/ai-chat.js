@@ -49,6 +49,8 @@ router.get('/ai-chat', isAuthenticated, hasPermission('aichat.manage'), (req, re
     SELECT q.*, u.username, u.nickname, u.role
     FROM ai_quota q LEFT JOIN users u ON q.user_id = u.id
     ORDER BY q.id DESC LIMIT 100`);
+  const presets = queryAll(db, 'SELECT * FROM ai_presets WHERE is_global = 1 ORDER BY is_default DESC, id ASC');
+  const promptTemplates = queryAll(db, 'SELECT * FROM ai_prompt_templates WHERE is_global = 1 ORDER BY sort_order ASC, id ASC');
 
   res.render('admin/ai-chat', {
     user: req.session.user,
@@ -59,6 +61,8 @@ router.get('/ai-chat', isAuthenticated, hasPermission('aichat.manage'), (req, re
     defaultWorldBook,
     docs,
     quotaRows,
+    presets,
+    promptTemplates,
     hasEmbeddings: Boolean(settings.ai_embedding_api_base && settings.ai_embedding_model),
     userPermissions: res.locals.userPermissions || []
   });
@@ -345,6 +349,74 @@ router.get('/ai-chat/stats', isAuthenticated, hasPermission('aichat.manage'), (r
       recent
     }
   });
+});
+
+// ============ 全局生成参数预设 ============
+
+router.post('/ai-chat/presets/save', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const id = toInt(first(req.body.id), 0);
+  const name = (first(req.body.name) || '').trim().slice(0, 100);
+  if (!name) return res.status(400).json({ error: '预设名称不能为空' });
+  const temperature = Math.min(Math.max(parseFloat(first(req.body.temperature)) || 0.7, 0), 2);
+  const topP = Math.min(Math.max(parseFloat(first(req.body.top_p)) || 1, 0), 1);
+  const topK = Math.max(toInt(first(req.body.top_k), 0), 0);
+  const freqPen = Math.min(Math.max(parseFloat(first(req.body.frequency_penalty)) || 0, -2), 2);
+  const presPen = Math.min(Math.max(parseFloat(first(req.body.presence_penalty)) || 0, -2), 2);
+  const maxTokens = Math.min(Math.max(toInt(first(req.body.max_tokens), 4096), 256), 32768);
+  const isDefault = first(req.body.is_default) === '1' || first(req.body.is_default) === 'on' ? 1 : 0;
+  if (id) {
+    const existing = queryOne(db, 'SELECT id FROM ai_presets WHERE id = ? AND is_global = 1', [id]);
+    if (!existing) return res.status(404).json({ error: '预设不存在' });
+    db.run('UPDATE ai_presets SET name=?, temperature=?, top_p=?, top_k=?, frequency_penalty=?, presence_penalty=?, max_tokens=?, is_default=? WHERE id=?',
+      [name, temperature, topP, topK, freqPen, presPen, maxTokens, isDefault, id]);
+  } else {
+    db.run('INSERT INTO ai_presets (user_id, name, temperature, top_p, top_k, frequency_penalty, presence_penalty, max_tokens, is_default, is_global) VALUES (NULL,?,?,?,?,?,?,?,?,1)',
+      [name, temperature, topP, topK, freqPen, presPen, maxTokens, isDefault]);
+  }
+  if (isDefault) db.run('UPDATE ai_presets SET is_default = 0 WHERE is_global = 1 AND name != ?', [name]);
+  saveDatabase();
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'ai_preset', target_title: name, detail: `保存全局预设：${name}`, ip: req.ip });
+  res.json({ success: true });
+});
+
+router.post('/ai-chat/presets/delete', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT id, name FROM ai_presets WHERE id = ? AND is_global = 1', [toInt(first(req.body.id), 0)]);
+  if (!row) return res.status(404).json({ error: '预设不存在' });
+  db.run('DELETE FROM ai_presets WHERE id = ?', [row.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// ============ 全局提示词模板 ============
+
+router.post('/ai-chat/prompt-templates/save', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const id = toInt(first(req.body.id), 0);
+  const name = (first(req.body.name) || '').trim().slice(0, 100);
+  const content = (first(req.body.content) || '').trim().slice(0, 8000);
+  const description = (first(req.body.description) || '').trim().slice(0, 200);
+  if (!name || !content) return res.status(400).json({ error: '名称和内容不能为空' });
+  if (id) {
+    const existing = queryOne(db, 'SELECT id FROM ai_prompt_templates WHERE id = ? AND is_global = 1', [id]);
+    if (!existing) return res.status(404).json({ error: '模板不存在' });
+    db.run('UPDATE ai_prompt_templates SET name=?, content=?, description=? WHERE id=?', [name, content, description, id]);
+  } else {
+    db.run('INSERT INTO ai_prompt_templates (user_id, name, content, description, is_global) VALUES (NULL,?,?,?,1)', [name, content, description]);
+  }
+  saveDatabase();
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'ai_prompt_template', target_title: name, detail: `保存提示词模板：${name}`, ip: req.ip });
+  res.json({ success: true });
+});
+
+router.post('/ai-chat/prompt-templates/delete', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT id, name FROM ai_prompt_templates WHERE id = ? AND is_global = 1', [toInt(first(req.body.id), 0)]);
+  if (!row) return res.status(404).json({ error: '模板不存在' });
+  db.run('DELETE FROM ai_prompt_templates WHERE id = ?', [row.id]);
+  saveDatabase();
+  res.json({ success: true });
 });
 
 module.exports = router;

@@ -69,13 +69,31 @@ function buildContext(db, conv, userMsg, opts = {}) {
   const systemParts = [];
   matchWorldBook(entries, userMsg, recentForScan, ['system_top']).forEach(e => systemParts.push(e.content));
   if (role) {
-    // 角色卡：system_prompt + 性格 + 场景 + 示例对话 组装为完整角色上下文
-    const roleParts = [];
-    if (role.system_prompt) roleParts.push(role.system_prompt);
-    if (role.personality) roleParts.push('【角色性格】\n' + role.personality);
-    if (role.scenario) roleParts.push('【当前场景】\n' + role.scenario);
-    if (role.examples) roleParts.push('【示例对话（仅供模仿风格，不要复述）】\n' + role.examples);
-    if (roleParts.length) systemParts.push(roleParts.join('\n\n'));
+    // 提示词模板：有模板时用模板替代默认角色卡组装
+    if (conv.prompt_template_id) {
+      const tpl = queryOne(db, 'SELECT content FROM ai_prompt_templates WHERE id = ?', [conv.prompt_template_id]);
+      if (tpl && tpl.content) {
+        const userRow = queryOne(db, 'SELECT username FROM users WHERE id = ?', [conv.user_id]);
+        const userName = (userRow && userRow.username) || '用户';
+        const rendered = tpl.content
+          .replace(/\{\{char\}\}/gi, role.name || '')
+          .replace(/\{\{user\}\}/gi, userName)
+          .replace(/\{\{scenario\}\}/gi, role.scenario || '')
+          .replace(/\{\{personality\}\}/gi, role.personality || '')
+          .replace(/\{\{description\}\}/gi, role.description || '')
+          .replace(/\{\{greeting\}\}/gi, role.greeting || '')
+          .replace(/\{\{examples\}\}/gi, role.examples || '');
+        systemParts.push(rendered);
+      }
+    } else {
+      // 默认角色卡组装
+      const roleParts = [];
+      if (role.system_prompt) roleParts.push(role.system_prompt);
+      if (role.personality) roleParts.push('【角色性格】\n' + role.personality);
+      if (role.scenario) roleParts.push('【当前场景】\n' + role.scenario);
+      if (role.examples) roleParts.push('【示例对话（仅供模仿风格，不要复述）】\n' + role.examples);
+      if (roleParts.length) systemParts.push(roleParts.join('\n\n'));
+    }
   }
   if (conv.system_prompt) systemParts.push(conv.system_prompt);
 
@@ -113,13 +131,29 @@ function buildContext(db, conv, userMsg, opts = {}) {
     if (excludeMsgId && m.id === excludeMsgId) continue;
     if (m.role !== 'user' && m.role !== 'assistant') continue;
     if (m.status === 'error' || m.status === 'stopped') continue;
+    if (m.is_active === 0) continue; // 跳过非活跃 alternate
     tokens += estimateTokens(m.content);
     windowMsgs.unshift(m);
     if (tokens > HISTORY_TOKEN_WINDOW) break;
   }
-  windowMsgs.forEach(m => {
+
+  // 作者注释（Author's Note）：插入到历史窗口的指定深度位置
+  const authorNote = String(conv.author_note || '').trim();
+  const noteDepth = Math.max(parseInt(conv.author_note_depth, 10) || 4, 0);
+  let noteInserted = false;
+
+  windowMsgs.forEach((m, idx) => {
+    // 在倒数第 noteDepth 条消息前插入作者注释
+    if (authorNote && !noteInserted && idx === Math.max(0, windowMsgs.length - noteDepth)) {
+      messages.push({ role: 'system', content: '[Author\'s Note: ' + authorNote + ']' });
+      noteInserted = true;
+    }
     messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') });
   });
+  // 如果历史太短没插入，放在历史最前面
+  if (authorNote && !noteInserted) {
+    messages.splice(1, 0, { role: 'system', content: '[Author\'s Note: ' + authorNote + ']' });
+  }
 
   // ---- 用户消息（user_top 世界书条目附加到消息尾部） ----
   const topEntries = matchWorldBook(entries, userMsg, recentForScan, ['user_top']);

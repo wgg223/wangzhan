@@ -40,6 +40,8 @@
   <button type="button" data-tab="worldbook">默认世界书</button>
   <button type="button" data-tab="knowledge">知识库</button>
   <button type="button" data-tab="quota">配额统计</button>
+  <button type="button" data-tab="presets">生成预设</button>
+  <button type="button" data-tab="templates">提示词模板</button>
 </div>
 
 <!-- ============ 模型 ============ -->
@@ -254,6 +256,77 @@
 <div class="ai-chat-panel" id="tab-quota">
   <div class="ai-chat-hint">管理员 / super_admin 不受配额限制。今日剩余 = daily_limit − daily_used（跨天自动重置）。</div>
   <div id="quotaWrap"></div>
+</div>
+
+<!-- ============ 生成预设 ============ -->
+<div class="ai-chat-panel" id="tab-presets">
+  <div class="ai-chat-hint">全局生成预设对所有用户可见。用户可在前台「生成」面板中加载预设，也可保存自己的私有预设。</div>
+  <div id="presetList">
+    <% presets.forEach(p => { %>
+    <div class="ai-chat-role-card" data-preset-id="<%= p.id %>">
+      <h3><%= p.name %> <% if (p.is_default) { %><span class="badge-default">默认</span><% } %></h3>
+      <p>Temp <%= p.temperature %> · Top P <%= p.top_p %> · Top K <%= p.top_k %> · Freq <%= p.frequency_penalty %> · Pres <%= p.presence_penalty %> · Max <%= p.max_tokens %></p>
+      <div class="ai-chat-actions">
+        <button type="button" class="btn btn-sm" onclick="editPreset(<%= p.id %>)">编辑</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="deletePreset(<%= p.id %>)">删除</button>
+      </div>
+    </div>
+    <% }) %>
+    <% if (!presets.length) { %><p class="text-muted" style="font-size:13px;">暂无全局预设</p><% } %>
+  </div>
+  <button type="button" class="btn btn-primary" onclick="editPreset(0)" style="margin-top:10px;">＋ 新增预设</button>
+  <div id="presetFormWrap" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-card);">
+    <h3 style="margin-bottom:12px; font-size:15px;" id="presetFormTitle">新增预设</h3>
+    <div class="ai-chat-form">
+      <input type="hidden" id="p_id">
+      <label>名称<input id="p_name" placeholder="如：创意写作"></label>
+      <label>Temperature<input id="p_temperature" type="number" step="0.05" min="0" max="2" value="0.7"></label>
+      <label>Top P<input id="p_top_p" type="number" step="0.05" min="0" max="1" value="1"></label>
+      <label>Top K<input id="p_top_k" type="number" step="1" min="0" max="100" value="0"></label>
+      <label>Freq Penalty<input id="p_frequency_penalty" type="number" step="0.1" min="-2" max="2" value="0"></label>
+      <label>Pres Penalty<input id="p_presence_penalty" type="number" step="0.1" min="-2" max="2" value="0"></label>
+      <label>Max Tokens<input id="p_max_tokens" type="number" step="256" min="256" max="32768" value="4096"></label>
+      <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="p_is_default" style="width:auto;"> 设为默认</label>
+    </div>
+    <div class="ai-chat-actions">
+      <button type="button" class="btn btn-primary" onclick="savePreset()">保存</button>
+      <button type="button" class="btn" onclick="document.getElementById('presetFormWrap').style.display='none'">取消</button>
+      <span class="ai-chat-msg" id="presetMsg"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 提示词模板 ============ -->
+<div class="ai-chat-panel" id="tab-templates">
+  <div class="ai-chat-hint">全局提示词模板对所有用户可见。支持变量：{{char}}、{{user}}、{{scenario}}、{{personality}}。用户也可创建私有模板。</div>
+  <div id="templateList">
+    <% promptTemplates.forEach(t => { %>
+    <div class="ai-chat-role-card" data-template-id="<%= t.id %>">
+      <h3><%= t.name %></h3>
+      <p><%= (t.content || '').slice(0, 200) %></p>
+      <div class="ai-chat-actions">
+        <button type="button" class="btn btn-sm" onclick="editTemplate(<%= t.id %>)">编辑</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="deleteTemplate(<%= t.id %>)">删除</button>
+      </div>
+    </div>
+    <% }) %>
+    <% if (!promptTemplates.length) { %><p class="text-muted" style="font-size:13px;">暂无全局模板</p><% } %>
+  </div>
+  <button type="button" class="btn btn-primary" onclick="editTemplate(0)" style="margin-top:10px;">＋ 新增模板</button>
+  <div id="templateFormWrap" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-card);">
+    <h3 style="margin-bottom:12px; font-size:15px;" id="templateFormTitle">新增模板</h3>
+    <div class="ai-chat-form">
+      <input type="hidden" id="t_id">
+      <label class="full">名称<input id="t_name" placeholder="如：角色扮演标准模板"></label>
+      <label class="full">内容<textarea id="t_content" rows="8" placeholder="{{char}} 是一个...&#10;{{user}} 是...&#10;场景：{{scenario}}"></textarea></label>
+      <label class="full">描述（可选）<input id="t_description" placeholder="简短说明模板用途"></label>
+    </div>
+    <div class="ai-chat-actions">
+      <button type="button" class="btn btn-primary" onclick="saveTemplate()">保存</button>
+      <button type="button" class="btn" onclick="document.getElementById('templateFormWrap').style.display='none'">取消</button>
+      <span class="ai-chat-msg" id="templateMsg"></span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -595,6 +668,119 @@
     csrfFetch('/admin/ai-chat/quota/update', { method: 'POST', body: fd }, 20000)
       .then(function (json) { alert(json.success ? '已保存' : (json.error || '保存失败')); })
       .catch(function (err) { alert(err.message || '保存失败'); });
+  };
+
+  // ============ 生成预设 ============
+  var presetsData = <%- JSON.stringify(presets) %>;
+
+  window.editPreset = function (id) {
+    var wrap = document.getElementById('presetFormWrap');
+    wrap.style.display = 'block';
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('presetMsg').textContent = '';
+    if (!id) {
+      document.getElementById('presetFormTitle').textContent = '新增预设';
+      document.getElementById('p_id').value = '';
+      document.getElementById('p_name').value = '';
+      document.getElementById('p_temperature').value = 0.7;
+      document.getElementById('p_top_p').value = 1;
+      document.getElementById('p_top_k').value = 0;
+      document.getElementById('p_frequency_penalty').value = 0;
+      document.getElementById('p_presence_penalty').value = 0;
+      document.getElementById('p_max_tokens').value = 4096;
+      document.getElementById('p_is_default').checked = false;
+      return;
+    }
+    var p = presetsData.filter(function (x) { return x.id === id; })[0];
+    if (!p) return;
+    document.getElementById('presetFormTitle').textContent = '编辑预设 #' + id;
+    document.getElementById('p_id').value = p.id;
+    document.getElementById('p_name').value = p.name;
+    document.getElementById('p_temperature').value = p.temperature;
+    document.getElementById('p_top_p').value = p.top_p;
+    document.getElementById('p_top_k').value = p.top_k;
+    document.getElementById('p_frequency_penalty').value = p.frequency_penalty;
+    document.getElementById('p_presence_penalty').value = p.presence_penalty;
+    document.getElementById('p_max_tokens').value = p.max_tokens;
+    document.getElementById('p_is_default').checked = !!p.is_default;
+  };
+
+  window.savePreset = function () {
+    var fd = new FormData();
+    fd.append('id', document.getElementById('p_id').value);
+    fd.append('name', document.getElementById('p_name').value);
+    fd.append('temperature', document.getElementById('p_temperature').value);
+    fd.append('top_p', document.getElementById('p_top_p').value);
+    fd.append('top_k', document.getElementById('p_top_k').value);
+    fd.append('frequency_penalty', document.getElementById('p_frequency_penalty').value);
+    fd.append('presence_penalty', document.getElementById('p_presence_penalty').value);
+    fd.append('max_tokens', document.getElementById('p_max_tokens').value);
+    fd.append('is_default', document.getElementById('p_is_default').checked ? '1' : '0');
+    var msg = document.getElementById('presetMsg');
+    csrfFetch('/admin/ai-chat/presets/save', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) { msg.textContent = '已保存'; msg.className = 'ai-chat-msg'; setTimeout(function () { location.reload(); }, 600); }
+        else { msg.textContent = json.error || '保存失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function (err) { msg.textContent = err.message; msg.className = 'ai-chat-msg err'; });
+  };
+
+  window.deletePreset = function (id) {
+    if (!confirm('删除该全局预设？')) return;
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/presets/delete', { method: 'POST', body: fd }, 20000)
+      .then(function (json) { if (json.success) location.reload(); else alert(json.error || '删除失败'); })
+      .catch(function (err) { alert(err.message); });
+  };
+
+  // ============ 提示词模板 ============
+  var templatesData = <%- JSON.stringify(promptTemplates) %>;
+
+  window.editTemplate = function (id) {
+    var wrap = document.getElementById('templateFormWrap');
+    wrap.style.display = 'block';
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('templateMsg').textContent = '';
+    if (!id) {
+      document.getElementById('templateFormTitle').textContent = '新增模板';
+      document.getElementById('t_id').value = '';
+      document.getElementById('t_name').value = '';
+      document.getElementById('t_content').value = '';
+      document.getElementById('t_description').value = '';
+      return;
+    }
+    var t = templatesData.filter(function (x) { return x.id === id; })[0];
+    if (!t) return;
+    document.getElementById('templateFormTitle').textContent = '编辑模板 #' + id;
+    document.getElementById('t_id').value = t.id;
+    document.getElementById('t_name').value = t.name;
+    document.getElementById('t_content').value = t.content || '';
+    document.getElementById('t_description').value = t.description || '';
+  };
+
+  window.saveTemplate = function () {
+    var fd = new FormData();
+    fd.append('id', document.getElementById('t_id').value);
+    fd.append('name', document.getElementById('t_name').value);
+    fd.append('content', document.getElementById('t_content').value);
+    fd.append('description', document.getElementById('t_description').value);
+    var msg = document.getElementById('templateMsg');
+    csrfFetch('/admin/ai-chat/prompt-templates/save', { method: 'POST', body: fd }, 20000)
+      .then(function (json) {
+        if (json.success) { msg.textContent = '已保存'; msg.className = 'ai-chat-msg'; setTimeout(function () { location.reload(); }, 600); }
+        else { msg.textContent = json.error || '保存失败'; msg.className = 'ai-chat-msg err'; }
+      })
+      .catch(function (err) { msg.textContent = err.message; msg.className = 'ai-chat-msg err'; });
+  };
+
+  window.deleteTemplate = function (id) {
+    if (!confirm('删除该全局模板？')) return;
+    var fd = new FormData();
+    fd.append('id', id);
+    csrfFetch('/admin/ai-chat/prompt-templates/delete', { method: 'POST', body: fd }, 20000)
+      .then(function (json) { if (json.success) location.reload(); else alert(json.error || '删除失败'); })
+      .catch(function (err) { alert(err.message); });
   };
 })();
 </script>

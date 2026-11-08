@@ -129,18 +129,31 @@ function deleteBranch(db, conv, branchId) {
 
 // ============ 发送 ============
 
+function extractGenParams(conv) {
+  const gp = {};
+  if (conv.gen_temperature != null) gp.temperature = conv.gen_temperature;
+  if (conv.gen_top_p != null) gp.top_p = conv.gen_top_p;
+  if (conv.gen_top_k != null) gp.top_k = conv.gen_top_k;
+  if (conv.gen_frequency_penalty != null) gp.frequency_penalty = conv.gen_frequency_penalty;
+  if (conv.gen_presence_penalty != null) gp.presence_penalty = conv.gen_presence_penalty;
+  if (conv.gen_max_tokens != null) gp.max_tokens = conv.gen_max_tokens;
+  return Object.keys(gp).length ? gp : undefined;
+}
+
 /**
  * 调用模型 + 结果落库 + 配额消耗（sendMessage / regenerateMessage 共用）
  * 主动停止：保留半截内容，status=stopped，不计配额；失败：status=error，只计次数
  */
 async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaCheck) {
   const { stream = true, signal, onDelta } = opts;
+  const genParams = extractGenParams(conv);
   let full = '';
   try {
     const result = await callChatCompletion(modelInfo, messages, {
       stream,
       signal,
-      onDelta: stream ? (delta) => { full += delta; if (onDelta) onDelta(delta); } : undefined
+      onDelta: stream ? (delta) => { full += delta; if (onDelta) onDelta(delta); } : undefined,
+      genParams
     });
     full = result.content;
     if (!full) throw new Error('模型未返回内容，请重试');
@@ -281,5 +294,5 @@ module.exports = {
   createConversation, getOwnConversation, renameConversation, deleteConversation,
   getOwnMessage, deleteMessage, editMessage,
   forkConversation, switchBranch, deleteBranch,
-  sendMessage, regenerateMessage
+  sendMessage, regenerateMessage, extractGenParams
 };

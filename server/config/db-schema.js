@@ -631,6 +631,20 @@ function createTables(db) {
   try { db.run("ALTER TABLE ai_conversations ADD COLUMN memory_mode TEXT DEFAULT 'summary'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   try { db.run('ALTER TABLE ai_conversations ADD COLUMN rag_enabled INTEGER DEFAULT 1'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
+  // 生成参数（SillyTavern 风格，per-conversation 覆盖模型默认值）
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_temperature REAL'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_top_p REAL'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_top_k INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_frequency_penalty REAL'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_presence_penalty REAL'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_max_tokens INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE ai_conversations ADD COLUMN author_note TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN author_note_depth INTEGER DEFAULT 4'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_conversations ADD COLUMN prompt_template_id INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  // 消息滑动（alternates）：同一位置的多个回复
+  try { db.run('ALTER TABLE ai_messages ADD COLUMN alternate_of INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_messages ADD COLUMN is_active INTEGER DEFAULT 1'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+
   // AI 世界书（World Book）：按触发词注入上下文的设定条目
   db.run(`CREATE TABLE IF NOT EXISTS ai_world_book (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -861,6 +875,36 @@ function createTables(db) {
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_docs_source ON ai_knowledge_docs(source_type, source_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_docs_created ON ai_knowledge_docs(created_at)');
   db.run('CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunks_doc ON ai_knowledge_chunks(doc_id, chunk_index)');
+
+  // AI 生成参数预设（用户/全局，SillyTavern 风格）
+  db.run(`CREATE TABLE IF NOT EXISTS ai_presets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    name TEXT NOT NULL,
+    temperature REAL DEFAULT 0.7,
+    top_p REAL DEFAULT 1.0,
+    top_k INTEGER DEFAULT 0,
+    frequency_penalty REAL DEFAULT 0,
+    presence_penalty REAL DEFAULT 0,
+    max_tokens INTEGER DEFAULT 4096,
+    is_default INTEGER DEFAULT 0,
+    is_global INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+
+  // AI 提示词模板（管理员定义 + 用户自定义，支持变量替换）
+  db.run(`CREATE TABLE IF NOT EXISTS ai_prompt_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    is_global INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
 
   // ============ AI 提示词模块表 ============
   // 板块表（一级）

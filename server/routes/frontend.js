@@ -1004,7 +1004,9 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
   const user = req.session.user;
   const settings = getSettings(db);
   const conversations = queryAll(db, `SELECT id, title, model, role_id, system_prompt, message_count,
-      memory_enabled, memory_mode, rag_enabled, current_branch_id, updated_at
+      memory_enabled, memory_mode, rag_enabled, current_branch_id, updated_at,
+      gen_temperature, gen_top_p, gen_top_k, gen_frequency_penalty, gen_presence_penalty, gen_max_tokens,
+      author_note, author_note_depth, prompt_template_id
     FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC, id DESC`, [user.id]);
   const roles = queryAll(db, `SELECT id, name, avatar, description, category, is_official, user_id,
       greeting, personality, scenario, examples
@@ -1021,6 +1023,8 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
     p.requires_key = p.provider_key !== 'pollinations';
   });
   const quota = checkQuota(db, user);
+  const presets = queryAll(db, 'SELECT * FROM ai_presets WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC, is_default DESC, id ASC', [user.id]);
+  const promptTemplates = queryAll(db, 'SELECT id, name, content, description, is_global FROM ai_prompt_templates WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC, sort_order ASC, id ASC', [user.id]);
   res.json({
     success: true,
     data: {
@@ -1033,7 +1037,7 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
         mode: settings.ai_memory_mode || 'summary',
         interval: parseInt(settings.ai_memory_interval, 10) || 10
       },
-      conversations, roles, models, globalModels, providers,
+      conversations, roles, models, globalModels, providers, presets, promptTemplates,
       quota: quota.quota, quotaOk: quota.ok, quotaUnlimited: quota.unlimited
     }
   });
@@ -1159,7 +1163,7 @@ router.get('/ai-chat/api/conversations/:id/messages', isAuthenticated, hasFronte
   const conv = aiChatService.getOwnConversation(db, user, parseInt(req.params.id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const branchId = conv.current_branch_id || 0;
-  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, model, status, error, is_pinned, created_at FROM ai_messages WHERE conversation_id = ? AND branch_id = ? ORDER BY id ASC', [conv.id, branchId]);
+  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, model, status, error, is_pinned, created_at, alternate_of, is_active FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY id ASC', [conv.id, branchId]);
   const branches = queryAll(db, 'SELECT id, name, parent_message_id, created_at FROM ai_branches WHERE conversation_id = ? ORDER BY id ASC', [conv.id]);
   const worldBook = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
   const summaries = queryAll(db, "SELECT id, content, created_at FROM ai_memories WHERE conversation_id = ? AND type = 'summary' ORDER BY id ASC", [conv.id]);
@@ -1642,6 +1646,308 @@ router.post('/ai-chat/api/models/test', isAuthenticated, hasFrontendPermission('
     const { normalizeError } = require('../services/ai-chat/utils');
     res.status(400).json({ error: normalizeError(err) });
   }
+});
+
+// ============ 生成参数 / 预设 / 模板 / 继续 / 模仿 / 滑动 ============
+
+// 保存会话生成参数
+router.post('/ai-chat/api/conversations/gen-settings', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const b = req.body;
+  const clamp = (v, min, max) => v == null || v === '' ? null : Math.min(Math.max(parseFloat(v), min), max);
+  db.run(`UPDATE ai_conversations SET gen_temperature = ?, gen_top_p = ?, gen_top_k = ?,
+    gen_frequency_penalty = ?, gen_presence_penalty = ?, gen_max_tokens = ?,
+    author_note = ?, author_note_depth = ?, prompt_template_id = ? WHERE id = ?`,
+    [clamp(b.temperature, 0, 2), clamp(b.top_p, 0, 1),
+      b.top_k != null && b.top_k !== '' ? Math.max(parseInt(b.top_k, 10) || 0, 0) : null,
+      clamp(b.frequency_penalty, -2, 2), clamp(b.presence_penalty, -2, 2),
+      b.max_tokens != null && b.max_tokens !== '' ? Math.min(Math.max(parseInt(b.max_tokens, 10) || 4096, 256), 32768) : null,
+      String(b.author_note || '').slice(0, 2000),
+      Math.max(parseInt(b.author_note_depth, 10) || 4, 0),
+      b.prompt_template_id ? parseInt(b.prompt_template_id, 10) : null,
+      conv.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 预设列表（用户 + 全局）
+router.get('/ai-chat/api/presets', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const rows = queryAll(db, 'SELECT * FROM ai_presets WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC, is_default DESC, id ASC', [req.session.user.id]);
+  res.json({ success: true, data: rows });
+});
+
+// 保存预设
+router.post('/ai-chat/api/presets', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const b = req.body;
+  const id = parseInt(b.id, 10) || 0;
+  const name = String(b.name || '').trim().slice(0, 100);
+  if (!name) return res.status(400).json({ error: '预设名称不能为空' });
+  const clamp = (v, min, max, def) => v == null || v === '' ? def : Math.min(Math.max(parseFloat(v), min), max);
+  const vals = [name, clamp(b.temperature, 0, 2, 0.7), clamp(b.top_p, 0, 1, 1),
+    Math.max(parseInt(b.top_k, 10) || 0, 0), clamp(b.frequency_penalty, -2, 2, 0),
+    clamp(b.presence_penalty, -2, 2, 0), Math.min(Math.max(parseInt(b.max_tokens, 10) || 4096, 256), 32768),
+    b.is_default ? 1 : 0];
+  if (id) {
+    const existing = queryOne(db, 'SELECT id FROM ai_presets WHERE id = ? AND user_id = ?', [id, req.session.user.id]);
+    if (!existing) return res.status(404).json({ error: '预设不存在' });
+    db.run('UPDATE ai_presets SET name=?, temperature=?, top_p=?, top_k=?, frequency_penalty=?, presence_penalty=?, max_tokens=?, is_default=? WHERE id=?', [...vals, id]);
+    if (b.is_default) db.run('UPDATE ai_presets SET is_default = 0 WHERE user_id = ? AND id != ?', [req.session.user.id, id]);
+  } else {
+    db.run('INSERT INTO ai_presets (user_id, name, temperature, top_p, top_k, frequency_penalty, presence_penalty, max_tokens, is_default) VALUES (?,?,?,?,?,?,?,?,?)',
+      [req.session.user.id, ...vals]);
+    if (b.is_default) db.run('UPDATE ai_presets SET is_default = 0 WHERE user_id = ? AND id != last_insert_rowid()', [req.session.user.id]);
+  }
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 删除预设
+router.post('/ai-chat/api/presets/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT id FROM ai_presets WHERE id = ? AND user_id = ?', [parseInt(req.body.id, 10), req.session.user.id]);
+  if (!row) return res.status(404).json({ error: '预设不存在' });
+  db.run('DELETE FROM ai_presets WHERE id = ?', [row.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 提示词模板列表（全局 + 用户）
+router.get('/ai-chat/api/prompt-templates', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const rows = queryAll(db, 'SELECT * FROM ai_prompt_templates WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC, sort_order ASC, id ASC', [req.session.user.id]);
+  res.json({ success: true, data: rows });
+});
+
+// 保存提示词模板（用户自定义）
+router.post('/ai-chat/api/prompt-templates', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const b = req.body;
+  const id = parseInt(b.id, 10) || 0;
+  const name = String(b.name || '').trim().slice(0, 100);
+  const content = String(b.content || '').trim().slice(0, 8000);
+  if (!name || !content) return res.status(400).json({ error: '名称和内容不能为空' });
+  if (id) {
+    const existing = queryOne(db, 'SELECT id FROM ai_prompt_templates WHERE id = ? AND user_id = ?', [id, req.session.user.id]);
+    if (!existing) return res.status(404).json({ error: '模板不存在' });
+    db.run('UPDATE ai_prompt_templates SET name=?, content=?, description=? WHERE id=?',
+      [name, content, String(b.description || '').slice(0, 200), id]);
+  } else {
+    db.run('INSERT INTO ai_prompt_templates (user_id, name, content, description) VALUES (?,?,?,?)',
+      [req.session.user.id, name, content, String(b.description || '').slice(0, 200)]);
+  }
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 删除提示词模板
+router.post('/ai-chat/api/prompt-templates/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT id FROM ai_prompt_templates WHERE id = ? AND user_id = ?', [parseInt(req.body.id, 10), req.session.user.id]);
+  if (!row) return res.status(404).json({ error: '模板不存在' });
+  db.run('DELETE FROM ai_prompt_templates WHERE id = ?', [row.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 继续生成（从最后一条 AI 消息续写）
+router.post('/ai-chat/api/messages/continue', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatSendLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const branchId = conv.current_branch_id || 0;
+  const lastMsg = queryOne(db, `SELECT * FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND role = 'assistant' AND is_active = 1 ORDER BY id DESC LIMIT 1`, [conv.id, branchId]);
+  if (!lastMsg) return res.status(400).json({ error: '没有可继续的 AI 消息' });
+  const { resolveModel } = require('../services/ai-chat/provider');
+  const { buildContext } = require('../services/ai-chat/context');
+  const { checkQuota } = require('../services/ai-chat/quota');
+  const quotaCheck = checkQuota(db, user);
+  if (!quotaCheck.ok) return res.status(429).json({ error: quotaCheck.reason });
+  const modelInfo = resolveModel(db, user.id, conv.model);
+  const messages = buildContext(db, conv, '请继续', { excludeMsgId: null });
+  // 将最后一条 AI 消息的内容作为 assistant prefill 提示
+  messages.push({ role: 'assistant', content: String(lastMsg.content || '') + '\n' });
+  const { streamEnabled } = req.body;
+  const useStream = streamEnabled !== false && String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  const controller = new AbortController();
+  req.on('close', () => controller.abort());
+  const { callChatCompletion } = require('../services/ai-chat/provider');
+  const { estimateTokens, normalizeError } = require('../services/ai-chat/utils');
+  const { consumeQuota } = require('../services/ai-chat/quota');
+  let full = '';
+  const sendEvt = (event, data) => { if (!res.writableEnded) res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'); };
+  callChatCompletion(modelInfo, messages, {
+    stream: useStream, signal: controller.signal,
+    onDelta: useStream ? (delta) => { full += delta; sendEvt('delta', { delta }); } : undefined,
+    genParams: aiChatService.extractGenParams ? aiChatService.extractGenParams(conv) : undefined
+  }).then(result => {
+    full = result.content;
+    const combined = String(lastMsg.content || '') + '\n' + full;
+    db.run('UPDATE ai_messages SET content = ?, tokens = ? WHERE id = ?', [combined, estimateTokens(combined), lastMsg.id]);
+    saveDatabase();
+    consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
+    sendEvt('message', { id: lastMsg.id, content: combined, tokens: estimateTokens(combined), model: modelInfo.model_key, quota: checkQuota(db, user).quota });
+    sendEvt('done', { aborted: false });
+    res.end();
+  }).catch(err => {
+    if (controller.signal.aborted) {
+      if (full) {
+        const combined = String(lastMsg.content || '') + '\n' + full;
+        db.run('UPDATE ai_messages SET content = ?, tokens = ?, status = ? WHERE id = ?', [combined, estimateTokens(combined), 'stopped', lastMsg.id]);
+        saveDatabase();
+      }
+      sendEvt('done', { aborted: true });
+    } else {
+      sendEvt('error', { message: normalizeError(err) });
+      sendEvt('done', { aborted: false });
+    }
+    res.end();
+  });
+});
+
+// 模仿用户（以用户身份生成一条消息）
+router.post('/ai-chat/api/messages/impersonate', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatSendLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const { resolveModel, callChatCompletion } = require('../services/ai-chat/provider');
+  const { buildContext } = require('../services/ai-chat/context');
+  const { checkQuota, consumeQuota } = require('../services/ai-chat/quota');
+  const { estimateTokens, normalizeError } = require('../services/ai-chat/utils');
+  const quotaCheck = checkQuota(db, user);
+  if (!quotaCheck.ok) return res.status(429).json({ error: quotaCheck.reason });
+  const modelInfo = resolveModel(db, user.id, conv.model);
+  const messages = buildContext(db, conv, '', {});
+  messages.push({ role: 'system', content: 'Now generate the next user message in this conversation. Write only the user message content, no prefixes or labels. Match the user\'s style and language.' });
+  const useStream = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  const controller = new AbortController();
+  req.on('close', () => controller.abort());
+  let full = '';
+  const sendEvt = (event, data) => { if (!res.writableEnded) res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'); };
+  callChatCompletion(modelInfo, messages, {
+    stream: useStream, signal: controller.signal,
+    onDelta: useStream ? (delta) => { full += delta; sendEvt('delta', { delta }); } : undefined
+  }).then(result => {
+    full = result.content;
+    db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status) VALUES (?, ?, 'user', ?, ?, ?, 'done')`,
+      [conv.id, conv.current_branch_id || 0, full, estimateTokens(full), modelInfo.model_key]);
+    const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
+    db.run('UPDATE ai_conversations SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
+    saveDatabase();
+    consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
+    sendEvt('message', { id: msg.id, content: full, tokens: estimateTokens(full), model: modelInfo.model_key, role: 'user', quota: checkQuota(db, user).quota });
+    sendEvt('done', { aborted: false });
+    res.end();
+  }).catch(err => {
+    sendEvt('error', { message: normalizeError(err) });
+    sendEvt('done', { aborted: false });
+    res.end();
+  });
+});
+
+// 获取消息的 alternates（滑动回复）
+router.get('/ai-chat/api/messages/:id/alternates', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const msgId = parseInt(req.params.id, 10);
+  const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = ?', [msgId]);
+  if (!msg) return res.status(404).json({ error: '消息不存在' });
+  const conv = aiChatService.getOwnConversation(db, req.session.user, msg.conversation_id);
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const rootId = msg.alternate_of || msg.id;
+  const alternates = queryAll(db, 'SELECT id, content, tokens, model, status, is_active, created_at FROM ai_messages WHERE (id = ? OR alternate_of = ?) AND conversation_id = ? ORDER BY id ASC', [rootId, rootId, conv.id]);
+  res.json({ success: true, data: alternates });
+});
+
+// 切换活跃 alternate
+router.post('/ai-chat/api/messages/swipe', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const targetId = parseInt(req.body.message_id, 10);
+  const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = ?', [targetId]);
+  if (!msg) return res.status(404).json({ error: '消息不存在' });
+  const conv = aiChatService.getOwnConversation(db, req.session.user, msg.conversation_id);
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const rootId = msg.alternate_of || msg.id;
+  db.run('UPDATE ai_messages SET is_active = 0 WHERE (id = ? OR alternate_of = ?) AND conversation_id = ?', [rootId, rootId, conv.id]);
+  db.run('UPDATE ai_messages SET is_active = 1 WHERE id = ?', [targetId]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 重生成作为 alternate（滑动新增）
+router.post('/ai-chat/api/messages/swipe-regenerate', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatSendLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const targetId = parseInt(req.body.message_id, 10);
+  const target = queryOne(db, 'SELECT * FROM ai_messages WHERE id = ?', [targetId]);
+  if (!target || target.role !== 'assistant') return res.status(404).json({ error: '消息不存在' });
+  const conv = aiChatService.getOwnConversation(db, user, target.conversation_id);
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const { resolveModel, callChatCompletion } = require('../services/ai-chat/provider');
+  const { buildContext } = require('../services/ai-chat/context');
+  const { checkQuota, consumeQuota } = require('../services/ai-chat/quota');
+  const { estimateTokens, normalizeError } = require('../services/ai-chat/utils');
+  const quotaCheck = checkQuota(db, user);
+  if (!quotaCheck.ok) return res.status(429).json({ error: quotaCheck.reason });
+  const branchId = target.branch_id || 0;
+  const prevUser = queryOne(db, `SELECT * FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND id < ? AND role = 'user' ORDER BY id DESC LIMIT 1`, [conv.id, branchId, target.id]);
+  if (!prevUser) return res.status(400).json({ error: '找不到对应的用户消息' });
+  const modelInfo = resolveModel(db, user.id, conv.model);
+  const messages = buildContext(db, conv, prevUser.content, { excludeMsgId: prevUser.id });
+  const useStream = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  const controller = new AbortController();
+  req.on('close', () => controller.abort());
+  let full = '';
+  const sendEvt = (event, data) => { if (!res.writableEnded) res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'); };
+  const rootId = target.alternate_of || target.id;
+  callChatCompletion(modelInfo, messages, {
+    stream: useStream, signal: controller.signal,
+    onDelta: useStream ? (delta) => { full += delta; sendEvt('delta', { delta }); } : undefined,
+    genParams: aiChatService.extractGenParams ? aiChatService.extractGenParams(conv) : undefined
+  }).then(result => {
+    full = result.content;
+    db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status, alternate_of, is_active) VALUES (?, ?, 'assistant', ?, ?, ?, 'done', ?, 0)`,
+      [conv.id, branchId, full, estimateTokens(full), modelInfo.model_key, rootId]);
+    const newMsg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
+    saveDatabase();
+    consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
+    sendEvt('message', { id: newMsg.id, content: full, tokens: estimateTokens(full), model: modelInfo.model_key, alternate_of: rootId, quota: checkQuota(db, user).quota });
+    sendEvt('done', { aborted: false });
+    res.end();
+  }).catch(err => {
+    if (controller.signal.aborted) {
+      sendEvt('done', { aborted: true });
+    } else {
+      sendEvt('error', { message: normalizeError(err) });
+      sendEvt('done', { aborted: false });
+    }
+    res.end();
+  });
+});
+
+// 上下文预览（调试用：返回当前会话的完整 prompt 组装结果）
+router.get('/ai-chat/api/conversations/:id/context-preview', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.params.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const { buildContext } = require('../services/ai-chat/context');
+  const { estimateTokens } = require('../services/ai-chat/utils');
+  const messages = buildContext(db, conv, '（预览）', {});
+  const totalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+  res.json({ success: true, data: { messages, totalTokens } });
 });
 
 module.exports = router;

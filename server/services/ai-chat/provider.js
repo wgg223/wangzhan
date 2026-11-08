@@ -119,11 +119,12 @@ function resolveEmbeddings(db) {
  * 调用 OpenAI 兼容 chat/completions
  * @param {Object} modelInfo - resolveModel 返回值
  * @param {Array} messages
- * @param {Object} opts - { stream, signal, onDelta, timeout }
+ * @param {Object} opts - { stream, signal, onDelta, timeout, genParams }
+ *   genParams: { temperature, top_p, top_k, frequency_penalty, presence_penalty, max_tokens } 覆盖模型默认值
  * @returns {Promise<{content: string, finishReason: string}>}
  */
 async function callChatCompletion(modelInfo, messages, opts = {}) {
-  const { stream = false, signal, onDelta, timeout = 90000 } = opts;
+  const { stream = false, signal, onDelta, timeout = 90000, genParams } = opts;
   const isPollinations = modelInfo.provider === 'pollinations';
   // Pollinations 免费接口直接 POST 端点本身；其余 OpenAI 兼容端点拼 /chat/completions
   const url = isPollinations
@@ -137,12 +138,17 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
     headers.referer = 'http://localhost:3000';
   }
 
+  const gp = genParams || {};
   const body = {
     model: modelInfo.model_key,
     messages,
-    temperature: modelInfo.temperature,
-    max_tokens: modelInfo.max_tokens
+    temperature: gp.temperature != null ? gp.temperature : modelInfo.temperature,
+    max_tokens: gp.max_tokens != null ? gp.max_tokens : modelInfo.max_tokens
   };
+  if (gp.top_p != null && gp.top_p < 1) body.top_p = gp.top_p;
+  if (gp.top_k != null && gp.top_k > 0) body.top_k = gp.top_k;
+  if (gp.frequency_penalty != null && gp.frequency_penalty !== 0) body.frequency_penalty = gp.frequency_penalty;
+  if (gp.presence_penalty != null && gp.presence_penalty !== 0) body.presence_penalty = gp.presence_penalty;
   if (stream) body.stream = true;
 
   if (stream) {
