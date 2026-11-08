@@ -1,5 +1,192 @@
-/* AI 聊天页样式：三栏聊天应用，颜色全部走主站 variables.css（亮色默认，暗色随 [data-theme=dark] 自动切换） */
+/* AI 聊天页样式：独立页面，内嵌变量与基础样式 */
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ========== CSS 变量（独立页面自包含，不依赖主站 variables.css） ========== */
+:root {
+  --primary: #ec4899;
+  --primary-dark: #be185d;
+  --primary-light: #f9a8d4;
+  --primary-bg: #fdf2f8;
+  --primary-border: rgba(236, 72, 153, 0.2);
+  --primary-shadow: rgba(236, 72, 153, 0.3);
+  --primary-focus: rgba(236, 72, 153, 0.12);
+  --primary-glow: rgba(236, 72, 153, 0.4);
+  --success: #10b981;
+  --success-dark: #059669;
+  --success-light: #34d399;
+  --success-bg: rgba(16, 185, 129, 0.08);
+  --success-border: rgba(16, 185, 129, 0.2);
+  --success-shadow: rgba(16, 185, 129, 0.3);
+  --warning: #f59e0b;
+  --warning-dark: #d97706;
+  --warning-bg: rgba(245, 158, 11, 0.08);
+  --warning-border: rgba(245, 158, 11, 0.2);
+  --warning-shadow: rgba(245, 158, 11, 0.3);
+  --danger: #f43f5e;
+  --danger-dark: #e11d48;
+  --danger-bg: rgba(244, 63, 94, 0.08);
+  --danger-border: rgba(244, 63, 94, 0.2);
+  --danger-shadow: rgba(244, 63, 94, 0.3);
+  --info: #3b82f6;
+  --info-dark: #2563eb;
+  --info-bg: rgba(59, 130, 246, 0.08);
+  --info-border: rgba(59, 130, 246, 0.2);
+  --info-shadow: rgba(59, 130, 246, 0.3);
+  --accent: #8b5cf6;
+  --gray-50: #fdf5f9;
+  --gray-100: #f9e9f1;
+  --gray-200: #f0d6e2;
+  --gray-300: #e2bdcf;
+  --gray-400: #c39fb4;
+  --gray-500: #9d7d91;
+  --gray-600: #7c5e70;
+  --gray-700: #5e4655;
+  --gray-800: #43303e;
+  --gray-900: #2a1e27;
+  --bg-primary: #ffffff;
+  --bg-secondary: var(--gray-50);
+  --bg-card: #ffffff;
+  --bg-tertiary: var(--gray-100);
+  --text-primary: var(--gray-800);
+  --text-secondary: var(--gray-600);
+  --text-muted: var(--gray-400);
+  --text-inverse: #ffffff;
+  --border-color: var(--gray-200);
+  --border-light: rgba(236, 72, 153, 0.06);
+  --header-bg: rgba(255, 250, 253, 0.88);
+  --footer-bg: var(--gray-100);
+  --sidebar-bg: #2a1e3e;
+  --sidebar-hover: #3a2a55;
+  --code-bg: #fdf0f6;
+  --overlay-bg: rgba(42, 30, 62, 0.25);
+  --skeleton-base: #f0d6e2;
+  --skeleton-shine: #f9e9f1;
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+  --shadow-xs: 0 1px 2px rgba(42, 30, 62, 0.05);
+  --shadow-sm: 0 1px 3px rgba(42, 30, 62, 0.07), 0 1px 2px rgba(42, 30, 62, 0.05);
+  --shadow-md: 0 4px 12px -2px rgba(236, 72, 153, 0.12), 0 2px 6px -2px rgba(139, 92, 246, 0.08);
+  --shadow-lg: 0 12px 24px -6px rgba(236, 72, 153, 0.16), 0 6px 12px -6px rgba(139, 92, 246, 0.1);
+  --shadow-xl: 0 20px 40px -8px rgba(236, 72, 153, 0.2), 0 10px 20px -8px rgba(139, 92, 246, 0.12);
+  --shadow-2xl: 0 25px 60px -12px rgba(190, 24, 93, 0.25);
+  --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --line-height-tight: 1.3;
+  --line-height-normal: 1.6;
+  --line-height-relaxed: 1.7;
+  --line-height-loose: 1.9;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-fixed: 300;
+  --z-modal-backdrop: 400;
+  --z-modal: 500;
+  --z-popover: 600;
+  --z-tooltip: 700;
+  --z-toast: 800;
+}
+[data-theme="dark"] {
+  --primary: #f472b6;
+  --primary-dark: #ec4899;
+  --primary-light: #f9a8d4;
+  --primary-bg: #3d0f2c;
+  --primary-border: rgba(244, 114, 182, 0.2);
+  --primary-shadow: rgba(244, 114, 182, 0.3);
+  --primary-focus: rgba(244, 114, 182, 0.12);
+  --primary-glow: rgba(244, 114, 182, 0.4);
+  --success: #34d399;
+  --success-dark: #10b981;
+  --warning: #fbbf24;
+  --warning-dark: #f59e0b;
+  --danger: #fb7185;
+  --danger-dark: #f43f5e;
+  --info: #60a5fa;
+  --info-dark: #3b82f6;
+  --gray-50: #171024;
+  --gray-100: #211833;
+  --gray-200: #2e2347;
+  --gray-300: #44365c;
+  --gray-400: #6a5a80;
+  --gray-500: #9d8eb4;
+  --gray-600: #c3b7d3;
+  --gray-700: #dcd3e7;
+  --gray-800: #ebe5f1;
+  --gray-900: #f7f4fa;
+  --bg-primary: #171024;
+  --bg-secondary: #1e1530;
+  --bg-card: #211833;
+  --bg-tertiary: var(--gray-100);
+  --text-primary: #ebe5f1;
+  --text-secondary: #c3b7d3;
+  --text-muted: #6a5a80;
+  --text-inverse: #171024;
+  --border-color: #2e2347;
+  --border-light: rgba(244, 114, 182, 0.08);
+  --header-bg: rgba(23, 16, 36, 0.92);
+  --footer-bg: #1e1530;
+  --sidebar-bg: #110b1c;
+  --sidebar-hover: #211833;
+  --code-bg: #241b38;
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+  --skeleton-base: #2e2347;
+  --skeleton-shine: #44365c;
+  --danger-bg: rgba(251, 113, 133, 0.08);
+  --danger-border: rgba(251, 113, 133, 0.2);
+  --success-bg: rgba(52, 211, 153, 0.08);
+  --success-border: rgba(52, 211, 153, 0.2);
+  --warning-bg: rgba(251, 191, 36, 0.08);
+  --warning-border: rgba(251, 191, 36, 0.2);
+  --info-bg: rgba(96, 165, 250, 0.08);
+  --info-border: rgba(96, 165, 250, 0.2);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.4), 0 2px 6px -2px rgba(139, 92, 246, 0.2);
+  --shadow-lg: 0 12px 24px -6px rgba(0, 0, 0, 0.45), 0 6px 12px -6px rgba(139, 92, 246, 0.2);
+  --shadow-xl: 0 20px 40px -8px rgba(0, 0, 0, 0.55), 0 10px 20px -8px rgba(139, 92, 246, 0.2);
+  --shadow-2xl: 0 25px 60px -12px rgba(0, 0, 0, 0.65);
+  --accent: #a78bfa;
+}
+
+/* ========== 基础页面样式 ========== */
+html, body { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: var(--line-height-normal);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--info); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ========== Toast 提示 ========== */
+.toast-message {
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+  z-index: var(--z-toast);
+  padding: 10px 22px; border-radius: var(--radius-sm);
+  background: var(--bg-card); color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  font-size: 14px; line-height: 1.5;
+  animation: toast-slide-in .25s ease both;
+  white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+}
+.toast-message.toast-success { border-color: var(--success-border); background: var(--success-bg); color: var(--success-dark); }
+.toast-message.toast-error { border-color: var(--danger-border); background: var(--danger-bg); color: var(--danger-dark); }
+.toast-message.toast-warning { border-color: var(--warning-border); background: var(--warning-bg); color: var(--warning-dark); }
+.toast-message.toast-info { border-color: var(--info-border); background: var(--info-bg); color: var(--info-dark); }
+.toast-message.hiding { opacity: 0; transition: opacity .3s ease; }
+@keyframes toast-slide-in { from { opacity: 0; transform: translateX(-50%) translateY(-12px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 
 .ac-app {
   display: flex;

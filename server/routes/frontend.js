@@ -964,7 +964,7 @@ function csrfCheck(req, res, next) {
 
 const WORLD_BOOK_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top'];
 
-// AI 聊天页面（常规站点布局，背景与主站一致）
+// AI 聊天页面（独立页面，不使用主站布局）
 router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
   const db = req.db;
   if (!req.session.doubleSubmitToken) {

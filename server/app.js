@@ -291,7 +291,9 @@ app.use((req, res, next) => {
   } else if (req.path.startsWith('/setup')) {
     res.locals.layout = false;                  // 安装向导独立
   } else if (req.path.match(/^\/chat\/\d+$/)) {
-    res.locals.layout = false;                  // AI 聊天页独立
+    res.locals.layout = false;                  // IM 聊天页独立
+  } else if (req.path === '/ai-chat') {
+    res.locals.layout = false;                  // AI 聊天页独立（不依赖主站布局）
   } else {
     res.locals.layout = 'frontend/layout';      // 默认前台布局
   }
