@@ -87,7 +87,7 @@ router.use('/settings/basic', isSuperAdmin, settingsBasicRouter);
 router.use('/settings/smtp', isSuperAdmin, settingsSmtpRouter);
 router.use('/settings/agreement', isSuperAdmin, settingsAgreementRouter);
 router.use('/settings/popup', isSuperAdmin, settingsPopupRouter);
-router.use('/music', isSuperAdmin, musicRouter);
+router.use(musicRouter);
 router.use(articlesRouter);
 router.use(promptsRouter);
 router.use(aiImageRouter);
