@@ -6,7 +6,7 @@
   <title>AI 聊天 - <%= settings.site_name || '我的网站' %></title>
   <meta name="csrf-token" content="<%= csrfToken %>">
   <meta name="theme-color" content="#ec4899">
-  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-chat.css') : '/css/ai-chat.css' %>?v=20261108h">
+  <link rel="stylesheet" href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/css/ai-chat.css') : '/css/ai-chat.css' %>?v=20261108i">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 </head>
@@ -19,7 +19,7 @@
       <a class="ac-back" href="/">← 返回首页</a>
     </div>
     <button class="ac-btn ac-btn-primary ac-new-chat" id="acNewChat">＋ 新对话</button>
-    <div class="ac-conv-search"><input type="text" id="acConvSearch" placeholder="搜索会话…" autocomplete="off"></div>
+    <div class="ac-conv-search"><input type="search" id="acConvSearch" placeholder="搜索会话…" autocomplete="off" spellcheck="false"></div>
     <div class="ac-conv-list" id="acConvList"></div>
     <div class="ac-sidebar-foot">
       <span class="ac-quota-badge" id="acQuotaBadge"></span>
@@ -54,7 +54,7 @@
           <input type="text" class="ac-model-input" id="acmKey" placeholder="模型标识" maxlength="100" autocomplete="off">
           <button type="button" class="ac-btn ac-btn-sm" id="acmFetch">⟳ 获取模型</button>
           <input type="text" class="ac-model-input ac-model-input-wide" id="acmEndpoint" placeholder="API 端点" maxlength="300" autocomplete="off">
-          <input type="password" class="ac-model-input ac-model-input-wide" id="acmApiKey" placeholder="API Key" maxlength="300" autocomplete="off">
+          <input type="password" class="ac-model-input ac-model-input-wide" id="acmApiKey" placeholder="API Key" maxlength="300" autocomplete="new-password">
           <label class="ac-model-default"><input type="checkbox" id="acmDefault"> 默认</label>
           <button type="button" class="ac-btn ac-btn-primary ac-btn-sm" id="acmSave">保存</button>
           <button type="button" class="ac-btn ac-btn-sm" id="acmCancel">取消</button>
@@ -239,6 +239,6 @@
   prompts: canPickPrompt ? prompts.map(function(p) { return { id: p.id, title: p.title, excerpt: p.excerpt || '' }; }) : []
 }).replace(/</g, '\\u003c') %></script>
 <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/utils.js') : '/js/utils.js' %>"></script>
-<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-chat.js') : '/js/ai-chat.js' %>?v=20261108h" defer></script>
+<script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-chat.js') : '/js/ai-chat.js' %>?v=20261108i" defer></script>
 </body>
 </html>

@@ -1467,11 +1467,11 @@
             try {
               // atob 返回 Latin-1 二进制字符串，需转 UTF-8
               var binary = atob(base64Str);
-              var bytes = new Uint8Array(binary.length);
+              var utf8Bytes = new Uint8Array(binary.length);
               for (var m = 0; m < binary.length; m++) {
-                bytes[m] = binary.charCodeAt(m);
+                utf8Bytes[m] = binary.charCodeAt(m);
               }
-              return new TextDecoder('utf-8').decode(bytes);
+              return new TextDecoder('utf-8').decode(utf8Bytes);
             } catch (e) { return null; }
           }
         }
@@ -2054,8 +2054,23 @@
   });
 
   els.acConvSearch.addEventListener('input', function () {
+    // 浏览器自动填充用户名时也会触发 input 事件，但输入框不会获得焦点；此时清空，避免列表被过滤为空
+    if (els.acConvSearch.value && document.activeElement !== els.acConvSearch) {
+      els.acConvSearch.value = '';
+    }
     state.convSearch = els.acConvSearch.value;
     renderConversations();
+  });
+
+  // 浏览器可能把用户名自动填充进搜索框（页面存在 password 输入），导致列表被过滤为空；加载后清空非用户输入的值
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      if (els.acConvSearch && els.acConvSearch.value && document.activeElement !== els.acConvSearch) {
+        els.acConvSearch.value = '';
+        state.convSearch = '';
+        renderConversations();
+      }
+    }, 300);
   });
 
   els.acSend.addEventListener('click', send);
@@ -2082,6 +2097,13 @@
     els.acInputTokens.classList.remove('warn', 'over');
     if (tokens > 4000) els.acInputTokens.classList.add('over');
     else if (tokens > 2000) els.acInputTokens.classList.add('warn');
+  }
+  // 粗略 token 估算（与服务端同算法：CJK ≈ 1 token/字，其他 ≈ 4 字符/token）
+  function estimateTokens(text) {
+    if (!text) return 0;
+    var str = String(text);
+    var cjk = (str.match(/[一-鿿぀-ヿ가-힯]/g) || []).length;
+    return Math.ceil(cjk + (str.length - cjk) / 4);
   }
   els.acInput.addEventListener('input', autoResizeInput);
 
