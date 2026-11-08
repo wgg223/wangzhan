@@ -21,6 +21,20 @@ const { getImageConfigs, saveImageShareConfigs } = require('../utils/settings');
 const { addImageLog } = require('../utils/image-utils');
 const { isAdminRole, hasPermKey, validatePassword } = require('../middlewares/auth');
 
+// 图片分享站所有页面自带完整 HTML（views/image-share/header.ejs），统一独立渲染，不套主站布局。
+// express-ejs-layouts 只认 render 选项里的 layout:false（res.locals.layout=false 会被 || 跳过），故在此注入。
+router.use((req, res, next) => {
+  const render = res.render.bind(res);
+  res.render = function (view, opts, cb) {
+    const isFn = typeof opts === 'function';
+    const fn = isFn ? opts : cb;
+    const base = isFn ? {} : (opts || {});
+    const options = base.layout === undefined ? Object.assign({}, base, { layout: false }) : base;
+    render(view, options, fn);
+  };
+  next();
+});
+
 // 上传配置
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {

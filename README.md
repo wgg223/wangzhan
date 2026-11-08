@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.16.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.16.1 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -307,6 +307,15 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.16.1 (2026-11-09)
+
+**修复：独立页面被误套主站布局（导航栏残留根因）**
+- 根因：`express-ejs-layouts@2.5.1` 的 `options.layout || res.locals.layout || defaultLayout` 会跳过 falsy 的 `res.locals.layout=false`，导致中间件设置的独立布局从未生效，页面被套进带导航栏的主站布局
+- AI 聊天页 `/ai-chat`：render 选项显式 `layout:false`，彻底去除主站导航栏（修复多版本反馈"布局仍未改"）
+- 小说阅读器 `/novels/:id`、`/novels/:id/chapter/:id`：两处 render 加 `layout:false`，独立整页渲染
+- 图片分享站 `/image-share/*`：路由器级中间件统一默认 `layout:false`（全站页面自带完整 HTML），保留显式 layout 覆盖与回调渲染语义
+- IM 私信页 `/chat/:id` 保持套主站布局（其视图为 body 片段、依赖布局提供 HTML/CSS）
 
 ### v8.16.0 (2026-11-09)
 

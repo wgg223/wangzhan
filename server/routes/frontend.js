@@ -491,6 +491,7 @@ router.get('/novels/:id', hasFrontendPermission('novels.detail.access'), (req, r
   const chapters = queryAll(db, 'SELECT * FROM novel_chapters WHERE novel_id = ? ORDER BY chapter_number ASC', [req.params.id]);
 
   res.render('frontend/novel-reader', {
+    layout: false,
     user: req.session.user || null,
     settings: settings,
     novel: novel,
@@ -532,6 +533,7 @@ router.get('/novels/:id/chapter/:chapterId', isAuthenticated, (req, res) => {
   const chapterIndex = chapters.findIndex(ch => ch.id === Number(req.params.chapterId));
 
   res.render('frontend/novel-reader', {
+    layout: false,
     user: req.session.user || null,
     settings: settings,
     novel: novel,
@@ -992,6 +994,7 @@ router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (re
   const canExport = user.role === 'super_admin' || hasPermKey(userPerms, 'aichat.export');
 
   res.render('frontend/ai-chat', {
+    layout: false,
     user,
     settings,
     csrfToken: req.session.doubleSubmitToken,

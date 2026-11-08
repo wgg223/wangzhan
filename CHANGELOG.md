@@ -2,6 +2,16 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.16.1 (2026-11-09)
+
+**修复：独立页面被误套主站布局（导航栏残留根因）**
+
+- 根因：`express-ejs-layouts@2.5.1` 仅认 render 选项里的 `layout:false`；`res.locals.layout=false` 因 falsy 被 `||` 跳过，中间件的独立布局设置从未生效
+- AI 聊天页 `/ai-chat`：render 选项显式 `layout:false`，去除主站导航栏（修复多版本"布局仍未改"反馈）
+- 小说阅读器 `/novels/:id` 与章节页：两处 render 加 `layout:false`
+- 图片分享站 `/image-share/*`：路由器级中间件统一默认 `layout:false`，保留显式覆盖与回调语义
+- IM 私信页 `/chat/:id` 维持套布局（body 片段视图依赖布局提供 HTML/CSS）
+
 ## v8.16.0 (2026-11-09)
 
 **新增 + 修复：群聊扩容至 16 人 + 后台世界书导入 + 线上报障修复**
