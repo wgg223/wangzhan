@@ -644,11 +644,18 @@ function createTables(db) {
   // 消息滑动（alternates）：同一位置的多个回复
   try { db.run('ALTER TABLE ai_messages ADD COLUMN alternate_of INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   try { db.run('ALTER TABLE ai_messages ADD COLUMN is_active INTEGER DEFAULT 1'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  // 场景图片消息：is_image 标记 + image_url 存储
+  try { db.run('ALTER TABLE ai_messages ADD COLUMN is_image INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE ai_messages ADD COLUMN image_url TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   // 群聊（SillyTavern Group Chats）：多角色会话 + 消息说话人归属
   try { db.run('ALTER TABLE ai_conversations ADD COLUMN is_group INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   try { db.run("ALTER TABLE ai_conversations ADD COLUMN group_members TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   try { db.run("ALTER TABLE ai_conversations ADD COLUMN group_mode TEXT DEFAULT 'round'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
   try { db.run('ALTER TABLE ai_messages ADD COLUMN speaker_role_id INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+
+  // 精确 token 统计：输入 tokens 和输出 tokens 分开记录
+  try { db.run('ALTER TABLE ai_messages ADD COLUMN input_tokens INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_messages ADD COLUMN output_tokens INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // AI 世界书（World Book）：按触发词注入上下文的设定条目
   db.run(`CREATE TABLE IF NOT EXISTS ai_world_book (
@@ -690,6 +697,13 @@ function createTables(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
   )`);
+  // 记忆系统 v2：逐轮总结 / 逐轮向量 / 二次压缩分组
+  try { db.run('ALTER TABLE ai_memories ADD COLUMN round_index INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE ai_memories ADD COLUMN user_input TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE ai_memories ADD COLUMN status TEXT DEFAULT 'done'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run("ALTER TABLE ai_memories ADD COLUMN emb_model TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_memories ADD COLUMN group_start INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  try { db.run('ALTER TABLE ai_memories ADD COLUMN group_end INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // AI 剧情分支
   db.run(`CREATE TABLE IF NOT EXISTS ai_branches (
@@ -841,6 +855,11 @@ function createTables(db) {
     ['ai_memory_enabled', '1'],
     ['ai_memory_mode', 'summary'],
     ['ai_memory_interval', '10'],
+    ['ai_memory_keep_recent', '10'],
+    ['ai_memory_recall_min_score', '0.48'],
+    ['ai_memory_recall_max', '10'],
+    ['ai_memory_group_recent', '25'],
+    ['ai_memory_group_size', '5'],
     ['ai_embedding_api_base', ''],
     ['ai_embedding_model', ''],
     ['ai_embedding_api_key', ''],

@@ -9,7 +9,7 @@
   <%
   function acBust(p) {
     var u = typeof cdn !== 'undefined' ? cdn.getUrl(p) : p;
-    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261109f';
+    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261109j';
   }
   %>
   <link rel="stylesheet" href="<%= acBust('/css/ai-chat.css') %>">
@@ -181,6 +181,7 @@
           <label class="ac-field">记忆模式<select id="acMemoryMode"><option value="summary">摘要</option><option value="vector">向量</option><option value="both">摘要+向量</option><option value="off">关闭</option></select></label>
           <div style="display:flex;gap:6px;margin-top:10px;">
             <button class="ac-btn ac-btn-sm" id="acMemoryRefresh">立即总结</button>
+            <button class="ac-btn ac-btn-sm" id="acMemoryBackfill">记忆补录</button>
             <button class="ac-btn ac-btn-primary ac-btn-sm" id="acMemorySave" style="flex:1;">保存</button>
           </div>
         </div>
@@ -253,6 +254,8 @@
 <div class="ac-modal-overlay" id="acPresetSaveModal" hidden><div class="ac-modal"><div class="ac-modal-head"><h2>保存预设</h2><button class="ac-modal-close" data-ac-close="acPresetSaveModal">×</button></div><div class="ac-modal-body"><label class="ac-field">名称<input id="acPresetName" maxlength="100" placeholder="如：创意写作"></label><label class="ac-field ac-check"><input type="checkbox" id="acPresetDefault"> 默认</label></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-sm" data-ac-close="acPresetSaveModal">取消</button><button class="ac-btn ac-btn-primary ac-btn-sm" id="acPresetSaveConfirm">保存</button></div></div></div>
 
 <div class="ac-modal-overlay" id="acContextModal" hidden><div class="ac-modal ac-modal-lg"><div class="ac-modal-head"><h2>上下文预览</h2><button class="ac-modal-close" data-ac-close="acContextModal">×</button></div><div class="ac-modal-body" style="max-height:65vh;overflow-y:auto;"><div id="acContextInfo" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div><div id="acContextMessages"></div></div></div></div>
+
+<div class="ac-modal-overlay" id="acMemoryBackfillModal" hidden><div class="ac-modal"><div class="ac-modal-head"><h2>🧠 记忆补录</h2><button class="ac-modal-close" data-ac-close="acMemoryBackfillModal">×</button></div><div class="ac-modal-body" style="max-height:65vh;overflow-y:auto;"><div id="acBackfillStatus" style="font-size:13px;line-height:1.8;color:var(--text-muted);">加载中…</div><div id="acBackfillEmbWarn" style="display:none;margin-top:10px;padding:8px 10px;border-radius:6px;background:rgba(255,180,0,.14);color:#e0a800;font-size:12px;line-height:1.6;"></div><div id="acBackfillProgress" style="display:none;margin-top:12px;padding:10px;border:1px solid var(--border-color);border-radius:8px;"><div id="acBackfillPhase" style="font-size:13px;font-weight:600;margin-bottom:6px;"></div><div style="height:8px;background:var(--border-color);border-radius:4px;overflow:hidden;"><div id="acBackfillBar" style="height:100%;width:0;background:#6c5ce7;transition:width .3s;"></div></div><div id="acBackfillMeta" style="font-size:12px;color:var(--text-muted);margin-top:6px;"></div></div><p class="ac-modal-hint" style="margin-top:12px;">后台补录会等待当前回复结束后再继续。增强（向量）补录需先在后台配置向量模型。</p></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-danger ac-btn-sm" id="acBackfillCancel" style="display:none;">取消</button><span style="flex:1"></span><button class="ac-btn ac-btn-sm" id="acBackfillSummaries">逐轮总结</button><button class="ac-btn ac-btn-sm" id="acBackfillVectors">向量坐标</button><button class="ac-btn ac-btn-sm" id="acBackfillGroups">二次压缩</button><button class="ac-btn ac-btn-primary ac-btn-sm" id="acBackfillAll">全部补录</button></div></div></div>
 
 <script type="application/json" id="ai-chat-data"><%- JSON.stringify({
   csrfToken: csrfToken,

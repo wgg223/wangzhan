@@ -7,7 +7,7 @@ const { getSettings } = require('../../utils/settings');
 const { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings } = require('./provider');
 const { checkQuota, consumeQuota } = require('./quota');
 const { buildContext, getGroupMembers } = require('./context');
-const { maybeSummarize, embedRecentPairs } = require('./memory');
+const { summarizeRound, embedRound, getRounds, markReplyStart, markReplyEnd } = require('./memory');
 const { estimateTokens, normalizeError } = require('./utils');
 
 // ============ 会话 ============
@@ -178,6 +178,7 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
   const { stream = true, signal, onDelta } = opts;
   const genParams = extractGenParams(conv);
   let full = '';
+  let usage = null; // 存储 API 返回的实际 token 消耗
   try {
     const result = await callChatCompletion(modelInfo, messages, {
       stream,
@@ -186,27 +187,36 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
       genParams
     });
     full = result.content;
+    usage = result.usage; // 捕获 usage 信息
     if (!full) throw new Error('模型未返回内容，请重试');
   } catch (err) {
     // 主动停止：保留半截内容，status=stopped，不计配额
     if (signal && signal.aborted) {
-      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '', opts.speakerRoleId);
+      const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
+      const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
+      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '', opts.speakerRoleId, inputTokens, outputTokens);
       return {
-        messageId: msgId, content: full, tokens: estimateTokens(full), aborted: true,
+        messageId: msgId, content: full, tokens: inputTokens + outputTokens, 
+        inputTokens, outputTokens, aborted: true,
         model: modelInfo.model_key, quota: quotaCheck.quota
       };
     }
     const reason = normalizeError(err);
-    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason, opts.speakerRoleId);
+    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason, opts.speakerRoleId, 0, 0);
     consumeQuota(db, user, { tokens: 0, count: true }); // 失败计次数
     throw Object.assign(new Error(reason), { status: 502, messageId: msgId });
   }
 
-  const tokens = estimateTokens(full);
-  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '', opts.speakerRoleId);
-  consumeQuota(db, user, { tokens, count: true });
+  // 优先使用 API 返回的实际 token 数，否则估算
+  const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
+  const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
+  const totalTokens = inputTokens + outputTokens;
+  
+  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '', opts.speakerRoleId, inputTokens, outputTokens);
+  consumeQuota(db, user, { tokens: totalTokens, count: true });
   return {
-    messageId: msgId, content: full, tokens, aborted: false,
+    messageId: msgId, content: full, tokens: totalTokens,
+    inputTokens, outputTokens, aborted: false,
     model: modelInfo.model_key, quota: checkQuota(db, user).quota
   };
 }
@@ -230,6 +240,15 @@ async function embedUserMessage(db, conv, settings, content) {
  * 成功/错误均计配额（错误只计次数）；主动停止不计
  */
 async function sendMessage(db, user, conv, userContent, opts = {}) {
+  markReplyStart(conv.id);
+  try {
+    return await sendMessageInner(db, user, conv, userContent, opts);
+  } finally {
+    markReplyEnd(conv.id);
+  }
+}
+
+async function sendMessageInner(db, user, conv, userContent, opts = {}) {
   const settings = getSettings(db);
   if (String(settings.ai_enabled ?? '1') === '0') {
     throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });
@@ -273,17 +292,20 @@ async function sendMessage(db, user, conv, userContent, opts = {}) {
 
   const result = await runCompletion(db, user, conv, modelInfo, messages, opts, quotaCheck);
 
-  // 异步记忆后处理（不阻塞响应）：摘要记忆 + 向量记忆
+  // 异步记忆后处理（不阻塞响应）：为最新一轮生成逐轮总结 +（增强模式）逐轮向量
   const memoryEnabled = conv.memory_enabled !== 0 && String(settings.ai_memory_enabled ?? '1') !== '0';
   if (!result.aborted && memoryEnabled) {
     Promise.resolve()
-      .then(() => maybeSummarize(db, conv, modelInfo))
-      .catch(err => console.error('[ai-chat] 摘要记忆失败:', err.message));
-    if ((conv.memory_mode === 'vector' || conv.memory_mode === 'both') && embCfg) {
-      Promise.resolve()
-        .then(() => embedRecentPairs(db, conv, embCfg))
-        .catch(err => console.error('[ai-chat] 向量记忆失败:', err.message));
-    }
+      .then(async () => {
+        const rounds = getRounds(db, conv.id, conv.current_branch_id || 0);
+        const last = rounds[rounds.length - 1];
+        if (!last) return;
+        const summary = await summarizeRound(db, conv, modelInfo, last);
+        if ((conv.memory_mode === 'vector' || conv.memory_mode === 'both') && embCfg && summary) {
+          await embedRound(db, conv, embCfg, last, summary);
+        }
+      })
+      .catch(err => console.error('[ai-chat] 逐轮记忆失败:', err.message));
   }
 
   return result;
@@ -321,6 +343,15 @@ async function sendGroupRound(db, user, conv, userMsg, opts, ctxOpts) {
  * 群聊手动顶帖：不新增用户消息，指定角色对当前上下文回复一条
  */
 async function groupReply(db, user, conv, roleId, opts = {}) {
+  markReplyStart(conv.id);
+  try {
+    return await groupReplyInner(db, user, conv, roleId, opts);
+  } finally {
+    markReplyEnd(conv.id);
+  }
+}
+
+async function groupReplyInner(db, user, conv, roleId, opts = {}) {
   const settings = getSettings(db);
   if (String(settings.ai_enabled ?? '1') === '0') {
     throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });
@@ -341,10 +372,11 @@ async function groupReply(db, user, conv, roleId, opts = {}) {
   return { result, speaker: sp };
 }
 
-function saveAssistantMessage(db, conv, content, modelInfo, status, error, speakerRoleId) {
-  db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status, error, speaker_role_id)
-    VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, ?)`,
-  [conv.id, conv.current_branch_id || 0, content, estimateTokens(content),
+function saveAssistantMessage(db, conv, content, modelInfo, status, error, speakerRoleId, inputTokens, outputTokens) {
+  const totalTokens = (inputTokens || 0) + (outputTokens || 0) || estimateTokens(content);
+  db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, input_tokens, output_tokens, model, status, error, speaker_role_id)
+    VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [conv.id, conv.current_branch_id || 0, content, totalTokens, inputTokens || 0, outputTokens || 0,
     modelInfo ? modelInfo.model_key : '', status, error, speakerRoleId || null]);
   const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
   db.run('UPDATE ai_conversations SET message_count = message_count + 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
@@ -356,6 +388,15 @@ function saveAssistantMessage(db, conv, content, modelInfo, status, error, speak
  * 重新生成：以目标 assistant 消息的前一条用户消息为输入，追加一条新回复
  */
 async function regenerateMessage(db, user, conv, targetMsgId, opts = {}) {
+  markReplyStart(conv.id);
+  try {
+    return await regenerateMessageInner(db, user, conv, targetMsgId, opts);
+  } finally {
+    markReplyEnd(conv.id);
+  }
+}
+
+async function regenerateMessageInner(db, user, conv, targetMsgId, opts = {}) {
   const settings = getSettings(db);
   if (String(settings.ai_enabled ?? '1') === '0') {
     throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });

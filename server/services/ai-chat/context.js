@@ -6,7 +6,7 @@
 const { queryAll, queryOne } = require('../../config/database');
 const { getSettings } = require('../../utils/settings');
 const { estimateTokens } = require('./utils');
-const { buildMemoryBlock } = require('./memory');
+const { buildMemoryBlock, memorySettings, getRounds, getRoundSummaryMap, recallRounds, buildRecallBlock } = require('./memory');
 const { searchRag, buildRagBlock } = require('./rag');
 
 const HISTORY_TOKEN_WINDOW = 3000;
@@ -188,20 +188,60 @@ function buildContext(db, conv, userMsg, opts = {}) {
     });
   }
 
-  // ---- 当前分支历史窗口 ----
+  // ---- 当前分支历史窗口（楼层制：最近 keepRecent 楼全文，更早楼 AI 正文以逐轮总结替代） ----
+  const memSettings = memorySettings();
+  const memoryOn = conv.memory_enabled !== 0 && memSettings.enabled;
+  const summaryMap = memoryOn ? getRoundSummaryMap(db, conv.id) : {};
+  const rounds = memoryOn ? getRounds(db, conv.id, branchId) : [];
+  const useFloors = memoryOn && rounds.length > 0;
+
+  // 决定保留全文的楼：从最新楼往前，最多 keepRecent 楼且不超过 token 窗口
+  const fullRoundSet = new Set();
+  let budget = HISTORY_TOKEN_WINDOW;
+  let fullCount = 0;
+  for (let i = rounds.length - 1; i >= 0 && fullCount < memSettings.keepRecent; i--) {
+    const r = rounds[i];
+    if (excludeMsgId && r.userMsgId === excludeMsgId) continue;
+    const floorTokens = estimateTokens(r.userInput) + r.assistantMsgs.reduce((s, a) => s + estimateTokens(a.content), 0);
+    if (budget - floorTokens < 0 && fullRoundSet.size) break;
+    budget -= floorTokens;
+    fullRoundSet.add(r.index);
+    fullCount++;
+  }
+
   let windowMsgs = [];
-  let tokens = 0;
-  for (let i = history.length - 1; i >= 0; i--) {
-    const m = history[i];
-    if (excludeMsgId && m.id === excludeMsgId) continue;
-    if (m.role !== 'user' && m.role !== 'assistant') continue;
-    if (m.status === 'error' || m.status === 'stopped') continue;
-    if (m.is_active === 0) continue; // 跳过非活跃 alternate
-    // 压缩长消息以节省 token
-    const compressed = compressMessage(m.content);
-    tokens += estimateTokens(compressed);
-    windowMsgs.unshift({ ...m, content: compressed });
-    if (tokens > HISTORY_TOKEN_WINDOW) break;
+  if (useFloors) {
+    rounds.forEach(r => {
+      if (excludeMsgId && r.userMsgId === excludeMsgId) return;
+      windowMsgs.push({ role: 'user', content: compressMessage(r.userInput), speaker_role_id: null });
+      if (fullRoundSet.has(r.index)) {
+        r.assistantMsgs.forEach(a => {
+          if (a.status === 'error' || a.status === 'stopped') return;
+          windowMsgs.push({ role: 'assistant', content: compressMessage(a.content), speaker_role_id: a.speaker_role_id || null });
+        });
+      } else {
+        // 较早楼：用户原文保留，AI 正文以对应逐轮总结替代（不删除原聊天）
+        const summary = summaryMap[r.index];
+        if (summary) {
+          windowMsgs.push({ role: 'assistant', content: '[历史总结] ' + summary, speaker_role_id: null });
+        } else {
+          r.assistantMsgs.forEach(a => {
+            if (a.status === 'error' || a.status === 'stopped') return;
+            windowMsgs.push({ role: 'assistant', content: compressMessage(a.content), speaker_role_id: a.speaker_role_id || null });
+          });
+        }
+      }
+    });
+  } else {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const m = history[i];
+      if (excludeMsgId && m.id === excludeMsgId) continue;
+      if (m.role !== 'user' && m.role !== 'assistant') continue;
+      if (m.status === 'error' || m.status === 'stopped') continue;
+      if (m.is_active === 0) continue; // 跳过非活跃 alternate
+      const compressed = compressMessage(m.content);
+      windowMsgs.unshift({ role: m.role, content: compressed, speaker_role_id: m.speaker_role_id || null });
+    }
   }
 
   // 作者注释（Author's Note）：插入到历史窗口的指定深度位置
@@ -234,6 +274,13 @@ function buildContext(db, conv, userMsg, opts = {}) {
     let finalUserMsg = String(userMsg || '');
     if (topEntries.length) finalUserMsg += '\n\n（附加设定）\n' + topEntries.map(e => e.content).join('\n');
     messages.push({ role: 'user', content: finalUserMsg });
+    // 增强模式：按最新输入召回逐轮记忆，按原时间序附在最新用户消息后（仅本次请求）
+    const vecMode = conv.memory_mode === 'vector' || conv.memory_mode === 'both';
+    if (memoryOn && vecMode && embCfg && queryEmbedding) {
+      const recalled = recallRounds(db, conv.id, queryEmbedding, embCfg.model_key, memSettings.recallMinScore, memSettings.recallMax);
+      const recallBlock = buildRecallBlock(recalled);
+      if (recallBlock) messages.push({ role: 'user', content: recallBlock });
+    }
   }
 
   return messages;

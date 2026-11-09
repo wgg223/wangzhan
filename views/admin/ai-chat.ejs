@@ -199,6 +199,11 @@
       <option value="off" <%= aiSettings.ai_memory_mode === 'off' ? 'selected' : '' %>>关闭</option>
     </select></label>
     <label>摘要间隔（条）<input id="s_ai_memory_interval" type="number" min="2" value="<%= aiSettings.ai_memory_interval || 10 %>"></label>
+    <label>保留最近楼层（原文）<input id="s_ai_memory_keep_recent" type="number" min="1" max="100" value="<%= aiSettings.ai_memory_keep_recent || 10 %>"></label>
+    <label>召回最低相似度<input id="s_ai_memory_recall_min_score" type="number" step="0.01" min="0" max="1" value="<%= aiSettings.ai_memory_recall_min_score || 0.48 %>"></label>
+    <label>最大召回条数<input id="s_ai_memory_recall_max" type="number" min="1" max="50" value="<%= aiSettings.ai_memory_recall_max || 10 %>"></label>
+    <label>二次压缩保留最近轮数<input id="s_ai_memory_group_recent" type="number" min="0" max="500" value="<%= aiSettings.ai_memory_group_recent || 25 %>"></label>
+    <label>二次压缩分组大小<input id="s_ai_memory_group_size" type="number" min="1" max="50" value="<%= aiSettings.ai_memory_group_size || 5 %>"></label>
     <label>RAG 知识库问答<select id="s_ai_rag_enabled"><option value="1" <%= aiSettings.ai_rag_enabled === '1' ? 'selected' : '' %>>启用</option><option value="0" <%= aiSettings.ai_rag_enabled !== '1' ? 'selected' : '' %>>关闭</option></select></label>
     <label>RAG 最大召回条数<input id="s_ai_rag_max_results" type="number" min="1" max="20" value="<%= aiSettings.ai_rag_max_results || 5 %>"></label>
     <label>RAG 最低相似度<input id="s_ai_rag_min_score" type="number" step="0.05" min="0" max="1" value="<%= aiSettings.ai_rag_min_score || 0.3 %>"></label>
@@ -704,9 +709,11 @@
     var form = new FormData();
     ['s_ai_enabled', 's_ai_default_model', 's_ai_allow_user_models', 's_ai_stream_enabled',
       's_ai_default_daily_limit', 's_ai_default_total_limit', 's_ai_memory_enabled', 's_ai_memory_mode',
-      's_ai_memory_interval', 's_ai_rag_enabled', 's_ai_rag_max_results', 's_ai_rag_min_score',
+      's_ai_memory_interval', 's_ai_memory_keep_recent', 's_ai_memory_recall_min_score', 's_ai_memory_recall_max',
+      's_ai_memory_group_recent', 's_ai_memory_group_size', 's_ai_rag_enabled', 's_ai_rag_max_results', 's_ai_rag_min_score',
       's_ai_embedding_api_base', 's_ai_embedding_model', 's_ai_embedding_api_key'].forEach(function (id) {
-      form.append(id, document.getElementById(id).value);
+      // 服务端读取不带 s_ 前缀的字段名，此处剥离前缀以对齐（历史遗留：此前未剥离导致保存被忽略）
+      form.append(id.replace(/^s_/, ''), document.getElementById(id).value);
     });
     csrfFetch('/admin/ai-chat/settings/save', { method: 'POST', body: form }, 20000)
       .then(function (json) {

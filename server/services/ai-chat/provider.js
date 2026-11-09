@@ -121,7 +121,7 @@ function resolveEmbeddings(db) {
  * @param {Array} messages
  * @param {Object} opts - { stream, signal, onDelta, timeout, genParams }
  *   genParams: { temperature, top_p, top_k, frequency_penalty, presence_penalty, max_tokens } 覆盖模型默认值
- * @returns {Promise<{content: string, finishReason: string}>}
+ * @returns {Promise<{content: string, finishReason: string, usage?: {prompt_tokens: number, completion_tokens: number, total_tokens: number}}>}
  */
 async function callChatCompletion(modelInfo, messages, opts = {}) {
   const { stream = false, signal, onDelta, timeout = 90000, genParams } = opts;
@@ -145,6 +145,8 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
     temperature: gp.temperature != null ? gp.temperature : modelInfo.temperature,
     max_tokens: gp.max_tokens != null ? gp.max_tokens : modelInfo.max_tokens
   };
+  // 请求返回 usage 信息（部分服务商支持）
+  body.stream_options = { include_usage: true };
   if (gp.top_p != null && gp.top_p < 1) body.top_p = gp.top_p;
   if (gp.top_k != null && gp.top_k > 0) body.top_k = gp.top_k;
   if (gp.frequency_penalty != null && gp.frequency_penalty !== 0) body.frequency_penalty = gp.frequency_penalty;
@@ -156,9 +158,25 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
   }
 
   const resp = await axios.post(url, body, { headers, timeout, signal });
-  const content = resp.data && resp.data.choices && resp.data.choices[0] &&
-    resp.data.choices[0].message && resp.data.choices[0].message.content;
-  return { content: String(content || ''), finishReason: (resp.data.choices[0] && resp.data.choices[0].finish_reason) || 'stop' };
+  const data = resp.data;
+  const content = data && data.choices && data.choices[0] &&
+    data.choices[0].message && data.choices[0].message.content;
+  
+  const result = { 
+    content: String(content || ''), 
+    finishReason: (data.choices && data.choices[0] && data.choices[0].finish_reason) || 'stop' 
+  };
+  
+  // 提取 usage 信息（prompt_tokens, completion_tokens, total_tokens）
+  if (data && data.usage) {
+    result.usage = {
+      prompt_tokens: data.usage.prompt_tokens || 0,
+      completion_tokens: data.usage.completion_tokens || 0,
+      total_tokens: data.usage.total_tokens || 0
+    };
+  }
+  
+  return result;
 }
 
 // 流式解析：逐行解析 SSE `data: {...}`，跨 chunk 缓冲
@@ -167,6 +185,7 @@ function streamCompletion(url, headers, body, signal, onDelta) {
     let buffer = '';
     let content = '';
     let settled = false;
+    let usage = null; // 存储 usage 信息
 
     axios.post(url, body, { headers, responseType: 'stream', timeout: 0, signal })
       .then(resp => {
@@ -181,7 +200,9 @@ function streamCompletion(url, headers, body, signal, onDelta) {
             const payload = line.slice(5).trim();
             if (payload === '[DONE]') {
               settled = true;
-              resolve({ content, finishReason: 'stop' });
+              const result = { content, finishReason: 'stop' };
+              if (usage) result.usage = usage;
+              resolve(result);
               return;
             }
             let parsed;
@@ -197,6 +218,14 @@ function streamCompletion(url, headers, body, signal, onDelta) {
               reject(err);
               return;
             }
+            // 提取 usage 信息（通常在最后一个 chunk 中）
+            if (parsed.usage) {
+              usage = {
+                prompt_tokens: parsed.usage.prompt_tokens || 0,
+                completion_tokens: parsed.usage.completion_tokens || 0,
+                total_tokens: parsed.usage.total_tokens || 0
+              };
+            }
             const delta = parsed.choices && parsed.choices[0] &&
               parsed.choices[0].delta && parsed.choices[0].delta.content;
             if (delta) {
@@ -208,8 +237,13 @@ function streamCompletion(url, headers, body, signal, onDelta) {
         resp.data.on('end', () => {
           if (!settled) {
             settled = true;
-            if (content) resolve({ content, finishReason: 'stop' });
-            else reject(new Error('流式响应意外结束'));
+            if (content) {
+              const result = { content, finishReason: 'stop' };
+              if (usage) result.usage = usage;
+              resolve(result);
+            } else {
+              reject(new Error('流式响应意外结束'));
+            }
           }
         });
         resp.data.on('error', err => {

@@ -42,6 +42,9 @@
     'acWorldList', 'acWorldAdd', 'acWorldImport', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
     'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acMemoryEnabled', 'acRagEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
     'acAutoCompress', 'acCompressKeep', 'acCompressKeepVal', 'acCompressNow',
+    'acMemoryBackfill', 'acMemoryBackfillModal', 'acBackfillStatus', 'acBackfillEmbWarn',
+    'acBackfillProgress', 'acBackfillPhase', 'acBackfillBar', 'acBackfillMeta',
+    'acBackfillCancel', 'acBackfillSummaries', 'acBackfillVectors', 'acBackfillGroups', 'acBackfillAll',
     'acImageGenBtn',
     'acBranchList', 'acMenuBtn', 'acSidebar',
     'acModelsToggle', 'acModelsBody', 'acMyModels', 'acGlobalModels', 'acModelAddBtn', 'acModelAddRow',
@@ -626,7 +629,10 @@
       .then(function (r) { return r.json(); })
       .then(function (json) {
         if (!json.success) throw new Error(json.error || '加载失败');
-        state.messages = json.data.messages || [];
+        state.messages = (json.data.messages || []).map(function (m) {
+          if (m.is_image) { m.isImage = true; m.imageUrl = m.image_url; m.imagePrompt = m.content; }
+          return m;
+        });
         state.branches = json.data.branches || [];
         state.worldBook = json.data.worldBook || [];
         state.summaries = json.data.summaries || [];
@@ -738,7 +744,20 @@
   function updateConvTokens() {
     if (!els.acConvTokens) return;
     var total = state.messages.reduce(function (sum, m) { return sum + (m.tokens || 0); }, 0);
-    els.acConvTokens.textContent = total > 0 ? '本会话 ≈ ' + total + ' tokens' : '';
+    var totalInput = state.messages.reduce(function (sum, m) { return sum + (m.input_tokens || 0); }, 0);
+    var totalOutput = state.messages.reduce(function (sum, m) { return sum + (m.output_tokens || 0); }, 0);
+    if (total > 0) {
+      if (totalInput > 0 || totalOutput > 0) {
+        els.acConvTokens.textContent = '本会话 ↑' + totalInput + ' ↓' + totalOutput + ' (共 ' + total + ' tokens)';
+        els.acConvTokens.title = '输入 ' + totalInput + ' + 输出 ' + totalOutput + ' = ' + total + ' tokens';
+      } else {
+        els.acConvTokens.textContent = '本会话 ≈ ' + total + ' tokens';
+        els.acConvTokens.title = '';
+      }
+    } else {
+      els.acConvTokens.textContent = '';
+      els.acConvTokens.title = '';
+    }
   }
 
   function renderMessages() {
@@ -815,7 +834,12 @@
     if (m.tokens != null && m.tokens > 0) {
       var ttag = document.createElement('span');
       ttag.className = 'ac-msg-token-tag';
-      ttag.textContent = m.tokens + ' tokens';
+      if (m.input_tokens > 0 || m.output_tokens > 0) {
+        ttag.textContent = '↑' + m.input_tokens + ' ↓' + m.output_tokens;
+        ttag.title = '输入 ' + m.input_tokens + ' + 输出 ' + m.output_tokens + ' = ' + m.tokens + ' tokens';
+      } else {
+        ttag.textContent = m.tokens + ' tokens';
+      }
       meta.appendChild(ttag);
     }
     var actions = document.createElement('span');
@@ -1114,6 +1138,8 @@
         currentMsg.id = data.id;
         currentMsg.content = data.content || currentMsg.content;
         currentMsg.tokens = data.tokens;
+        currentMsg.inputTokens = data.inputTokens;
+        currentMsg.outputTokens = data.outputTokens;
         if (data.model) currentMsg.model = data.model;
         if (data.speaker_role_id) currentMsg.speaker_role_id = data.speaker_role_id;
         if (data.speaker_name) currentMsg.speaker_name = data.speaker_name;
@@ -2310,6 +2336,163 @@
       .catch(function (err) { showToast(err.message, 'error'); });
   }
 
+  // ============ 记忆补录 ============
+
+  var backfillTimer = null;
+  var BACKFILL_PHASE_NAMES = { summaries: '逐轮总结', vectors: '向量坐标', groups: '二次压缩' };
+
+  function backfillGet(url) {
+    return fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (json) {
+        if (!json.success) throw new Error(json.error || '请求失败');
+        return json.data;
+      });
+  }
+
+  function fmtEta(ms) {
+    if (ms == null || isNaN(ms)) return '计算中…';
+    if (ms < 1000) return '即将完成';
+    var s = Math.round(ms / 1000);
+    if (s < 60) return '约 ' + s + ' 秒';
+    var m = Math.round(s / 60);
+    if (m < 60) return '约 ' + m + ' 分钟';
+    return '约 ' + Math.round(m / 60) + ' 小时';
+  }
+
+  function renderBackfillStatus(d) {
+    if (!els.acBackfillStatus) return;
+    var lines = [];
+    lines.push('总轮次：<b>' + d.totalRounds + '</b>（空轮 ' + d.emptyRounds + ' 个跳过）· 模式：' + escapeHtml(d.mode || 'summary'));
+    lines.push('逐轮总结：已完成 <b>' + d.summariesDone + '</b> · 失败 <b>' + (d.summariesFailed || 0) + '</b> · 待补 <b>' + d.summariesMissing + '</b>');
+    var vecLine = '向量坐标：已完成 <b>' + d.vectorsDone + '</b> · 过期 <b>' + (d.vectorsStale || 0) + '</b> · 待补 <b>' + d.vectorsMissing + '</b>';
+    lines.push(vecLine);
+    lines.push('二次压缩：已完成 <b>' + d.groupsDone + '</b> / 预计 <b>' + d.groupsExpected + '</b> 组');
+    lines.push('向量模型：' + (d.hasEmbeddings ? escapeHtml(d.embModel || '已配置') : '<span style="color:#e0a800;">未配置</span>'));
+    els.acBackfillStatus.innerHTML = lines.join('<br>');
+
+    // 向量模型未配置 / 更换后需重新补录的提示
+    var warn = '';
+    if (!d.hasEmbeddings) {
+      warn = '增强（向量）补录需要先在后台配置向量模型，否则「向量坐标」阶段无法执行。';
+    } else if (d.vectorsStale > 0) {
+      warn = '检测到 ' + d.vectorsStale + ' 条向量坐标来自旧的向量模型，已过期。请重新补录「向量坐标」以使用当前模型 ' + escapeHtml(d.embModel || '') + '。';
+    }
+    if (els.acBackfillEmbWarn) {
+      els.acBackfillEmbWarn.textContent = warn;
+      els.acBackfillEmbWarn.style.display = warn ? 'block' : 'none';
+    }
+    // 未配置向量模型时禁用向量按钮
+    if (els.acBackfillVectors) els.acBackfillVectors.disabled = !d.hasEmbeddings;
+  }
+
+  function setBackfillButtonsDisabled(disabled) {
+    ['acBackfillSummaries', 'acBackfillVectors', 'acBackfillGroups', 'acBackfillAll'].forEach(function (id) {
+      if (els[id]) els[id].disabled = disabled || (id === 'acBackfillVectors' && !state.backfillHasEmb);
+    });
+    if (els.acBackfillCancel) els.acBackfillCancel.style.display = disabled ? 'inline-block' : 'none';
+  }
+
+  function renderBackfillProgress(job) {
+    if (!els.acBackfillProgress) return;
+    if (!job || (!job.running && !job.finished)) {
+      els.acBackfillProgress.style.display = 'none';
+      return;
+    }
+    els.acBackfillProgress.style.display = 'block';
+    var phaseName = BACKFILL_PHASE_NAMES[job.phase] || job.phase || '';
+    var pct = job.total > 0 ? Math.round(job.done / job.total * 100) : 0;
+    if (els.acBackfillBar) els.acBackfillBar.style.width = pct + '%';
+    if (job.finished) {
+      els.acBackfillPhase.textContent = job.error ? '补录失败' : '补录完成';
+      els.acBackfillMeta.textContent = job.error ? job.error : '全部阶段已处理完毕。';
+      if (els.acBackfillBar) els.acBackfillBar.style.width = '100%';
+      return;
+    }
+    els.acBackfillPhase.textContent = (job.waiting ? '⏳ 等待当前回复结束… ' : '▶ ') + phaseName;
+    var meta = job.done + ' / ' + job.total + '（' + pct + '%）';
+    if (!job.waiting) meta += ' · 预计剩余 ' + fmtEta(job.etaMs);
+    els.acBackfillMeta.textContent = meta;
+  }
+
+  function stopBackfillPolling() {
+    if (backfillTimer) { clearTimeout(backfillTimer); backfillTimer = null; }
+  }
+
+  function pollBackfillProgress() {
+    if (!state.currentConv) { stopBackfillPolling(); return; }
+    backfillGet('/ai-chat/api/memory/backfill/progress?conversation_id=' + state.currentConv.id)
+      .then(function (job) {
+        renderBackfillProgress(job);
+        if (job && job.running) {
+          backfillTimer = setTimeout(pollBackfillProgress, 1200);
+        } else {
+          stopBackfillPolling();
+          setBackfillButtonsDisabled(false);
+          // 补录结束后刷新状态统计
+          loadBackfillStatus();
+        }
+      })
+      .catch(function () { stopBackfillPolling(); setBackfillButtonsDisabled(false); });
+  }
+
+  function loadBackfillStatus() {
+    if (!state.currentConv) return Promise.resolve();
+    return backfillGet('/ai-chat/api/memory/status?conversation_id=' + state.currentConv.id)
+      .then(function (d) {
+        state.backfillHasEmb = !!d.hasEmbeddings;
+        renderBackfillStatus(d);
+      })
+      .catch(function (err) {
+        if (els.acBackfillStatus) els.acBackfillStatus.textContent = err.message;
+      });
+  }
+
+  function openMemoryBackfill() {
+    if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+    showModal('acMemoryBackfillModal');
+    if (els.acBackfillStatus) els.acBackfillStatus.textContent = '加载中…';
+    loadBackfillStatus();
+    // 若已有任务在跑，立即恢复轮询
+    backfillGet('/ai-chat/api/memory/backfill/progress?conversation_id=' + state.currentConv.id)
+      .then(function (job) {
+        if (job && job.running) {
+          setBackfillButtonsDisabled(true);
+          renderBackfillProgress(job);
+          stopBackfillPolling();
+          backfillTimer = setTimeout(pollBackfillProgress, 1200);
+        } else {
+          renderBackfillProgress(job);
+        }
+      })
+      .catch(function () { /* ignore */ });
+  }
+
+  function startMemoryBackfill(phases) {
+    if (!state.currentConv) return;
+    setBackfillButtonsDisabled(true);
+    api('/ai-chat/api/memory/backfill', { conversation_id: state.currentConv.id, phases: phases })
+      .then(function () {
+        showToast('补录已开始（后台进行，可关闭弹窗）', 'info');
+        renderBackfillProgress({ running: true, phase: phases[0], done: 0, total: 0, waiting: false });
+        els.acBackfillProgress.style.display = 'block';
+        stopBackfillPolling();
+        backfillTimer = setTimeout(pollBackfillProgress, 800);
+      })
+      .catch(function (err) {
+        setBackfillButtonsDisabled(false);
+        showToast(err.message, 'error');
+      });
+  }
+
+  function cancelMemoryBackfill() {
+    if (!state.currentConv) return;
+    api('/ai-chat/api/memory/backfill/cancel', { conversation_id: state.currentConv.id })
+      .then(function () { showToast('已请求取消补录', 'info'); })
+      .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+
   // ============ 对话压缩 ============
 
   function compressConversation() {
@@ -2416,10 +2599,26 @@
             }
             setTimeout(poll, pollInterval);
           } else if (task.status === 'success') {
-            // 生成成功
-            var imageUrl = task.result && task.result.images && task.result.images[0];
+            // 生成成功：images 为 [{ path, url }] 对象数组
+            var first = task.result && task.result.images && task.result.images[0];
+            var imageUrl = first ? (first.url || first.path) : null;
             updateImagePlaceholder(placeholder, imageUrl, prompt);
             showToast('场景图片已生成', 'success');
+            // 持久化图片消息到会话
+            if (imageUrl && state.currentConv) {
+              var oldId = placeholder.id;
+              api('/ai-chat/api/image/save', {
+                conversation_id: state.currentConv.id,
+                image_url: imageUrl,
+                prompt: prompt || ''
+              }, 15000).then(function (saveRes) {
+                if (saveRes.success && saveRes.data && saveRes.data.id) {
+                  placeholder.id = saveRes.data.id;
+                  var msgEl = document.querySelector('.ac-msg[data-id="' + oldId + '"]');
+                  if (msgEl) msgEl.setAttribute('data-id', saveRes.data.id);
+                }
+              }).catch(function () { /* 保存失败不影响展示 */ });
+            }
           } else if (task.status === 'failed' || task.status === 'cancelled') {
             updateImagePlaceholder(placeholder, null, task.error || '图片生成失败');
           }
@@ -2658,11 +2857,23 @@
   els.acMemorySave.addEventListener('click', saveMemorySettings);
   els.acMemoryRefresh.addEventListener('click', refreshMemory);
 
+  // 记忆补录
+  if (els.acMemoryBackfill) els.acMemoryBackfill.addEventListener('click', openMemoryBackfill);
+  if (els.acBackfillSummaries) els.acBackfillSummaries.addEventListener('click', function () { startMemoryBackfill(['summaries']); });
+  if (els.acBackfillVectors) els.acBackfillVectors.addEventListener('click', function () { startMemoryBackfill(['vectors']); });
+  if (els.acBackfillGroups) els.acBackfillGroups.addEventListener('click', function () { startMemoryBackfill(['groups']); });
+  if (els.acBackfillAll) els.acBackfillAll.addEventListener('click', function () {
+    var phases = ['summaries', 'groups'];
+    if (state.backfillHasEmb) phases.splice(1, 0, 'vectors');
+    startMemoryBackfill(phases);
+  });
+  if (els.acBackfillCancel) els.acBackfillCancel.addEventListener('click', cancelMemoryBackfill);
+
   // 对话压缩
   if (els.acCompressKeep) {
     els.acCompressKeep.addEventListener('input', function () {
       if (els.acCompressKeepVal) els.acCompressKeepVal.textContent = this.value;
-      try { localStorage.setItem('ac_compress_keep', this.value); } catch (e) {}
+      try { localStorage.setItem('ac_compress_keep', this.value); } catch (e) { /* ignore */ }
     });
     // 恢复设置
     try {
@@ -2673,11 +2884,11 @@
       }
       var autoCompress = localStorage.getItem('ac_auto_compress') === '1';
       if (els.acAutoCompress) els.acAutoCompress.checked = autoCompress;
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
   if (els.acAutoCompress) {
     els.acAutoCompress.addEventListener('change', function () {
-      try { localStorage.setItem('ac_auto_compress', this.checked ? '1' : '0'); } catch (e) {}
+      try { localStorage.setItem('ac_auto_compress', this.checked ? '1' : '0'); } catch (e) { /* ignore */ }
     });
   }
   if (els.acCompressNow) {

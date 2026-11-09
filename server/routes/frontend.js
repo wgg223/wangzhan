@@ -946,7 +946,7 @@ router.use('/', aiImageRoutes);
 const crypto = require('crypto');
 const aiChatService = require('../services/ai-chat');
 const { checkQuota } = require('../services/ai-chat/quota');
-const { refreshSummary } = require('../services/ai-chat/memory');
+const { refreshSummary, getMemoryStatus, startBackfill, getBackfillProgress, cancelBackfill } = require('../services/ai-chat/memory');
 const { resolveModel, fetchModelList } = require('../services/ai-chat/provider');
 
 // AI 聊天接口限流
@@ -1189,7 +1189,7 @@ router.get('/ai-chat/api/conversations/:id/messages', isAuthenticated, hasFronte
   const conv = aiChatService.getOwnConversation(db, user, parseInt(req.params.id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const branchId = conv.current_branch_id || 0;
-  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, model, status, error, is_pinned, created_at, alternate_of, is_active, speaker_role_id FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY id ASC', [conv.id, branchId]);
+  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, input_tokens, output_tokens, model, status, error, is_pinned, created_at, alternate_of, is_active, speaker_role_id, is_image, image_url FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY id ASC', [conv.id, branchId]);
   const branches = queryAll(db, 'SELECT id, name, parent_message_id, created_at FROM ai_branches WHERE conversation_id = ? ORDER BY id ASC', [conv.id]);
   const worldBook = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
   const summaries = queryAll(db, "SELECT id, content, created_at FROM ai_memories WHERE conversation_id = ? AND type = 'summary' ORDER BY id ASC", [conv.id]);
@@ -1245,7 +1245,7 @@ router.post('/ai-chat/api/send', isAuthenticated, hasFrontendPermission('aichat.
       onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined,
       onSpeaker: isGroup ? sp => sendEvent('speaker', sp) : undefined,
       onResult: isGroup ? (r, sp) => sendEvent('message', {
-        id: r.messageId, content: r.content, tokens: r.tokens, model: r.model, quota: r.quota,
+        id: r.messageId, content: r.content, tokens: r.tokens, inputTokens: r.inputTokens, outputTokens: r.outputTokens, model: r.model, quota: r.quota,
         speaker_role_id: sp.id, speaker_name: sp.name
       }) : undefined
     });
@@ -1254,7 +1254,7 @@ router.post('/ai-chat/api/send', isAuthenticated, hasFrontendPermission('aichat.
       return;
     }
     if (!isGroup) {
-      sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, model: result.model, quota: result.quota });
+      sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, inputTokens: result.inputTokens, outputTokens: result.outputTokens, model: result.model, quota: result.quota });
     }
     sendEvent('done', { aborted: !!result.aborted });
   });
@@ -1275,7 +1275,7 @@ router.post('/ai-chat/api/group/reply', isAuthenticated, hasFrontendPermission('
       onSpeaker: sp => sendEvent('speaker', sp)
     });
     sendEvent('message', {
-      id: result.messageId, content: result.content, tokens: result.tokens, model: result.model, quota: result.quota,
+      id: result.messageId, content: result.content, tokens: result.tokens, inputTokens: result.inputTokens, outputTokens: result.outputTokens, model: result.model, quota: result.quota,
       speaker_role_id: speaker.id, speaker_name: speaker.name
     });
     sendEvent('done', { aborted: !!result.aborted });
@@ -1299,7 +1299,7 @@ router.post('/ai-chat/api/messages/regenerate', isAuthenticated, hasFrontendPerm
       signal,
       onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined
     });
-    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, model: result.model, quota: result.quota });
+    sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, inputTokens: result.inputTokens, outputTokens: result.outputTokens, model: result.model, quota: result.quota });
     sendEvent('done', { aborted: !!result.aborted });
   });
 });
@@ -1478,6 +1478,48 @@ router.post('/ai-chat/api/memory/refresh', isAuthenticated, hasFrontendPermissio
   } catch (err) {
     res.status(500).json({ error: err.message || '摘要生成失败' });
   }
+});
+
+// 记忆状态（逐轮总结/向量/分组统计，供补录弹窗）
+router.get('/ai-chat/api/memory/status', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.query.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  res.json({ success: true, data: getMemoryStatus(db, conv) });
+});
+
+// 启动记忆补录（后台异步：逐轮总结/向量坐标/二次压缩）
+router.post('/ai-chat/api/memory/backfill', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  let phases = Array.isArray(req.body.phases) ? req.body.phases : ['summaries', 'vectors', 'groups'];
+  phases = phases.filter(p => ['summaries', 'vectors', 'groups'].indexOf(p) !== -1);
+  if (!phases.length) phases = ['summaries', 'vectors', 'groups'];
+  const modelInfo = resolveModel(db, user.id, conv.model);
+  if (!modelInfo) return res.status(500).json({ error: '未配置可用模型' });
+  const r = startBackfill(db, conv, modelInfo, phases);
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  res.json({ success: true });
+});
+
+// 补录进度
+router.get('/ai-chat/api/memory/backfill/progress', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const convId = parseInt(req.query.conversation_id, 10);
+  const conv = aiChatService.getOwnConversation(req.db, req.session.user, convId);
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const job = getBackfillProgress(conv.id);
+  res.json({ success: true, data: job || { running: false, finished: false } });
+});
+
+// 取消补录
+router.post('/ai-chat/api/memory/backfill/cancel', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const conv = aiChatService.getOwnConversation(req.db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const r = cancelBackfill(conv.id);
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  res.json({ success: true });
 });
 
 // 创建用户角色（支持开场白/性格/场景/示例对话等角色卡字段）
@@ -1782,7 +1824,7 @@ router.post('/ai-chat/api/conversations/compress', isAuthenticated, hasFrontendP
   try {
     const { callChatCompletion } = require('../services/ai-chat/provider');
     const { resolveModel } = require('../services/ai-chat/provider');
-    const modelInfo = resolveModel(db, conv.model_id);
+    const modelInfo = resolveModel(db, req.session.user.id, conv.model);
     if (!modelInfo) throw new Error('未配置可用模型');
 
     const compressPrompt = `请将以下对话历史压缩为一段简洁的摘要（保留关键信息、角色设定、重要事件），以便后续对话参考：
@@ -1791,11 +1833,15 @@ ${toCompress.map(m => `${m.role}: ${m.content}`).join('\n')}
 
 摘要：`;
 
-    const { content } = await callChatCompletion(modelInfo, [
+    const result = await callChatCompletion(modelInfo, [
       { role: 'user', content: compressPrompt }
     ], { stream: false, timeout: 60000, max_tokens: 1000 });
 
-    summary = String(content || '').trim();
+    summary = String(result.content || '').trim();
+    // 记录压缩调用的 token 消耗（用于统计，不写入消息表）
+    if (result.usage) {
+      console.log('[ai-chat] 压缩调用 token:', result.usage.prompt_tokens, '+', result.usage.completion_tokens, '=', result.usage.total_tokens);
+    }
   } catch (err) {
     return res.status(500).json({ error: '压缩失败：' + (err.message || '模型调用错误') });
   }
@@ -1809,6 +1855,7 @@ ${toCompress.map(m => `${m.role}: ${m.content}`).join('\n')}
   db.run(`DELETE FROM ai_messages WHERE id IN (${oldIds.map(() => '?').join(',')})`, oldIds);
 
   // 插入摘要作为系统消息
+  const { estimateTokens } = require('../services/ai-chat/utils');
   const summaryContent = `[对话历史摘要]\n${summary}`;
   db.run('INSERT INTO ai_messages (conversation_id, role, content, tokens) VALUES (?, ?, ?, ?)',
     [conv.id, 'system', summaryContent, estimateTokens(summaryContent)]);
@@ -1848,7 +1895,7 @@ ${contextSummary}
   let imagePrompt = '';
   try {
     const { callChatCompletion, resolveModel } = require('../services/ai-chat/provider');
-    const modelInfo = resolveModel(db);
+    const modelInfo = resolveModel(db, user.id, conv.model);
     if (!modelInfo) throw new Error('未配置可用模型');
 
     const { content } = await callChatCompletion(modelInfo, [
@@ -1890,6 +1937,24 @@ ${contextSummary}
   } catch (err) {
     res.status(500).json({ error: '图片生成任务启动失败：' + (err.message || '') });
   }
+});
+
+// 保存场景图片为会话消息（前端轮询到生成结果后调用，持久化图片消息）
+router.post('/ai-chat/api/image/save', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  const imageUrl = String(req.body.image_url || '').trim();
+  const prompt = String(req.body.prompt || '').trim();
+  if (!imageUrl) return res.status(400).json({ error: '缺少图片地址' });
+  db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status, is_image, image_url)
+    VALUES (?, ?, 'assistant', ?, 0, '', 'done', 1, ?)`,
+  [conv.id, conv.current_branch_id || 0, prompt || '场景图片', imageUrl]);
+  const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
+  db.run('UPDATE ai_conversations SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
+  saveDatabase();
+  res.json({ success: true, data: { id: msg.id } });
 });
 
 // 预设列表（用户 + 全局）
@@ -2009,11 +2074,15 @@ router.post('/ai-chat/api/messages/continue', isAuthenticated, hasFrontendPermis
     genParams: aiChatService.extractGenParams ? aiChatService.extractGenParams(conv) : undefined
   }).then(result => {
     full = result.content;
+    const usage = result.usage;
     const combined = String(lastMsg.content || '') + '\n' + full;
-    db.run('UPDATE ai_messages SET content = ?, tokens = ? WHERE id = ?', [combined, estimateTokens(combined), lastMsg.id]);
+    const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
+    const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
+    const totalTokens = inputTokens + outputTokens;
+    db.run('UPDATE ai_messages SET content = ?, tokens = ?, input_tokens = ?, output_tokens = ? WHERE id = ?', [combined, totalTokens, inputTokens, outputTokens, lastMsg.id]);
     saveDatabase();
-    consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
-    sendEvt('message', { id: lastMsg.id, content: combined, tokens: estimateTokens(combined), model: modelInfo.model_key, quota: checkQuota(db, user).quota });
+    consumeQuota(db, user, { tokens: totalTokens, count: true });
+    sendEvt('message', { id: lastMsg.id, content: combined, tokens: totalTokens, inputTokens: inputTokens, outputTokens: outputTokens, model: modelInfo.model_key, quota: checkQuota(db, user).quota });
     sendEvt('done', { aborted: false });
     res.end();
   }).catch(err => {
@@ -2060,13 +2129,17 @@ router.post('/ai-chat/api/messages/impersonate', isAuthenticated, hasFrontendPer
     onDelta: useStream ? (delta) => { full += delta; sendEvt('delta', { delta }); } : undefined
   }).then(result => {
     full = result.content;
-    db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status) VALUES (?, ?, 'user', ?, ?, ?, 'done')`,
-      [conv.id, conv.current_branch_id || 0, full, estimateTokens(full), modelInfo.model_key]);
+    const usage = result.usage;
+    const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
+    const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
+    const totalTokens = inputTokens + outputTokens;
+    db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, input_tokens, output_tokens, model, status) VALUES (?, ?, 'user', ?, ?, ?, ?, ?, 'done')`,
+      [conv.id, conv.current_branch_id || 0, full, totalTokens, inputTokens, outputTokens, modelInfo.model_key]);
     const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
     db.run('UPDATE ai_conversations SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
     saveDatabase();
-    consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
-    sendEvt('message', { id: msg.id, content: full, tokens: estimateTokens(full), model: modelInfo.model_key, role: 'user', quota: checkQuota(db, user).quota });
+    consumeQuota(db, user, { tokens: totalTokens, count: true });
+    sendEvt('message', { id: msg.id, content: full, tokens: totalTokens, inputTokens: inputTokens, outputTokens: outputTokens, model: modelInfo.model_key, role: 'user', quota: checkQuota(db, user).quota });
     sendEvt('done', { aborted: false });
     res.end();
   }).catch(err => {
