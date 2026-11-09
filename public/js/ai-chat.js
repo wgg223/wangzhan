@@ -80,11 +80,11 @@
 
   // ============ 通用请求 ============
 
-  function api(url, data) {
+  function api(url, data, timeout) {
     return csrfFetch(url, {
       method: 'POST',
       body: JSON.stringify(data || {})
-    }, 20000).catch(function (err) {
+    }, timeout || 20000).catch(function (err) {
       throw new Error((err && err.message) || '网络请求失败');
     });
   }

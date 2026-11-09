@@ -1859,7 +1859,8 @@ router.post('/ai-chat/api/conversations/compress', isAuthenticated, hasFrontendP
   if (!conv) return res.status(404).json({ error: '会话不存在' });
 
   const keepRecent = Math.min(Math.max(parseInt(req.body.keep_recent, 10) || 10, 4), 50);
-  const messages = queryAll(db, 'SELECT * FROM ai_messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC', [conv.id]);
+  const branchId = conv.current_branch_id || 0;
+  const messages = queryAll(db, 'SELECT * FROM ai_messages WHERE conversation_id = ? AND branch_id = ? ORDER BY created_at ASC, id ASC', [conv.id, branchId]);
 
   if (messages.length <= keepRecent) {
     return res.json({ success: true, compressed: 0, message: '消息数量不足，无需压缩' });
@@ -1871,20 +1872,36 @@ router.post('/ai-chat/api/conversations/compress', isAuthenticated, hasFrontendP
   // 生成摘要
   let summary = '';
   try {
-    const { callChatCompletion } = require('../services/ai-chat/provider');
-    const { resolveModel } = require('../services/ai-chat/provider');
+    const { callChatCompletion, resolveModel } = require('../services/ai-chat/provider');
     const modelInfo = resolveModel(db, req.session.user.id, conv.model);
     if (!modelInfo) throw new Error('未配置可用模型');
 
-    const compressPrompt = `请将以下对话历史压缩为一段简洁的摘要（保留关键信息、角色设定、重要事件），以便后续对话参考：
+    // 控制送入模型的上下文规模：单条截断 + 总量预算，优先保留较近的旧消息，避免超出模型上下文导致上游 400/500
+    const PER_MSG_LIMIT = 600;    // 单条最多字符
+    const TOTAL_LIMIT = 12000;    // 参与压缩的消息总字符预算
+    const lines = [];
+    let totalChars = 0;
+    // 从最近的旧消息往前取，直到超出预算
+    for (let i = toCompress.length - 1; i >= 0; i--) {
+      const m = toCompress[i];
+      let text = String(m.content || '');
+      if (text.length > PER_MSG_LIMIT) text = text.slice(0, PER_MSG_LIMIT) + '…';
+      const line = `${m.role}: ${text}`;
+      if (totalChars + line.length > TOTAL_LIMIT && lines.length > 0) break;
+      lines.unshift(line);
+      totalChars += line.length;
+    }
+    const historyText = lines.join('\n');
 
-${toCompress.map(m => `${m.role}: ${m.content}`).join('\n')}
+    const compressPrompt = `请将以下对话历史压缩为一段简洁的摘要（保留关键信息、角色设定、重要事件），以便后续对话参考。直接输出摘要正文，不要添加任何前缀或解释：
+
+${historyText}
 
 摘要：`;
 
     const result = await callChatCompletion(modelInfo, [
       { role: 'user', content: compressPrompt }
-    ], { stream: false, timeout: 60000, max_tokens: 1000 });
+    ], { stream: false, timeout: 60000, genParams: { temperature: 0.3, max_tokens: 1000 } });
 
     summary = String(result.content || '').trim();
     // 记录压缩调用的 token 消耗（用于统计，不写入消息表）
@@ -1892,24 +1909,29 @@ ${toCompress.map(m => `${m.role}: ${m.content}`).join('\n')}
       console.log('[ai-chat] 压缩调用 token:', result.usage.prompt_tokens, '+', result.usage.completion_tokens, '=', result.usage.total_tokens);
     }
   } catch (err) {
-    return res.status(500).json({ error: '压缩失败：' + (err.message || '模型调用错误') });
+    console.error('[ai-chat] 压缩失败:', err && err.message);
+    return res.status(500).json({ error: '压缩失败：' + ((err && err.message) || '模型调用错误') });
   }
 
   if (!summary) {
     return res.status(500).json({ error: '压缩失败：未生成摘要' });
   }
 
-  // 删除旧消息，插入摘要消息
+  // 删除旧消息，插入摘要消息（放入 try，避免 DB 异常变成未捕获的 async 错误）
   const oldIds = toCompress.map(m => m.id);
-  db.run(`DELETE FROM ai_messages WHERE id IN (${oldIds.map(() => '?').join(',')})`, oldIds);
+  try {
+    db.run(`DELETE FROM ai_messages WHERE id IN (${oldIds.map(() => '?').join(',')})`, oldIds);
 
-  // 插入摘要作为系统消息
-  const { estimateTokens } = require('../services/ai-chat/utils');
-  const summaryContent = `[对话历史摘要]\n${summary}`;
-  db.run('INSERT INTO ai_messages (conversation_id, role, content, tokens) VALUES (?, ?, ?, ?)',
-    [conv.id, 'system', summaryContent, estimateTokens(summaryContent)]);
+    const { estimateTokens } = require('../services/ai-chat/utils');
+    const summaryContent = `[对话历史摘要]\n${summary}`;
+    db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, status) VALUES (?, ?, ?, ?, ?, ?)`,
+      [conv.id, branchId, 'system', summaryContent, estimateTokens(summaryContent), 'done']);
 
-  saveDatabase();
+    saveDatabase();
+  } catch (err) {
+    console.error('[ai-chat] 压缩写入失败:', err && err.message);
+    return res.status(500).json({ error: '压缩写入失败：' + ((err && err.message) || '数据库错误') });
+  }
 
   res.json({
     success: true,
