@@ -3,13 +3,58 @@
  */
 const crypto = require('crypto');
 
-// 粗略 token 估算（中文约 1 字 ≈ 1 token，西文约 4 字符 ≈ 1 token）
+/**
+ * 更精确的 token 估算（基于 GPT 系列模型的分词规律）
+ * 
+ * 规则：
+ * - CJK 字符（中日韩）：约 1.5 tokens/字（常用字 1 token，生僻字 2 tokens）
+ * - 英文单词：约 1.3 tokens/词（常见短词 1 token，长词/专业术语 2+ tokens）
+ * - 数字：约 1 token/3-4 位数字
+ * - 标点符号：约 1 token/个
+ * - 空白字符：约 0.5 tokens/个（空格、换行等）
+ * - 特殊字符/emoji：约 2 tokens/个
+ * 
+ * @param {string} text - 输入文本
+ * @returns {number} 估算的 token 数
+ */
 function estimateTokens(text) {
   if (!text) return 0;
   const str = String(text);
-  const cjk = (str.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
-  const rest = str.length - cjk;
-  return Math.ceil(cjk + rest / 4);
+  let tokens = 0;
+
+  // CJK 字符（中日韩统一表意文字 + 日文假名 + 韩文谚文）
+  const cjkChars = (str.match(/[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
+  tokens += cjkChars * 1.5;
+
+  // Emoji 和特殊符号（通常在 2 tokens 左右）
+  const emojiChars = (str.match(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu) || []).length;
+  tokens += emojiChars * 2;
+
+  // 数字序列（每 3-4 位数字约 1 token）
+  const numberSequences = str.match(/\d+/g) || [];
+  for (const num of numberSequences) {
+    tokens += Math.ceil(num.length / 3.5);
+  }
+
+  // 英文单词（每词约 1.3 tokens）
+  // 先移除 CJK、emoji、数字，再统计英文单词
+  const remaining = str
+    .replace(/[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af]/g, '') // 移除 CJK
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // 移除 emoji
+    .replace(/\d+/g, ''); // 移除数字
+  
+  const words = remaining.match(/[a-zA-Z]+/g) || [];
+  tokens += words.length * 1.3;
+
+  // 标点符号（每个约 1 token）
+  const punctuation = (str.match(/[.,!?;:'"()\[\]{}<>\/\\|`~@#$%^&*_+=\-]/g) || []).length;
+  tokens += punctuation;
+
+  // 空白字符（空格、换行等，约 0.3 tokens/个）
+  const whitespace = (str.match(/\s/g) || []).length;
+  tokens += whitespace * 0.3;
+
+  return Math.ceil(tokens);
 }
 
 // 余弦相似度（两个等长数值数组）
