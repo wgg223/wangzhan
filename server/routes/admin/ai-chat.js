@@ -61,6 +61,11 @@ router.get('/ai-chat', isAuthenticated, hasPermission('aichat.manage'), (req, re
     ORDER BY q.id DESC LIMIT 100`);
   const presets = queryAll(db, 'SELECT * FROM ai_presets WHERE is_global = 1 ORDER BY is_default DESC, id ASC');
   const promptTemplates = queryAll(db, 'SELECT * FROM ai_prompt_templates WHERE is_global = 1 ORDER BY sort_order ASC, id ASC');
+  const providers = queryAll(db, 'SELECT provider_key, name, api_base, default_model, models, api_key_url FROM ai_chat_providers ORDER BY sort_order ASC, id ASC');
+  providers.forEach(p => {
+    try { p.models = JSON.parse(p.models || '[]'); } catch (e) { p.models = []; }
+    p.requires_key = p.provider_key !== 'pollinations';
+  });
 
   res.render('admin/ai-chat', {
     user: req.session.user,
@@ -74,6 +79,7 @@ router.get('/ai-chat', isAuthenticated, hasPermission('aichat.manage'), (req, re
     quotaRows,
     presets,
     promptTemplates,
+    providers,
     hasEmbeddings: Boolean(settings.ai_embedding_api_base && settings.ai_embedding_model),
     userPermissions: res.locals.userPermissions || []
   });

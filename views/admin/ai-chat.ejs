@@ -84,9 +84,21 @@
       <select id="m_fetch_list" style="display:none; margin-top:6px;" onchange="document.getElementById('m_model_key').value=this.value"></select>
       <span id="m_fetch_msg" style="font-size:11px; color:var(--gray-500);"></span>
     </label>
-    <label>服务商（OpenAI 兼容）<input id="m_provider" placeholder="如：deepseek / openai / siliconflow"></label>
+    <label class="full">内置服务商
+      <select id="m_provider_preset" onchange="applyAdminProviderPreset()">
+        <option value="">自定义</option>
+        <% providers.forEach(function(p) { %>
+        <option value="<%= p.provider_key %>"><%= p.name %><%= p.requires_key ? '' : '（免费）' %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>服务商标识（OpenAI 兼容）<input id="m_provider" placeholder="如：deepseek / openai / siliconflow"></label>
     <label>API 端点（留空用默认）<input id="m_api_endpoint" placeholder="如：https://api.deepseek.com/v1"></label>
     <label>API Key（留空不修改，新增可不填）<input id="m_api_key" type="password" placeholder="Bearer 密钥"></label>
+    <div id="m_get_key_wrap" style="display:none;" class="full">
+      <span style="font-size:12px; color:var(--gray-500);">前往获取密钥：</span>
+      <a id="m_get_key_link" href="#" target="_blank" rel="noopener" style="font-size:12px;"></a>
+    </div>
     <label>max_tokens<input id="m_max_tokens" type="number" value="4096" min="256" max="32768"></label>
     <label>temperature<input id="m_temperature" type="number" value="0.7" step="0.1" min="0" max="2"></label>
     <label class="full" style="display:flex; align-items:center; gap:8px; font-size:13px;">
@@ -374,15 +386,48 @@
     });
   });
 
+  // 内置服务商数据（与前端一致）
+  var adminProviders = <%- JSON.stringify(providers) %>;
+
+  // 选择内置服务商 → 自动带出端点/默认模型/获取密钥链接
+  window.applyAdminProviderPreset = function () {
+    var key = document.getElementById('m_provider_preset').value;
+    var providerInput = document.getElementById('m_provider');
+    var endpointInput = document.getElementById('m_api_endpoint');
+    var getWrap = document.getElementById('m_get_key_wrap');
+    var getLink = document.getElementById('m_get_key_link');
+    if (!key) {
+      providerInput.value = '';
+      endpointInput.value = '';
+      getWrap.style.display = 'none';
+      return;
+    }
+    var p = adminProviders.filter(function (x) { return x.provider_key === key; })[0];
+    if (!p) return;
+    providerInput.value = p.provider_key;
+    endpointInput.value = p.api_base || '';
+    if (p.api_key_url) {
+      getLink.href = p.api_key_url;
+      getLink.textContent = p.name + ' 获取密钥 →';
+      getWrap.style.display = '';
+    } else {
+      getWrap.style.display = 'none';
+    }
+  };
+
   // ============ 模型 ============
   window.editModel = function (id) {
     var wrap = document.getElementById('modelFormWrap');
     wrap.style.display = 'block';
     wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     document.getElementById('modelFormMsg').textContent = '';
+    var presetSel = document.getElementById('m_provider_preset');
+    var getWrap = document.getElementById('m_get_key_wrap');
     if (!id) {
       document.getElementById('modelFormTitle').textContent = '新增模型';
       ['m_id', 'm_name', 'm_model_key', 'm_provider', 'm_api_endpoint', 'm_api_key'].forEach(function (f) { document.getElementById(f).value = ''; });
+      presetSel.value = '';
+      getWrap.style.display = 'none';
       document.getElementById('m_max_tokens').value = 4096;
       document.getElementById('m_temperature').value = 0.7;
       document.getElementById('m_is_default').checked = false;
@@ -397,7 +442,18 @@
     var spans = row.querySelectorAll('.info span');
     document.getElementById('m_name').value = strong;
     document.getElementById('m_model_key').value = spans[0] ? spans[0].textContent : '';
-    document.getElementById('m_provider').value = spans[1] ? spans[1].textContent : '';
+    var providerVal = spans[1] ? spans[1].textContent : '';
+    document.getElementById('m_provider').value = providerVal;
+    // 尝试匹配内置服务商下拉
+    var matched = adminProviders.filter(function (p) { return p.provider_key === providerVal; })[0];
+    presetSel.value = matched ? matched.provider_key : '';
+    if (matched && matched.api_key_url) {
+      document.getElementById('m_get_key_link').href = matched.api_key_url;
+      document.getElementById('m_get_key_link').textContent = matched.name + ' 获取密钥 →';
+      getWrap.style.display = '';
+    } else {
+      getWrap.style.display = 'none';
+    }
     document.getElementById('m_api_endpoint').value = '';
     document.getElementById('m_api_key').value = '';
     document.getElementById('m_max_tokens').value = 4096;

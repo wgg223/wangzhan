@@ -15,6 +15,43 @@ const WORLD_SCAN_DEPTH = 6;
 // 群聊其余成员卡注入总预算（字符）：按人数均分，避免大群撑爆上下文。
 // 10500 = 7 × 1500，保证 8 人及以下群聊每成员仍可获得完整 1500 字摘要（与旧行为一致）。
 const GROUP_CARD_BUDGET = 10500;
+// 单条消息 token 上限：超过则截断（节省上下文 token）
+const MSG_TOKEN_LIMIT = 500;
+// 世界书条目内容长度上限（字符）
+const WORLD_BOOK_CONTENT_LIMIT = 2000;
+
+/**
+ * 压缩单条消息：超过 MSG_TOKEN_LIMIT 时截断并添加标记
+ */
+function compressMessage(content) {
+  const text = String(content || '');
+  const tokens = estimateTokens(text);
+  if (tokens <= MSG_TOKEN_LIMIT) return text;
+  // 按字符估算截断位置（1 token ≈ 1.5 字符 for CJK, 4 chars for others）
+  const maxChars = Math.floor(MSG_TOKEN_LIMIT * 2.5);
+  return text.slice(0, maxChars) + '\n\n[... 消息已截断，原文 ' + tokens + ' tokens]';
+}
+
+/**
+ * 压缩世界书条目：去重 + 截断长内容
+ */
+function compressWorldBookEntries(entries) {
+  const seen = new Set();
+  return (entries || []).filter(e => {
+    const key = (e.key || '').trim().toLowerCase();
+    const content = String(e.content || '').trim();
+    if (!content) return false;
+    // 按 key+content 前 100 字符去重
+    const dedupKey = key + '|' + content.slice(0, 100);
+    if (seen.has(dedupKey)) return false;
+    seen.add(dedupKey);
+    // 截断长内容
+    if (content.length > WORLD_BOOK_CONTENT_LIMIT) {
+      e.content = content.slice(0, WORLD_BOOK_CONTENT_LIMIT) + '\n[... 已截断]';
+    }
+    return true;
+  });
+}
 
 function getRole(db, roleId) {
   if (!roleId) return null;
@@ -69,7 +106,8 @@ function buildContext(db, conv, userMsg, opts = {}) {
   const members = isGroup ? getGroupMembers(db, conv) : [];
   const speaker = isGroup ? (members.find(m => m.id === speakerRoleId) || members[0] || null) : null;
   const role = isGroup ? speaker : getRole(db, conv.role_id);
-  const entries = getWorldBook(db, conv.id);
+  const rawEntries = getWorldBook(db, conv.id);
+  const entries = compressWorldBookEntries(rawEntries);
 
   // ---- 当前分支历史（先取历史，供世界书触发词扫描与对话窗口复用） ----
   const branchId = conv.current_branch_id || 0;
@@ -159,8 +197,10 @@ function buildContext(db, conv, userMsg, opts = {}) {
     if (m.role !== 'user' && m.role !== 'assistant') continue;
     if (m.status === 'error' || m.status === 'stopped') continue;
     if (m.is_active === 0) continue; // 跳过非活跃 alternate
-    tokens += estimateTokens(m.content);
-    windowMsgs.unshift(m);
+    // 压缩长消息以节省 token
+    const compressed = compressMessage(m.content);
+    tokens += estimateTokens(compressed);
+    windowMsgs.unshift({ ...m, content: compressed });
     if (tokens > HISTORY_TOKEN_WINDOW) break;
   }
 

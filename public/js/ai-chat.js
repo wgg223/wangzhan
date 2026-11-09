@@ -68,7 +68,8 @@
     'acContextModal', 'acContextInfo', 'acContextMessages',
     'acBranchModal',
     'acNewGroup', 'acGroupBar', 'acGroupMembers', 'acGroupEdit',
-    'acGroupModal', 'acGroupModalTitle', 'acGroupName', 'acGroupMode', 'acGroupMemberList', 'acGroupSave']
+    'acGroupModal', 'acGroupModalTitle', 'acGroupName', 'acGroupMode', 'acGroupMemberList', 'acGroupSave',
+    'acConvTokens']
     .forEach(function (id) { els[id] = document.getElementById(id); });
 
   // ============ 通用请求 ============
@@ -731,16 +732,24 @@
 
   // ============ 消息渲染 ============
 
+  function updateConvTokens() {
+    if (!els.acConvTokens) return;
+    var total = state.messages.reduce(function (sum, m) { return sum + (m.tokens || 0); }, 0);
+    els.acConvTokens.textContent = total > 0 ? '本会话 ≈ ' + total + ' tokens' : '';
+  }
+
   function renderMessages() {
     els.acMessages.innerHTML = '';
     els.acEmpty.style.display = state.messages.length ? 'none' : 'block';
     if (!state.messages.length) {
       renderEmptyHint();
+      updateConvTokens();
       return;
     }
     state.messages.forEach(function (m) {
       appendMessageEl(m, false);
     });
+    updateConvTokens();
     scrollToBottom(true);
   }
 
@@ -799,6 +808,12 @@
       mtag.className = 'ac-msg-model-tag';
       mtag.textContent = m.model;
       meta.appendChild(mtag);
+    }
+    if (m.tokens != null && m.tokens > 0) {
+      var ttag = document.createElement('span');
+      ttag.className = 'ac-msg-token-tag';
+      ttag.textContent = m.tokens + ' tokens';
+      meta.appendChild(ttag);
     }
     var actions = document.createElement('span');
     actions.className = 'ac-msg-actions';
@@ -1137,6 +1152,7 @@
     // 移除流式占位气泡（m.id 已被服务端 id 覆盖，DOM 上的临时 id 对不上，需用元素引用判断）
     if (placeholderEl && placeholderEl.parentNode) placeholderEl.remove();
     appendMessageEl(m, false);
+    updateConvTokens();
     // 刷新会话列表（标题/计数可能变化）与配额，保持当前会话选中
     var convId = state.currentConv ? state.currentConv.id : null;
     loadBootstrap({ autoSelect: false })

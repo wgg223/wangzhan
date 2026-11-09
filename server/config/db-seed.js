@@ -710,7 +710,9 @@ PHILOSOPHY（价值讨论）：成熟、不给简单答案、承认矛盾。
     ['openrouter', 'OpenRouter（聚合）', 'https://openrouter.ai/api/v1', 'openrouter/auto',
       JSON.stringify([]), 'https://openrouter.ai/keys', 12],
     ['pollinations', 'Pollinations.ai（免费）', 'https://text.pollinations.ai/openai', 'openai',
-      JSON.stringify([]), '', 13]
+      JSON.stringify([]), '', 13],
+    ['sta1n', 'Sta1n.ai', 'https://api.sta1n.ai/v1', 'sta1n-pro',
+      JSON.stringify([]), 'https://sta1n.ai', 14]
   ];
   defaultAiChatProviders.forEach(([key, name, base, model, models, keyUrl, sort]) => {
     db.run(`INSERT OR IGNORE INTO ai_chat_providers (provider_key, name, api_base, default_model, models, api_key_url, sort_order)
