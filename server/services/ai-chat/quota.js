@@ -34,10 +34,11 @@ function getQuotaRow(db, userId) {
 
 /**
  * 检查配额是否可用
+ * 豁免：管理员，或本次走用户自己的 API（ownApi=true，自填模型）——不限额、不计数
  * @returns {{ok: boolean, unlimited: boolean, quota: Object, reason?: string}}
  */
-function checkQuota(db, user) {
-  if (isAdminRole(user)) {
+function checkQuota(db, user, opts = {}) {
+  if (isAdminRole(user) || opts.ownApi) {
     return { ok: true, unlimited: true, quota: { dailyLimit: 0, dailyUsed: 0, remaining: 0, totalLimit: 0, totalUsed: 0 } };
   }
   const row = getQuotaRow(db, user.id);
@@ -59,9 +60,10 @@ function checkQuota(db, user) {
 
 /**
  * 消费配额：成功计入次数 + token 消耗；失败只计次数
+ * 管理员或走用户自己的 API（ownApi=true）时不消费
  */
-function consumeQuota(db, user, { tokens = 0, count = true } = {}) {
-  if (isAdminRole(user)) return;
+function consumeQuota(db, user, { tokens = 0, count = true, ownApi = false } = {}) {
+  if (isAdminRole(user) || ownApi) return;
   const row = getQuotaRow(db, user.id);
   db.run('UPDATE ai_quota SET daily_used = daily_used + ?, total_used = total_used + ? WHERE id = ?',
     [count ? 1 : 0, tokens, row.id]);

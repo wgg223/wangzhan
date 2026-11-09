@@ -60,7 +60,9 @@ function resolveModel(db, userId, convModel) {
     api_endpoint: POLLINATIONS_ENDPOINT,
     api_key: null,
     max_tokens: 4096,
-    temperature: 0.7
+    temperature: 0.7,
+    owner_id: null,
+    is_own: false
   };
 }
 
@@ -73,7 +75,10 @@ function modelInfoFromRow(row) {
     api_endpoint: row.api_endpoint || '',
     api_key: decrypt(row.api_key || '') || null,
     max_tokens: parseInt(row.max_tokens, 10) || 4096,
-    temperature: parseFloat(row.temperature) || 0.7
+    temperature: parseFloat(row.temperature) || 0.7,
+    // 用户自填模型（user_id 非空）= 走自己的 API，不受站内配额/条数限制
+    owner_id: row.user_id != null ? row.user_id : null,
+    is_own: row.user_id != null
   };
 }
 

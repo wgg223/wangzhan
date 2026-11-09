@@ -1058,6 +1058,8 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
       },
       conversations, roles, models, globalModels, providers, presets, promptTemplates,
       quota: quota.quota, quotaOk: quota.ok, quotaUnlimited: quota.unlimited,
+      // 默认模型（会话未显式指定时）是否为用户自填模型——自有 API 不受站内配额限制
+      defaultModelIsOwn: aiChatService.isOwnModel(db, user.id, ''),
       canExport: user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'aichat.export')
     }
   });

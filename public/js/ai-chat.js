@@ -172,6 +172,7 @@
           allowUserModels: !!d.allowUserModels,
           predictEnabled: !!d.predictEnabled,
           predictCount: d.predictCount || 3,
+          defaultModelIsOwn: !!d.defaultModelIsOwn,
           memoryDefaults: d.memoryDefaults || {}
         };
         applyPredictAvailability();
@@ -610,6 +611,12 @@
       els.acQuotaBadge.className = 'ac-quota-badge';
       return;
     }
+    // 当前会话走用户自己的 API：不受站内配额/条数限制
+    if (convUsesOwnModel(state.currentConv)) {
+      els.acQuotaBadge.textContent = '自有 API · 不限量';
+      els.acQuotaBadge.className = 'ac-quota-badge own';
+      return;
+    }
     var q = state.quota || {};
     var remaining = typeof q.remaining === 'number' ? q.remaining : q.dailyLimit - q.dailyUsed;
     els.acQuotaBadge.textContent = '今日剩余 ' + Math.max(0, remaining) + '/' + (q.dailyLimit || 0);
@@ -627,6 +634,7 @@
     els.acConvTitle.textContent = conv.title || '新对话';
     updateRoleLabel();
     updateModelLabel();
+    renderQuota();
     updateShareBtn();
     renderGroupBar();
     closeAllModals();
@@ -738,6 +746,7 @@
       .then(function () {
         state.currentConv.model = modelKey;
         updateModelLabel();
+        renderQuota();
         hideModal('acModelModal');
         showToast(modelKey ? '模型已切换' : '已切换为自动选择', 'success');
       })
@@ -1008,6 +1017,19 @@
 
   // ============ 发送 / 停止 ============
 
+  // 判断会话是否走「用户自己的 API」（自填模型）——与后端 resolveModel 优先级一致：
+  // 显式 conv.model 命中自有模型即自有；命中站内全局模型即站内；为空或未匹配时回落到后端默认解析结果。
+  function convUsesOwnModel(conv) {
+    var ownKeys = (state.models || []).map(function (m) { return m.model_key; });
+    var globalKeys = (state.globalModels || []).map(function (m) { return m.model_key; });
+    var key = (conv && conv.model) ? String(conv.model) : '';
+    if (key) {
+      if (ownKeys.indexOf(key) !== -1) return true;
+      if (globalKeys.indexOf(key) !== -1) return false;
+    }
+    return !!(state.settings && state.settings.defaultModelIsOwn);
+  }
+
   function send() {
     if (state.streaming) return;
     var content = els.acInput.value.trim();
@@ -1016,7 +1038,8 @@
       showToast('AI 聊天功能暂未开放', 'error');
       return;
     }
-    if (state.quota && !state.quotaUnlimited && state.quota.remaining <= 0) {
+    // 站内 API 才受配额/条数限制；用户自己的 API 不限制
+    if (state.quota && !state.quotaUnlimited && !convUsesOwnModel(state.currentConv) && state.quota.remaining <= 0) {
       showToast('今日对话次数已用完', 'error');
       return;
     }
@@ -3349,7 +3372,7 @@
     if (!predictOn || predictInFlight) return;
     if (state.streaming || !state.currentConv) return;
     if (state.settings && !state.settings.predictEnabled) return;
-    if (state.quota && !state.quotaUnlimited && state.quota.remaining <= 0) return;
+    if (state.quota && !state.quotaUnlimited && !convUsesOwnModel(state.currentConv) && state.quota.remaining <= 0) return;
     var convId = state.currentConv.id;
     predictInFlight = true;
     if (els.acPredictBtn) els.acPredictBtn.classList.add('loading');

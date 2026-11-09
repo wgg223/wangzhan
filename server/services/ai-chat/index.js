@@ -229,7 +229,7 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
     }
     const reason = normalizeError(err);
     const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason, opts.speakerRoleId, 0, 0);
-    consumeQuota(db, user, { tokens: 0, count: true }); // 失败计次数
+    consumeQuota(db, user, { tokens: 0, count: true, ownApi: modelInfo.is_own }); // 失败计次数
     throw Object.assign(new Error(reason), { status: 502, messageId: msgId });
   }
 
@@ -240,7 +240,7 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
 
   const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '', opts.speakerRoleId, inputTokens, outputTokens,
     { reasoning, genInfo: buildGenInfo(modelInfo, genParams, finishReason, continuePasses) });
-  consumeQuota(db, user, { tokens: totalTokens, count: true });
+  consumeQuota(db, user, { tokens: totalTokens, count: true, ownApi: modelInfo.is_own });
   return {
     messageId: msgId, content: full, tokens: totalTokens,
     inputTokens, outputTokens, aborted: false, reasoning, finishReason, continuePasses,
@@ -292,7 +292,7 @@ async function sendMessageInner(db, user, conv, userContent, opts = {}) {
   }
 
   const modelInfo = resolveModel(db, user.id, conv.model);
-  const quotaCheck = checkQuota(db, user);
+  const quotaCheck = checkQuota(db, user, { ownApi: modelInfo.is_own });
   if (!quotaCheck.ok) {
     throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
   }
@@ -356,16 +356,16 @@ async function sendGroupRound(db, user, conv, userMsg, opts, ctxOpts) {
   if (!members.length) throw Object.assign(new Error('群聊没有可用成员，请先添加角色'), { status: 400 });
   const speakers = opts.speakerRoleId ? members.filter(m => m.id === opts.speakerRoleId) : members;
   if (!speakers.length) throw Object.assign(new Error('指定的角色不在群成员中'), { status: 400 });
+  const modelInfo = resolveModel(db, user.id, conv.model);
   let last = null;
   for (const sp of speakers) {
     if (opts.signal && opts.signal.aborted) break;
-    const quotaCheck = checkQuota(db, user);
+    const quotaCheck = checkQuota(db, user, { ownApi: modelInfo.is_own });
     if (!quotaCheck.ok) {
       if (!last) throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
       break;
     }
     if (opts.onSpeaker) opts.onSpeaker({ role_id: sp.id, name: sp.name, avatar: sp.avatar || '' });
-    const modelInfo = resolveModel(db, user.id, conv.model);
     const messages = buildContext(db, conv, userMsg, Object.assign({}, ctxOpts, { speakerRoleId: sp.id }));
     last = await runCompletion(db, user, conv, modelInfo, messages,
       Object.assign({}, opts, { speakerRoleId: sp.id }), quotaCheck);
@@ -397,11 +397,11 @@ async function groupReplyInner(db, user, conv, roleId, opts = {}) {
   const members = getGroupMembers(db, conv);
   const sp = members.find(m => m.id === parseInt(roleId, 10));
   if (!sp) throw Object.assign(new Error('指定的角色不在群成员中'), { status: 400 });
-  const quotaCheck = checkQuota(db, user);
+  const modelInfo = resolveModel(db, user.id, conv.model);
+  const quotaCheck = checkQuota(db, user, { ownApi: modelInfo.is_own });
   if (!quotaCheck.ok) throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
   const lastUser = queryOne(db, "SELECT content FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1",
     [conv.id, conv.current_branch_id || 0]);
-  const modelInfo = resolveModel(db, user.id, conv.model);
   const messages = buildContext(db, conv, lastUser ? lastUser.content : '', { speakerRoleId: sp.id, noUserMsg: true });
   if (opts.onSpeaker) opts.onSpeaker({ role_id: sp.id, name: sp.name, avatar: sp.avatar || '' });
   const result = await runCompletion(db, user, conv, modelInfo, messages,
@@ -441,7 +441,8 @@ async function regenerateMessageInner(db, user, conv, targetMsgId, opts = {}) {
   if (String(settings.ai_enabled ?? '1') === '0') {
     throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });
   }
-  const quotaCheck = checkQuota(db, user);
+  const modelInfo = resolveModel(db, user.id, conv.model);
+  const quotaCheck = checkQuota(db, user, { ownApi: modelInfo.is_own });
   if (!quotaCheck.ok) throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
 
   const target = queryOne(db, 'SELECT * FROM ai_messages WHERE id = ? AND conversation_id = ?', [targetMsgId, conv.id]);
@@ -453,7 +454,6 @@ async function regenerateMessageInner(db, user, conv, targetMsgId, opts = {}) {
     [conv.id, branchId, target.id]);
   if (!prevUser) throw Object.assign(new Error('找不到对应的用户消息'), { status: 400 });
 
-  const modelInfo = resolveModel(db, user.id, conv.model);
   // 与 sendMessage 一致：重新生成同样做向量记忆/RAG 检索；群聊保留原说话人
   const { embCfg, queryEmbedding } = await embedUserMessage(db, conv, settings, prevUser.content);
   const messages = buildContext(db, conv, prevUser.content, {
@@ -481,7 +481,8 @@ async function predictReplies(db, user, conv, opts = {}) {
   if (String(settings.ai_predict_enabled ?? '1') === '0') {
     throw Object.assign(new Error('预测功能已被管理员关闭'), { status: 403 });
   }
-  const quotaCheck = checkQuota(db, user);
+  const modelInfo = resolveModel(db, user.id, conv.model);
+  const quotaCheck = checkQuota(db, user, { ownApi: modelInfo.is_own });
   if (!quotaCheck.ok) throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
 
   const count = Math.min(Math.max(parseInt(settings.ai_predict_count, 10) || 3, 1), 5);
@@ -490,8 +491,6 @@ async function predictReplies(db, user, conv, opts = {}) {
     WHERE conversation_id = ? AND branch_id = ? AND status = 'done' ORDER BY id DESC LIMIT 12`,
     [conv.id, branchId]).reverse();
   if (!history.length) return { suggestions: [] };
-
-  const modelInfo = resolveModel(db, user.id, conv.model);
 
   // 角色简介（群聊取会话标题即可，单聊附带角色名/性格，帮助预测贴合语境）
   let roleBrief = '';
@@ -540,7 +539,7 @@ async function predictReplies(db, user, conv, opts = {}) {
   const suggestions = parseSuggestions(full, count);
   const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
   const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
-  consumeQuota(db, user, { tokens: inputTokens + outputTokens, count: false });
+  consumeQuota(db, user, { tokens: inputTokens + outputTokens, count: false, ownApi: modelInfo.is_own });
   return { suggestions };
 }
 
@@ -569,9 +568,15 @@ function parseSuggestions(text, count) {
     .slice(0, count);
 }
 
+// 判断某会话（或默认）解析出的模型是否为用户自填模型（走自己的 API，不受站内配额限制）
+function isOwnModel(db, userId, convModel) {
+  const m = resolveModel(db, userId, convModel);
+  return !!(m && m.is_own);
+}
+
 module.exports = {
   createConversation, getOwnConversation, renameConversation, deleteConversation,
   updateGroup, getOwnMessage, deleteMessage, editMessage,
   forkConversation, switchBranch, deleteBranch,
-  sendMessage, regenerateMessage, groupReply, extractGenParams, predictReplies
+  sendMessage, regenerateMessage, groupReply, extractGenParams, predictReplies, isOwnModel
 };
