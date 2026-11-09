@@ -210,6 +210,21 @@
     <label class="full">嵌入 API 端点（OpenAI 兼容 /embeddings）<input id="s_ai_embedding_api_base" placeholder="如：https://api.openai.com/v1" value="<%= aiSettings.ai_embedding_api_base || '' %>"></label>
     <label class="full">嵌入模型<input id="s_ai_embedding_model" placeholder="如：text-embedding-3-small" value="<%= aiSettings.ai_embedding_model || '' %>"></label>
     <label class="full">嵌入 API Key（留空不修改）<input id="s_ai_embedding_api_key" type="password" placeholder="<%= (aiSettings.ai_embedding_api_key && aiSettings.ai_embedding_api_key.indexOf('ENC:') === 0) ? '已配置（留空保持不变）' : 'Bearer 密钥' %>"></label>
+
+    <div class="full" style="border-top:1px solid var(--border-color); margin:8px 0 4px; padding-top:12px; font-weight:600; font-size:14px;">上下文与生成</div>
+    <label>上下文预算（tokens）<input id="s_ai_context_size" type="number" min="2000" max="1000000" step="1000" value="<%= aiSettings.ai_context_size || 16000 %>"></label>
+    <label>历史窗口预算（tokens）<input id="s_ai_history_window" type="number" min="500" max="200000" step="500" value="<%= aiSettings.ai_history_window || 3000 %>"></label>
+    <label>思维链展示（reasoning）<select id="s_ai_reasoning_enabled"><option value="1" <%= aiSettings.ai_reasoning_enabled !== '0' ? 'selected' : '' %>>开启</option><option value="0" <%= aiSettings.ai_reasoning_enabled === '0' ? 'selected' : '' %>>关闭</option></select></label>
+    <label>截断自动续写<select id="s_ai_auto_continue"><option value="1" <%= aiSettings.ai_auto_continue !== '0' ? 'selected' : '' %>>开启</option><option value="0" <%= aiSettings.ai_auto_continue === '0' ? 'selected' : '' %>>关闭</option></select></label>
+    <label>自动续写最大次数<input id="s_ai_auto_continue_max" type="number" min="0" max="5" value="<%= aiSettings.ai_auto_continue_max != null ? aiSettings.ai_auto_continue_max : 3 %>"></label>
+    <label>预测建议回复<select id="s_ai_predict_enabled"><option value="1" <%= aiSettings.ai_predict_enabled !== '0' ? 'selected' : '' %>>开启（用户可自行开关）</option><option value="0" <%= aiSettings.ai_predict_enabled === '0' ? 'selected' : '' %>>关闭（全站隐藏）</option></select></label>
+    <label>预测建议条数<input id="s_ai_predict_count" type="number" min="1" max="5" value="<%= aiSettings.ai_predict_count != null ? aiSettings.ai_predict_count : 3 %>"></label>
+
+    <div class="full" style="border-top:1px solid var(--border-color); margin:8px 0 4px; padding-top:12px; font-weight:600; font-size:14px;">世界书（默认策略，用户会话可覆盖）</div>
+    <label>递归扫描<select id="s_ai_world_recursion"><option value="1" <%= aiSettings.ai_world_recursion !== '0' ? 'selected' : '' %>>开启</option><option value="0" <%= aiSettings.ai_world_recursion === '0' ? 'selected' : '' %>>关闭</option></select></label>
+    <label>递归最大层数<input id="s_ai_world_recursion_steps" type="number" min="1" max="10" value="<%= aiSettings.ai_world_recursion_steps || 4 %>"></label>
+    <label>世界书预算占比 %<input id="s_ai_world_budget_percent" type="number" min="0" max="100" value="<%= aiSettings.ai_world_budget_percent != null ? aiSettings.ai_world_budget_percent : 25 %>"></label>
+    <label>扫描深度（最近 N 条）<input id="s_ai_world_scan_depth" type="number" min="1" max="50" value="<%= aiSettings.ai_world_scan_depth || 6 %>"></label>
   </div>
   <div class="ai-chat-actions">
     <button type="button" class="btn btn-primary" onclick="saveSettings()">保存设置</button>
@@ -224,11 +239,11 @@
     <thead><tr><th>ID</th><th>触发词</th><th>内容</th><th>位置</th><th>常驻</th><th>状态</th><th>操作</th></tr></thead>
     <tbody>
       <% defaultWorldBook.forEach(w => { %>
-      <tr data-dwb-id="<%= w.id %>">
+      <tr data-dwb-id="<%= w.id %>" data-dwb="<%= JSON.stringify(w) %>">
         <td><%= w.id %></td>
         <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><%= w.key || '（常驻）' %></td>
         <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><%= w.content %></td>
-        <td><%= w.position %></td>
+        <td><%= w.position %><%= w.position === 'in_chat' ? ('@' + (w.depth == null ? 4 : w.depth)) : '' %></td>
         <td><%= w.constant ? '是' : '否' %></td>
         <td><%= w.enabled ? '启用' : '停用' %></td>
         <td>
@@ -252,15 +267,20 @@
       <label>触发词（多个用逗号分隔，留空=常驻注入）<input id="dwb_key" placeholder="如：雨夜, 城市"></label>
       <label class="full">内容<textarea id="dwb_content" rows="4" placeholder="注入给 AI 的设定内容…"></textarea></label>
       <label>注入位置
-        <select id="dwb_position">
+        <select id="dwb_position" onchange="dwbPosChanged()">
           <option value="system_top">system_top（系统顶层）</option>
           <option value="before_char">before_char（角色前）</option>
           <option value="after_char">after_char（角色后）</option>
           <option value="user_top">user_top（用户消息前）</option>
           <option value="assistant_top">assistant_top（助手回复前）</option>
+          <option value="in_chat">in_chat（按深度插入历史）</option>
         </select>
       </label>
+      <label id="dwb_depth_wrap" style="display:none;">插入深度（倒数第 N 条前）<input id="dwb_depth" type="number" value="4" min="0" max="200"></label>
+      <label>触发概率 %<input id="dwb_probability" type="number" value="100" min="0" max="100"></label>
       <label>排序<input id="dwb_sort_order" type="number" value="0" min="0"></label>
+      <label>二级触发词（选择性，需同时命中）<input id="dwb_secondary_keys" placeholder="逗号分隔，可留空"></label>
+      <label><input type="checkbox" id="dwb_selective" style="width:auto; margin-right:6px;">选择性（需二级键命中）</label>
       <label><input type="checkbox" id="dwb_constant" style="width:auto; margin-right:6px;">常驻注入（忽略触发词）</label>
       <label><input type="checkbox" id="dwb_enabled" style="width:auto; margin-right:6px;" checked>启用</label>
     </div>
@@ -711,7 +731,10 @@
       's_ai_default_daily_limit', 's_ai_default_total_limit', 's_ai_memory_enabled', 's_ai_memory_mode',
       's_ai_memory_interval', 's_ai_memory_keep_recent', 's_ai_memory_recall_min_score', 's_ai_memory_recall_max',
       's_ai_memory_group_recent', 's_ai_memory_group_size', 's_ai_rag_enabled', 's_ai_rag_max_results', 's_ai_rag_min_score',
-      's_ai_embedding_api_base', 's_ai_embedding_model', 's_ai_embedding_api_key'].forEach(function (id) {
+      's_ai_embedding_api_base', 's_ai_embedding_model', 's_ai_embedding_api_key',
+      's_ai_context_size', 's_ai_history_window', 's_ai_reasoning_enabled', 's_ai_auto_continue', 's_ai_auto_continue_max',
+      's_ai_world_recursion', 's_ai_world_recursion_steps', 's_ai_world_budget_percent', 's_ai_world_scan_depth',
+      's_ai_predict_enabled', 's_ai_predict_count'].forEach(function (id) {
       // 服务端读取不带 s_ 前缀的字段名，此处剥离前缀以对齐（历史遗留：此前未剥离导致保存被忽略）
       form.append(id.replace(/^s_/, ''), document.getElementById(id).value);
     });
@@ -764,6 +787,17 @@
   };
 
   // ============ 默认世界书 ============
+  window.dwbPosChanged = function () {
+    var pos = document.getElementById('dwb_position').value;
+    document.getElementById('dwb_depth_wrap').style.display = (pos === 'in_chat') ? '' : 'none';
+  };
+
+  function dwbRowData(id) {
+    var row = document.querySelector('tr[data-dwb-id="' + id + '"]');
+    if (!row) return null;
+    try { return JSON.parse(row.getAttribute('data-dwb') || 'null'); } catch (e) { return null; }
+  }
+
   window.editDefaultWorldBook = function (id) {
     var wrap = document.getElementById('dwbFormWrap');
     wrap.style.display = 'block';
@@ -771,22 +805,32 @@
     document.getElementById('dwbMsg').textContent = '';
     if (!id) {
       document.getElementById('dwbFormTitle').textContent = '新增默认世界书条目';
-      ['dwb_id', 'dwb_key', 'dwb_content', 'dwb_sort_order'].forEach(function (f) { document.getElementById(f).value = ''; });
+      ['dwb_id', 'dwb_key', 'dwb_content', 'dwb_secondary_keys'].forEach(function (f) { document.getElementById(f).value = ''; });
       document.getElementById('dwb_position').value = 'before_char';
+      document.getElementById('dwb_sort_order').value = 0;
+      document.getElementById('dwb_probability').value = 100;
+      document.getElementById('dwb_depth').value = 4;
       document.getElementById('dwb_constant').checked = false;
+      document.getElementById('dwb_selective').checked = false;
       document.getElementById('dwb_enabled').checked = true;
+      dwbPosChanged();
       return;
     }
-    var row = document.querySelector('tr[data-dwb-id="' + id + '"]');
-    if (!row) return;
+    var w = dwbRowData(id);
+    if (!w) return;
     document.getElementById('dwbFormTitle').textContent = '编辑默认世界书条目';
-    document.getElementById('dwb_id').value = id;
-    document.getElementById('dwb_key').value = row.cells[1].textContent === '（常驻）' ? '' : row.cells[1].textContent;
-    document.getElementById('dwb_content').value = row.cells[2].textContent;
-    document.getElementById('dwb_position').value = row.cells[3].textContent;
-    document.getElementById('dwb_constant').checked = row.cells[4].textContent === '是';
-    document.getElementById('dwb_enabled').checked = row.cells[5].textContent === '启用';
-    document.getElementById('dwb_sort_order').value = 0;
+    document.getElementById('dwb_id').value = w.id;
+    document.getElementById('dwb_key').value = w.key || '';
+    document.getElementById('dwb_content').value = w.content || '';
+    document.getElementById('dwb_position').value = w.position || 'before_char';
+    document.getElementById('dwb_sort_order').value = w.sort_order || 0;
+    document.getElementById('dwb_secondary_keys').value = w.secondary_keys || '';
+    document.getElementById('dwb_probability').value = w.probability == null ? 100 : w.probability;
+    document.getElementById('dwb_depth').value = w.depth == null ? 4 : w.depth;
+    document.getElementById('dwb_constant').checked = !!w.constant;
+    document.getElementById('dwb_selective').checked = !!w.selective;
+    document.getElementById('dwb_enabled').checked = !!w.enabled;
+    dwbPosChanged();
   };
 
   window.saveDefaultWorldBook = function () {
@@ -798,6 +842,10 @@
     fd.append('content', document.getElementById('dwb_content').value);
     fd.append('position', document.getElementById('dwb_position').value);
     fd.append('sort_order', document.getElementById('dwb_sort_order').value);
+    fd.append('secondary_keys', document.getElementById('dwb_secondary_keys').value);
+    fd.append('probability', document.getElementById('dwb_probability').value);
+    fd.append('depth', document.getElementById('dwb_depth').value);
+    fd.append('selective', document.getElementById('dwb_selective').checked ? '1' : '0');
     fd.append('constant', document.getElementById('dwb_constant').checked ? '1' : '0');
     fd.append('enabled', document.getElementById('dwb_enabled').checked ? '1' : '0');
     csrfFetch('/admin/ai-chat/world-book-defaults/save', { method: 'POST', body: fd }, 20000)
@@ -809,13 +857,19 @@
   };
 
   window.toggleDefaultWorldBook = function (id, enabled) {
+    // 保留原条目全部字段，仅切换启用状态（避免历史实现清空 key/position/constant）
+    var w = dwbRowData(id) || {};
     var fd = new FormData();
     fd.append('id', id);
-    fd.append('key', '');
-    fd.append('content', '');
-    fd.append('position', 'before_char');
-    fd.append('sort_order', '0');
-    fd.append('constant', '0');
+    fd.append('key', w.key || '');
+    fd.append('content', w.content || '');
+    fd.append('position', w.position || 'before_char');
+    fd.append('sort_order', w.sort_order || 0);
+    fd.append('secondary_keys', w.secondary_keys || '');
+    fd.append('probability', w.probability == null ? 100 : w.probability);
+    fd.append('depth', w.depth == null ? 4 : w.depth);
+    fd.append('selective', w.selective ? '1' : '0');
+    fd.append('constant', w.constant ? '1' : '0');
     fd.append('enabled', enabled ? '0' : '1');
     csrfFetch('/admin/ai-chat/world-book-defaults/save', { method: 'POST', body: fd }, 20000)
       .then(function (json) {

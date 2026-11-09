@@ -719,6 +719,52 @@ PHILOSOPHY（价值讨论）：成熟、不给简单答案、承认矛盾。
       VALUES (?, ?, ?, ?, ?, ?, ?)`, [key, name, base, model, models, keyUrl, sort]);
   });
 
+  // ============ 内置生成参数预设与提示词模板（一次性种子，参考 RP-Hub 内置预设） ============
+  const builtinSeedRow = queryAll(db, "SELECT setting_value FROM settings WHERE setting_key = 'ai_builtin_presets_seeded'");
+  if (!builtinSeedRow.length) {
+    // 全局生成参数预设：[name, temperature, top_p, top_k, freq_pen, pres_pen, max_tokens, is_default]
+    const builtinPresets = [
+      ['角色扮演（沉浸）', 1.0, 0.95, 0, 0.2, 0.1, 4096, 0],
+      ['创意写作', 0.9, 0.95, 0, 0.1, 0, 4096, 0],
+      ['日常对话', 0.7, 1.0, 0, 0, 0, 2048, 1],
+      ['严谨事实', 0.3, 1.0, 0, 0, 0, 2048, 0],
+      ['头脑风暴', 1.2, 0.98, 0, 0.3, 0.2, 4096, 0]
+    ];
+    builtinPresets.forEach(([name, temp, topP, topK, freq, pres, maxTok, isDefault]) => {
+      db.run(`INSERT INTO ai_presets (user_id, name, temperature, top_p, top_k, frequency_penalty, presence_penalty, max_tokens, is_default, is_global)
+        VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, 1)`, [name, temp, topP, topK, freq, pres, maxTok, isDefault]);
+    });
+    // 全局提示词模板：[name, content, description, sort_order]
+    const builtinTemplates = [
+      ['RP 沉浸模式（防抢话）',
+        '你将扮演 {{char}}，与 {{user}} 进行沉浸式角色扮演对话。\n\n' +
+        '【角色设定】\n{{description}}\n\n【性格】\n{{personality}}\n\n【场景】\n{{scenario}}\n\n' +
+        '【规则】\n1. 始终以 {{char}} 的身份、口吻与视角回复，绝不扮演或代替 {{user}} 发言、行动、决策。\n' +
+        '2. 回复聚焦当下场景，推进剧情但不抢节奏；每次回复 2-4 段为宜。\n' +
+        '3. 用「」表示对话，用动作与神态描写增强画面感，避免剧本式格式。\n' +
+        '4. 保持角色知识边界：{{char}} 不知道未亲历或未被告知的事。\n\n' +
+        '【世界设定】\n{{worldInfo}}\n\n{{authorNote}}',
+        '标准 RP 模板：角色卡 + 防抢话规则 + 世界书占位符', 1],
+      ['文风抗八股',
+        '你是一位文笔出色的创作者。写作要求：\n' +
+        '1. 禁用"值得注意的是""综上所述""总而言之"等八股套话与 AI 腔。\n' +
+        '2. 少用排比堆砌与空洞形容词，多用具体名词、动作与感官细节。\n' +
+        '3. 句式长短交错，段落之间有呼吸感；对话要口语化、有个性。\n' +
+        '4. 不主动总结升华，让情节与细节自己说话。',
+        '附加文风约束，可与其他模板叠加使用', 2],
+      ['简洁助手',
+        '你是乐于助人的智能助手。回答要求：准确、简洁、有条理；' +
+        '不确定时明确说明，不编造。涉及代码时给出可运行的完整示例。{{memory}}',
+        '通用问答模板（带记忆占位符）', 3]
+    ];
+    builtinTemplates.forEach(([name, content, desc, sort]) => {
+      db.run(`INSERT INTO ai_prompt_templates (user_id, name, content, description, is_global, sort_order)
+        VALUES (NULL, ?, ?, ?, 1, ?)`, [name, content, desc, sort]);
+    });
+    db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_builtin_presets_seeded', '1')");
+    console.log('[db-seed] 已写入内置 AI 生成预设 ' + builtinPresets.length + ' 个、提示词模板 ' + builtinTemplates.length + ' 个');
+  }
+
   // 豆包默认模型迁移：旧版 seedream-3.0 多数账号未开通，改为 seedream-4.0（仅当仍是旧默认值时执行）
   db.run(`UPDATE ai_image_providers SET default_model = 'doubao-seedream-4-0-250828', models = ?
     WHERE provider_key = 'doubao' AND default_model = 'doubao-seedream-3-0-t2i-250528'`,

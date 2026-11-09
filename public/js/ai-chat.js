@@ -40,19 +40,20 @@
     'acModelBtn', 'acModelLabel', 'acModelModal', 'acModelList',
     'acRoleModal', 'acRoleList', 'acRoleCreate', 'acRoleCreateModal', 'acNewRoleName', 'acNewRolePrompt', 'acNewRoleGreeting', 'acNewRoleDesc', 'acNewRolePersonality', 'acNewRoleScenario', 'acNewRoleExamples', 'acRoleSave',
     'acWorldList', 'acWorldAdd', 'acWorldImport', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
-    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acMemoryEnabled', 'acRagEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
+    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acWorldSecondary', 'acWorldSelective', 'acWorldProbability', 'acWorldDepth', 'acWorldSelectiveWrap', 'acWorldDepthWrap',
+    'acMemoryEnabled', 'acRagEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
     'acAutoCompress', 'acCompressKeep', 'acCompressKeepVal', 'acCompressNow',
     'acMemoryBackfill', 'acMemoryBackfillModal', 'acBackfillStatus', 'acBackfillEmbWarn',
     'acBackfillProgress', 'acBackfillPhase', 'acBackfillBar', 'acBackfillMeta',
     'acBackfillCancel', 'acBackfillSummaries', 'acBackfillVectors', 'acBackfillGroups', 'acBackfillAll',
-    'acImageGenBtn',
+    'acImageGenBtn', 'acPredictBtn', 'acSuggestions',
     'acBranchList', 'acMenuBtn', 'acSidebar',
     'acModelsToggle', 'acModelsBody', 'acMyModels', 'acGlobalModels', 'acModelAddBtn', 'acModelAddRow',
     'acmProvider', 'acmKey', 'acmEndpoint', 'acmApiKey', 'acmDefault', 'acmSave', 'acmCancel', 'acmGetWrap', 'acmGetLink',
     'acmFetch', 'acmFetchWrap', 'acmFetchList', 'acmFetchUse', 'acmFetchTip',
     'acShareBtn', 'acShareModal', 'acShareUrl', 'acShareCopy', 'acShareToggle',
     'acPickPrompt', 'acPromptModal', 'acPromptSearch', 'acPromptList', 'acPromptCount', 'acPromptMore',
-    'acFullscreenBtn', 'acApp',
+    'acFullscreenBtn', 'acApp', 'acThemeBtn',
     'acTtsVoice', 'acTtsRate', 'acTtsRateVal', 'acTtsPitch', 'acTtsPitchVal', 'acTtsToggle',
     'acRoleImport', 'acRoleExport', 'acRoleFileInput',
     'acRoleImportUrl', 'acRoleUrlModal', 'acRoleUrlInput', 'acRoleUrlFetch',
@@ -169,8 +170,11 @@
           aiEnabled: !!d.aiEnabled,
           streamEnabled: !!d.streamEnabled,
           allowUserModels: !!d.allowUserModels,
+          predictEnabled: !!d.predictEnabled,
+          predictCount: d.predictCount || 3,
           memoryDefaults: d.memoryDefaults || {}
         };
+        applyPredictAvailability();
         state.quota = d.quota || null;
         state.quotaUnlimited = !!d.quotaUnlimited;
         canExport = !!d.canExport;
@@ -617,6 +621,7 @@
   function selectConversation(convId) {
     var conv = state.conversations.filter(function (c) { return c.id === convId; })[0];
     if (!conv) return;
+    clearSuggestions();
     state.currentConv = conv;
     renderConversations();
     els.acConvTitle.textContent = conv.title || '新对话';
@@ -829,6 +834,15 @@
       var mtag = document.createElement('span');
       mtag.className = 'ac-msg-model-tag';
       mtag.textContent = m.model;
+      var gi = m.genInfo || (m.gen_info ? tryParseJson(m.gen_info) : null);
+      if (gi) {
+        var parts = [];
+        if (gi.finish_reason) parts.push('结束：' + gi.finish_reason);
+        if (gi.continued) parts.push('自动续写 ' + gi.continued + ' 次');
+        if (gi.temperature != null) parts.push('temp ' + gi.temperature);
+        if (gi.max_tokens != null) parts.push('max ' + gi.max_tokens);
+        if (parts.length) mtag.title = parts.join(' · ');
+      }
       meta.appendChild(mtag);
     }
     if (m.tokens != null && m.tokens > 0) {
@@ -850,6 +864,33 @@
 
     var content = document.createElement('div');
     content.className = 'ac-msg-content';
+    // 持久化的思维链：折叠展示（默认收起）
+    if (m.role === 'assistant' && m.reasoning && !streaming) {
+      var rbox = document.createElement('div');
+      rbox.className = 'ac-msg-reasoning collapsed';
+      var rhead = document.createElement('div');
+      rhead.className = 'ac-reasoning-head';
+      var rlabel = document.createElement('span');
+      rlabel.className = 'ac-reasoning-label';
+      rlabel.textContent = '已深度思考';
+      var rtgl = document.createElement('button');
+      rtgl.type = 'button';
+      rtgl.className = 'ac-reasoning-toggle';
+      rtgl.textContent = '展开';
+      rtgl.addEventListener('click', function (e) {
+        e.stopPropagation();
+        rbox.classList.toggle('collapsed');
+        rtgl.textContent = rbox.classList.contains('collapsed') ? '展开' : '收起';
+      });
+      rhead.appendChild(rlabel);
+      rhead.appendChild(rtgl);
+      var rbody = document.createElement('div');
+      rbody.className = 'ac-reasoning-body';
+      rbody.textContent = m.reasoning;
+      rbox.appendChild(rhead);
+      rbox.appendChild(rbody);
+      body.appendChild(rbox);
+    }
     if (m.isImage && m.imageUrl) {
       // 图片消息：显示图片
       var img = document.createElement('img');
@@ -885,13 +926,19 @@
     return el;
   }
 
+  function tryParseJson(v) {
+    if (v == null) return null;
+    if (typeof v === 'object') return v;
+    try { return JSON.parse(v); } catch (e) { return null; }
+  }
+
   function renderMarkdown(el) {
     if (!window.marked || !window.DOMPurify) return;
     try {
       var raw = marked.parse(el.textContent);
       el.innerHTML = DOMPurify.sanitize(raw);
       el.classList.add('markdown');
-      // 代码块添加复制按钮
+      // 代码块添加复制按钮 + 语法高亮
       el.querySelectorAll('pre').forEach(function (pre) {
         var btn = document.createElement('button');
         btn.type = 'button';
@@ -902,6 +949,10 @@
           copyToClipboard(code ? code.textContent : pre.textContent, '代码已复制');
         });
         pre.appendChild(btn);
+        if (window.hljs) {
+          var codeEl = pre.querySelector('code');
+          try { if (codeEl) window.hljs.highlightElement(codeEl); } catch (e) { /* 忽略高亮失败 */ }
+        }
       });
     } catch (e) { /* 渲染失败保留纯文本 */ }
   }
@@ -992,6 +1043,7 @@
       els.acInput.value = '';
       els.acInput.style.height = 'auto';
       updateTokenEstimate();
+      clearSuggestions();
       // 用户消息立即上屏
       var userMsg = { id: 'u' + Date.now(), role: 'user', content: content, branch_id: conv.current_branch_id || 0 };
       state.messages.push(userMsg);
@@ -1101,6 +1153,55 @@
       }
     }
 
+    // 思维链（reasoning_content）流式渲染：折叠盒展示，默认展开、生成结束后收起
+    function updateReasoning(text) {
+      if (!lastEl) return;
+      var body = lastEl.querySelector('.ac-msg-body');
+      if (!body) return;
+      var box = body.querySelector('.ac-msg-reasoning');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'ac-msg-reasoning streaming';
+        box.innerHTML = '<div class="ac-reasoning-head"><span class="ac-reasoning-dot"></span><span class="ac-reasoning-label">思考中…</span><button type="button" class="ac-reasoning-toggle">收起</button></div><div class="ac-reasoning-body"></div>';
+        var contentEl = body.querySelector('.ac-msg-content');
+        if (contentEl) body.insertBefore(box, contentEl); else body.appendChild(box);
+        var tgl = box.querySelector('.ac-reasoning-toggle');
+        tgl.addEventListener('click', function () {
+          box.classList.toggle('collapsed');
+          tgl.textContent = box.classList.contains('collapsed') ? '展开' : '收起';
+        });
+      }
+      box.querySelector('.ac-reasoning-body').textContent = text;
+      scrollToBottom();
+    }
+
+    function finishReasoning() {
+      if (!lastEl) return;
+      var box = lastEl.querySelector('.ac-msg-reasoning');
+      if (!box) return;
+      box.classList.remove('streaming');
+      box.classList.add('collapsed');
+      var label = box.querySelector('.ac-reasoning-label');
+      if (label) label.textContent = '已深度思考';
+      var tgl = box.querySelector('.ac-reasoning-toggle');
+      if (tgl) tgl.textContent = '展开';
+    }
+
+    // 截断续写提示（防截断自动续写）
+    function showContinue(pass) {
+      if (!lastEl) return;
+      var body = lastEl.querySelector('.ac-msg-body');
+      if (!body) return;
+      var tip = body.querySelector('.ac-msg-continue');
+      if (!tip) {
+        tip = document.createElement('div');
+        tip.className = 'ac-msg-continue';
+        body.appendChild(tip);
+      }
+      tip.textContent = '✍️ 内容被截断，正在自动续写（第 ' + pass + ' 次）…';
+      scrollToBottom();
+    }
+
     // 说话人切换时把上一条占位气泡就地定稿
     function settleCurrent() {
       if (!currentMsg) return;
@@ -1133,6 +1234,13 @@
         if (!currentMsg) return;
         currentMsg.content = (currentMsg.content || '') + (data.delta || '');
         updateContent(currentMsg.content);
+      } else if (event === 'reasoning') {
+        if (!currentMsg) return;
+        currentMsg.reasoning = (currentMsg.reasoning || '') + (data.delta || '');
+        updateReasoning(currentMsg.reasoning);
+      } else if (event === 'continue') {
+        if (!currentMsg) return;
+        showContinue(data.pass || 1);
       } else if (event === 'message') {
         if (!currentMsg) return;
         currentMsg.id = data.id;
@@ -1140,6 +1248,8 @@
         currentMsg.tokens = data.tokens;
         currentMsg.inputTokens = data.inputTokens;
         currentMsg.outputTokens = data.outputTokens;
+        if (data.reasoning != null) currentMsg.reasoning = data.reasoning;
+        if (data.gen_info) currentMsg.genInfo = data.gen_info;
         if (data.model) currentMsg.model = data.model;
         if (data.speaker_role_id) currentMsg.speaker_role_id = data.speaker_role_id;
         if (data.speaker_name) currentMsg.speaker_name = data.speaker_name;
@@ -1152,6 +1262,7 @@
         if (data.messageId) currentMsg.id = data.messageId;
       } else if (event === 'done') {
         noReply = !!data.noReply;
+        finishReasoning();
         if (currentMsg) currentMsg.status = currentMsg.status === 'error' ? 'error' : (data.aborted ? 'stopped' : 'done');
       }
     }, controller.signal)
@@ -1210,6 +1321,7 @@
           renderConversations();
           updateModelLabel();
         }
+        fetchPredictions();
       })
       .catch(function () { /* ignore */ });
     scrollToBottom();
@@ -2082,6 +2194,28 @@
         ctag.textContent = '常驻';
         item.appendChild(ctag);
       }
+      if (w.selective && w.secondary_keys) {
+        var stag = document.createElement('span');
+        stag.className = 'ac-world-pos ac-world-sel';
+        stag.textContent = '二级键';
+        stag.title = '需同时命中：' + w.secondary_keys;
+        item.appendChild(stag);
+      }
+      var prob = w.probability == null ? 100 : Number(w.probability);
+      if (prob < 100) {
+        var ptag = document.createElement('span');
+        ptag.className = 'ac-world-pos ac-world-prob';
+        ptag.textContent = prob + '%';
+        ptag.title = '触发概率 ' + prob + '%';
+        item.appendChild(ptag);
+      }
+      if (w.position === 'in_chat') {
+        var dtag = document.createElement('span');
+        dtag.className = 'ac-world-pos ac-world-depth';
+        dtag.textContent = '深度' + (w.depth == null ? 4 : w.depth);
+        dtag.title = '插入到倒数第 N 条消息之前';
+        item.appendChild(dtag);
+      }
       var tog = document.createElement('button');
       tog.type = 'button';
       tog.className = 'ac-world-toggle';
@@ -2097,6 +2231,23 @@
     });
   }
 
+  // 构造世界书条目完整写入负载（保留所有字段，避免部分更新丢字段）
+  function worldPayload(w, enabled) {
+    return {
+      conversation_id: state.currentConv.id,
+      id: w.id,
+      key: w.key || '',
+      content: w.content || '',
+      position: w.position || 'before_char',
+      enabled: enabled,
+      constant: w.constant ? 1 : 0,
+      secondary_keys: w.secondary_keys || '',
+      selective: w.selective ? 1 : 0,
+      probability: w.probability == null ? 100 : w.probability,
+      depth: w.depth == null ? 4 : w.depth
+    };
+  }
+
   // 快速启用/停用世界书条目（保留原字段）
   function toggleWorldEntry(w) {
     api('/ai-chat/api/world-book', {
@@ -2106,7 +2257,11 @@
       content: w.content || '',
       position: w.position || 'before_char',
       enabled: w.enabled ? 0 : 1,
-      constant: w.constant ? 1 : 0
+      constant: w.constant ? 1 : 0,
+      secondary_keys: w.secondary_keys || '',
+      selective: w.selective ? 1 : 0,
+      probability: w.probability == null ? 100 : w.probability,
+      depth: w.depth == null ? 4 : w.depth
     }).then(function () {
       w.enabled = w.enabled ? 0 : 1;
       renderWorldList();
@@ -2115,7 +2270,7 @@
   }
 
   function positionLabel(pos) {
-    var map = { system_top: '系统前', before_char: '角色前', after_char: '角色后', user_top: '消息尾', assistant_top: 'AI前' };
+    var map = { system_top: '系统前', before_char: '角色前', after_char: '角色后', user_top: '消息尾', assistant_top: 'AI前', in_chat: '按深度插入' };
     return map[pos] || pos;
   }
 
@@ -2141,24 +2296,44 @@
       else if (data.entries && typeof data.entries === 'object') raw = Object.keys(data.entries).map(function (k) { return data.entries[k]; });
       else if (data.content) raw = [data];
     }
-    // SillyTavern position 数值 → 本站位置
-    var posMap = { 0: 'system_top', 1: 'before_char', 2: 'after_char', 3: 'after_char', 4: 'user_top', 5: 'assistant_top' };
-    var positions = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top'];
+    // SillyTavern position 数值 → 本站位置（0=beforeCharDefs 前, 1=afterCharDefs 前, 2=@Depth, 3=before EM, 4=after EM, 5=before AN, 6=after AN）
+    var posMap = { 0: 'before_char', 1: 'after_char', 2: 'in_chat', 3: 'system_top', 4: 'system_top', 5: 'user_top', 6: 'assistant_top' };
+    var posStrMap = { beforeChar: 'before_char', afterChar: 'after_char', beforeEM: 'system_top', afterEM: 'system_top', beforeAN: 'user_top', afterAN: 'assistant_top', atDepth: 'in_chat' };
+    var positions = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top', 'in_chat'];
+    function normKeys(v) {
+      if (Array.isArray(v)) return v.map(function (k) { return String(k).trim(); }).filter(Boolean);
+      return String(v || '').split(/[,，]/).map(function (k) { return k.trim(); }).filter(Boolean);
+    }
     var out = [];
     raw.forEach(function (e, i) {
       if (!e || typeof e !== 'object') return;
-      var keys = Array.isArray(e.key) ? e.key : String(e.key || '').split(/[,，]/);
-      var key = keys.map(function (k) { return String(k).trim(); }).filter(Boolean).join(',');
+      var key = normKeys(e.key || e.keys).join(',');
       if (!key && e.comment) key = String(e.comment).trim();
+      if (!key && e.name) key = String(e.name).trim();
+      var secondary = normKeys(e.key_secondary || e.secondary_keys).join(',');
       var content = String(e.content || '').trim();
       if (!content) return;
+      var pos;
+      if (positions.indexOf(e.position) !== -1) pos = e.position;
+      else if (posStrMap[e.position]) pos = posStrMap[e.position];
+      else if (e.injection_position === 2 || Number(e.position) === 2) pos = 'in_chat';
+      else pos = posMap[Number(e.position)] || 'before_char';
+      var selective = (e.selective === true || e.selective === 1) ? 1 : (secondary ? 1 : 0);
+      var prob = e.probability == null ? 100 : parseInt(e.probability, 10);
+      if (isNaN(prob)) prob = 100;
+      var depth = e.depth != null ? parseInt(e.depth, 10) : (e.injection_depth != null ? parseInt(e.injection_depth, 10) : 4);
+      if (isNaN(depth)) depth = 4;
       out.push({
         key: key,
         content: content,
-        position: positions.indexOf(e.position) !== -1 ? e.position : (posMap[Number(e.position)] || 'before_char'),
+        position: pos,
         enabled: (e.disable === true || e.enabled === false || e.enabled === 0) ? 0 : 1,
-        constant: e.constant ? 1 : 0,
-        sort_order: parseInt(e.order, 10) || parseInt(e.sort_order, 10) || i
+        constant: (e.constant === true || e.constant === 1) ? 1 : 0,
+        secondary_keys: secondary,
+        selective: selective,
+        probability: prob,
+        depth: depth,
+        sort_order: parseInt(e.insertion_order, 10) || parseInt(e.order, 10) || parseInt(e.sort_order, 10) || i
       });
     });
     return out;
@@ -2211,9 +2386,25 @@
     els.acWorldPos.value = w ? (w.position || 'before_char') : 'before_char';
     els.acWorldConstant.checked = Boolean(w && w.constant);
     els.acWorldContent.value = w ? (w.content || '') : '';
+    if (els.acWorldSecondary) els.acWorldSecondary.value = w ? (w.secondary_keys || '') : '';
+    if (els.acWorldSelective) els.acWorldSelective.checked = Boolean(w && w.selective);
+    if (els.acWorldProbability) els.acWorldProbability.value = w && w.probability != null ? w.probability : 100;
+    if (els.acWorldDepth) els.acWorldDepth.value = w && w.depth != null ? w.depth : 4;
     els.acWorldDelete.style.display = w ? 'inline-block' : 'none';
     els.acWorldEditModal.dataset.id = w ? w.id : '';
+    updateWorldAdvancedVisibility();
     showModal('acWorldEditModal');
+  }
+
+  // 依据「位置/选择性」联动显示二级键、深度输入
+  function updateWorldAdvancedVisibility() {
+    if (els.acWorldDepthWrap) {
+      els.acWorldDepthWrap.style.display = (els.acWorldPos && els.acWorldPos.value === 'in_chat') ? '' : 'none';
+    }
+    if (els.acWorldSelectiveWrap) {
+      var on = els.acWorldSelective && els.acWorldSelective.checked;
+      els.acWorldSecondary && (els.acWorldSecondary.disabled = !on);
+    }
   }
 
   function saveWorldEntry() {
@@ -2225,8 +2416,14 @@
       key: els.acWorldKey.value,
       content: els.acWorldContent.value,
       position: els.acWorldPos.value,
-      constant: els.acWorldConstant.checked ? 1 : 0
+      constant: els.acWorldConstant.checked ? 1 : 0,
+      secondary_keys: els.acWorldSecondary ? els.acWorldSecondary.value : '',
+      selective: els.acWorldSelective && els.acWorldSelective.checked ? 1 : 0,
+      probability: els.acWorldProbability ? parseInt(els.acWorldProbability.value, 10) : 100,
+      depth: els.acWorldDepth ? parseInt(els.acWorldDepth.value, 10) : 4
     };
+    if (isNaN(payload.probability)) payload.probability = 100;
+    if (isNaN(payload.depth)) payload.depth = 4;
     api('/ai-chat/api/world-book', payload).then(function () {
       hideModal('acWorldEditModal');
       selectConversation(convId);
@@ -2256,15 +2453,9 @@
 
     var promises = state.worldBook.map(function (w) {
       if (action === 'enableAll' && !w.enabled) {
-        return api('/ai-chat/api/world-book', {
-          conversation_id: convId, id: w.id, key: w.key || '', content: w.content || '',
-          position: w.position || 'before_char', enabled: 1, constant: w.constant ? 1 : 0
-        }).then(function () { w.enabled = 1; });
+        return api('/ai-chat/api/world-book', worldPayload(w, 1)).then(function () { w.enabled = 1; });
       } else if (action === 'disableAll' && w.enabled) {
-        return api('/ai-chat/api/world-book', {
-          conversation_id: convId, id: w.id, key: w.key || '', content: w.content || '',
-          position: w.position || 'before_char', enabled: 0, constant: w.constant ? 1 : 0
-        }).then(function () { w.enabled = 0; });
+        return api('/ai-chat/api/world-book', worldPayload(w, 0)).then(function () { w.enabled = 0; });
       } else if (action === 'deleteAll') {
         return api('/ai-chat/api/world-book/delete', { conversation_id: convId, id: w.id });
       }
@@ -2853,6 +3044,8 @@
   }
   els.acWorldSave.addEventListener('click', saveWorldEntry);
   els.acWorldDelete.addEventListener('click', deleteWorldEntry);
+  if (els.acWorldPos) els.acWorldPos.addEventListener('change', updateWorldAdvancedVisibility);
+  if (els.acWorldSelective) els.acWorldSelective.addEventListener('change', updateWorldAdvancedVisibility);
 
   els.acMemorySave.addEventListener('click', saveMemorySettings);
   els.acMemoryRefresh.addEventListener('click', refreshMemory);
@@ -3067,6 +3260,119 @@
   if (els.acFullscreenBtn) {
     els.acFullscreenBtn.addEventListener('click', toggleFullscreen);
   }
+
+  // ============ 深色/浅色主题切换（持久化到 localStorage） ============
+  function applyTheme(theme) {
+    var root = document.documentElement;
+    if (theme === 'dark') root.setAttribute('data-theme', 'dark');
+    else root.removeAttribute('data-theme');
+    if (els.acThemeBtn) {
+      els.acThemeBtn.innerHTML = theme === 'dark' ? '☀️ <span>日间</span>' : '🌙 <span>夜间</span>';
+      els.acThemeBtn.title = theme === 'dark' ? '切换到浅色' : '切换到深色';
+    }
+    try { localStorage.setItem('ac_theme', theme); } catch (e) { /* 忽略存储失败 */ }
+  }
+  function initTheme() {
+    var saved = null;
+    try { saved = localStorage.getItem('ac_theme'); } catch (e) { /* 忽略 */ }
+    if (!saved) {
+      saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    applyTheme(saved);
+  }
+  if (els.acThemeBtn) {
+    els.acThemeBtn.addEventListener('click', function () {
+      var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      applyTheme(cur === 'dark' ? 'light' : 'dark');
+    });
+  }
+  initTheme();
+
+  // ============ 智能预测（推荐用户可能发送的下一条消息） ============
+  var predictOn = false;
+  var predictInFlight = false;
+
+  function applyPredictAvailability() {
+    // 管理员总开关关闭时，彻底隐藏按钮与建议区
+    var allowed = !!(state.settings && state.settings.predictEnabled);
+    if (els.acPredictBtn) els.acPredictBtn.style.display = allowed ? '' : 'none';
+    if (!allowed) { clearSuggestions(); }
+  }
+
+  function applyPredict(on) {
+    predictOn = !!on;
+    if (els.acPredictBtn) {
+      els.acPredictBtn.classList.toggle('active', predictOn);
+      els.acPredictBtn.title = predictOn ? '智能预测：已开启（点击关闭）' : '智能预测：已关闭（点击开启）';
+    }
+    try { localStorage.setItem('ac_predict_on', predictOn ? '1' : '0'); } catch (e) { /* 忽略存储失败 */ }
+    if (!predictOn) clearSuggestions();
+  }
+
+  function initPredict() {
+    var saved = null;
+    try { saved = localStorage.getItem('ac_predict_on'); } catch (e) { /* 忽略 */ }
+    applyPredict(saved === '1'); // 默认关闭，由用户主动开启
+  }
+
+  function clearSuggestions() {
+    if (els.acSuggestions) { els.acSuggestions.innerHTML = ''; els.acSuggestions.hidden = true; }
+  }
+
+  function renderSuggestions(list) {
+    if (!els.acSuggestions) return;
+    els.acSuggestions.innerHTML = '';
+    if (!list || !list.length) { els.acSuggestions.hidden = true; return; }
+    var label = document.createElement('span');
+    label.className = 'ac-suggestions-label';
+    label.textContent = '💡 你可能想说';
+    els.acSuggestions.appendChild(label);
+    list.forEach(function (text) {
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ac-suggestion-chip';
+      chip.textContent = text;
+      chip.title = '点击填入输入框';
+      chip.addEventListener('click', function () {
+        els.acInput.value = text;
+        clearSuggestions();
+        els.acInput.focus();
+        updateTokenEstimate();
+        autoResizeInput();
+      });
+      els.acSuggestions.appendChild(chip);
+    });
+    els.acSuggestions.hidden = false;
+  }
+
+  function fetchPredictions() {
+    if (!predictOn || predictInFlight) return;
+    if (state.streaming || !state.currentConv) return;
+    if (state.settings && !state.settings.predictEnabled) return;
+    if (state.quota && !state.quotaUnlimited && state.quota.remaining <= 0) return;
+    var convId = state.currentConv.id;
+    predictInFlight = true;
+    if (els.acPredictBtn) els.acPredictBtn.classList.add('loading');
+    api('/ai-chat/api/predict', { conversation_id: convId })
+      .then(function (json) {
+        // 期间用户可能已切换会话，丢弃过期结果
+        if (!state.currentConv || state.currentConv.id !== convId) return;
+        if (json && json.success) renderSuggestions(json.suggestions || []);
+      })
+      .catch(function () { /* 静默失败，不打扰对话 */ })
+      .then(function () {
+        predictInFlight = false;
+        if (els.acPredictBtn) els.acPredictBtn.classList.remove('loading');
+      });
+  }
+
+  if (els.acPredictBtn) {
+    els.acPredictBtn.addEventListener('click', function () {
+      applyPredict(!predictOn);
+      if (predictOn) fetchPredictions();
+    });
+  }
+  initPredict();
 
   // ESC 退出全屏
   document.addEventListener('keydown', function (e) {

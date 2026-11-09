@@ -1,7 +1,16 @@
 /**
- * AI 聊天上下文组装管线：
- * system（角色 prompt + 会话 prompt + 世界书 system_top）→ 记忆块 → RAG 块
- * → 世界书命中（before_char 等）→ 当前分支历史窗口 → 用户消息
+ * AI 聊天上下文组装管线（SillyTavern 式增强）：
+ * system（世界书 system_top → 角色卡/提示词模板 → 会话 prompt → 群聊框架 → 记忆 → RAG）
+ * → 世界书命中块（assistant_top）→ 当前分支历史窗口（含 in_chat 深度注入 + Author's Note）
+ * → 用户消息（user_top 附加）→ 全局 token 预算裁剪
+ *
+ * 世界书扫描（scanWorldBook）：
+ *  - constant 常驻；key 为空视为常驻（向后兼容）
+ *  - 主触发词命中「当前消息 + 最近 N 条消息」缓冲区即激活
+ *  - selective=1 时还需二级触发词（secondary_keys）命中任一才激活
+ *  - probability 概率触发（单次生成内只掷一次骰子）
+ *  - 递归扫描：新激活条目内容回灌缓冲区再扫，受最大递归步数与 token 预算限制
+ *  - in_chat 位置：按 depth 注入到历史窗口倒数第 depth 条消息之前
  */
 const { queryAll, queryOne } = require('../../config/database');
 const { getSettings } = require('../../utils/settings');
@@ -10,7 +19,7 @@ const { buildMemoryBlock, memorySettings, getRounds, getRoundSummaryMap, recallR
 const { searchRag, buildRagBlock } = require('./rag');
 
 const HISTORY_TOKEN_WINDOW = 3000;
-// 世界书触发词扫描深度：同时检查当前消息与最近 N 条消息，避免关键词出现在上一条就失配
+// 世界书触发词扫描深度默认值：同时检查当前消息与最近 N 条消息，避免关键词出现在上一条就失配
 const WORLD_SCAN_DEPTH = 6;
 // 群聊其余成员卡注入总预算（字符）：按人数均分，避免大群撑爆上下文。
 // 10500 = 7 × 1500，保证 8 人及以下群聊每成员仍可获得完整 1500 字摘要（与旧行为一致）。
@@ -19,6 +28,8 @@ const GROUP_CARD_BUDGET = 10500;
 const MSG_TOKEN_LIMIT = 500;
 // 世界书条目内容长度上限（字符）
 const WORLD_BOOK_CONTENT_LIMIT = 2000;
+// 世界书注入位置全集（in_chat = SillyTavern @Depth 深度注入）
+const WORLD_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top', 'in_chat'];
 
 /**
  * 压缩单条消息：超过 MSG_TOKEN_LIMIT 时截断并添加标记
@@ -70,26 +81,104 @@ function getWorldBook(db, convId) {
   return queryAll(db, 'SELECT * FROM ai_world_book WHERE conversation_id = ? AND enabled = 1 ORDER BY sort_order ASC, id ASC', [convId]);
 }
 
+function splitKeys(keyStr) {
+  return String(keyStr || '').split(/[,，、;；\s]+/).map(k => k.trim().toLowerCase()).filter(Boolean);
+}
+
 /**
- * 世界书命中判定：
- *  - constant=1 或 key 为空 → 常驻注入，始终命中
- *  - 否则按 key 拆分多关键词（支持逗号/顿号/分号/空格分隔），大小写不敏感，
- *    在「当前用户消息 + 最近 WORLD_SCAN_DEPTH 条消息」中命中任一关键词即触发
+ * SillyTavern 式世界书扫描：主键 + 二级键（selective）+ 概率 + 递归激活 + token 预算
+ * @param {Array} entries - 启用中的条目（已压缩去重）
+ * @param {string} userMsg - 当前用户消息
+ * @param {Array} recentMsgs - 最近 N 条消息（扫描缓冲区来源）
+ * @param {Object} cfg - { recursion, recursionSteps, budgetTokens, scanDepth }
+ * @returns {Object} { byPosition: { system_top: [...], ..., in_chat: [...] }, activatedCount, budgetUsed }
  */
-function matchWorldBook(entries, userMsg, recentMsgs, positions) {
-  const msg = String(userMsg || '');
+function scanWorldBook(entries, userMsg, recentMsgs, cfg = {}) {
+  const list = entries || [];
   const recent = (recentMsgs || [])
     .filter(m => m && (m.role === 'user' || m.role === 'assistant'))
     .map(m => String(m.content || ''))
     .join('\n');
-  const haystack = (msg + '\n' + recent).toLowerCase();
-  return (entries || []).filter(e => {
-    if (positions.indexOf(e.position) === -1) return false;
-    if (e.constant) return true; // 显式常驻
-    const keys = String(e.key || '').split(/[,，、;；\s]+/).map(k => k.trim().toLowerCase()).filter(Boolean);
-    if (!keys.length) return true; // 无触发词 → 视作常驻注入（向后兼容）
-    return keys.some(k => haystack.indexOf(k) !== -1);
+  let buffer = (String(userMsg || '') + '\n' + recent).toLowerCase();
+
+  const recursion = cfg.recursion !== false;
+  const maxSteps = Math.max(1, Math.min(parseInt(cfg.recursionSteps, 10) || 4, 10));
+  const budget = Math.max(0, parseInt(cfg.budgetTokens, 10) || 0);
+
+  const activated = new Set();   // 条目 id
+  const probRoll = new Map();    // 条目 id → 本次生成的概率掷骰结果（只掷一次）
+  const byPosition = {};
+  let budgetUsed = 0;
+
+  const tryActivate = (e) => {
+    if (activated.has(e.id)) return false;
+    // 概率触发（单次生成内只掷一次）
+    const prob = e.probability == null ? 100 : Math.max(0, Math.min(100, parseInt(e.probability, 10) || 0));
+    if (!probRoll.has(e.id)) probRoll.set(e.id, Math.random() * 100 < prob);
+    if (!probRoll.get(e.id)) return false;
+
+    if (!e.constant) {
+      const keys = splitKeys(e.key);
+      // 无触发词 → 视作常驻注入（向后兼容）
+      if (keys.length && !keys.some(k => buffer.indexOf(k) !== -1)) return false;
+      // selective：还需二级触发词命中任一（SillyTavern AND 语义）
+      if (e.selective) {
+        const sec = splitKeys(e.secondary_keys);
+        if (sec.length && !sec.some(k => buffer.indexOf(k) !== -1)) return false;
+      }
+    }
+    // token 预算控制
+    const tokens = estimateTokens(String(e.content || ''));
+    if (budget > 0 && budgetUsed + tokens > budget) return false;
+    budgetUsed += tokens;
+    activated.add(e.id);
+    const pos = WORLD_POSITIONS.indexOf(e.position) !== -1 ? e.position : 'before_char';
+    if (!byPosition[pos]) byPosition[pos] = [];
+    byPosition[pos].push(e);
+    return true;
+  };
+
+  // 递归扫描状态机：新激活条目内容回灌缓冲区再扫，直到无新激活或达到步数上限
+  for (let step = 0; step < maxSteps; step++) {
+    const newlyActivated = [];
+    list.forEach(e => { if (tryActivate(e)) newlyActivated.push(e); });
+    if (!newlyActivated.length || !recursion) break;
+    buffer += '\n' + newlyActivated.map(e => String(e.content || '')).join('\n').toLowerCase();
+  }
+
+  // 每个位置内按 insertion_order（sort_order）排序
+  Object.keys(byPosition).forEach(pos => {
+    byPosition[pos].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.id - b.id);
   });
+  return { byPosition, activatedCount: activated.size, budgetUsed };
+}
+
+/**
+ * 兼容旧接口：按位置过滤命中条目
+ */
+function matchWorldBook(entries, userMsg, recentMsgs, positions) {
+  const { byPosition } = scanWorldBook(entries, userMsg, recentMsgs, { recursion: false });
+  const out = [];
+  (positions || []).forEach(p => { if (byPosition[p]) out.push(...byPosition[p]); });
+  return out;
+}
+
+/**
+ * 全局 token 预算裁剪（SillyTavern ChatCompletion 语义）：
+ * 超出预算时从最早的历史消息开始删除，始终保留首条 system、世界书块与最新的用户消息。
+ */
+function trimMessagesToBudget(messages, budgetTokens) {
+  if (!budgetTokens || budgetTokens <= 0) return messages;
+  let total = messages.reduce((s, m) => s + estimateTokens(m.content), 0);
+  if (total <= budgetTokens) return messages;
+  const out = messages.slice();
+  // 从索引 1 开始删（保留 out[0] 主 system），保护最后一条消息
+  let i = 1;
+  while (total > budgetTokens && i < out.length - 1) {
+    total -= estimateTokens(out[i].content);
+    out.splice(i, 1);
+  }
+  return out;
 }
 
 /**
@@ -97,7 +186,7 @@ function matchWorldBook(entries, userMsg, recentMsgs, positions) {
  * @param {Object} db
  * @param {Object} conv
  * @param {string} userMsg - 当前用户消息
- * @param {Object} opts - { excludeMsgId, modelInfo, embCfg, queryEmbedding }
+ * @param {Object} opts - { excludeMsgId, modelInfo, embCfg, queryEmbedding, speakerRoleId, noUserMsg }
  */
 function buildContext(db, conv, userMsg, opts = {}) {
   const { excludeMsgId, embCfg, queryEmbedding, speakerRoleId, noUserMsg } = opts;
@@ -109,22 +198,58 @@ function buildContext(db, conv, userMsg, opts = {}) {
   const rawEntries = getWorldBook(db, conv.id);
   const entries = compressWorldBookEntries(rawEntries);
 
+  // ---- 世界书扫描（后台可配：递归/步数/预算/扫描深度） ----
+  const contextSize = Math.max(2000, parseInt(settings.ai_context_size, 10) || 16000);
+  const worldBudgetPct = Math.max(0, Math.min(100, parseInt(settings.ai_world_budget_percent, 10) || 25));
+  const scanDepth = Math.max(1, parseInt(settings.ai_world_scan_depth, 10) || WORLD_SCAN_DEPTH);
+  const recursionOn = String(settings.ai_world_recursion ?? '1') !== '0';
+  const recursionSteps = parseInt(settings.ai_world_recursion_steps, 10) || 4;
+
   // ---- 当前分支历史（先取历史，供世界书触发词扫描与对话窗口复用） ----
   const branchId = conv.current_branch_id || 0;
   const history = queryAll(db, 'SELECT * FROM ai_messages WHERE conversation_id = ? AND branch_id = ? ORDER BY id ASC',
     [conv.id, branchId]);
   const recentForScan = history
     .filter(m => !(excludeMsgId && m.id === excludeMsgId))
-    .slice(-WORLD_SCAN_DEPTH);
+    .slice(-scanDepth);
+
+  const scan = scanWorldBook(entries, userMsg, recentForScan, {
+    recursion: recursionOn,
+    recursionSteps,
+    budgetTokens: Math.floor(contextSize * worldBudgetPct / 100)
+  });
+  const byPos = scan.byPosition;
+  const joinEntries = (pos) => (byPos[pos] || []).map(e => String(e.content || '')).filter(Boolean).join('\n');
+
+  // ---- 记忆 / RAG 块（提前计算，供模板占位符与默认注入共用） ----
+  const memoryEnabled = conv.memory_enabled !== 0 && String(settings.ai_memory_enabled ?? '1') !== '0';
+  const memoryBlock = memoryEnabled ? (buildMemoryBlock(db, conv, queryEmbedding) || '') : '';
+  const ragOn = conv.rag_enabled !== 0 && String(settings.ai_rag_enabled || '0') === '1' && embCfg && queryEmbedding;
+  let ragBlock = '';
+  if (ragOn) {
+    const hits = searchRag(db, queryEmbedding, parseInt(settings.ai_rag_max_results, 10) || 5, parseFloat(settings.ai_rag_min_score) || 0.3);
+    ragBlock = buildRagBlock(hits) || '';
+  }
 
   // ---- system 部分 ----
   const systemParts = [];
-  matchWorldBook(entries, userMsg, recentForScan, ['system_top']).forEach(e => systemParts.push(e.content));
+  const systemTopBlock = joinEntries('system_top');
+  if (systemTopBlock) systemParts.push(systemTopBlock);
+
+  const authorNote = String(conv.author_note || '').trim();
+  // 世界书 before/after char 块（模板占位符与默认注入共用）
+  const beforeCharBlock = joinEntries('before_char');
+  const afterCharBlock = joinEntries('after_char');
+  const assistantTopBlock = joinEntries('assistant_top');
+  const worldAllBlock = [beforeCharBlock, afterCharBlock].filter(Boolean).join('\n');
+
+  let templateUsed = false;
   if (role) {
-    // 提示词模板：有模板时用模板替代默认角色卡组装
+    // 提示词模板：有模板时用模板替代默认角色卡组装（story string 占位符）
     if (conv.prompt_template_id) {
       const tpl = queryOne(db, 'SELECT content FROM ai_prompt_templates WHERE id = ?', [conv.prompt_template_id]);
       if (tpl && tpl.content) {
+        templateUsed = true;
         const userRow = queryOne(db, 'SELECT username FROM users WHERE id = ?', [conv.user_id]);
         const userName = (userRow && userRow.username) || '用户';
         const rendered = tpl.content
@@ -134,18 +259,29 @@ function buildContext(db, conv, userMsg, opts = {}) {
           .replace(/\{\{personality\}\}/gi, role.personality || '')
           .replace(/\{\{description\}\}/gi, role.description || '')
           .replace(/\{\{greeting\}\}/gi, role.greeting || '')
-          .replace(/\{\{examples\}\}/gi, role.examples || '');
+          .replace(/\{\{examples\}\}/gi, role.examples || '')
+          .replace(/\{\{wiBefore\}\}/gi, beforeCharBlock)
+          .replace(/\{\{wiAfter\}\}/gi, afterCharBlock)
+          .replace(/\{\{worldInfo\}\}/gi, worldAllBlock)
+          .replace(/\{\{memory\}\}/gi, memoryBlock)
+          .replace(/\{\{rag\}\}/gi, ragBlock)
+          .replace(/\{\{authorNote\}\}/gi, authorNote);
         systemParts.push(rendered);
       }
-    } else {
-      // 默认角色卡组装
+    }
+    if (!templateUsed) {
+      // 默认角色卡组装：世界书包裹角色定义（SillyTavern wi before/after char defs 语义）
       const roleParts = [];
+      if (beforeCharBlock) roleParts.push(beforeCharBlock);
       if (role.system_prompt) roleParts.push(role.system_prompt);
       if (role.personality) roleParts.push('【角色性格】\n' + role.personality);
       if (role.scenario) roleParts.push('【当前场景】\n' + role.scenario);
       if (role.examples) roleParts.push('【示例对话（仅供模仿风格，不要复述）】\n' + role.examples);
+      if (afterCharBlock) roleParts.push(afterCharBlock);
       if (roleParts.length) systemParts.push(roleParts.join('\n\n'));
     }
+  } else if (!templateUsed && worldAllBlock) {
+    systemParts.push(worldAllBlock);
   }
   if (conv.system_prompt) systemParts.push(conv.system_prompt);
 
@@ -162,29 +298,20 @@ function buildContext(db, conv, userMsg, opts = {}) {
     systemParts.push(groupLines.join('\n'));
   }
 
-  // 记忆块（会话开启记忆时）
-  const memoryEnabled = conv.memory_enabled !== 0 && String(settings.ai_memory_enabled ?? '1') !== '0';
-  if (memoryEnabled) {
-    const block = buildMemoryBlock(db, conv, queryEmbedding);
-    if (block) systemParts.push(block);
-  }
-
-  // RAG 块（全局开启 + 会话开启 + 有嵌入配置时）
-  const ragOn = conv.rag_enabled !== 0 && String(settings.ai_rag_enabled || '0') === '1' && embCfg && queryEmbedding;
-  if (ragOn) {
-    const hits = searchRag(db, queryEmbedding, parseInt(settings.ai_rag_max_results, 10) || 5, parseFloat(settings.ai_rag_min_score) || 0.3);
-    const ragBlock = buildRagBlock(hits);
-    if (ragBlock) systemParts.push(ragBlock);
-  }
+  // 记忆块（模板未通过占位符消费时默认注入）
+  const templateHasMemory = templateUsed && /\{\{memory\}\}/i.test(getTemplateContent(db, conv));
+  if (memoryBlock && !templateHasMemory) systemParts.push(memoryBlock);
+  // RAG 块
+  const templateHasRag = templateUsed && /\{\{rag\}\}/i.test(getTemplateContent(db, conv));
+  if (ragBlock && !templateHasRag) systemParts.push(ragBlock);
 
   const messages = [{ role: 'system', content: systemParts.filter(Boolean).join('\n\n') }];
 
-  // ---- 世界书命中块（before_char/after_char/assistant_top 归入上下文块） ----
-  const hitEntries = matchWorldBook(entries, userMsg, recentForScan, ['before_char', 'after_char', 'assistant_top']);
-  if (hitEntries.length) {
+  // ---- 世界书 assistant_top：归入独立上下文块 ----
+  if (assistantTopBlock) {
     messages.push({
       role: 'user',
-      content: '（场景设定，请遵循但不要提及此设定）\n' + hitEntries.map(e => e.content).join('\n')
+      content: '（场景设定，请遵循但不要提及此设定）\n' + assistantTopBlock
     });
   }
 
@@ -194,10 +321,11 @@ function buildContext(db, conv, userMsg, opts = {}) {
   const summaryMap = memoryOn ? getRoundSummaryMap(db, conv.id) : {};
   const rounds = memoryOn ? getRounds(db, conv.id, branchId) : [];
   const useFloors = memoryOn && rounds.length > 0;
+  const historyWindow = Math.max(500, parseInt(settings.ai_history_window, 10) || HISTORY_TOKEN_WINDOW);
 
   // 决定保留全文的楼：从最新楼往前，最多 keepRecent 楼且不超过 token 窗口
   const fullRoundSet = new Set();
-  let budget = HISTORY_TOKEN_WINDOW;
+  let budget = historyWindow;
   let fullCount = 0;
   for (let i = rounds.length - 1; i >= 0 && fullCount < memSettings.keepRecent; i--) {
     const r = rounds[i];
@@ -244,16 +372,37 @@ function buildContext(db, conv, userMsg, opts = {}) {
     }
   }
 
-  // 作者注释（Author's Note）：插入到历史窗口的指定深度位置
-  const authorNote = String(conv.author_note || '').trim();
-  const noteDepth = Math.max(parseInt(conv.author_note_depth, 10) || 4, 0);
-  let noteInserted = false;
+  // ---- 深度注入（SillyTavern @Depth / Author's Note 语义）----
+  // 收集 { depth → [system 消息] }，插入到倒数第 depth 条历史消息之前
+  const depthInserts = new Map();
+  const addDepthInsert = (depth, msg) => {
+    const d = Math.max(0, parseInt(depth, 10) || 0);
+    if (!depthInserts.has(d)) depthInserts.set(d, []);
+    depthInserts.get(d).push(msg);
+  };
+  // 世界书 in_chat 条目
+  (byPos.in_chat || []).forEach(e => {
+    addDepthInsert(e.depth != null ? e.depth : 4, {
+      role: 'system',
+      content: '（场景设定，请遵循但不要提及此设定）\n' + String(e.content || '')
+    });
+  });
+  // 作者注释（模板已消费时不再默认注入）
+  const templateHasNote = templateUsed && /\{\{authorNote\}\}/i.test(getTemplateContent(db, conv));
+  if (authorNote && !templateHasNote) {
+    addDepthInsert(conv.author_note_depth != null ? conv.author_note_depth : 4, {
+      role: 'system',
+      content: "[Author's Note: " + authorNote + ']'
+    });
+  }
 
+  const insertedDepths = new Set();
   windowMsgs.forEach((m, idx) => {
-    // 在倒数第 noteDepth 条消息前插入作者注释
-    if (authorNote && !noteInserted && idx === Math.max(0, windowMsgs.length - noteDepth)) {
-      messages.push({ role: 'system', content: '[Author\'s Note: ' + authorNote + ']' });
-      noteInserted = true;
+    // 在倒数第 depth 条消息前插入到点的深度内容
+    const depthFromEnd = windowMsgs.length - idx;
+    if (depthInserts.has(depthFromEnd) && !insertedDepths.has(depthFromEnd)) {
+      depthInserts.get(depthFromEnd).forEach(msg => messages.push(msg));
+      insertedDepths.add(depthFromEnd);
     }
     // 群聊中其他角色的发言归入 user 侧并带名字前缀，当前说话人的历史保持 assistant
     if (isGroup && m.role === 'assistant' && m.speaker_role_id && role && m.speaker_role_id !== role.id) {
@@ -263,16 +412,16 @@ function buildContext(db, conv, userMsg, opts = {}) {
       messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') });
     }
   });
-  // 如果历史太短没插入，放在历史最前面
-  if (authorNote && !noteInserted) {
-    messages.splice(1, 0, { role: 'system', content: '[Author\'s Note: ' + authorNote + ']' });
-  }
+  // 历史太短没插入的深度内容，放在历史最前面（system 之后）
+  depthInserts.forEach((msgs, d) => {
+    if (!insertedDepths.has(d)) msgs.forEach(msg => messages.splice(1, 0, msg));
+  });
 
   // ---- 用户消息（user_top 世界书条目附加到消息尾部；noUserMsg 用于群聊手动顶帖） ----
   if (!noUserMsg) {
-    const topEntries = matchWorldBook(entries, userMsg, recentForScan, ['user_top']);
+    const userTopBlock = joinEntries('user_top');
     let finalUserMsg = String(userMsg || '');
-    if (topEntries.length) finalUserMsg += '\n\n（附加设定）\n' + topEntries.map(e => e.content).join('\n');
+    if (userTopBlock) finalUserMsg += '\n\n（附加设定）\n' + userTopBlock;
     messages.push({ role: 'user', content: finalUserMsg });
     // 增强模式：按最新输入召回逐轮记忆，按原时间序附在最新用户消息后（仅本次请求）
     const vecMode = conv.memory_mode === 'vector' || conv.memory_mode === 'both';
@@ -283,7 +432,24 @@ function buildContext(db, conv, userMsg, opts = {}) {
     }
   }
 
-  return messages;
+  // ---- 全局 token 预算裁剪 ----
+  return trimMessagesToBudget(messages, contextSize);
 }
 
-module.exports = { buildContext, getRole, getGroupMembers, getWorldBook, matchWorldBook, HISTORY_TOKEN_WINDOW };
+// 模板内容短缓存（60s TTL，判断占位符是否被模板消费；避免每条消息重复查库）
+const templateCache = new Map();
+function getTemplateContent(db, conv) {
+  if (!conv.prompt_template_id) return '';
+  const id = conv.prompt_template_id;
+  const hit = templateCache.get(id);
+  if (hit && Date.now() - hit.ts < 60000) return hit.content;
+  const tpl = queryOne(db, 'SELECT content FROM ai_prompt_templates WHERE id = ?', [id]);
+  const content = (tpl && tpl.content) || '';
+  templateCache.set(id, { content, ts: Date.now() });
+  return content;
+}
+
+module.exports = {
+  buildContext, getRole, getGroupMembers, getWorldBook, matchWorldBook, scanWorldBook,
+  trimMessagesToBudget, WORLD_POSITIONS, HISTORY_TOKEN_WINDOW
+};

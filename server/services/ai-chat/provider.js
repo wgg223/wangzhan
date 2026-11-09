@@ -119,12 +119,13 @@ function resolveEmbeddings(db) {
  * 调用 OpenAI 兼容 chat/completions
  * @param {Object} modelInfo - resolveModel 返回值
  * @param {Array} messages
- * @param {Object} opts - { stream, signal, onDelta, timeout, genParams }
+ * @param {Object} opts - { stream, signal, onDelta, onReasoning, timeout, genParams }
  *   genParams: { temperature, top_p, top_k, frequency_penalty, presence_penalty, max_tokens } 覆盖模型默认值
- * @returns {Promise<{content: string, finishReason: string, usage?: {prompt_tokens: number, completion_tokens: number, total_tokens: number}}>}
+ *   onReasoning: (deltaText) => void 推理过程增量回调（DeepSeek/R1 类模型 reasoning_content）
+ * @returns {Promise<{content: string, reasoning?: string, finishReason: string, usage?: {prompt_tokens: number, completion_tokens: number, total_tokens: number}}>}
  */
 async function callChatCompletion(modelInfo, messages, opts = {}) {
-  const { stream = false, signal, onDelta, timeout = 90000, genParams } = opts;
+  const { stream = false, signal, onDelta, onReasoning, timeout = 90000, genParams } = opts;
   const isPollinations = modelInfo.provider === 'pollinations';
   // Pollinations 免费接口直接 POST 端点本身；其余 OpenAI 兼容端点拼 /chat/completions
   const url = isPollinations
@@ -154,19 +155,22 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
   if (stream) body.stream = true;
 
   if (stream) {
-    return streamCompletion(url, headers, body, signal, onDelta);
+    return streamCompletion(url, headers, body, signal, onDelta, onReasoning);
   }
 
   const resp = await axios.post(url, body, { headers, timeout, signal });
   const data = resp.data;
-  const content = data && data.choices && data.choices[0] &&
-    data.choices[0].message && data.choices[0].message.content;
-  
-  const result = { 
-    content: String(content || ''), 
-    finishReason: (data.choices && data.choices[0] && data.choices[0].finish_reason) || 'stop' 
+  const choice = data && data.choices && data.choices[0];
+  const content = choice && choice.message && choice.message.content;
+  // 推理模型（DeepSeek-R1 等）：reasoning_content 思考过程
+  const reasoning = choice && choice.message && (choice.message.reasoning_content || choice.message.reasoning);
+
+  const result = {
+    content: String(content || ''),
+    finishReason: (choice && choice.finish_reason) || 'stop'
   };
-  
+  if (reasoning) result.reasoning = String(reasoning);
+
   // 提取 usage 信息（prompt_tokens, completion_tokens, total_tokens）
   if (data && data.usage) {
     result.usage = {
@@ -175,15 +179,17 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
       total_tokens: data.usage.total_tokens || 0
     };
   }
-  
+
   return result;
 }
 
-// 流式解析：逐行解析 SSE `data: {...}`，跨 chunk 缓冲
-function streamCompletion(url, headers, body, signal, onDelta) {
+// 流式解析：逐行解析 SSE `data: {...}`，跨 chunk 缓冲；支持 reasoning_content 增量与真实 finish_reason
+function streamCompletion(url, headers, body, signal, onDelta, onReasoning) {
   return new Promise((resolve, reject) => {
     let buffer = '';
     let content = '';
+    let reasoning = '';
+    let finishReason = '';
     let settled = false;
     let usage = null; // 存储 usage 信息
 
@@ -200,7 +206,8 @@ function streamCompletion(url, headers, body, signal, onDelta) {
             const payload = line.slice(5).trim();
             if (payload === '[DONE]') {
               settled = true;
-              const result = { content, finishReason: 'stop' };
+              const result = { content, finishReason: finishReason || 'stop' };
+              if (reasoning) result.reasoning = reasoning;
               if (usage) result.usage = usage;
               resolve(result);
               return;
@@ -226,19 +233,29 @@ function streamCompletion(url, headers, body, signal, onDelta) {
                 total_tokens: parsed.usage.total_tokens || 0
               };
             }
-            const delta = parsed.choices && parsed.choices[0] &&
-              parsed.choices[0].delta && parsed.choices[0].delta.content;
-            if (delta) {
-              content += delta;
-              if (typeof onDelta === 'function') onDelta(delta);
+            const choice = parsed.choices && parsed.choices[0];
+            if (!choice) continue;
+            if (choice.finish_reason) finishReason = choice.finish_reason;
+            const delta = choice.delta;
+            if (!delta) continue;
+            // 推理过程增量（DeepSeek-R1 / QwQ 等思考型模型）
+            const think = delta.reasoning_content || delta.reasoning;
+            if (think) {
+              reasoning += think;
+              if (typeof onReasoning === 'function') onReasoning(think);
+            }
+            if (delta.content) {
+              content += delta.content;
+              if (typeof onDelta === 'function') onDelta(delta.content);
             }
           }
         });
         resp.data.on('end', () => {
           if (!settled) {
             settled = true;
-            if (content) {
-              const result = { content, finishReason: 'stop' };
+            if (content || reasoning) {
+              const result = { content, finishReason: finishReason || 'stop' };
+              if (reasoning) result.reasoning = reasoning;
               if (usage) result.usage = usage;
               resolve(result);
             } else {

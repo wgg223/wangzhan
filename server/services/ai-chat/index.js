@@ -32,10 +32,13 @@ function createConversation(db, user, data = {}) {
   const conv = queryOne(db, 'SELECT * FROM ai_conversations WHERE id = last_insert_rowid()');
 
   // 默认世界书：新会话自动复制启用中的全局默认条目（副本，会话内可自由编辑）
-  const defaultEntries = queryAll(db, 'SELECT key, content, position, sort_order, enabled, constant FROM ai_default_world_book WHERE enabled = 1 ORDER BY sort_order ASC, id ASC');
+  const defaultEntries = queryAll(db, `SELECT key, content, position, sort_order, enabled, constant,
+      secondary_keys, selective, probability, depth FROM ai_default_world_book WHERE enabled = 1 ORDER BY sort_order ASC, id ASC`);
   defaultEntries.forEach(e => {
-    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [conv.id, e.key, e.content, e.position, e.sort_order, e.enabled, e.constant]);
+    db.run(`INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant,
+        secondary_keys, selective, probability, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [conv.id, e.key, e.content, e.position, e.sort_order, e.enabled, e.constant,
+      e.secondary_keys || '', e.selective || 0, e.probability == null ? 100 : e.probability, e.depth == null ? 4 : e.depth]);
   });
 
   // 角色开场白：新会话选择带开场白的角色时，自动注入第一条 AI 消息
@@ -173,31 +176,54 @@ function extractGenParams(conv) {
 /**
  * 调用模型 + 结果落库 + 配额消耗（sendMessage / regenerateMessage 共用）
  * 主动停止：保留半截内容，status=stopped，不计配额；失败：status=error，只计次数
+ * 抗截断：finish_reason=length 时自动追加 assistant 前缀续写（RP-Hub 式，最多 N 次）
  */
 async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaCheck) {
-  const { stream = true, signal, onDelta } = opts;
+  const { stream = true, signal, onDelta, onReasoning, onContinue } = opts;
   const genParams = extractGenParams(conv);
+  const settings = getSettings(db);
+  const autoContinue = String(settings.ai_auto_continue ?? '1') !== '0';
+  const maxContinue = Math.min(Math.max(parseInt(settings.ai_auto_continue_max, 10) || 3, 0), 5);
   let full = '';
+  let reasoning = '';
   let usage = null; // 存储 API 返回的实际 token 消耗
+  let finishReason = 'stop';
+  let continuePasses = 0;
   try {
-    const result = await callChatCompletion(modelInfo, messages, {
-      stream,
-      signal,
-      onDelta: stream ? (delta) => { full += delta; if (onDelta) onDelta(delta); } : undefined,
-      genParams
-    });
-    full = result.content;
-    usage = result.usage; // 捕获 usage 信息
+    const workMsgs = messages.slice();
+    for (;;) {
+      const result = await callChatCompletion(modelInfo, workMsgs, {
+        stream,
+        signal,
+        onDelta: stream ? (delta) => { if (onDelta) onDelta(delta); } : undefined,
+        onReasoning: stream && onReasoning ? onReasoning : undefined,
+        genParams
+      });
+      full += result.content || '';
+      if (result.reasoning) reasoning += result.reasoning;
+      if (result.usage) usage = result.usage;
+      finishReason = result.finishReason || 'stop';
+      // 抗截断自动续写：把已生成内容作为 assistant 前缀，请求模型接着写
+      if (autoContinue && finishReason === 'length' && continuePasses < maxContinue &&
+          !(signal && signal.aborted) && full) {
+        continuePasses++;
+        workMsgs.push({ role: 'assistant', content: full });
+        if (onContinue) onContinue({ pass: continuePasses });
+        continue;
+      }
+      break;
+    }
     if (!full) throw new Error('模型未返回内容，请重试');
   } catch (err) {
     // 主动停止：保留半截内容，status=stopped，不计配额
     if (signal && signal.aborted) {
       const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
       const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
-      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '', opts.speakerRoleId, inputTokens, outputTokens);
+      const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '', opts.speakerRoleId, inputTokens, outputTokens,
+        { reasoning, genInfo: buildGenInfo(modelInfo, genParams, finishReason, continuePasses) });
       return {
-        messageId: msgId, content: full, tokens: inputTokens + outputTokens, 
-        inputTokens, outputTokens, aborted: true,
+        messageId: msgId, content: full, tokens: inputTokens + outputTokens,
+        inputTokens, outputTokens, aborted: true, reasoning,
         model: modelInfo.model_key, quota: quotaCheck.quota
       };
     }
@@ -211,14 +237,25 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
   const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
   const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
   const totalTokens = inputTokens + outputTokens;
-  
-  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '', opts.speakerRoleId, inputTokens, outputTokens);
+
+  const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '', opts.speakerRoleId, inputTokens, outputTokens,
+    { reasoning, genInfo: buildGenInfo(modelInfo, genParams, finishReason, continuePasses) });
   consumeQuota(db, user, { tokens: totalTokens, count: true });
   return {
     messageId: msgId, content: full, tokens: totalTokens,
-    inputTokens, outputTokens, aborted: false,
+    inputTokens, outputTokens, aborted: false, reasoning, finishReason, continuePasses,
     model: modelInfo.model_key, quota: checkQuota(db, user).quota
   };
+}
+
+// 生成参数快照（SillyTavern swipe_info 语义）：记录本条回复的模型/参数/截断续写次数
+function buildGenInfo(modelInfo, genParams, finishReason, continuePasses) {
+  return Object.assign({
+    model: modelInfo ? modelInfo.model_key : '',
+    finish_reason: finishReason || 'stop',
+    continued: continuePasses || 0,
+    ts: Date.now()
+  }, genParams || {});
 }
 
 /**
@@ -372,12 +409,15 @@ async function groupReplyInner(db, user, conv, roleId, opts = {}) {
   return { result, speaker: sp };
 }
 
-function saveAssistantMessage(db, conv, content, modelInfo, status, error, speakerRoleId, inputTokens, outputTokens) {
+function saveAssistantMessage(db, conv, content, modelInfo, status, error, speakerRoleId, inputTokens, outputTokens, extra) {
+  const ex = extra || {};
   const totalTokens = (inputTokens || 0) + (outputTokens || 0) || estimateTokens(content);
-  db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, input_tokens, output_tokens, model, status, error, speaker_role_id)
-    VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?, ?)`,
+  const genInfoStr = ex.genInfo ? JSON.stringify(ex.genInfo) : '';
+  const reasoningStr = String(ex.reasoning || '').slice(0, 20000);
+  db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, input_tokens, output_tokens, model, status, error, speaker_role_id, reasoning, gen_info)
+    VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   [conv.id, conv.current_branch_id || 0, content, totalTokens, inputTokens || 0, outputTokens || 0,
-    modelInfo ? modelInfo.model_key : '', status, error, speakerRoleId || null]);
+    modelInfo ? modelInfo.model_key : '', status, error, speakerRoleId || null, reasoningStr, genInfoStr]);
   const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
   db.run('UPDATE ai_conversations SET message_count = message_count + 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
   saveDatabase();
@@ -427,9 +467,111 @@ async function regenerateMessageInner(db, user, conv, targetMsgId, opts = {}) {
     Object.assign({}, opts, { speakerRoleId: target.speaker_role_id || undefined }), quotaCheck);
 }
 
+/**
+ * 预测用户接下来最可能发送的 N 条消息（RP-Hub / SillyTavern「建议回复」式）
+ * 轻量上下文：仅取当前分支最近若干条历史 + 角色简介，低 max_tokens、非流式，
+ * 要求模型严格输出 JSON 字符串数组；不落库、不触发记忆，仅按实际用量计配额。
+ * @returns {Promise<{suggestions: string[]}>}
+ */
+async function predictReplies(db, user, conv, opts = {}) {
+  const settings = getSettings(db);
+  if (String(settings.ai_enabled ?? '1') === '0') {
+    throw Object.assign(new Error('AI 聊天功能暂未开放'), { status: 403 });
+  }
+  if (String(settings.ai_predict_enabled ?? '1') === '0') {
+    throw Object.assign(new Error('预测功能已被管理员关闭'), { status: 403 });
+  }
+  const quotaCheck = checkQuota(db, user);
+  if (!quotaCheck.ok) throw Object.assign(new Error(quotaCheck.reason), { status: 429 });
+
+  const count = Math.min(Math.max(parseInt(settings.ai_predict_count, 10) || 3, 1), 5);
+  const branchId = conv.current_branch_id || 0;
+  const history = queryAll(db, `SELECT role, content, speaker_role_id FROM ai_messages
+    WHERE conversation_id = ? AND branch_id = ? AND status = 'done' ORDER BY id DESC LIMIT 12`,
+    [conv.id, branchId]).reverse();
+  if (!history.length) return { suggestions: [] };
+
+  const modelInfo = resolveModel(db, user.id, conv.model);
+
+  // 角色简介（群聊取会话标题即可，单聊附带角色名/性格，帮助预测贴合语境）
+  let roleBrief = '';
+  const speakerNames = {};
+  if (!conv.is_group && conv.role_id) {
+    const role = queryOne(db, 'SELECT name, personality, scenario FROM ai_roles WHERE id = ?', [conv.role_id]);
+    if (role) {
+      roleBrief = '正在对话的角色：' + (role.name || '') +
+        (role.personality ? '。性格：' + String(role.personality).slice(0, 200) : '') +
+        (role.scenario ? '。场景：' + String(role.scenario).slice(0, 200) : '');
+    }
+  } else if (conv.is_group) {
+    // 群聊：一次性解析说话人角色名，用于对话记录标注
+    queryAll(db, 'SELECT id, name FROM ai_roles').forEach(r => { speakerNames[r.id] = r.name; });
+  }
+
+  const transcript = history.map(m => {
+    const who = m.role === 'user' ? '用户' : (speakerNames[m.speaker_role_id] || 'AI');
+    return who + '：' + String(m.content || '').slice(0, 500);
+  }).join('\n');
+
+  const sys = '你是对话预测助手。请站在【用户】的角度，预测用户接下来最可能发送的 ' + count + ' 条消息。' +
+    '要求：口语化、自然、每条不超过 30 个字、彼此内容不同、贴合当前语境与角色。' +
+    '只输出一个 JSON 字符串数组，形如 ["...","...","..."]，不要任何解释或多余文字。';
+  const messages = [
+    { role: 'system', content: sys + (roleBrief ? '\n' + roleBrief : '') },
+    { role: 'user', content: '以下是当前对话记录：\n' + transcript + '\n\n请输出预测的 ' + count + ' 条用户消息（JSON 数组）：' }
+  ];
+
+  let full = '';
+  let usage = null;
+  try {
+    const result = await callChatCompletion(modelInfo, messages, {
+      stream: false,
+      signal: opts.signal,
+      timeout: 30000,
+      genParams: { temperature: 0.8, max_tokens: 200 }
+    });
+    full = result.content || '';
+    usage = result.usage || null;
+  } catch (err) {
+    if (opts.signal && opts.signal.aborted) return { suggestions: [] };
+    throw Object.assign(new Error(normalizeError(err)), { status: 502 });
+  }
+
+  const suggestions = parseSuggestions(full, count);
+  const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
+  const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
+  consumeQuota(db, user, { tokens: inputTokens + outputTokens, count: false });
+  return { suggestions };
+}
+
+// 从模型输出中稳健提取字符串数组（容忍 ```json 包裹、前后缀噪声、逐行输出等）
+function parseSuggestions(text, count) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  let arr = null;
+  const m = raw.match(/\[[\s\S]*\]/);
+  if (m) { try { arr = JSON.parse(m[0]); } catch (e) { arr = null; } }
+  if (!Array.isArray(arr)) {
+    arr = raw.replace(/^```(?:json)?/i, '').replace(/```$/, '')
+      .split('\n').map(s => s.trim())
+      .filter(Boolean)
+      .map(s => s.replace(/^[\d\-.、)）*\s]+/, '').replace(/^["'“”]+|["'“”]+$/g, ''))
+      .filter(Boolean);
+  }
+  const seen = {};
+  return arr
+    .map(s => String(typeof s === 'string' ? s : (s && s.content) || '').trim().slice(0, 60))
+    .filter(s => {
+      if (!s || seen[s.toLowerCase()]) return false;
+      seen[s.toLowerCase()] = 1;
+      return true;
+    })
+    .slice(0, count);
+}
+
 module.exports = {
   createConversation, getOwnConversation, renameConversation, deleteConversation,
   updateGroup, getOwnMessage, deleteMessage, editMessage,
   forkConversation, switchBranch, deleteBranch,
-  sendMessage, regenerateMessage, groupReply, extractGenParams
+  sendMessage, regenerateMessage, groupReply, extractGenParams, predictReplies
 };

@@ -544,7 +544,7 @@ router.post('/ai-chat/roles/avatar', isAuthenticated, hasPermission('aichat.mana
 
 // ============ 默认世界书（全局模板，新会话自动复制） ============
 
-const DEFAULT_WORLD_BOOK_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top'];
+const DEFAULT_WORLD_BOOK_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top', 'in_chat'];
 
 router.post('/ai-chat/world-book-defaults/save', isAuthenticated, hasPermission('aichat.manage'), (req, res) => {
   const db = req.db;
@@ -555,16 +555,22 @@ router.post('/ai-chat/world-book-defaults/save', isAuthenticated, hasPermission(
   const sortOrder = Math.max(toInt(first(req.body.sort_order), 0), 0);
   const enabled = first(req.body.enabled) === '0' ? 0 : 1;
   const constant = first(req.body.constant) === '1' || first(req.body.constant) === 'on' ? 1 : 0;
+  const secondaryKeys = (first(req.body.secondary_keys) || '').trim().slice(0, 300);
+  const selective = first(req.body.selective) === '1' || first(req.body.selective) === 'on' ? 1 : 0;
+  const probability = Math.min(Math.max(toInt(first(req.body.probability), 100), 0), 100);
+  const depth = Math.min(Math.max(toInt(first(req.body.depth), 4), 0), 200);
   if (id) {
     const existing = queryOne(db, 'SELECT * FROM ai_default_world_book WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: '条目不存在' });
     if (!content) content = existing.content; // 编辑/启停时内容留空保留原文
-    db.run('UPDATE ai_default_world_book SET key = ?, content = ?, position = ?, sort_order = ?, enabled = ?, constant = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [key, content, position, sortOrder, enabled, constant, id]);
+    db.run(`UPDATE ai_default_world_book SET key = ?, content = ?, position = ?, sort_order = ?, enabled = ?, constant = ?,
+      secondary_keys = ?, selective = ?, probability = ?, depth = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [key, content, position, sortOrder, enabled, constant, secondaryKeys, selective, probability, depth, id]);
   } else {
     if (!content) return res.status(400).json({ error: '内容不能为空' });
-    db.run('INSERT INTO ai_default_world_book (key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?)',
-      [key, content, position, sortOrder, enabled, constant]);
+    db.run(`INSERT INTO ai_default_world_book (key, content, position, sort_order, enabled, constant,
+        secondary_keys, selective, probability, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [key, content, position, sortOrder, enabled, constant, secondaryKeys, selective, probability, depth]);
   }
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'ai_default_world_book', target_title: key || '（常驻）', detail: `保存默认世界书条目：${key || '（常驻）'}`, ip: req.ip });
@@ -615,8 +621,13 @@ router.post('/ai-chat/world-book-defaults/import', isAuthenticated, hasPermissio
         const enabled = e.enabled === 0 ? 0 : 1;
         const constant = e.constant === 1 ? 1 : 0;
         const sortOrder = parseInt(e.sort_order, 10) || i;
-        db.run('INSERT INTO ai_default_world_book (key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?)',
-          [key, content, position, sortOrder, enabled, constant]);
+        const secondaryKeys = String(e.secondary_keys || '').trim().slice(0, 300);
+        const selective = e.selective === 1 ? 1 : 0;
+        const probability = Math.min(Math.max(parseInt(e.probability, 10) || 100, 0), 100);
+        const depth = Math.min(Math.max(parseInt(e.depth, 10) || 4, 0), 200);
+        db.run(`INSERT INTO ai_default_world_book (key, content, position, sort_order, enabled, constant,
+            secondary_keys, selective, probability, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [key, content, position, sortOrder, enabled, constant, secondaryKeys, selective, probability, depth]);
         if (key) existing.add(key.toLowerCase());
         imported++;
       });
@@ -659,7 +670,21 @@ router.post('/ai-chat/settings/save', isAuthenticated, hasPermission('aichat.man
     ai_embedding_api_base: (first(req.body.ai_embedding_api_base) || '').trim().slice(0, 300),
     ai_embedding_model: (first(req.body.ai_embedding_model) || '').trim().slice(0, 100),
     ai_embedding_api_key: encEmbeddingKey,
-    ai_stream_enabled: first(req.body.ai_stream_enabled) === '1' || first(req.body.ai_stream_enabled) === 'on' ? '1' : '0'
+    ai_stream_enabled: first(req.body.ai_stream_enabled) === '1' || first(req.body.ai_stream_enabled) === 'on' ? '1' : '0',
+    // 世界书增强（SillyTavern 式）
+    ai_world_recursion: first(req.body.ai_world_recursion) === '1' || first(req.body.ai_world_recursion) === 'on' ? '1' : '0',
+    ai_world_recursion_steps: String(Math.min(Math.max(toInt(first(req.body.ai_world_recursion_steps), 4), 1), 10)),
+    ai_world_budget_percent: String(Math.min(Math.max(toInt(first(req.body.ai_world_budget_percent), 25), 0), 100)),
+    ai_world_scan_depth: String(Math.min(Math.max(toInt(first(req.body.ai_world_scan_depth), 6), 1), 50)),
+    // 上下文预算与抗截断续写
+    ai_context_size: String(Math.min(Math.max(toInt(first(req.body.ai_context_size), 16000), 2000), 1000000)),
+    ai_history_window: String(Math.min(Math.max(toInt(first(req.body.ai_history_window), 3000), 500), 200000)),
+    ai_auto_continue: first(req.body.ai_auto_continue) === '1' || first(req.body.ai_auto_continue) === 'on' ? '1' : '0',
+    ai_auto_continue_max: String(Math.min(Math.max(toInt(first(req.body.ai_auto_continue_max), 3), 0), 5)),
+    ai_reasoning_enabled: first(req.body.ai_reasoning_enabled) === '1' || first(req.body.ai_reasoning_enabled) === 'on' ? '1' : '0',
+    // 预测建议回复
+    ai_predict_enabled: first(req.body.ai_predict_enabled) === '1' || first(req.body.ai_predict_enabled) === 'on' ? '1' : '0',
+    ai_predict_count: String(Math.min(Math.max(toInt(first(req.body.ai_predict_count), 3), 1), 5))
   });
   saveDatabase();
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'ai_settings', target_title: 'AI聊天设置', detail: '更新 AI 聊天系统设置', ip: req.ip });

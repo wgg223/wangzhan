@@ -671,6 +671,12 @@ function createTables(db) {
     FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
   )`);
   try { db.run('ALTER TABLE ai_world_book ADD COLUMN constant INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
+  // 世界书增强（SillyTavern 式）：二级触发词 / 选择性触发 / 概率触发 / 深度注入
+  const addAiCol = (table, ddl) => { try { db.run(`ALTER TABLE ${table} ADD COLUMN ${ddl}`); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } } };
+  ['secondary_keys TEXT DEFAULT \'\'', 'selective INTEGER DEFAULT 0', 'probability INTEGER DEFAULT 100', 'depth INTEGER DEFAULT 4'].forEach(ddl => addAiCol('ai_world_book', ddl));
+  // 消息级：推理过程（reasoning_content）与生成参数快照（swipe_info 语义）
+  addAiCol('ai_messages', "reasoning TEXT DEFAULT ''");
+  addAiCol('ai_messages', "gen_info TEXT DEFAULT ''");
 
   // AI 默认世界书（全局模板）：新会话创建时自动复制进会话世界书，后台可管理
   db.run(`CREATE TABLE IF NOT EXISTS ai_default_world_book (
@@ -681,9 +687,14 @@ function createTables(db) {
     position TEXT DEFAULT 'before_char',
     sort_order INTEGER DEFAULT 0,
     constant INTEGER DEFAULT 0,
+    secondary_keys TEXT DEFAULT '',
+    selective INTEGER DEFAULT 0,
+    probability INTEGER DEFAULT 100,
+    depth INTEGER DEFAULT 4,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  ['secondary_keys TEXT DEFAULT \'\'', 'selective INTEGER DEFAULT 0', 'probability INTEGER DEFAULT 100', 'depth INTEGER DEFAULT 4'].forEach(ddl => addAiCol('ai_default_world_book', ddl));
 
   // AI 记忆（摘要记忆 + 向量记忆）
   db.run(`CREATE TABLE IF NOT EXISTS ai_memories (
@@ -863,7 +874,21 @@ function createTables(db) {
     ['ai_embedding_api_base', ''],
     ['ai_embedding_model', ''],
     ['ai_embedding_api_key', ''],
-    ['ai_stream_enabled', '1']
+    ['ai_stream_enabled', '1'],
+    // 世界书增强（SillyTavern 式）：递归扫描 / token 预算 / 扫描深度
+    ['ai_world_recursion', '1'],
+    ['ai_world_recursion_steps', '4'],
+    ['ai_world_budget_percent', '25'],
+    ['ai_world_scan_depth', '6'],
+    // 上下文与生成：总上下文预算（token）、历史窗口、抗截断自动续写
+    ['ai_context_size', '16000'],
+    ['ai_history_window', '3000'],
+    ['ai_auto_continue', '1'],
+    ['ai_auto_continue_max', '3'],
+    ['ai_reasoning_enabled', '1'],
+    // 预测建议回复（用户可能发送的下一条消息）
+    ['ai_predict_enabled', '1'],
+    ['ai_predict_count', '3']
   ];
   for (const [key, value] of defaultAiSettings) {
     db.run('INSERT OR IGNORE INTO ai_settings (setting_key, setting_value) VALUES (?, ?)', [key, value]);

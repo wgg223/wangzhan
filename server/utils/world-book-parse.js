@@ -5,9 +5,21 @@
  * 此处不做长度截断/去重，由调用方按各自存储上限处理。
  */
 
-const POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top'];
-// SillyTavern position 数值 → 本站位置
-const POS_MAP = { 0: 'system_top', 1: 'before_char', 2: 'after_char', 3: 'after_char', 4: 'user_top', 5: 'assistant_top' };
+const POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top', 'in_chat'];
+// SillyTavern position 数值 → 本站位置（V2: 0=before char defs, 1=after char defs；旧映射保留兼容）
+const POS_MAP = { 0: 'before_char', 1: 'after_char', 2: 'system_top', 3: 'system_top', 4: 'user_top', 5: 'assistant_top' };
+// SillyTavern V3 position 字符串 → 本站位置
+const POS_STR_MAP = {
+  beforeChar: 'before_char', afterChar: 'after_char',
+  beforeEM: 'system_top', afterEM: 'system_top',
+  beforeAN: 'user_top', afterAN: 'assistant_top',
+  atDepth: 'in_chat'
+};
+
+function normalizeKeys(v) {
+  if (Array.isArray(v)) return v.map(k => String(k).trim()).filter(Boolean).join(',');
+  return String(v || '').split(/[,，]/).map(k => k.trim()).filter(Boolean).join(',');
+}
 
 function parseJson(data) {
   let raw = [];
@@ -20,18 +32,28 @@ function parseJson(data) {
   const out = [];
   raw.forEach((e, i) => {
     if (!e || typeof e !== 'object') return;
-    const keys = Array.isArray(e.key) ? e.key : String(e.key || '').split(/[,，]/);
-    let key = keys.map(k => String(k).trim()).filter(Boolean).join(',');
+    let key = normalizeKeys(e.key != null ? e.key : e.keys);
     if (!key && e.comment) key = String(e.comment).trim();
     const content = String(e.content || '').trim();
     if (!content) return;
+    // 位置：本站名称 → V3 字符串 → injection_position=2(固定深度) → V2 数值
+    let position;
+    if (POSITIONS.indexOf(e.position) !== -1) position = e.position;
+    else if (POS_STR_MAP[e.position]) position = POS_STR_MAP[e.position];
+    else if (e.injection_position === 2 || e.injection_position === '2') position = 'in_chat';
+    else position = POS_MAP[Number(e.position)] || 'before_char';
+    const depth = Math.min(Math.max(parseInt(e.depth != null ? e.depth : e.injection_depth, 10) || 4, 0), 200);
     out.push({
       key,
       content,
-      position: POSITIONS.indexOf(e.position) !== -1 ? e.position : (POS_MAP[Number(e.position)] || 'before_char'),
+      position,
       enabled: (e.disable === true || e.enabled === false || e.enabled === 0) ? 0 : 1,
       constant: e.constant ? 1 : 0,
-      sort_order: parseInt(e.order, 10) || parseInt(e.sort_order, 10) || i
+      secondary_keys: normalizeKeys(e.secondary_keys),
+      selective: (e.selective === true || e.selective === 1) ? 1 : 0,
+      probability: Math.min(Math.max(parseInt(e.probability, 10) || 100, 0), 100),
+      depth,
+      sort_order: parseInt(e.insertion_order, 10) || parseInt(e.order, 10) || parseInt(e.sort_order, 10) || i
     });
   });
   return out;

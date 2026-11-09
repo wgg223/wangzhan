@@ -9,12 +9,14 @@
   <%
   function acBust(p) {
     var u = typeof cdn !== 'undefined' ? cdn.getUrl(p) : p;
-    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261109j';
+    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261110c';
   }
   %>
   <link rel="stylesheet" href="<%= acBust('/css/ai-chat.css') %>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
 <div class="ac-app" id="acApp">
@@ -39,6 +41,7 @@
       <div class="ac-conv-title" id="acConvTitle">新对话</div>
       <span class="ac-conv-tokens" id="acConvTokens"></span>
       <div class="ac-toolbar">
+        <button class="ac-tool" id="acThemeBtn" title="切换深色/浅色">🌙 <span>夜间</span></button>
         <button class="ac-tool" id="acFullscreenBtn" title="全屏聊天">⛶ <span>全屏</span></button>
         <button class="ac-tool" id="acShareBtn" title="分享" style="display:none;">🔗 <span>分享</span></button>
         <button class="ac-tool" id="acModelBtn" title="切换模型">⚙️ <span id="acModelLabel">自动</span></button>
@@ -92,6 +95,7 @@
     </div>
 
     <footer class="ac-input-bar">
+      <div class="ac-suggestions" id="acSuggestions" hidden></div>
       <textarea id="acInput" rows="3" placeholder="输入消息，Enter 发送，Shift+Enter 换行" maxlength="8000"></textarea>
       <div class="ac-input-foot">
         <span class="ac-input-tip">Enter 发送 · Shift+Enter 换行</span>
@@ -100,6 +104,7 @@
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acImpersonateBtn" title="模仿用户">👤 模仿</button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acCompressBtn" title="压缩对话历史">📦</button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acTtsToggle" title="朗读">🔊</button>
+        <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acPredictBtn" title="智能预测：推荐你可能想发的下一条消息">💡 <span>预测</span></button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acImageGenBtn" title="生成场景图片">🎨</button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acPickPrompt" style="display:none;">📚</button>
         <button type="button" class="ac-btn ac-btn-primary" id="acSend">发送</button>
@@ -241,7 +246,7 @@
 
 <div class="ac-modal-overlay" id="acGroupModal" hidden><div class="ac-modal"><div class="ac-modal-head"><h2 id="acGroupModalTitle">新建群聊</h2><button class="ac-modal-close" data-ac-close="acGroupModal">×</button></div><div class="ac-modal-body"><label class="ac-field">群聊名称<input id="acGroupName" maxlength="100" placeholder="如：主角小队"></label><label class="ac-field">回复模式<select id="acGroupMode"><option value="round">轮流发言（每轮所有成员依次回复）</option><option value="manual">手动指定（点击成员头像触发回复）</option></select></label><label class="ac-field">群成员（2–16 个）</label><div class="ac-group-member-list" id="acGroupMemberList"></div></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-sm" data-ac-close="acGroupModal">取消</button><button class="ac-btn ac-btn-primary ac-btn-sm" id="acGroupSave">创建</button></div></div></div>
 
-<div class="ac-modal-overlay" id="acWorldEditModal" hidden><div class="ac-modal ac-modal-lg"><div class="ac-modal-head"><h2 id="acWorldEditTitle">世界书条目</h2><button class="ac-modal-close" data-ac-close="acWorldEditModal">×</button></div><div class="ac-modal-body"><div class="ac-field-row"><label class="ac-field">触发词<input id="acWorldKey" maxlength="100" placeholder="逗号分隔，留空=常驻"></label><label class="ac-field">位置<select id="acWorldPos"><option value="system_top">系统前</option><option value="before_char">角色前</option><option value="after_char">角色后</option><option value="user_top">用户消息</option><option value="assistant_top">AI前</option></select></label></div><label class="ac-field ac-check"><input type="checkbox" id="acWorldConstant"> 常驻</label><label class="ac-field">内容<textarea id="acWorldContent" rows="8" maxlength="20000"></textarea></label></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-danger ac-btn-sm" id="acWorldDelete" style="display:none;">删除</button><span style="flex:1"></span><button class="ac-btn ac-btn-sm" data-ac-close="acWorldEditModal">取消</button><button class="ac-btn ac-btn-primary ac-btn-sm" id="acWorldSave">保存</button></div></div></div>
+<div class="ac-modal-overlay" id="acWorldEditModal" hidden><div class="ac-modal ac-modal-lg"><div class="ac-modal-head"><h2 id="acWorldEditTitle">世界书条目</h2><button class="ac-modal-close" data-ac-close="acWorldEditModal">×</button></div><div class="ac-modal-body"><div class="ac-field-row"><label class="ac-field">触发词<input id="acWorldKey" maxlength="200" placeholder="逗号分隔，留空=常驻"></label><label class="ac-field">位置<select id="acWorldPos"><option value="system_top">系统前</option><option value="before_char">角色前</option><option value="after_char">角色后</option><option value="user_top">用户消息</option><option value="assistant_top">AI前</option><option value="in_chat">按深度插入</option></select></label></div><div class="ac-field-row"><label class="ac-field" id="acWorldDepthWrap" style="display:none;">插入深度<small>倒数第 N 条消息前</small><input id="acWorldDepth" type="number" min="0" max="200" value="4"></label><label class="ac-field">触发概率 %<input id="acWorldProbability" type="number" min="0" max="100" value="100"></label></div><div class="ac-field-row"><label class="ac-field ac-check"><input type="checkbox" id="acWorldConstant"> 常驻</label><label class="ac-field ac-check" id="acWorldSelectiveWrap"><input type="checkbox" id="acWorldSelective"> 选择性（需二级键命中）</label></div><label class="ac-field">二级触发词<small>选择性开启时，需同时命中才注入</small><input id="acWorldSecondary" maxlength="300" placeholder="逗号分隔"></label><label class="ac-field">内容<textarea id="acWorldContent" rows="8" maxlength="20000"></textarea></label></div><div class="ac-modal-foot"><button class="ac-btn ac-btn-danger ac-btn-sm" id="acWorldDelete" style="display:none;">删除</button><span style="flex:1"></span><button class="ac-btn ac-btn-sm" data-ac-close="acWorldEditModal">取消</button><button class="ac-btn ac-btn-primary ac-btn-sm" id="acWorldSave">保存</button></div></div></div>
 
 <div class="ac-modal-overlay" id="acBranchModal" hidden><div class="ac-modal"><div class="ac-modal-head"><h2>剧情分支</h2><button class="ac-modal-close" data-ac-close="acBranchModal">×</button></div><div class="ac-modal-body" id="acBranchList"></div><div class="ac-modal-foot"><span class="ac-modal-hint">在 AI 消息上点「分叉」创建分支</span></div></div></div>
 

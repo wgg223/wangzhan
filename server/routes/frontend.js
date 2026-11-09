@@ -964,7 +964,7 @@ function csrfCheck(req, res, next) {
   next();
 }
 
-const WORLD_BOOK_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top'];
+const WORLD_BOOK_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top', 'in_chat'];
 
 // AI 聊天页面（独立页面，不使用主站布局）
 router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
@@ -1037,6 +1037,18 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
     data: {
       aiEnabled: String(settings.ai_enabled ?? '1') !== '0',
       streamEnabled: String(settings.ai_stream_enabled ?? '1') !== '0',
+      reasoningEnabled: String(settings.ai_reasoning_enabled ?? '1') !== '0',
+      autoContinue: String(settings.ai_auto_continue ?? '1') !== '0',
+      autoContinueMax: Math.min(Math.max(parseInt(settings.ai_auto_continue_max, 10) || 3, 0), 5),
+      predictEnabled: String(settings.ai_predict_enabled ?? '1') !== '0',
+      predictCount: Math.min(Math.max(parseInt(settings.ai_predict_count, 10) || 3, 1), 5),
+      contextSize: parseInt(settings.ai_context_size, 10) || 16000,
+      worldDefaults: {
+        recursion: String(settings.ai_world_recursion ?? '1') !== '0',
+        recursionSteps: parseInt(settings.ai_world_recursion_steps, 10) || 4,
+        budgetPercent: parseInt(settings.ai_world_budget_percent, 10) || 25,
+        scanDepth: parseInt(settings.ai_world_scan_depth, 10) || 6
+      },
       defaultModel: settings.ai_default_model || '',
       allowUserModels: String(settings.ai_allow_user_models ?? '1') !== '0',
       memoryDefaults: {
@@ -1189,9 +1201,9 @@ router.get('/ai-chat/api/conversations/:id/messages', isAuthenticated, hasFronte
   const conv = aiChatService.getOwnConversation(db, user, parseInt(req.params.id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const branchId = conv.current_branch_id || 0;
-  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, input_tokens, output_tokens, model, status, error, is_pinned, created_at, alternate_of, is_active, speaker_role_id, is_image, image_url FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY id ASC', [conv.id, branchId]);
+  const messages = queryAll(db, 'SELECT id, branch_id, role, content, tokens, input_tokens, output_tokens, model, status, error, is_pinned, created_at, alternate_of, is_active, speaker_role_id, is_image, image_url, reasoning, gen_info FROM ai_messages WHERE conversation_id = ? AND branch_id = ? AND (is_active = 1 OR is_active IS NULL) ORDER BY id ASC', [conv.id, branchId]);
   const branches = queryAll(db, 'SELECT id, name, parent_message_id, created_at FROM ai_branches WHERE conversation_id = ? ORDER BY id ASC', [conv.id]);
-  const worldBook = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
+  const worldBook = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order, secondary_keys, selective, probability, depth FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
   const summaries = queryAll(db, "SELECT id, content, created_at FROM ai_memories WHERE conversation_id = ? AND type = 'summary' ORDER BY id ASC", [conv.id]);
   res.json({ success: true, data: { conversation: conv, messages, branches, worldBook, summaries } });
 });
@@ -1236,6 +1248,7 @@ router.post('/ai-chat/api/send', isAuthenticated, hasFrontendPermission('aichat.
   if (!conv) return res.status(404).json({ error: '会话不存在' });
 
   const streamEnabled = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  const reasoningOn = String(getSettings(db).ai_reasoning_enabled ?? '1') !== '0';
   const isGroup = !!conv.is_group;
   streamCompletionResponse(req, res, async (signal, sendEvent) => {
     const result = await aiChatService.sendMessage(db, user, conv, String(req.body.content || ''), {
@@ -1243,6 +1256,8 @@ router.post('/ai-chat/api/send', isAuthenticated, hasFrontendPermission('aichat.
       signal,
       speakerRoleId: parseInt(req.body.speaker_role_id, 10) || undefined,
       onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined,
+      onReasoning: streamEnabled && reasoningOn ? delta => sendEvent('reasoning', { delta }) : undefined,
+      onContinue: streamEnabled ? info => sendEvent('continue', info) : undefined,
       onSpeaker: isGroup ? sp => sendEvent('speaker', sp) : undefined,
       onResult: isGroup ? (r, sp) => sendEvent('message', {
         id: r.messageId, content: r.content, tokens: r.tokens, inputTokens: r.inputTokens, outputTokens: r.outputTokens, model: r.model, quota: r.quota,
@@ -1267,11 +1282,14 @@ router.post('/ai-chat/api/group/reply', isAuthenticated, hasFrontendPermission('
   const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const streamEnabled = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  const reasoningOn = String(getSettings(db).ai_reasoning_enabled ?? '1') !== '0';
   streamCompletionResponse(req, res, async (signal, sendEvent) => {
     const { result, speaker } = await aiChatService.groupReply(db, user, conv, req.body.role_id, {
       stream: streamEnabled,
       signal,
       onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined,
+      onReasoning: streamEnabled && reasoningOn ? delta => sendEvent('reasoning', { delta }) : undefined,
+      onContinue: streamEnabled ? info => sendEvent('continue', info) : undefined,
       onSpeaker: sp => sendEvent('speaker', sp)
     });
     sendEvent('message', {
@@ -1293,15 +1311,30 @@ router.post('/ai-chat/api/messages/regenerate', isAuthenticated, hasFrontendPerm
   if (!conv) return res.status(404).json({ error: '会话不存在' });
 
   const streamEnabled = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  const reasoningOn = String(getSettings(db).ai_reasoning_enabled ?? '1') !== '0';
   streamCompletionResponse(req, res, async (signal, sendEvent) => {
     const result = await aiChatService.regenerateMessage(db, user, conv, targetId, {
       stream: streamEnabled,
       signal,
-      onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined
+      onDelta: streamEnabled ? delta => sendEvent('delta', { delta }) : undefined,
+      onReasoning: streamEnabled && reasoningOn ? delta => sendEvent('reasoning', { delta }) : undefined,
+      onContinue: streamEnabled ? info => sendEvent('continue', info) : undefined
     });
     sendEvent('message', { id: result.messageId, content: result.content, tokens: result.tokens, inputTokens: result.inputTokens, outputTokens: result.outputTokens, model: result.model, quota: result.quota });
     sendEvent('done', { aborted: !!result.aborted });
   });
+});
+
+// 预测用户接下来可能发送的消息（建议回复，非流式）
+router.post('/ai-chat/api/predict', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, async (req, res) => {
+  const conv = aiChatService.getOwnConversation(req.db, req.session.user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  try {
+    const result = await aiChatService.predictReplies(req.db, req.session.user, conv, {});
+    res.json({ success: true, suggestions: result.suggestions || [] });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || '预测失败' });
+  }
 });
 
 // 编辑消息
@@ -1353,7 +1386,7 @@ router.get('/ai-chat/api/world-book', isAuthenticated, hasFrontendPermission('ai
   const db = req.db;
   const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.query.conversation_id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
-  const list = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
+  const list = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order, secondary_keys, selective, probability, depth FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
   res.json({ success: true, data: list });
 });
 
@@ -1370,16 +1403,22 @@ router.post('/ai-chat/api/world-book', isAuthenticated, hasFrontendPermission('a
   const sortOrder = parseInt(req.body.sort_order, 10) || 0;
   const enabled = req.body.enabled === false || req.body.enabled === 0 ? 0 : 1;
   const constant = req.body.constant === true || req.body.constant === 1 || req.body.constant === '1' ? 1 : 0;
+  const secondaryKeys = String(req.body.secondary_keys || '').trim().slice(0, 300);
+  const selective = req.body.selective === true || req.body.selective === 1 || req.body.selective === '1' ? 1 : 0;
+  const probability = Math.min(Math.max(parseInt(req.body.probability, 10) || 100, 0), 100);
+  const depth = Math.min(Math.max(parseInt(req.body.depth, 10) || 4, 0), 200);
   if (!content) return res.status(400).json({ error: '内容不能为空' });
 
   if (id) {
     const row = queryOne(db, 'SELECT id FROM ai_world_book WHERE id = ? AND conversation_id = ?', [id, conv.id]);
     if (!row) return res.status(404).json({ error: '条目不存在' });
-    db.run('UPDATE ai_world_book SET key = ?, content = ?, position = ?, sort_order = ?, enabled = ?, constant = ? WHERE id = ?',
-      [key, content, position, sortOrder, enabled, constant, id]);
+    db.run(`UPDATE ai_world_book SET key = ?, content = ?, position = ?, sort_order = ?, enabled = ?, constant = ?,
+      secondary_keys = ?, selective = ?, probability = ?, depth = ? WHERE id = ?`,
+    [key, content, position, sortOrder, enabled, constant, secondaryKeys, selective, probability, depth, id]);
   } else {
-    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [conv.id, key, content, position, sortOrder, enabled, constant]);
+    db.run(`INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant,
+        secondary_keys, selective, probability, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [conv.id, key, content, position, sortOrder, enabled, constant, secondaryKeys, selective, probability, depth]);
   }
   saveDatabase();
   res.json({ success: true });
@@ -1402,14 +1441,17 @@ router.post('/ai-chat/api/world-book/import-defaults', isAuthenticated, hasFront
   const db = req.db;
   const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.conversation_id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
-  const defaults = queryAll(db, 'SELECT key, content, position, sort_order, enabled, constant FROM ai_default_world_book WHERE enabled = 1 ORDER BY sort_order ASC, id ASC');
+  const defaults = queryAll(db, `SELECT key, content, position, sort_order, enabled, constant,
+      secondary_keys, selective, probability, depth FROM ai_default_world_book WHERE enabled = 1 ORDER BY sort_order ASC, id ASC`);
   const existing = new Set(queryAll(db, 'SELECT key FROM ai_world_book WHERE conversation_id = ?', [conv.id]).map(r => String(r.key).trim().toLowerCase()));
   let imported = 0;
   defaults.forEach(e => {
     const k = String(e.key || '').trim();
     if (existing.has(k.toLowerCase())) return;
-    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [conv.id, k, e.content, e.position, e.sort_order, e.enabled, e.constant]);
+    db.run(`INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant,
+        secondary_keys, selective, probability, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [conv.id, k, e.content, e.position, e.sort_order, e.enabled, e.constant,
+      e.secondary_keys || '', e.selective || 0, e.probability == null ? 100 : e.probability, e.depth == null ? 4 : e.depth]);
     imported++;
   });
   saveDatabase();
@@ -1435,8 +1477,13 @@ router.post('/ai-chat/api/world-book/import', isAuthenticated, hasFrontendPermis
     const enabled = e.enabled === 0 || e.enabled === false ? 0 : 1;
     const constant = e.constant === 1 || e.constant === true || e.constant === '1' ? 1 : 0;
     const sortOrder = parseInt(e.sort_order, 10) || i;
-    db.run('INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [conv.id, key, content, position, sortOrder, enabled, constant]);
+    const secondaryKeys = String(e.secondary_keys || '').trim().slice(0, 300);
+    const selective = e.selective === 1 || e.selective === true || e.selective === '1' ? 1 : 0;
+    const probability = Math.min(Math.max(parseInt(e.probability, 10) || 100, 0), 100);
+    const depth = Math.min(Math.max(parseInt(e.depth, 10) || 4, 0), 200);
+    db.run(`INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant,
+        secondary_keys, selective, probability, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [conv.id, key, content, position, sortOrder, enabled, constant, secondaryKeys, selective, probability, depth]);
     if (key) existing.add(key.toLowerCase());
     imported++;
   });
@@ -2058,6 +2105,7 @@ router.post('/ai-chat/api/messages/continue', isAuthenticated, hasFrontendPermis
   messages.push({ role: 'assistant', content: String(lastMsg.content || '') + '\n' });
   const { streamEnabled } = req.body;
   const useStream = streamEnabled !== false && String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  const reasoningOn = String(getSettings(db).ai_reasoning_enabled ?? '1') !== '0';
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -2071,6 +2119,7 @@ router.post('/ai-chat/api/messages/continue', isAuthenticated, hasFrontendPermis
   callChatCompletion(modelInfo, messages, {
     stream: useStream, signal: controller.signal,
     onDelta: useStream ? (delta) => { full += delta; sendEvt('delta', { delta }); } : undefined,
+    onReasoning: useStream && reasoningOn ? (delta) => { sendEvt('reasoning', { delta }); } : undefined,
     genParams: aiChatService.extractGenParams ? aiChatService.extractGenParams(conv) : undefined
   }).then(result => {
     full = result.content;
@@ -2079,7 +2128,12 @@ router.post('/ai-chat/api/messages/continue', isAuthenticated, hasFrontendPermis
     const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
     const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
     const totalTokens = inputTokens + outputTokens;
-    db.run('UPDATE ai_messages SET content = ?, tokens = ?, input_tokens = ?, output_tokens = ? WHERE id = ?', [combined, totalTokens, inputTokens, outputTokens, lastMsg.id]);
+    const combinedReasoning = String(lastMsg.reasoning || '') + (result.reasoning || '');
+    const genInfo = JSON.stringify(Object.assign({
+      model: modelInfo.model_key, finish_reason: result.finishReason || 'stop', ts: Date.now(), continued: true
+    }, (aiChatService.extractGenParams ? aiChatService.extractGenParams(conv) : undefined) || {}));
+    db.run('UPDATE ai_messages SET content = ?, tokens = ?, input_tokens = ?, output_tokens = ?, reasoning = ?, gen_info = ? WHERE id = ?',
+      [combined, totalTokens, inputTokens, outputTokens, combinedReasoning.slice(0, 20000), genInfo, lastMsg.id]);
     saveDatabase();
     consumeQuota(db, user, { tokens: totalTokens, count: true });
     sendEvt('message', { id: lastMsg.id, content: combined, tokens: totalTokens, inputTokens: inputTokens, outputTokens: outputTokens, model: modelInfo.model_key, quota: checkQuota(db, user).quota });
@@ -2158,7 +2212,7 @@ router.get('/ai-chat/api/messages/:id/alternates', isAuthenticated, hasFrontendP
   const conv = aiChatService.getOwnConversation(db, req.session.user, msg.conversation_id);
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const rootId = msg.alternate_of || msg.id;
-  const alternates = queryAll(db, 'SELECT id, content, tokens, model, status, is_active, created_at FROM ai_messages WHERE (id = ? OR alternate_of = ?) AND conversation_id = ? ORDER BY id ASC', [rootId, rootId, conv.id]);
+  const alternates = queryAll(db, 'SELECT id, content, tokens, model, status, is_active, created_at, gen_info FROM ai_messages WHERE (id = ? OR alternate_of = ?) AND conversation_id = ? ORDER BY id ASC', [rootId, rootId, conv.id]);
   res.json({ success: true, data: alternates });
 });
 
@@ -2198,22 +2252,30 @@ router.post('/ai-chat/api/messages/swipe-regenerate', isAuthenticated, hasFronte
   const modelInfo = resolveModel(db, user.id, conv.model);
   const messages = buildContext(db, conv, prevUser.content, { excludeMsgId: prevUser.id });
   const useStream = String(getSettings(db).ai_stream_enabled ?? '1') !== '0';
+  const reasoningOn = String(getSettings(db).ai_reasoning_enabled ?? '1') !== '0';
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   const controller = new AbortController();
   req.on('close', () => controller.abort());
   let full = '';
+  let reasoning = '';
   const sendEvt = (event, data) => { if (!res.writableEnded) res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'); };
   const rootId = target.alternate_of || target.id;
+  const genParams = aiChatService.extractGenParams ? aiChatService.extractGenParams(conv) : undefined;
   callChatCompletion(modelInfo, messages, {
     stream: useStream, signal: controller.signal,
-    onDelta: useStream ? (delta) => { full += delta; sendEvt('delta', { delta }); } : undefined,
-    genParams: aiChatService.extractGenParams ? aiChatService.extractGenParams(conv) : undefined
+    onDelta: useStream ? (delta) => { sendEvt('delta', { delta }); } : undefined,
+    onReasoning: useStream && reasoningOn ? (delta) => { sendEvt('reasoning', { delta }); } : undefined,
+    genParams
   }).then(result => {
     full = result.content;
-    db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status, alternate_of, is_active) VALUES (?, ?, 'assistant', ?, ?, ?, 'done', ?, 0)`,
-      [conv.id, branchId, full, estimateTokens(full), modelInfo.model_key, rootId]);
+    reasoning = result.reasoning || '';
+    const genInfo = JSON.stringify(Object.assign({
+      model: modelInfo.model_key, finish_reason: result.finishReason || 'stop', ts: Date.now()
+    }, genParams || {}));
+    db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status, alternate_of, is_active, reasoning, gen_info) VALUES (?, ?, 'assistant', ?, ?, ?, 'done', ?, 0, ?, ?)`,
+      [conv.id, branchId, full, estimateTokens(full), modelInfo.model_key, rootId, reasoning.slice(0, 20000), genInfo]);
     const newMsg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
     saveDatabase();
     consumeQuota(db, user, { tokens: estimateTokens(full), count: true });
