@@ -1761,6 +1761,130 @@ router.post('/ai-chat/api/conversations/gen-settings', isAuthenticated, hasFront
   res.json({ success: true });
 });
 
+// 压缩对话历史（将旧消息摘要化以节省 token）
+router.post('/ai-chat/api/conversations/compress', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, async (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+
+  const keepRecent = Math.min(Math.max(parseInt(req.body.keep_recent, 10) || 10, 4), 50);
+  const messages = queryAll(db, 'SELECT * FROM ai_messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC', [conv.id]);
+
+  if (messages.length <= keepRecent) {
+    return res.json({ success: true, compressed: 0, message: '消息数量不足，无需压缩' });
+  }
+
+  const toCompress = messages.slice(0, messages.length - keepRecent);
+  const toKeep = messages.slice(messages.length - keepRecent);
+
+  // 生成摘要
+  let summary = '';
+  try {
+    const { callChatCompletion } = require('../services/ai-chat/provider');
+    const { resolveModel } = require('../services/ai-chat/provider');
+    const modelInfo = resolveModel(db, conv.model_id);
+    if (!modelInfo) throw new Error('未配置可用模型');
+
+    const compressPrompt = `请将以下对话历史压缩为一段简洁的摘要（保留关键信息、角色设定、重要事件），以便后续对话参考：
+
+${toCompress.map(m => `${m.role}: ${m.content}`).join('\n')}
+
+摘要：`;
+
+    const { content } = await callChatCompletion(modelInfo, [
+      { role: 'user', content: compressPrompt }
+    ], { stream: false, timeout: 60000, max_tokens: 1000 });
+
+    summary = String(content || '').trim();
+  } catch (err) {
+    return res.status(500).json({ error: '压缩失败：' + (err.message || '模型调用错误') });
+  }
+
+  if (!summary) {
+    return res.status(500).json({ error: '压缩失败：未生成摘要' });
+  }
+
+  // 删除旧消息，插入摘要消息
+  const oldIds = toCompress.map(m => m.id);
+  db.run(`DELETE FROM ai_messages WHERE id IN (${oldIds.map(() => '?').join(',')})`, oldIds);
+
+  // 插入摘要作为系统消息
+  const summaryContent = `[对话历史摘要]\n${summary}`;
+  db.run('INSERT INTO ai_messages (conversation_id, role, content, tokens) VALUES (?, ?, ?, ?)',
+    [conv.id, 'system', summaryContent, estimateTokens(summaryContent)]);
+
+  saveDatabase();
+
+  res.json({
+    success: true,
+    compressed: oldIds.length,
+    kept: toKeep.length,
+    summary: summary.slice(0, 200) + (summary.length > 200 ? '...' : '')
+  });
+});
+
+// 根据对话上下文生成图片
+router.post('/ai-chat/api/image/generate', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, async (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+
+  // 获取最近的消息作为上下文
+  const messages = queryAll(db, 'SELECT role, content FROM ai_messages WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT 10', [conv.id]);
+  messages.reverse();
+
+  if (!messages.length) return res.status(400).json({ error: '对话为空，无法生成图片' });
+
+  // 构建场景描述提示词
+  const contextSummary = messages.map(m => `${m.role}: ${m.content.slice(0, 200)}`).join('\n');
+  const scenePrompt = `根据以下对话内容，生成一个简洁的英文图片描述（场景、氛围、关键元素），只输出描述本身，不要任何前缀：
+
+${contextSummary}
+
+图片描述：`;
+
+  // 调用 LLM 生成图片提示词
+  let imagePrompt = '';
+  try {
+    const { callChatCompletion, resolveModel } = require('../services/ai-chat/provider');
+    const modelInfo = resolveModel(db);
+    if (!modelInfo) throw new Error('未配置可用模型');
+
+    const { content } = await callChatCompletion(modelInfo, [
+      { role: 'user', content: scenePrompt }
+    ], { stream: false, timeout: 30000, max_tokens: 200 });
+
+    imagePrompt = String(content || '').trim();
+    if (!imagePrompt) throw new Error('未生成图片描述');
+  } catch (err) {
+    return res.status(500).json({ error: '生成图片描述失败：' + (err.message || '') });
+  }
+
+  // 使用 Pollinations 免费接口生成图片
+  try {
+    const encodedPrompt = encodeURIComponent(imagePrompt);
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${Date.now()}`;
+
+    // 保存生成记录到 ai_image_records
+    db.run(`INSERT INTO ai_image_records
+      (user_id, prompt, provider, model, size, seed, style, reference_image, status, image_path)
+      VALUES (?, ?, 'pollinations', '', '1024x1024', ?, '', '', 'success', ?)`,
+      [user.id, imagePrompt, Date.now() % 2147483647, imageUrl]);
+    saveDatabase();
+
+    res.json({
+      success: true,
+      data: {
+        prompt: imagePrompt,
+        url: imageUrl
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: '图片生成失败：' + (err.message || '网络错误') });
+  }
+});
+
 // 预设列表（用户 + 全局）
 router.get('/ai-chat/api/presets', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
   const db = req.db;

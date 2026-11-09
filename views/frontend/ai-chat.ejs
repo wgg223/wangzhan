@@ -9,7 +9,7 @@
   <%
   function acBust(p) {
     var u = typeof cdn !== 'undefined' ? cdn.getUrl(p) : p;
-    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261109d';
+    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261109e';
   }
   %>
   <link rel="stylesheet" href="<%= acBust('/css/ai-chat.css') %>">
@@ -98,7 +98,9 @@
         <span class="ac-input-tokens" id="acInputTokens"></span>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acContinueBtn" title="继续生成">▶ 继续</button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acImpersonateBtn" title="模仿用户">👤 模仿</button>
+        <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acCompressBtn" title="压缩对话历史">📦</button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acTtsToggle" title="朗读">🔊</button>
+        <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acImageGenBtn" title="生成场景图片">🎨</button>
         <button type="button" class="ac-btn ac-btn-ghost ac-btn-sm" id="acPickPrompt" style="display:none;">📚</button>
         <button type="button" class="ac-btn ac-btn-primary" id="acSend">发送</button>
         <button type="button" class="ac-btn ac-btn-danger" id="acStop" style="display:none;">停止</button>
@@ -181,6 +183,12 @@
             <button class="ac-btn ac-btn-sm" id="acMemoryRefresh">立即总结</button>
             <button class="ac-btn ac-btn-primary ac-btn-sm" id="acMemorySave" style="flex:1;">保存</button>
           </div>
+        </div>
+        <div class="ac-panel-section">
+          <h4>对话压缩</h4>
+          <label class="ac-field ac-check"><input type="checkbox" id="acAutoCompress"> 自动压缩（消息过多时）</label>
+          <div class="ac-slider-group"><label>保留最近 <span id="acCompressKeepVal">10</span> 条</label><input type="range" id="acCompressKeep" min="4" max="50" step="1" value="10"></div>
+          <button class="ac-btn ac-btn-sm" id="acCompressNow" style="width:100%;margin-top:6px;">立即压缩对话</button>
         </div>
         <div class="ac-panel-section">
           <h4>TTS 语音</h4>

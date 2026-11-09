@@ -41,6 +41,8 @@
     'acRoleModal', 'acRoleList', 'acRoleCreate', 'acRoleCreateModal', 'acNewRoleName', 'acNewRolePrompt', 'acNewRoleGreeting', 'acNewRoleDesc', 'acNewRolePersonality', 'acNewRoleScenario', 'acNewRoleExamples', 'acRoleSave',
     'acWorldList', 'acWorldAdd', 'acWorldImport', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
     'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acMemoryEnabled', 'acRagEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
+    'acAutoCompress', 'acCompressKeep', 'acCompressKeepVal', 'acCompressNow',
+    'acImageGenBtn',
     'acBranchList', 'acMenuBtn', 'acSidebar',
     'acModelsToggle', 'acModelsBody', 'acMyModels', 'acGlobalModels', 'acModelAddBtn', 'acModelAddRow',
     'acmProvider', 'acmKey', 'acmEndpoint', 'acmApiKey', 'acmDefault', 'acmSave', 'acmCancel', 'acmGetWrap', 'acmGetLink',
@@ -630,6 +632,7 @@
         state.summaries = json.data.summaries || [];
         renderMessages();
         populatePanel();
+        checkAutoCompress();
       })
       .catch(function (err) { showToast(err.message, 'error'); });
   }
@@ -823,7 +826,26 @@
 
     var content = document.createElement('div');
     content.className = 'ac-msg-content';
-    content.textContent = m.content || '';
+    if (m.isImage && m.imageUrl) {
+      // 图片消息：显示图片
+      var img = document.createElement('img');
+      img.src = m.imageUrl;
+      img.alt = m.imagePrompt || '生成的图片';
+      img.style.cssText = 'max-width:100%;border-radius:8px;cursor:pointer;';
+      img.onclick = function () { window.open(m.imageUrl, '_blank'); };
+      content.appendChild(img);
+      if (m.imagePrompt) {
+        var caption = document.createElement('div');
+        caption.style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:6px;';
+        caption.textContent = '🎨 ' + m.imagePrompt;
+        content.appendChild(caption);
+      }
+    } else if (m.isImage && m.status === 'generating') {
+      // 生成中占位
+      content.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);"><div class="ac-loading"></div>正在生成场景图片…</div>';
+    } else {
+      content.textContent = m.content || '';
+    }
     if (m.status === 'error') content.classList.add('error');
     if (m.status === 'stopped') content.classList.add('stopped');
     body.appendChild(content);
@@ -2288,6 +2310,93 @@
       .catch(function (err) { showToast(err.message, 'error'); });
   }
 
+  // ============ 对话压缩 ============
+
+  function compressConversation() {
+    if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+    var keepRecent = els.acCompressKeep ? parseInt(els.acCompressKeep.value, 10) || 10 : 10;
+    if (!confirm('将压缩 ' + state.messages.length + ' 条消息中的旧消息，保留最近 ' + keepRecent + ' 条。确定继续？')) return;
+
+    showToast('正在压缩对话…', 'info');
+    api('/ai-chat/api/conversations/compress', {
+      id: state.currentConv.id,
+      keep_recent: keepRecent
+    }, 60000).then(function (res) {
+      if (res.success) {
+        showToast('压缩完成：' + res.compressed + ' 条消息已摘要', 'success');
+        selectConversation(state.currentConv.id);
+      } else {
+        showToast(res.error || '压缩失败', 'error');
+      }
+    }).catch(function (err) {
+      showToast(err.message || '压缩失败', 'error');
+    });
+  }
+
+  // 自动压缩检查（消息过多时提示）
+  function checkAutoCompress() {
+    if (!els.acAutoCompress || !els.acAutoCompress.checked) return;
+    if (!state.currentConv || !state.messages) return;
+    var threshold = els.acCompressKeep ? (parseInt(els.acCompressKeep.value, 10) || 10) * 3 : 30;
+    if (state.messages.length > threshold) {
+      showToast('对话较长（' + state.messages.length + ' 条），建议点击 📦 压缩历史消息', 'info', 5000);
+    }
+  }
+
+  // ============ 场景图片生成 ============
+
+  function generateSceneImage() {
+    if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+    if (state.streaming) { showToast('请等待当前消息生成完成', 'error'); return; }
+
+    showToast('正在根据对话场景生成图片…', 'info');
+
+    // 添加一个占位消息
+    var placeholder = {
+      id: 'img_' + Date.now(),
+      role: 'system',
+      content: '🎨 正在生成场景图片…',
+      status: 'generating',
+      isImage: true
+    };
+    state.messages.push(placeholder);
+    appendMessageEl(placeholder, true);
+    scrollToBottom(true);
+
+    api('/ai-chat/api/image/generate', {
+      conversation_id: state.currentConv.id
+    }, 120000).then(function (res) {
+      // 移除占位消息
+      var idx = state.messages.indexOf(placeholder);
+      if (idx >= 0) state.messages.splice(idx, 1);
+
+      if (res.success && res.data) {
+        // 添加生成的图片消息
+        var imgMsg = {
+          id: 'img_' + Date.now(),
+          role: 'system',
+          content: '🎨 ' + (res.data.prompt || '场景图片') + '\n\n![生成的图片](' + res.data.url + ')',
+          status: 'done',
+          isImage: true,
+          imageUrl: res.data.url,
+          imagePrompt: res.data.prompt
+        };
+        state.messages.push(imgMsg);
+        appendMessageEl(imgMsg, true);
+        showToast('场景图片已生成', 'success');
+      } else {
+        showToast(res.error || '图片生成失败', 'error');
+      }
+      scrollToBottom(true);
+    }).catch(function (err) {
+      // 移除占位消息
+      var idx = state.messages.indexOf(placeholder);
+      if (idx >= 0) state.messages.splice(idx, 1);
+      renderMessages();
+      showToast(err.message || '图片生成失败', 'error');
+    });
+  }
+
   // ============ 分支 ============
 
   function openBranchModal() {
@@ -2465,6 +2574,32 @@
 
   els.acMemorySave.addEventListener('click', saveMemorySettings);
   els.acMemoryRefresh.addEventListener('click', refreshMemory);
+
+  // 对话压缩
+  if (els.acCompressKeep) {
+    els.acCompressKeep.addEventListener('input', function () {
+      if (els.acCompressKeepVal) els.acCompressKeepVal.textContent = this.value;
+      try { localStorage.setItem('ac_compress_keep', this.value); } catch (e) {}
+    });
+    // 恢复设置
+    try {
+      var savedKeep = localStorage.getItem('ac_compress_keep');
+      if (savedKeep) {
+        els.acCompressKeep.value = savedKeep;
+        if (els.acCompressKeepVal) els.acCompressKeepVal.textContent = savedKeep;
+      }
+      var autoCompress = localStorage.getItem('ac_auto_compress') === '1';
+      if (els.acAutoCompress) els.acAutoCompress.checked = autoCompress;
+    } catch (e) {}
+  }
+  if (els.acAutoCompress) {
+    els.acAutoCompress.addEventListener('change', function () {
+      try { localStorage.setItem('ac_auto_compress', this.checked ? '1' : '0'); } catch (e) {}
+    });
+  }
+  if (els.acCompressNow) {
+    els.acCompressNow.addEventListener('click', compressConversation);
+  }
 
   // 弹窗关闭（点击 × / 遮罩）
   document.querySelectorAll('[data-ac-close]').forEach(function (btn) {
@@ -3177,6 +3312,17 @@
       scrollToBottom(true);
       startStream('/ai-chat/api/messages/impersonate', { conversation_id: state.currentConv.id }, placeholder);
     });
+  }
+
+  // 压缩对话按钮（工具栏）
+  var acCompressBtn = document.getElementById('acCompressBtn');
+  if (acCompressBtn) {
+    acCompressBtn.addEventListener('click', compressConversation);
+  }
+
+  // 生成场景图片按钮（工具栏）
+  if (els.acImageGenBtn) {
+    els.acImageGenBtn.addEventListener('click', generateSceneImage);
   }
 
   // 初始化 TTS
