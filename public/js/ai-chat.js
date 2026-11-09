@@ -2349,7 +2349,7 @@
     if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
     if (state.streaming) { showToast('请等待当前消息生成完成', 'error'); return; }
 
-    showToast('正在根据对话场景生成图片…', 'info');
+    showToast('正在根据对话场景生成图片描述…', 'info');
 
     // 添加一个占位消息
     var placeholder = {
@@ -2366,28 +2366,16 @@
     api('/ai-chat/api/image/generate', {
       conversation_id: state.currentConv.id
     }, 120000).then(function (res) {
-      // 移除占位消息
-      var idx = state.messages.indexOf(placeholder);
-      if (idx >= 0) state.messages.splice(idx, 1);
-
-      if (res.success && res.data) {
-        // 添加生成的图片消息
-        var imgMsg = {
-          id: 'img_' + Date.now(),
-          role: 'system',
-          content: '🎨 ' + (res.data.prompt || '场景图片') + '\n\n![生成的图片](' + res.data.url + ')',
-          status: 'done',
-          isImage: true,
-          imageUrl: res.data.url,
-          imagePrompt: res.data.prompt
-        };
-        state.messages.push(imgMsg);
-        appendMessageEl(imgMsg, true);
-        showToast('场景图片已生成', 'success');
+      if (res.success && res.data && res.data.taskId) {
+        // 开始轮询任务状态
+        pollImageTask(res.data.taskId, placeholder, res.data.prompt);
       } else {
+        // 移除占位消息
+        var idx = state.messages.indexOf(placeholder);
+        if (idx >= 0) state.messages.splice(idx, 1);
+        renderMessages();
         showToast(res.error || '图片生成失败', 'error');
       }
-      scrollToBottom(true);
     }).catch(function (err) {
       // 移除占位消息
       var idx = state.messages.indexOf(placeholder);
@@ -2395,6 +2383,101 @@
       renderMessages();
       showToast(err.message || '图片生成失败', 'error');
     });
+  }
+
+  // 轮询图片生成任务状态
+  function pollImageTask(taskId, placeholder, prompt) {
+    var pollCount = 0;
+    var maxPolls = 60; // 最多轮询 60 次（约 2 分钟）
+    var pollInterval = 2000; // 每 2 秒轮询一次
+
+    function poll() {
+      pollCount++;
+      fetch('/ai-image/api/status?task=' + encodeURIComponent(taskId), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!res.success) {
+            if (pollCount >= maxPolls) {
+              updateImagePlaceholder(placeholder, null, '图片生成超时');
+              return;
+            }
+            setTimeout(poll, pollInterval);
+            return;
+          }
+
+          var task = res.data;
+          if (task.status === 'running' || task.status === 'pending') {
+            // 继续轮询
+            if (pollCount >= maxPolls) {
+              updateImagePlaceholder(placeholder, null, '图片生成超时');
+              return;
+            }
+            setTimeout(poll, pollInterval);
+          } else if (task.status === 'success') {
+            // 生成成功
+            var imageUrl = task.result && task.result.images && task.result.images[0];
+            updateImagePlaceholder(placeholder, imageUrl, prompt);
+            showToast('场景图片已生成', 'success');
+          } else if (task.status === 'failed' || task.status === 'cancelled') {
+            updateImagePlaceholder(placeholder, null, task.error || '图片生成失败');
+          }
+        })
+        .catch(function (err) {
+          if (pollCount < maxPolls) {
+            setTimeout(poll, pollInterval);
+          } else {
+            updateImagePlaceholder(placeholder, null, '轮询失败：' + err.message);
+          }
+        });
+    }
+
+    poll();
+  }
+
+  // 更新图片占位消息
+  function updateImagePlaceholder(placeholder, imageUrl, promptOrError) {
+    var idx = state.messages.indexOf(placeholder);
+    if (idx < 0) return;
+
+    if (imageUrl) {
+      placeholder.status = 'done';
+      placeholder.imageUrl = imageUrl;
+      placeholder.imagePrompt = promptOrError;
+      placeholder.content = '🎨 ' + (promptOrError || '场景图片');
+    } else {
+      placeholder.status = 'error';
+      placeholder.content = '❌ ' + (promptOrError || '图片生成失败');
+      placeholder.isImage = false;
+    }
+
+    // 重新渲染该消息
+    var el = document.querySelector('.ac-msg[data-id="' + placeholder.id + '"]');
+    if (el) {
+      var content = el.querySelector('.ac-msg-content');
+      if (content) {
+        content.innerHTML = '';
+        if (imageUrl) {
+          var img = document.createElement('img');
+          img.src = imageUrl;
+          img.alt = promptOrError || '生成的图片';
+          img.style.cssText = 'max-width:100%;border-radius:8px;cursor:pointer;';
+          img.onclick = function () { window.open(imageUrl, '_blank'); };
+          content.appendChild(img);
+          if (promptOrError) {
+            var caption = document.createElement('div');
+            caption.style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:6px;';
+            caption.textContent = '🎨 ' + promptOrError;
+            content.appendChild(caption);
+          }
+        } else {
+          content.textContent = placeholder.content;
+          content.classList.add('error');
+        }
+      }
+    }
+    scrollToBottom(true);
   }
 
   // ============ 分支 ============

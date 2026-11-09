@@ -1861,27 +1861,34 @@ ${contextSummary}
     return res.status(500).json({ error: '生成图片描述失败：' + (err.message || '') });
   }
 
-  // 使用 Pollinations 免费接口生成图片
+  // 使用 AI 生图系统生成图片（支持多服务商、异步任务）
   try {
-    const encodedPrompt = encodeURIComponent(imagePrompt);
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${Date.now()}`;
+    const { startImageTask } = require('../services/image-gen');
 
-    // 保存生成记录到 ai_image_records
-    db.run(`INSERT INTO ai_image_records
-      (user_id, prompt, provider, model, size, seed, style, reference_image, status, image_path)
-      VALUES (?, ?, 'pollinations', '', '1024x1024', ?, '', '', 'success', ?)`,
-      [user.id, imagePrompt, Date.now() % 2147483647, imageUrl]);
-    saveDatabase();
+    // 选择默认服务商（优先 pollinations 免 Key，否则用第一个启用的）
+    const imgProviders = queryAll(db, 'SELECT provider_key FROM ai_image_providers WHERE enabled = 1 ORDER BY sort_order ASC LIMIT 1');
+    const providerKey = imgProviders.length ? imgProviders[0].provider_key : 'pollinations';
+
+    const taskId = startImageTask(db, {
+      userId: user.id,
+      providerKey,
+      prompt: imagePrompt,
+      negativePrompt: '',
+      size: '1024x1024',
+      n: 1,
+      seed: 0,
+      style: ''
+    });
 
     res.json({
       success: true,
       data: {
-        prompt: imagePrompt,
-        url: imageUrl
+        taskId,
+        prompt: imagePrompt
       }
     });
   } catch (err) {
-    res.status(500).json({ error: '图片生成失败：' + (err.message || '网络错误') });
+    res.status(500).json({ error: '图片生成任务启动失败：' + (err.message || '') });
   }
 });
 
