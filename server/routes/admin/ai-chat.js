@@ -28,7 +28,7 @@ const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { encrypt } = require('../../config/crypto-secure');
 const { getSettings, upsertSettings } = require('../../utils/settings');
-const { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings } = require('../../services/ai-chat/provider');
+const { resolveModel, resolveEmbeddings, callChatCompletion, callEmbeddings, fetchModelList } = require('../../services/ai-chat/provider');
 const { embedDocument, invalidateRagCache } = require('../../services/ai-chat/rag');
 const { normalizeError } = require('../../services/ai-chat/utils');
 const { parseWorldBook } = require('../../utils/world-book-parse');
@@ -145,6 +145,18 @@ router.post('/ai-chat/models/test', isAuthenticated, hasPermission('aichat.manag
       temperature: 0.3
     }, [{ role: 'user', content: '你好，请只回复"连接成功"四个字' }], { stream: false });
     res.json({ success: true, data: { reply: String(content || '').slice(0, 200) } });
+  } catch (err) {
+    res.status(400).json({ error: normalizeError(err) });
+  }
+});
+
+// 获取模型列表（按端点 + Key 调 OpenAI 兼容 /models）
+router.post('/ai-chat/api/models/fetch', isAuthenticated, hasPermission('aichat.manage'), async (req, res) => {
+  const endpoint = String(req.body.api_endpoint || '').trim();
+  const apiKey = String(req.body.api_key || '').trim();
+  try {
+    const list = await fetchModelList(endpoint, apiKey);
+    res.json({ success: true, data: list });
   } catch (err) {
     res.status(400).json({ error: normalizeError(err) });
   }
