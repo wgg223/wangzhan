@@ -52,7 +52,8 @@ function createTables(db) {
     'ALTER TABLE users ADD COLUMN delete_token_expires DATETIME',
     'ALTER TABLE users ADD COLUMN deactivated_at DATETIME',
     "ALTER TABLE users ADD COLUMN uid TEXT DEFAULT ''",
-    'ALTER TABLE users ADD COLUMN superior_id INTEGER'
+    'ALTER TABLE users ADD COLUMN superior_id INTEGER',
+    'ALTER TABLE users ADD COLUMN ai_chat_help_seen INTEGER DEFAULT 0'
   ];
   userMigrations.forEach(sql => {
     try { db.run(sql); } catch (e) {
@@ -695,6 +696,25 @@ function createTables(db) {
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   ['secondary_keys TEXT DEFAULT \'\'', 'selective INTEGER DEFAULT 0', 'probability INTEGER DEFAULT 100', 'depth INTEGER DEFAULT 4'].forEach(ddl => addAiCol('ai_default_world_book', ddl));
+
+  // AI 正则后处理脚本（SillyTavern Regex / RP-Hub 正则管线 式）：
+  // placement=prompt（发送前替换 messages）/ display（渲染前替换正文）/ both；
+  // min_depth/max_depth 按距最后一条消息的深度限定作用范围（NULL=不限）。
+  db.run(`CREATE TABLE IF NOT EXISTS ai_regex_scripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    find_regex TEXT NOT NULL DEFAULT '',
+    replace_string TEXT NOT NULL DEFAULT '',
+    flags TEXT NOT NULL DEFAULT 'g',
+    placement TEXT NOT NULL DEFAULT 'display',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    min_depth INTEGER,
+    max_depth INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 
   // AI 记忆（摘要记忆 + 向量记忆）
   db.run(`CREATE TABLE IF NOT EXISTS ai_memories (

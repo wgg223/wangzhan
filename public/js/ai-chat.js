@@ -31,7 +31,9 @@
     abortController: null,
     convSearch: '',
     presets: [],
-    promptTemplates: []
+    promptTemplates: [],
+    regexScripts: [],
+    helpSeen: false
   };
 
   var els = {};
@@ -75,6 +77,11 @@
     'acBranchModal',
     'acNewGroup', 'acGroupBar', 'acGroupMembers', 'acGroupEdit',
     'acGroupModal', 'acGroupModalTitle', 'acGroupName', 'acGroupMode', 'acGroupMemberList', 'acGroupSave',
+    'acRegexBtn', 'acRegexModal', 'acRegexModalTitle', 'acRegexListView', 'acRegexList', 'acRegexAdd', 'acRegexEditView',
+    'acRegexName', 'acRegexFind', 'acRegexReplace', 'acRegexFlags', 'acRegexPlacement', 'acRegexSort', 'acRegexEnabled',
+    'acRegexMinDepth', 'acRegexMaxDepth', 'acRegexTestSample', 'acRegexTestBtn', 'acRegexTestResult',
+    'acRegexDelete', 'acRegexBack', 'acRegexSave',
+    'acHelpBtn', 'acHelpModal', 'acHelpSearch', 'acHelpCats', 'acHelpCount', 'acHelpList', 'acHelpOk',
     'acConvTokens']
     .forEach(function (id) { els[id] = document.getElementById(id); });
 
@@ -182,6 +189,8 @@
         applyExportVisibility();
         state.presets = d.presets || [];
         state.promptTemplates = d.promptTemplates || [];
+        state.regexScripts = d.regexScripts || [];
+        state.helpSeen = state.helpSeen || !!d.helpSeen;
         renderConversations();
         renderQuota();
         renderMyModels();
@@ -190,6 +199,11 @@
         renderPromptTemplateSelect();
         if (autoSelect && state.conversations.length) {
           selectConversation(state.conversations[0].id);
+        }
+        // 每个账户首次进入聊天页自动弹出使用指南（仅初始加载触发一次，已看过则不打扰）
+        if (autoSelect && !state.helpSeen && !helpAutoShown) {
+          helpAutoShown = true;
+          setTimeout(function () { openHelp(); }, 450);
         }
         return true;
       });
@@ -941,10 +955,45 @@
     try { return JSON.parse(v); } catch (e) { return null; }
   }
 
+  // ============ 正则后处理（display 侧，与后端 regex.js 等价） ============
+  var REGEX_ALLOWED_FLAGS = ['g', 'i', 'm', 's', 'u', 'y'];
+  var REGEX_MAX_INPUT = 100000;
+
+  function regexSanitizeFlags(flags) {
+    var set = {};
+    String(flags || 'g').split('').forEach(function (f) { set[f] = true; });
+    var out = '';
+    REGEX_ALLOWED_FLAGS.forEach(function (f) { if (set[f]) out += f; });
+    return out || 'g';
+  }
+
+  function regexApplyOne(text, script) {
+    var pattern = String(script.find_regex || '');
+    if (!pattern) return text;
+    var input = String(text == null ? '' : text);
+    if (input.length > REGEX_MAX_INPUT) return input;
+    var re;
+    try { re = new RegExp(pattern, regexSanitizeFlags(script.flags)); } catch (e) { return input; }
+    try { return input.replace(re, String(script.replace_string == null ? '' : script.replace_string)); } catch (e) { return input; }
+  }
+
+  // 对正文应用所有启用的 display/both 脚本（按 sort_order, id 顺序）
+  function applyDisplayRegex(text) {
+    var scripts = state.regexScripts || [];
+    var out = String(text == null ? '' : text);
+    scripts.forEach(function (s) {
+      if (!s.enabled) return;
+      var p = String(s.placement || 'display');
+      if (p !== 'display' && p !== 'both') return;
+      out = regexApplyOne(out, s);
+    });
+    return out;
+  }
+
   function renderMarkdown(el) {
     if (!window.marked || !window.DOMPurify) return;
     try {
-      var raw = marked.parse(el.textContent);
+      var raw = marked.parse(applyDisplayRegex(el.textContent));
       el.innerHTML = DOMPurify.sanitize(raw);
       el.classList.add('markdown');
       // 代码块添加复制按钮 + 语法高亮
@@ -1210,6 +1259,41 @@
       if (tgl) tgl.textContent = '展开';
     }
 
+    // 平滑节流渲染（RP-Hub api-utils.js:365 / SillyTavern sse-stream 式）：
+    // 累积增量，~60ms 批量刷新一次，避免快流逐字渲染抖动；结束时立即 flush。
+    var renderTimer = null;
+    var renderDirty = false;
+    function flushRender() {
+      renderDirty = false;
+      if (!currentMsg || !lastEl) return;
+      if (currentMsg.content) updateContent(currentMsg.content);
+      if (currentMsg.reasoning) updateReasoning(currentMsg.reasoning);
+    }
+    function scheduleRender() {
+      renderDirty = true;
+      if (renderTimer) return;
+      renderTimer = setTimeout(function () {
+        renderTimer = null;
+        if (renderDirty) flushRender();
+      }, 60);
+    }
+    function stopRenderTimer() {
+      if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+      renderDirty = false;
+    }
+    // 正文到达即折叠原生思考块（RP-Hub app.js:4813 语义），每个说话人只折叠一次
+    var reasoningAutoCollapsed = false;
+    function autoCollapseReasoning() {
+      if (reasoningAutoCollapsed || !lastEl) return;
+      var box = lastEl.querySelector('.ac-msg-reasoning');
+      if (box && box.classList.contains('streaming') && !box.classList.contains('collapsed')) {
+        reasoningAutoCollapsed = true;
+        box.classList.add('collapsed');
+        var tgl = box.querySelector('.ac-reasoning-toggle');
+        if (tgl) tgl.textContent = '展开';
+      }
+    }
+
     // 截断续写提示（防截断自动续写）
     function showContinue(pass) {
       if (!lastEl) return;
@@ -1228,6 +1312,7 @@
     // 说话人切换时把上一条占位气泡就地定稿
     function settleCurrent() {
       if (!currentMsg) return;
+      stopRenderTimer();
       if (currentMsg.content) {
         currentMsg.status = currentMsg.status === 'error' ? 'error' : 'done';
         if (lastEl && lastEl.parentNode) lastEl.remove();
@@ -1243,6 +1328,7 @@
     streamFetch(url, body, function (event, data) {
       if (event === 'speaker') {
         settleCurrent();
+        reasoningAutoCollapsed = false;
         if (typingEl) { typingEl.remove(); typingEl = null; }
         currentMsg = {
           id: 'g' + Date.now(), role: 'assistant', content: '', status: 'streaming',
@@ -1255,17 +1341,20 @@
         scrollToBottom(true);
       } else if (event === 'delta') {
         if (!currentMsg) return;
+        var hadContent = !!(currentMsg.content && currentMsg.content.length);
         currentMsg.content = (currentMsg.content || '') + (data.delta || '');
-        updateContent(currentMsg.content);
+        if (!hadContent && currentMsg.content) autoCollapseReasoning();
+        scheduleRender();
       } else if (event === 'reasoning') {
         if (!currentMsg) return;
         currentMsg.reasoning = (currentMsg.reasoning || '') + (data.delta || '');
-        updateReasoning(currentMsg.reasoning);
+        scheduleRender();
       } else if (event === 'continue') {
         if (!currentMsg) return;
         showContinue(data.pass || 1);
       } else if (event === 'message') {
         if (!currentMsg) return;
+        stopRenderTimer();
         currentMsg.id = data.id;
         currentMsg.content = data.content || currentMsg.content;
         currentMsg.tokens = data.tokens;
@@ -1280,16 +1369,20 @@
         renderQuota();
       } else if (event === 'error') {
         if (!currentMsg) return;
+        stopRenderTimer();
         currentMsg.status = 'error';
         currentMsg.content = data.message || '生成失败';
         if (data.messageId) currentMsg.id = data.messageId;
       } else if (event === 'done') {
         noReply = !!data.noReply;
+        stopRenderTimer();
+        flushRender();
         finishReasoning();
         if (currentMsg) currentMsg.status = currentMsg.status === 'error' ? 'error' : (data.aborted ? 'stopped' : 'done');
       }
     }, controller.signal)
       .catch(function (err) {
+        stopRenderTimer();
         if (!currentMsg) return;
         if (err && err.name === 'AbortError') {
           currentMsg.status = 'stopped';
@@ -1299,6 +1392,7 @@
         }
       })
       .then(function () {
+        stopRenderTimer();
         state.streaming = false;
         els.acSend.style.display = '';
         els.acStop.style.display = 'none';
@@ -2960,7 +3054,7 @@
 
   function closeAllModals() {
     ['acRoleModal', 'acRoleCreateModal', 'acRoleUrlModal', 'acWorldEditModal', 'acBranchModal',
-      'acShareModal', 'acPromptModal', 'acModelModal', 'acTemplateModal', 'acPresetSaveModal', 'acContextModal']
+      'acShareModal', 'acPromptModal', 'acModelModal', 'acTemplateModal', 'acPresetSaveModal', 'acContextModal', 'acRegexModal', 'acHelpModal']
       .forEach(hideModal);
   }
 
@@ -3885,6 +3979,319 @@
     });
   }
 
+  // ============ 正则后处理脚本管理 ============
+
+  var regexEditingId = null;
+
+  function regexPlacementLabel(p) {
+    return p === 'prompt' ? '发送' : (p === 'both' ? '两者' : '渲染');
+  }
+
+  function reloadRegexScripts() {
+    return fetch('/ai-chat/api/regex', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (json) { if (json.success) state.regexScripts = json.data || []; });
+  }
+
+  // display 侧脚本变更后，重渲染当前会话已有消息以立即生效（流式中不打断）
+  function refreshMessagesForRegex() {
+    if (state.streaming) return;
+    if (state.currentConv && state.messages.length) renderMessages();
+  }
+
+  function renderRegexList() {
+    if (!els.acRegexList) return;
+    els.acRegexList.innerHTML = '';
+    if (!state.regexScripts.length) {
+      els.acRegexList.innerHTML = '<p style="font-size:12px;color:var(--text-muted);">暂无脚本。可新建用于去除思考标签、统一格式、清理多余空白等。</p>';
+      return;
+    }
+    state.regexScripts.forEach(function (s) {
+      var item = document.createElement('div');
+      item.className = 'ac-regex-item' + (s.enabled ? '' : ' disabled');
+      var info = document.createElement('div');
+      info.className = 'ac-regex-item-info';
+      info.innerHTML = '<div class="ac-regex-item-title">' + escapeHtml(s.name || '(未命名)') +
+        ' <span class="ac-regex-badge">' + regexPlacementLabel(s.placement) + '</span>' +
+        (s.enabled ? '' : ' <span class="ac-regex-off">停用</span>') + '</div>' +
+        '<div class="ac-regex-item-pattern"><code>' + escapeHtml(s.find_regex || '') + '</code> → ' +
+        escapeHtml(s.replace_string ? s.replace_string : '(删除)') + '</div>';
+      info.addEventListener('click', function () { showRegexEdit(s); });
+      item.appendChild(info);
+
+      var toggle = document.createElement('button');
+      toggle.className = 'ac-btn ac-btn-sm';
+      toggle.textContent = s.enabled ? '停用' : '启用';
+      toggle.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var payload = Object.assign({}, s, { enabled: s.enabled ? 0 : 1 });
+        api('/ai-chat/api/regex', payload).then(function () {
+          return reloadRegexScripts();
+        }).then(function () {
+          renderRegexList();
+          refreshMessagesForRegex();
+          showToast(s.enabled ? '已停用' : '已启用', 'success');
+        }).catch(function (err) { showToast(err.message, 'error'); });
+      });
+      item.appendChild(toggle);
+
+      var del = document.createElement('button');
+      del.className = 'ac-btn ac-btn-danger ac-btn-sm';
+      del.textContent = '删除';
+      del.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (!window.confirm('删除脚本「' + (s.name || '') + '」？')) return;
+        api('/ai-chat/api/regex/delete', { id: s.id }).then(function () {
+          return reloadRegexScripts();
+        }).then(function () {
+          renderRegexList();
+          refreshMessagesForRegex();
+          showToast('已删除', 'success');
+        }).catch(function (err) { showToast(err.message, 'error'); });
+      });
+      item.appendChild(del);
+      els.acRegexList.appendChild(item);
+    });
+  }
+
+  function showRegexList() {
+    regexEditingId = null;
+    if (els.acRegexListView) els.acRegexListView.hidden = false;
+    if (els.acRegexEditView) els.acRegexEditView.hidden = true;
+    if (els.acRegexBack) els.acRegexBack.hidden = true;
+    if (els.acRegexSave) els.acRegexSave.hidden = true;
+    if (els.acRegexDelete) els.acRegexDelete.hidden = true;
+    if (els.acRegexModalTitle) els.acRegexModalTitle.textContent = '正则后处理脚本';
+    renderRegexList();
+  }
+
+  function showRegexEdit(script) {
+    var s = script || {};
+    regexEditingId = s.id || null;
+    if (els.acRegexListView) els.acRegexListView.hidden = true;
+    if (els.acRegexEditView) els.acRegexEditView.hidden = false;
+    if (els.acRegexBack) els.acRegexBack.hidden = false;
+    if (els.acRegexSave) els.acRegexSave.hidden = false;
+    if (els.acRegexDelete) els.acRegexDelete.hidden = !regexEditingId;
+    if (els.acRegexModalTitle) els.acRegexModalTitle.textContent = regexEditingId ? '编辑正则脚本' : '新建正则脚本';
+    if (els.acRegexName) els.acRegexName.value = s.name || '';
+    if (els.acRegexFind) els.acRegexFind.value = s.find_regex || '';
+    if (els.acRegexReplace) els.acRegexReplace.value = s.replace_string || '';
+    if (els.acRegexFlags) els.acRegexFlags.value = s.flags != null ? s.flags : 'g';
+    if (els.acRegexPlacement) els.acRegexPlacement.value = s.placement || 'display';
+    if (els.acRegexSort) els.acRegexSort.value = s.sort_order != null ? s.sort_order : 0;
+    if (els.acRegexEnabled) els.acRegexEnabled.checked = s.enabled == null ? true : !!s.enabled;
+    if (els.acRegexMinDepth) els.acRegexMinDepth.value = s.min_depth == null ? '' : s.min_depth;
+    if (els.acRegexMaxDepth) els.acRegexMaxDepth.value = s.max_depth == null ? '' : s.max_depth;
+    if (els.acRegexTestSample) els.acRegexTestSample.value = '';
+    if (els.acRegexTestResult) { els.acRegexTestResult.hidden = true; els.acRegexTestResult.textContent = ''; }
+  }
+
+  function collectRegexForm() {
+    return {
+      id: regexEditingId || 0,
+      name: (els.acRegexName.value || '').trim(),
+      find_regex: els.acRegexFind.value || '',
+      replace_string: els.acRegexReplace.value || '',
+      flags: (els.acRegexFlags.value || 'g').trim(),
+      placement: els.acRegexPlacement.value || 'display',
+      sort_order: parseInt(els.acRegexSort.value, 10) || 0,
+      enabled: els.acRegexEnabled.checked ? 1 : 0,
+      min_depth: els.acRegexMinDepth.value === '' ? null : parseInt(els.acRegexMinDepth.value, 10),
+      max_depth: els.acRegexMaxDepth.value === '' ? null : parseInt(els.acRegexMaxDepth.value, 10)
+    };
+  }
+
+  if (els.acRegexBtn) {
+    els.acRegexBtn.addEventListener('click', function () {
+      showRegexList();
+      showModal('acRegexModal');
+    });
+  }
+  if (els.acRegexAdd) {
+    els.acRegexAdd.addEventListener('click', function () { showRegexEdit(null); });
+  }
+  if (els.acRegexBack) {
+    els.acRegexBack.addEventListener('click', function () { showRegexList(); });
+  }
+  if (els.acRegexSave) {
+    els.acRegexSave.addEventListener('click', function () {
+      var payload = collectRegexForm();
+      if (!payload.name) { showToast('请填写名称', 'error'); return; }
+      if (!payload.find_regex) { showToast('请填写查找正则', 'error'); return; }
+      api('/ai-chat/api/regex', payload).then(function () {
+        showToast('脚本已保存', 'success');
+        return reloadRegexScripts();
+      }).then(function () {
+        showRegexList();
+        refreshMessagesForRegex();
+      }).catch(function (err) { showToast(err.message, 'error'); });
+    });
+  }
+  if (els.acRegexDelete) {
+    els.acRegexDelete.addEventListener('click', function () {
+      if (!regexEditingId) return;
+      var name = (els.acRegexName.value || '').trim();
+      if (!window.confirm('删除脚本「' + name + '」？')) return;
+      api('/ai-chat/api/regex/delete', { id: regexEditingId }).then(function () {
+        showToast('已删除', 'success');
+        return reloadRegexScripts();
+      }).then(function () {
+        showRegexList();
+        refreshMessagesForRegex();
+      }).catch(function (err) { showToast(err.message, 'error'); });
+    });
+  }
+  if (els.acRegexTestBtn) {
+    els.acRegexTestBtn.addEventListener('click', function () {
+      var find = els.acRegexFind.value || '';
+      if (!find) { showToast('请填写查找正则', 'error'); return; }
+      var payload = {
+        find_regex: find,
+        replace_string: els.acRegexReplace.value || '',
+        flags: (els.acRegexFlags.value || 'g').trim(),
+        sample: els.acRegexTestSample.value || ''
+      };
+      els.acRegexTestResult.hidden = false;
+      els.acRegexTestResult.textContent = '测试中…';
+      api('/ai-chat/api/regex/test', payload).then(function (json) {
+        if (!json.success) throw new Error(json.error || '测试失败');
+        var d = json.data || {};
+        els.acRegexTestResult.textContent = (d.changed ? '✓ 已命中并替换：\n\n' : '○ 未命中（无变化）：\n\n') + (d.output || '(空)');
+        els.acRegexTestResult.classList.toggle('changed', !!d.changed);
+      }).catch(function (err) {
+        els.acRegexTestResult.textContent = '✗ ' + err.message;
+        els.acRegexTestResult.classList.remove('changed');
+      });
+    });
+  }
+
+  // ============ AI 聊天使用指南（Q&A） ============
+
+  var HELP_QA = [
+    { cat: '入门', q: '如何开始第一次对话？', a: '点击左侧「＋ 新对话」，选择一个角色（🎭）与模型（⚙️），在底部输入框发送消息即可。\n也可以直接点空对话页推荐的角色芯片快速开始。' },
+    { cat: '入门', q: '角色（🎭）是什么？', a: '角色是预设的人设、开场白、性格与场景，决定 AI 的身份和说话风格。\n可选官方角色，也可创建自己的角色。' },
+    { cat: '入门', q: '模型（⚙️）怎么选？', a: '点顶部「⚙️ 模型」切换。可用管理员配置的全局模型；\n也可在设置面板「我的 API」填写自己的服务商 Key（自有 API 不占站内配额）。' },
+    { cat: '入门', q: '这个指南怎么再次打开？', a: '点顶部「❓ 指南」随时查看。\n每个账户首次进入聊天页会自动弹出一次，之后不再自动打扰。' },
+    { cat: '模型与配额', q: '什么是自有 API？为什么不占配额？', a: '在设置面板「我的 API」添加你自己的服务商端点与 Key 后，用该模型对话走你自己的额度，不消耗站内配额。' },
+    { cat: '模型与配额', q: '配额用完了怎么办？', a: '顶部配额徽章显示剩余。可等待重置、改用自有 API，或联系管理员。\n未配置时可用免费的 Pollinations 模型兜底。' },
+    { cat: '模型与配额', q: '支持哪些服务商？', a: '任意 OpenAI 兼容端点（OpenAI、DeepSeek、硅基流动等）以及内置提供商。\n在「我的 API」选择提供商会自动带出端点与 Key 获取链接，也可一键拉取模型列表。' },
+    { cat: '对话操作', q: '如何停止 / 继续生成？', a: '生成中点「停止」会保留已生成的半截内容；\n对最后一条 AI 消息点「继续」可接着往下写。' },
+    { cat: '对话操作', q: '「模仿用户」是什么？', a: '让 AI 以你的身份生成一条用户消息，常用于快速推进剧情或补全输入。' },
+    { cat: '对话操作', q: '如何重新生成 / 切换回复？', a: 'AI 消息上可「重新生成」；多次生成会形成可切换的候选回复（swipe），用消息上的分支操作左右查看。' },
+    { cat: '对话操作', q: '剧情分支怎么用？', a: '在 AI 消息上点「分叉」从该处创建新分支，各分支互不影响；\n可在面板或分支弹窗中查看与切换。' },
+    { cat: '对话操作', q: '能编辑 / 删除消息吗？', a: '可以。用户消息可编辑后重新生成，消息也支持删除；\n编辑作用于当前所在分支。' },
+    { cat: '角色与世界书', q: '如何创建自己的角色？', a: '「🎭 角色」→「＋ 创建角色」，填写名称、设定、开场白、性格、场景、示例，可上传头像。\n支持导入角色卡（JSON/PNG）与 URL 抓取。' },
+    { cat: '角色与世界书', q: '世界书是什么？', a: '世界书是按需注入的背景设定条目。设置触发词后，当对话命中关键词时自动把条目内容插入上下文，节省 token。' },
+    { cat: '角色与世界书', q: '世界书有哪些触发方式？', a: '常驻（constant）、主触发词、选择性（需二级触发词同时命中）、概率触发；\n位置可选系统前 / 角色前后 / 用户消息前 / AI 前 / 按深度插入。' },
+    { cat: '记忆与上下文', q: 'AI 会记住之前的剧情吗？', a: '开启记忆后，系统会逐轮总结（摘要记忆）；增强模式还会做向量召回，让长对话也能回忆早期内容。' },
+    { cat: '记忆与上下文', q: '自动压缩是什么？', a: '对话过长时按设定保留最近 N 条、把更早内容压缩成摘要，避免超出模型上下文。\n可在设置面板调「自动压缩」与保留条数，也可手动「立即压缩」。' },
+    { cat: '记忆与上下文', q: '如何查看实际发给模型的内容？', a: '设置面板「上下文」→「🔍 预览上下文」，逐条显示来源（系统提示 / 世界书 / 记忆 / 角色卡 / 历史…）与 token 估算，所见即所送。' },
+    { cat: '记忆与上下文', q: '作者注释（Author\'s Note）有什么用？', a: '在指定深度插入一段临时指令（如文风、节奏要求），不改变角色卡，适合临时调控。' },
+    { cat: '高级功能', q: '正则后处理脚本能做什么？', a: '设置面板「🧩 管理正则脚本」。发送侧（prompt）在发给模型前替换上下文；渲染侧（display）在显示前美化正文（如去除思考标签、统一格式）。\n支持标志、深度范围与实时测试。' },
+    { cat: '高级功能', q: '提示词模板与预设有什么区别？', a: '模板（管理模板）定义角色卡的组装方式，支持 {{char}} / {{user}} 等占位符；\n预设保存一套生成参数（温度、top_p 等）便于快速切换。' },
+    { cat: '高级功能', q: '生成参数怎么调？', a: '设置面板可设温度、top_p、top_k、频率 / 存在惩罚、最大 tokens，并可保存为预设。' },
+    { cat: '高级功能', q: '群聊怎么玩？', a: '新建群聊添加 2–16 个角色，选「轮流发言」（每轮所有成员依次回复）或「手动指定」（点成员头像触发回复）。' },
+    { cat: '高级功能', q: '推理过程（思考链）是什么？', a: '推理模型（如 DeepSeek-R1）会先输出思考过程，显示在可折叠的推理盒里，正文到达后自动折叠。' },
+    { cat: '高级功能', q: '预测回复（建议芯片）是什么？', a: '开启后，AI 会预测你接下来可能说的几条话，点芯片即可快速发送。' },
+    { cat: '高级功能', q: '朗读（TTS）怎么开？', a: '设置面板可开启语音朗读，并选择音色、语速、音调。' },
+    { cat: '高级功能', q: '如何导入 / 导出与分享？', a: '设置面板「操作」可导出 / 导入会话与角色；顶部「🔗 分享」生成免登录查看链接（可停用）。\n导出权限由管理员控制。' },
+    { cat: '界面与帮助', q: '夜间模式 / 全屏怎么用？', a: '顶部「🌙 夜间」切换深浅色，「⛶ 全屏」进入沉浸聊天，偏好会被记住。' }
+  ];
+
+  var helpActiveCat = '';
+  var helpSearchTerm = '';
+  var helpAutoShown = false;
+
+  function helpCategories() {
+    var seen = {};
+    var cats = [];
+    HELP_QA.forEach(function (item) {
+      if (!seen[item.cat]) { seen[item.cat] = true; cats.push(item.cat); }
+    });
+    return cats;
+  }
+
+  function renderHelpCats() {
+    if (!els.acHelpCats) return;
+    els.acHelpCats.innerHTML = '';
+    var cats = [''].concat(helpCategories());
+    cats.forEach(function (cat) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ac-help-cat' + (helpActiveCat === cat ? ' active' : '');
+      btn.textContent = cat || '全部';
+      btn.addEventListener('click', function () {
+        helpActiveCat = cat;
+        renderHelpCats();
+        renderHelpList();
+      });
+      els.acHelpCats.appendChild(btn);
+    });
+  }
+
+  function renderHelpList() {
+    if (!els.acHelpList) return;
+    var term = helpSearchTerm.toLowerCase();
+    var items = HELP_QA.filter(function (item) {
+      if (helpActiveCat && item.cat !== helpActiveCat) return false;
+      if (term && (item.q + ' ' + item.a + ' ' + item.cat).toLowerCase().indexOf(term) === -1) return false;
+      return true;
+    });
+    if (els.acHelpCount) {
+      els.acHelpCount.textContent = term || helpActiveCat ? ('匹配 ' + items.length + ' 条') : ('共 ' + items.length + ' 条常见问题');
+    }
+    els.acHelpList.innerHTML = '';
+    if (!items.length) {
+      els.acHelpList.innerHTML = '<div class="ac-help-empty">没有匹配的问题，换个关键词试试。</div>';
+      return;
+    }
+    items.forEach(function (item) {
+      var wrap = document.createElement('div');
+      wrap.className = 'ac-help-item';
+      var q = document.createElement('button');
+      q.type = 'button';
+      q.className = 'ac-help-q';
+      q.innerHTML = '<span class="ac-help-q-cat">' + escapeHtml(item.cat) + '</span>' +
+        '<span class="ac-help-q-text">' + escapeHtml(item.q) + '</span>' +
+        '<span class="ac-help-q-arrow">▶</span>';
+      var a = document.createElement('div');
+      a.className = 'ac-help-a';
+      a.textContent = item.a;
+      q.addEventListener('click', function () { wrap.classList.toggle('open'); });
+      wrap.appendChild(q);
+      wrap.appendChild(a);
+      els.acHelpList.appendChild(wrap);
+    });
+  }
+
+  // 标记账户已看过指南（幂等；乐观更新避免重复请求，失败则回退以便下次仍可弹出）
+  function markHelpSeen() {
+    if (state.helpSeen) return;
+    state.helpSeen = true;
+    api('/ai-chat/api/help-seen', {}).catch(function () { state.helpSeen = false; });
+  }
+
+  function openHelp() {
+    renderHelpCats();
+    renderHelpList();
+    showModal('acHelpModal');
+    markHelpSeen();
+  }
+
+  if (els.acHelpBtn) {
+    els.acHelpBtn.addEventListener('click', function () { openHelp(); });
+  }
+  if (els.acHelpOk) {
+    els.acHelpOk.addEventListener('click', function () { hideModal('acHelpModal'); });
+  }
+  if (els.acHelpSearch) {
+    els.acHelpSearch.addEventListener('input', function () {
+      helpSearchTerm = (els.acHelpSearch.value || '').trim();
+      renderHelpList();
+    });
+  }
+
   // ============ 上下文预览 ============
 
   if (els.acContextPreview) {
@@ -3903,7 +4310,9 @@
           (d.messages || []).forEach(function (m) {
             var div = document.createElement('div');
             div.className = 'ac-context-msg ' + (m.role || 'system');
-            div.innerHTML = '<div class="ac-context-msg-role">' + escapeHtml(m.role || 'system') + '</div>' +
+            var srcTag = m.source ? '<span class="ac-context-src">' + escapeHtml(m.source) + '</span>' : '';
+            var tokTag = m.tokens != null ? '<span class="ac-context-tok">' + m.tokens + ' tok</span>' : '';
+            div.innerHTML = '<div class="ac-context-msg-role">' + escapeHtml(m.role || 'system') + srcTag + tokTag + '</div>' +
               '<div class="ac-context-msg-content">' + escapeHtml(m.content || '') + '</div>';
             els.acContextMessages.appendChild(div);
           });

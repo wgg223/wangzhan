@@ -130,7 +130,7 @@ function resolveEmbeddings(db) {
  * @returns {Promise<{content: string, reasoning?: string, finishReason: string, usage?: {prompt_tokens: number, completion_tokens: number, total_tokens: number}}>}
  */
 async function callChatCompletion(modelInfo, messages, opts = {}) {
-  const { stream = false, signal, onDelta, onReasoning, timeout = 90000, genParams } = opts;
+  const { stream = false, signal, onDelta, onReasoning, timeout = 90000, genParams, idleTimeout } = opts;
   const isPollinations = modelInfo.provider === 'pollinations';
   // Pollinations 免费接口直接 POST 端点本身；其余 OpenAI 兼容端点拼 /chat/completions
   const url = isPollinations
@@ -160,7 +160,7 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
   if (stream) body.stream = true;
 
   if (stream) {
-    return streamCompletion(url, headers, body, signal, onDelta, onReasoning);
+    return streamCompletion(url, headers, body, signal, onDelta, onReasoning, idleTimeout);
   }
 
   const resp = await axios.post(url, body, { headers, timeout, signal });
@@ -189,7 +189,7 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
 }
 
 // 流式解析：逐行解析 SSE `data: {...}`，跨 chunk 缓冲；支持 reasoning_content 增量与真实 finish_reason
-function streamCompletion(url, headers, body, signal, onDelta, onReasoning) {
+function streamCompletion(url, headers, body, signal, onDelta, onReasoning, idleTimeout) {
   return new Promise((resolve, reject) => {
     let buffer = '';
     let content = '';
@@ -198,10 +198,43 @@ function streamCompletion(url, headers, body, signal, onDelta, onReasoning) {
     let settled = false;
     let usage = null; // 存储 usage 信息
 
-    axios.post(url, body, { headers, responseType: 'stream', timeout: 0, signal })
+    // 空闲超时（RP-Hub api-utils.js:80 式）：每收到一块数据重置计时，持续输出的长回复
+    // 不会被总时长打断；仅当上游超过 IDLE_MS 没有任何数据（挂死）才中止请求。
+    const IDLE_MS = Math.max(5000, parseInt(idleTimeout, 10) || 120000);
+    const idleCtrl = new AbortController();
+    let timedOut = false;
+    let idleTimer = null;
+    const clearIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+    const touch = () => {
+      clearIdle();
+      idleTimer = setTimeout(() => { timedOut = true; idleCtrl.abort(); }, IDLE_MS);
+    };
+    const onExternalAbort = () => idleCtrl.abort();
+    if (signal) {
+      if (signal.aborted) idleCtrl.abort();
+      else signal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+    const finish = (err, result) => {
+      if (settled) return;
+      settled = true;
+      clearIdle();
+      if (signal) signal.removeEventListener('abort', onExternalAbort);
+      if (err) reject(err); else resolve(result);
+    };
+    const timeoutError = () => {
+      const e = new Error('模型响应超时（' + Math.round(IDLE_MS / 1000) + 's 无数据），请稍后重试');
+      e.name = 'TimeoutError';
+      e.code = 'ETIMEDOUT';
+      return e;
+    };
+
+    touch(); // 从发起请求开始计时（含连接与首字节等待）
+    axios.post(url, body, { headers, responseType: 'stream', timeout: 0, signal: idleCtrl.signal })
       .then(resp => {
+        touch();
         resp.data.on('data', chunk => {
           if (settled) return;
+          touch();
           buffer += chunk.toString('utf8');
           let idx;
           while ((idx = buffer.indexOf('\n')) !== -1) {
@@ -210,11 +243,10 @@ function streamCompletion(url, headers, body, signal, onDelta, onReasoning) {
             if (!line.startsWith('data:')) continue;
             const payload = line.slice(5).trim();
             if (payload === '[DONE]') {
-              settled = true;
               const result = { content, finishReason: finishReason || 'stop' };
               if (reasoning) result.reasoning = reasoning;
               if (usage) result.usage = usage;
-              resolve(result);
+              finish(null, result);
               return;
             }
             let parsed;
@@ -226,8 +258,7 @@ function streamCompletion(url, headers, body, signal, onDelta, onReasoning) {
             if (parsed.error) {
               const err = new Error(parsed.error.message || '流式响应错误');
               err.response = { status: parsed.error.code || 500, data: parsed.error };
-              settled = true;
-              reject(err);
+              finish(err);
               return;
             }
             // 提取 usage 信息（通常在最后一个 chunk 中）
@@ -257,30 +288,27 @@ function streamCompletion(url, headers, body, signal, onDelta, onReasoning) {
         });
         resp.data.on('end', () => {
           if (!settled) {
-            settled = true;
             if (content || reasoning) {
               const result = { content, finishReason: finishReason || 'stop' };
               if (reasoning) result.reasoning = reasoning;
               if (usage) result.usage = usage;
-              resolve(result);
+              finish(null, result);
             } else {
-              reject(new Error('流式响应意外结束'));
+              finish(new Error('流式响应意外结束'));
             }
           }
         });
         resp.data.on('error', err => {
-          if (settled) return;
-          settled = true;
-          reject(err);
+          finish(timedOut ? timeoutError() : err);
         });
       })
       .catch(err => {
         if (settled) return;
-        settled = true;
+        if (timedOut) return finish(timeoutError());
         const wrapped = new Error(normalizeError(err));
         wrapped.code = err.code;
         wrapped.response = err.response;
-        reject(wrapped);
+        finish(wrapped);
       });
   });
 }

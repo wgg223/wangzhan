@@ -1032,6 +1032,9 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
   const quota = checkQuota(db, user);
   const presets = queryAll(db, 'SELECT * FROM ai_presets WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC, is_default DESC, id ASC', [user.id]);
   const promptTemplates = queryAll(db, 'SELECT id, name, content, description, is_global FROM ai_prompt_templates WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC, sort_order ASC, id ASC', [user.id]);
+  const regexScripts = queryAll(db, 'SELECT id, name, find_regex, replace_string, flags, placement, enabled, sort_order, min_depth, max_depth FROM ai_regex_scripts WHERE user_id = ? ORDER BY sort_order ASC, id ASC', [user.id]);
+  const helpRow = queryOne(db, 'SELECT ai_chat_help_seen FROM users WHERE id = ?', [user.id]);
+  const helpSeen = !!(helpRow && helpRow.ai_chat_help_seen);
   res.json({
     success: true,
     data: {
@@ -1056,13 +1059,22 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
         mode: settings.ai_memory_mode || 'summary',
         interval: parseInt(settings.ai_memory_interval, 10) || 10
       },
-      conversations, roles, models, globalModels, providers, presets, promptTemplates,
+      conversations, roles, models, globalModels, providers, presets, promptTemplates, regexScripts,
       quota: quota.quota, quotaOk: quota.ok, quotaUnlimited: quota.unlimited,
       // 默认模型（会话未显式指定时）是否为用户自填模型——自有 API 不受站内配额限制
       defaultModelIsOwn: aiChatService.isOwnModel(db, user.id, ''),
+      helpSeen,
       canExport: user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'aichat.export')
     }
   });
+});
+
+// 标记当前账户已看过 AI 聊天使用指南（首次自动弹窗关闭后调用，幂等）
+router.post('/ai-chat/api/help-seen', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  db.run('UPDATE users SET ai_chat_help_seen = 1 WHERE id = ?', [req.session.user.id]);
+  saveDatabase();
+  res.json({ success: true });
 });
 
 // 新建会话
@@ -2109,6 +2121,74 @@ router.post('/ai-chat/api/prompt-templates/delete', isAuthenticated, hasFrontend
   res.json({ success: true });
 });
 
+// ============ 正则后处理脚本（SillyTavern Regex 式，用户级） ============
+const REGEX_PLACEMENTS = ['prompt', 'display', 'both'];
+
+// 列表
+router.get('/ai-chat/api/regex', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const rows = queryAll(db, 'SELECT id, name, find_regex, replace_string, flags, placement, enabled, sort_order, min_depth, max_depth FROM ai_regex_scripts WHERE user_id = ? ORDER BY sort_order ASC, id ASC', [req.session.user.id]);
+  res.json({ success: true, data: rows });
+});
+
+// 保存（新建/更新）
+router.post('/ai-chat/api/regex', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const b = req.body;
+  const { compile } = require('../services/ai-chat/regex');
+  const id = parseInt(b.id, 10) || 0;
+  const name = String(b.name || '').trim().slice(0, 100);
+  const findRegex = String(b.find_regex || '').slice(0, 2000);
+  const replaceString = String(b.replace_string == null ? '' : b.replace_string).slice(0, 8000);
+  const flags = String(b.flags || 'g').slice(0, 10);
+  const placement = REGEX_PLACEMENTS.indexOf(b.placement) !== -1 ? b.placement : 'display';
+  const enabled = b.enabled === false || b.enabled === 0 ? 0 : 1;
+  const sortOrder = parseInt(b.sort_order, 10) || 0;
+  const minDepth = b.min_depth === '' || b.min_depth == null ? null : Math.min(Math.max(parseInt(b.min_depth, 10) || 0, 0), 1000);
+  const maxDepth = b.max_depth === '' || b.max_depth == null ? null : Math.min(Math.max(parseInt(b.max_depth, 10) || 0, 0), 1000);
+  if (!name) return res.status(400).json({ error: '名称不能为空' });
+  if (!findRegex) return res.status(400).json({ error: '查找正则不能为空' });
+  if (!compile({ find_regex: findRegex, flags })) return res.status(400).json({ error: '正则表达式无效，请检查语法' });
+
+  if (id) {
+    const existing = queryOne(db, 'SELECT id FROM ai_regex_scripts WHERE id = ? AND user_id = ?', [id, req.session.user.id]);
+    if (!existing) return res.status(404).json({ error: '脚本不存在' });
+    db.run(`UPDATE ai_regex_scripts SET name=?, find_regex=?, replace_string=?, flags=?, placement=?, enabled=?, sort_order=?, min_depth=?, max_depth=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+      [name, findRegex, replaceString, flags, placement, enabled, sortOrder, minDepth, maxDepth, id]);
+  } else {
+    db.run(`INSERT INTO ai_regex_scripts (user_id, name, find_regex, replace_string, flags, placement, enabled, sort_order, min_depth, max_depth) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [req.session.user.id, name, findRegex, replaceString, flags, placement, enabled, sortOrder, minDepth, maxDepth]);
+  }
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 删除
+router.post('/ai-chat/api/regex/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT id FROM ai_regex_scripts WHERE id = ? AND user_id = ?', [parseInt(req.body.id, 10), req.session.user.id]);
+  if (!row) return res.status(404).json({ error: '脚本不存在' });
+  db.run('DELETE FROM ai_regex_scripts WHERE id = ?', [row.id]);
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// 测试：对样本文本应用单条脚本（无需先保存），返回结果与是否命中
+router.post('/ai-chat/api/regex/test', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const b = req.body;
+  const { applyOne, compile } = require('../services/ai-chat/regex');
+  const script = {
+    find_regex: String(b.find_regex || '').slice(0, 2000),
+    replace_string: String(b.replace_string == null ? '' : b.replace_string).slice(0, 8000),
+    flags: String(b.flags || 'g').slice(0, 10)
+  };
+  if (!script.find_regex) return res.status(400).json({ error: '查找正则不能为空' });
+  if (!compile(script)) return res.status(400).json({ error: '正则表达式无效，请检查语法' });
+  const sample = String(b.sample == null ? '' : b.sample).slice(0, 20000);
+  const output = applyOne(sample, script);
+  res.json({ success: true, data: { output, changed: output !== sample } });
+});
+
 // 继续生成（从最后一条 AI 消息续写）
 router.post('/ai-chat/api/messages/continue', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatSendLimiter, (req, res) => {
   const db = req.db;
@@ -2326,7 +2406,23 @@ router.get('/ai-chat/api/conversations/:id/context-preview', isAuthenticated, ha
   const { estimateTokens } = require('../services/ai-chat/utils');
   const messages = buildContext(db, conv, '（预览）', {});
   const totalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
-  res.json({ success: true, data: { messages, totalTokens } });
+  // 启发式来源标注（便于调试各注入块）：不改变 buildContext 产物，仅附加 source 标签
+  const labelSource = (m, idx) => {
+    const c = String(m.content || '');
+    if (idx === 0 && m.role === 'system') return '系统提示';
+    if (c.indexOf("[Author's Note:") !== -1) return '作者备注';
+    if (c.indexOf('（场景设定') === 0) return '世界书';
+    if (c.indexOf('[历史总结]') === 0) return '记忆总结';
+    if (/【角色性格】|【当前场景】|【示例对话/.test(c)) return '角色卡';
+    if (c.indexOf('【群聊设定】') !== -1) return '群聊框架';
+    if (/【记忆|记忆引用|\[M#/.test(c)) return '记忆';
+    if (/知识库|RAG|检索到的/.test(c)) return '知识库';
+    if (m.role === 'user') return idx === messages.length - 1 ? '用户消息' : '对话历史';
+    if (m.role === 'assistant') return '对话历史';
+    return '注入块';
+  };
+  const annotated = messages.map((m, idx) => ({ role: m.role, content: m.content, source: labelSource(m, idx), tokens: estimateTokens(m.content) }));
+  res.json({ success: true, data: { messages: annotated, totalTokens } });
 });
 
 module.exports = router;

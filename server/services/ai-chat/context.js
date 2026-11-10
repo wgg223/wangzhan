@@ -17,6 +17,7 @@ const { getSettings } = require('../../utils/settings');
 const { estimateTokens } = require('./utils');
 const { buildMemoryBlock, memorySettings, getRounds, getRoundSummaryMap, recallRounds, buildRecallBlock } = require('./memory');
 const { searchRag, buildRagBlock } = require('./rag');
+const { getRegexScripts, applyPromptRegex } = require('./regex');
 
 const HISTORY_TOKEN_WINDOW = 3000;
 // 世界书触发词扫描深度默认值：同时检查当前消息与最近 N 条消息，避免关键词出现在上一条就失配
@@ -433,7 +434,10 @@ function buildContext(db, conv, userMsg, opts = {}) {
   }
 
   // ---- 全局 token 预算裁剪 ----
-  return trimMessagesToBudget(messages, contextSize);
+  const trimmed = trimMessagesToBudget(messages, contextSize);
+  // ---- prompt 侧正则后处理（SillyTavern Regex 式）：所有生成路径的统一 chokepoint ----
+  // 在裁剪后应用，depth 以最终发送的消息数组为准；预览路由亦经此函数，故所见即所送。
+  return applyPromptRegex(trimmed, getRegexScripts(db, conv.user_id));
 }
 
 // 模板内容短缓存（60s TTL，判断占位符是否被模板消费；避免每条消息重复查库）

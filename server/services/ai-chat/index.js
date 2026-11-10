@@ -190,6 +190,7 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
   let finishReason = 'stop';
   let continuePasses = 0;
   try {
+    // prompt 侧正则后处理已统一在 buildContext（context.js）中应用，此处直接使用传入 messages
     const workMsgs = messages.slice();
     for (;;) {
       const result = await callChatCompletion(modelInfo, workMsgs, {
