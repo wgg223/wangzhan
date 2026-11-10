@@ -39,6 +39,14 @@ function getOrCreateSecret() {
 
 const sessionSecret = getOrCreateSecret();
 
+// 日志目录兜底：PM2 的 pre_start 钩子并不存在（会被静默忽略），
+// logs 目录不存在时 PM2 打不开 error_file/out_file，崩溃日志直接丢失。
+try {
+  fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
+} catch (err) {
+  console.error('[ecosystem] 创建 logs 目录失败:', err.message);
+}
+
 module.exports = {
   apps: [{
     name: 'website-admin',
@@ -61,21 +69,20 @@ module.exports = {
       SESSION_SECRET: 'dev-secret-not-for-production'
     },
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-    error_file: './logs/pm2-error.log',
-    out_file: './logs/pm2-out.log',
-    merge_logs: false,
+    error_file: path.join(__dirname, 'logs', 'pm2-error.log'),
+    out_file: path.join(__dirname, 'logs', 'pm2-out.log'),
+    merge_logs: true,
     watch: false,
     autorestart: true,
     max_restarts: 10,
     restart_delay: 5000,
     kill_timeout: 30000,
-    pre_start: 'node -e "require(\'fs\').mkdirSync(\'logs\',{recursive:true})"',
     // 健康检查配置
     min_uptime: '60s',
     wait_ready: true,
-    listen_timeout: 10000,
-    // 日志轮转（通过 PM2 插件）
-    combine_logs: true,
+    // 10s 太短：数据库初始化 + 播种超过 10 秒就会被 PM2 判为「未就绪」直接杀掉，
+    // 表现为 uptime 0 / mem 0b / exit_code 1 的无限重启
+    listen_timeout: 30000,
     time: true,
   }]
 };

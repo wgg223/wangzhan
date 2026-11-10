@@ -328,17 +328,52 @@ function doRestart(projectRoot, delayMs) {
     console.log('[system-update] 更新完成，正在重启服务器...');
 
     // 直接拉起新进程兜底（拉起后当前进程退出，由新进程接管端口）
+    // 不走 npm / npm.cmd：Windows 下 spawn('npm.cmd', ..., { shell: true }) 会以退出码 1 结束，
+    // 不带 shell 的裸 'npm.cmd' 更会同步抛 spawn EINVAL（Node 18+ 不再直接执行 .cmd），
+    // 结果是「更新完成 → 重启失败 → 进程崩溃」，文件已更新但服务跑的还是旧代码。
+    // 这里改为按 package.json 的 start 脚本参数，用当前 node 可执行文件直接拉起。
+    const resolveStartArgs = () => {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+        const startScript = String((pkg.scripts && pkg.scripts.start) || '').trim();
+        if (startScript) {
+          const parts = startScript.split(/\s+/).filter(Boolean);
+          // 去掉脚本前缀 node / node.exe，改为用 process.execPath 执行，参数原样保留
+          if (parts[0] === 'node' || parts[0] === 'node.exe') return parts.slice(1);
+        }
+      } catch (e) { /* ignore */ }
+      // 兜底：沿用当前进程的启动参数（含 --expose-gc / --max-old-space-size 等）
+      return process.argv.slice(1);
+    };
+
     const spawnAndExit = () => {
-      console.log('[system-update] 使用 npm run start 重启...');
-      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      const child = spawn(npmCmd, ['run', 'start'], {
-        cwd: projectRoot,
-        detached: true,
-        stdio: 'ignore',
-        shell: process.platform === 'win32'
+      const args = resolveStartArgs();
+      if (!args.length) {
+        console.error('[system-update] 无法解析启动参数，已跳过自动重启，请手动重启服务');
+        return;
+      }
+      console.log('[system-update] 使用 node 直接重启:', process.execPath, args.join(' '));
+      let child;
+      try {
+        child = spawn(process.execPath, args, {
+          cwd: projectRoot,
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+          env: process.env
+        });
+      } catch (e) {
+        console.error('[system-update] 拉起新进程失败:', e.message, '请手动重启服务');
+        return;
+      }
+      // 子进程若连启动都失败，保住当前进程继续服务，避免站点直接不可用
+      let exiting = false;
+      const exitTimer = setTimeout(() => { exiting = true; process.exit(0); }, 500);
+      child.on('error', (err) => {
+        if (!exiting) clearTimeout(exitTimer);
+        console.error('[system-update] 新进程启动失败:', err.message, '当前进程继续提供服务，请手动重启');
       });
       child.unref();
-      process.exit(0);
     };
 
     if (process.env.PM2_HOME || process.env.pm_id) {
@@ -350,8 +385,12 @@ function doRestart(projectRoot, delayMs) {
       ];
       const tryNext = (i) => {
         if (i >= attempts.length) {
-          console.error('[system-update] PM2 重启全部失败，回退到直接启动（PM2 autorestart 会自动拉起）');
-          spawnAndExit();
+          // 绝不在这里再 spawn 一个裸进程：那会留下一个脱离 PM2 的孤儿实例占住端口，
+          // PM2 每次重启都撞 EADDRINUSE → 无限重启循环（线上 restart_time 335 次即由此而来），
+          // 而孤儿进程跑的是旧内存代码，表现为「版本号更新了，功能没变化」。
+          // PM2 自身有 autorestart，这里只保留现场并明确报错，交由人工/守护脚本处理。
+          console.error('[system-update] PM2 重启全部失败；为避免产生脱离 PM2 的孤儿进程，不再做裸进程兜底');
+          failTask('自动重启失败：PM2 重启命令全部失败，请手动执行 pm2 restart website-admin（更新文件已写入完成）');
           return;
         }
         exec(attempts[i], (error, stdout, stderr) => {

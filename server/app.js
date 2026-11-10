@@ -513,37 +513,64 @@ async function start() {
     }
 
     // 5. 启动 HTTP 服务，监听所有网卡（0.0.0.0）
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`服务器运行在 http://0.0.0.0:${PORT}`);
-      console.log(`环境: ${process.env.NODE_ENV || 'development'}`);
-      // 通知 PM2 应用已就绪（配合 ecosystem.config.js 中的 wait_ready: true）
-      if (process.send) {
-        process.send('ready');
-      }
-    });
+    // 在线更新后重启时，新进程会与旧进程短暂重叠：旧进程尚未释放端口就 listen 会拿到 EADDRINUSE。
+    // 原实现直接 process.exit(1)，等于「更新完成 → 新进程起不来 → 站点彻底不可用」。
+    // 现改为等待端口释放后重试，只有在连续重试仍失败时才退出。
+    const MAX_LISTEN_RETRY = 10;   // 最多重试 10 次
+    const LISTEN_RETRY_DELAY = 1000; // 每次间隔 1 秒
+    let listenAttempt = 0;
 
-    // 端口冲突检测：EADDRINUSE 时明确报错并退出
-    server.on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
+    // 请求超时治理参数（每次重建 server 都要重新应用）
+    const applyServerTuning = (s) => {
+      //   - timeout = 0：关闭闲置销毁（长任务期间 socket 不再被 Node 掐断），
+      //     超时兜底交给 Nginx proxy_read_timeout（300s）与下方 requestTimeout；
+      //   - requestTimeout = 120s：单请求整体上限（Node 18+ 生效，旧版本自动忽略）；
+      //   - headersTimeout 60s < keepAliveTimeout 65s（Node 强制要求前者更小）。
+      s.timeout = 0;
+      s.requestTimeout = 120000;
+      s.headersTimeout = 60000;
+      s.keepAliveTimeout = 65000;
+    };
+
+    let server = null;
+    const listenWithRetry = () => {
+      listenAttempt++;
+      server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`服务器运行在 http://0.0.0.0:${PORT}`);
+        console.log(`环境: ${process.env.NODE_ENV || 'development'}`);
+        if (listenAttempt > 1) {
+          console.log(`[app] 端口在第 ${listenAttempt} 次尝试后成功监听（旧进程已退出）`);
+        }
+        // 通知 PM2 应用已就绪（配合 ecosystem.config.js 中的 wait_ready: true）
+        if (process.send) {
+          process.send('ready');
+        }
+      });
+
+      applyServerTuning(server);
+
+      // 端口冲突处理：先重试等待旧进程释放，超过上限才退出
+      server.on('error', (err) => {
+        if (err.code !== 'EADDRINUSE') {
+          console.error('[错误] HTTP 服务启动失败:', err.message);
+          return;
+        }
+        if (listenAttempt <= MAX_LISTEN_RETRY) {
+          console.warn(`[app] 端口 ${PORT} 仍被占用（第 ${listenAttempt}/${MAX_LISTEN_RETRY} 次），${LISTEN_RETRY_DELAY}ms 后重试...`);
+          setTimeout(listenWithRetry, LISTEN_RETRY_DELAY);
+          return;
+        }
         console.error(`[错误] 端口 ${PORT} 已被占用，请更换端口（PORT环境变量）或关闭占用进程`);
         process.exit(1);
-      }
-    });
+      });
+    };
+    listenWithRetry();
 
-    // ===== 请求超时治理（减少 Nginx 502） =====
+    // ===== 请求超时治理（减少 Nginx 502）=====
     // 原配置 server.timeout=30000 会在请求 30 秒内无数据收发时销毁 socket，
     // 而 Nginx 侧 proxy_read_timeout 已放宽到 300s —— 慢请求（批量导入/大表格保存等）
     // 会被 Node 先切断连接，Nginx 随即报 502 Bad Gateway（upstream prematurely closed）。
-    // 现在：
-    //   - server.timeout = 0：关闭闲置销毁（长任务期间 socket 不再被 Node 掐断），
-    //     超时兜底交给 Nginx proxy_read_timeout（300s）与下方 requestTimeout；
-    //   - requestTimeout = 120s：单请求整体上限（Node 18+ 生效，旧版本自动忽略），
-    //     防恶意慢连接拖住进程；批量导入 1000 行异步哈希在 120s 内可完成；
-    //   - headersTimeout 60s < keepAliveTimeout 65s（Node 强制要求前者更小）。
-    server.timeout = 0;
-    server.requestTimeout = 120000;
-    server.headersTimeout = 60000;
-    server.keepAliveTimeout = 65000;
+    // 参数已收敛到上方 applyServerTuning()，每次 listen 重试都会重新应用。
 
     // 进程级错误处理
     process.on('uncaughtException', (err) => {

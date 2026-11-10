@@ -2,6 +2,13 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.23.1 (2026-11-11)
+
+**修复：在线更新后重启失效（版本号变了但功能没变 / PM2 无限重启）**
+- `ecosystem.config.js`：`listen_timeout` 10 秒 → 30 秒（初始化超时被 PM2 判「未就绪」直接杀进程，导致 335 次重启循环）；`logs` 目录加载时自动创建，`error_file`/`out_file` 改绝对路径，删除 PM2 不支持的 `pre_start`、`combine_logs`
+- `system-update.js`：重启不再走 npm（Windows 下 `npm.cmd` + shell 退出码 1、裸 `.cmd` 抛 `spawn EINVAL`），改为按 start 脚本参数用 `process.execPath` 直接拉起；PM2 模式下重启失败不再裸 spawn，杜绝孤儿进程占端口
+- `app.js`：`EADDRINUSE` 由「立即退出」改为每秒重试最多 10 次，重启期间端口重叠可自愈
+
 ## v8.23.0 (2026-11-11)
 
 **新增：角色卡广场上传 + 卡片屏蔽治理 + 后台批量操作**

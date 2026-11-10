@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.23.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.23.1 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -307,6 +307,16 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.23.1 (2026-11-11)
+
+**修复：在线更新后重启失效（版本号变了但功能没变 / PM2 无限重启）**
+- **PM2 判定未就绪即杀进程**：`ecosystem.config.js` 的 `wait_ready: true` + `listen_timeout: 10000`，而应用要等数据库建表、播种、建索引全部完成后才在 `listen` 回调里 `process.send('ready')`；2 核 1.6G 机器初始化常超 10 秒，PM2 等不到就直接杀掉子进程（`uptime 0 / mem 0b / exit_code 1`）→ 5 秒后重启 → 335 次无限循环。现放宽到 **30 秒**
+- **日志从未落盘**：`pre_start` / `combine_logs` 都不是 PM2 支持的配置项，会被静默忽略，`logs` 目录不存在时 PM2 打不开 `error_file`/`out_file`，`pm2-error.log` 永远不生成、排障无线索。现改为**加载配置时就 `mkdir logs`** + `error_file`/`out_file` 用绝对路径，并删掉两个无效键
+- **重启命令本身跑不通**：`system-update.js` 原先用 `spawn('npm.cmd', ['run','start'], { shell: true })` 兜底重启；实测该写法在 Windows 下退出码为 1，带不带 shell 的裸 `npm.cmd` 更会抛 `spawn EINVAL`（Node 18+ 不再直接执行 `.cmd`）。现改为解析 `package.json` 的 `start` 脚本参数，用 `process.execPath` 直接拉起，并加 try/catch 与 `error` 事件：拉不起来时**保留当前进程继续服务**而不是当场退出
+- **PM2 模式下不再裸 spawn**：旧逻辑在 `pm2 restart` 三连失败后会 `spawn` 一个脱离 PM2 的裸进程，它占住端口后 PM2 每次重启都撞 `EADDRINUSE`、又失败又裸 spawn，形成「孤儿进程 + 无限重启」，而对外服务的孤儿跑的是旧内存代码 —— 这就是「版本号更新了功能没变化」。现改为只记录 `failTask` 并提示手动 `pm2 restart`，**绝不再造孤儿**
+- **端口重叠可自愈**：`app.js` 遇 `EADDRINUSE` 原先是立刻 `process.exit(1)`，现在改为每秒重试、最多 10 次；实测新进程在旧进程仍占端口时打印「第 1/2/3 次仍被占用」，旧进程退出后**第 4 次成功接管**。超时参数收敛到 `applyServerTuning()`，每次重试都重新应用
+- 验证：`node --check` 三个文件全部通过；端口重叠实测 `/health` 返回 200；隔离端口（3101）实测新 spawn 逻辑可正常拉起并对外响应；线上恢复后 `db: ok`、`errorCount: 0`
 
 ### v8.23.0 (2026-11-11)
 
