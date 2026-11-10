@@ -1,6 +1,6 @@
 /**
  * 数据库核心模块（SQLite 双驱动支持）
- * 作用：统一管理数据库连接、初始化、迁移、保存与关闭。
+ * 作用：统一管理数据库连接、初始化、保存与关闭。
  * 双驱动设计：
  *   - better-sqlite3（原生，首选）：同步 API、性能好，启动时自动加载；
  *   - sql.js（WASM 回退）：better-sqlite3 不可用（如纯 pkg 打包/无原生模块）
@@ -8,7 +8,7 @@
  * 关键特性：
  *   - 数据库文件不存在时自动创建空文件；
  *   - sql.js 模式下所有写操作通过 scheduleSave 节流落盘（3 秒合并 + 超 20 次立即存）；
- *   - 启动时依次执行：建表 → 安装状态检查 → 默认数据 → 索引 → 去重；
+ *   - 启动时依次执行：建表 → 安装状态检查 → 默认数据 → 索引/唯一约束；
  *   - 损坏的数据库文件自动备份后重建。
  */
 
@@ -22,8 +22,7 @@ const fsSafe = require('../utils/fs-safe');
 const { setUseNativeSql, queryOne, queryAll, generateUid } = require('./db-helpers');
 const { createTables } = require('./db-schema');        // 建表
 const { insertDefaultDataIfNeeded } = require('./db-seed'); // 默认数据
-const { createIndexes } = require('./db-indexes');      // 索引
-const { deduplicateDatabase, ensureUniqueConstraints } = require('./db-dedup'); // 去重
+const { createIndexes } = require('./db-indexes');      // 索引与唯一约束
 
 // 尝试加载原生驱动，失败则回退 WASM
 try {
@@ -113,7 +112,7 @@ function performSave() {
 /**
  * 初始化数据库（应用启动时调用）
  * 流程：确保文件存在 → 打开连接（原生/WASM）→ PRAGMA 优化 →
- *       建表 → 安装状态检查 → 默认数据 → 索引/唯一约束 → 去重 → 首次保存
+ *       建表 → 安装状态检查 → 默认数据 → 索引/唯一约束 → 首次保存
  * @returns {Promise<Object>} 数据库实例
  */
 async function initDatabase() {
@@ -142,15 +141,12 @@ async function initDatabase() {
     db.pragma('secure_delete = FAST');       // 安全删除，平衡性能
     db.pragma('busy_timeout = 5000');        // 忙等待 5 秒
 
-    // 包装 db.run：统一异常处理（duplicate column 是迁移正常噪音，静默）
+    // 包装 db.run：统一异常处理（记录 SQL 与错误信息后重新抛出）
     db.run = function(sql, params) {
       try {
         return this.prepare(sql).run(params || []);
       } catch (err) {
-        // duplicate column name 是存量库 ALTER TABLE 迁移的正常噪音，静默处理
-        if (!err.message || !err.message.includes('duplicate column name')) {
-          console.error('SQL执行错误:', err.message, 'SQL:', sql);
-        }
+        console.error('SQL执行错误:', err.message, 'SQL:', sql);
         throw err;
       }
     };
@@ -202,12 +198,8 @@ async function initDatabase() {
     insertDefaultDataIfNeeded(db);
   }
 
-  // 创建数据库索引和唯一约束
+  // 创建数据库索引与唯一约束
   createIndexes(db);
-  ensureUniqueConstraints(db);
-
-  // 自动去重 - 清理更新过程中产生的重复数据
-  deduplicateDatabase(db);
 
   // 初始保存（WASM 模式下落盘一次）
   saveDatabase();

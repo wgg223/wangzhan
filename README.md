@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.20.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.21.0 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -80,10 +80,9 @@ wangzhan-注释版/
 │   │   ├── constants.js             # 项目常量
 │   │   ├── crypto-secure.js         # AES-256-GCM 加解密
 │   │   ├── database.js              # SQLite 连接管理与编排
-│   │   ├── db-dedup.js              # 数据去重
 │   │   ├── db-helpers.js            # 查询辅助函数
-│   │   ├── db-indexes.js            # 索引创建
-│   │   ├── db-schema.js             # 表结构定义与迁移
+│   │   ├── db-indexes.js            # 索引与唯一约束创建
+│   │   ├── db-schema.js             # 表结构定义（CREATE TABLE 单一事实来源）
 │   │   ├── db-seed.js               # 默认数据播种
 │   │   ├── mailer.js                # SMTP 邮件发送
 │   │   ├── monitor.js               # 系统资源监控
@@ -247,7 +246,7 @@ npm run security:check    # 安全配置验证
 
 ## 关键架构说明
 
-- **数据库双驱动**：优先 `better-sqlite3`（原生），回退 `sql.js`（WASM）；启动时自动建表迁移 + 播种默认数据
+- **数据库双驱动**：优先 `better-sqlite3`（原生），回退 `sql.js`（WASM）；启动时自动建表 + 播种默认数据。`server/config/db-schema.js` 是表结构的唯一事实来源，全部列直接写在 `CREATE TABLE` 中，**不再有针对存量库的 `ALTER TABLE` 增量迁移**（v8.21.0 起移除）；字段变更请改此处并重新初始化数据库或恢复备份，旧库不支持原地升级
 - **SESSION_SECRET 持久化**：首次启动生成密钥存入 `.session_secret`
 - **布局自动切换**：根据路径自动选择前台 / 后台 layout
 - **维护模式**：中间件层面实现，开启后前台显示维护页面，后台仍可访问
@@ -307,6 +306,16 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.21.0 (2026-11-10)
+
+**重构：删除全部数据库迁移脚本，表结构以 CREATE TABLE 为单一事实来源**
+- 95 个 `ALTER TABLE` 增量迁移列全部折回所属表的 `CREATE TABLE`（涉及 `users`、`permission_applications`、`images`、`ai_conversations`、`ai_messages`、`ai_world_book`、`ai_memories`、`spreadsheets`、`image_shares` 等），`db-schema.js` 由 1373 行精简到 1227 行，77 张表、零 `ALTER TABLE`
+- 删除 `server/config/db-dedup.js` 及启动时的去重 / 唯一约束修复调用，同时移除存量 admin 补权、`uid` 回填、`spreadsheets` / `image_shares` 的 PRAGMA 兜底等一次性数据修复逻辑；后台「数据去重」接口 `POST /settings/dedup` 一并下线
+- 去重脚本原先创建的 4 个唯一索引（`settings.setting_key`、`image_configs.config_key`、`oauth_providers.provider`、`user_oauth_bindings(provider, open_id)`）迁入 `db-indexes.js`，索引集合与重构前完全一致
+- `database.js` 初始化流程收口为「建表 → 安装状态检查 → 默认数据播种 → 索引/唯一约束 → 首次保存」，不再包含任何针对存量库的补丁式修复
+- ⚠️ **不再支持旧库原地升级**：字段变更请直接修改 `db-schema.js` 后重新初始化数据库或恢复备份；本地已从 0 部署（删除旧库与 `.setup_completed` 标记 → 全新安装向导）
+- 验证：以删除前生产库的 `sqlite_master` 为基线，全新初始化的库逐表比对列定义、逐名比对索引（含唯一约束），结果 **零差异（77 表 / 118 索引）**；安装向导、前台与后台共 9 个页面、AI 聊天 bootstrap 全部正常，启动日志无报错
 
 ### v8.20.0 (2026-11-10)
 

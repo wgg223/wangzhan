@@ -22,7 +22,7 @@ No test suite exists. `npm test` is not configured.
 ## Architecture
 
 - **Entry point**: `server/app.js` — Express app, middleware stack, route mounting
-- **Database**: `server/config/database.js` — SQLite with 40+ tables, auto-migrates on startup
+- **Database**: `server/config/database.js` — SQLite, 77 tables. `server/config/db-schema.js` is the single source of truth: CREATE TABLE only, no ALTER TABLE migrations (removed in v8.21.0)
 - **Routes**: `server/routes/` — auth, admin (nested), frontend, setup, image-share, community, content
 - **Templates**: `views/` — EJS with `express-ejs-layouts`. Layout selection is path-based in `app.js:156-185`
 - **Admin routes**: `server/routes/admin/` — separate layout (`admin/layout.ejs`), all under `/admin`
@@ -31,6 +31,7 @@ No test suite exists. `npm test` is not configured.
 ## Key Conventions
 
 - Database uses `better-sqlite3` when available (native), falls back to `sql.js` (WASM). All DB calls go through `queryAll()` / `getDb()` from `server/config/database.js`
+- Schema changes are made by editing `CREATE TABLE` in `server/config/db-schema.js` (unique indexes live in `db-indexes.js`). There are no startup migrations or dedup/repair scripts: existing databases are NOT altered in place, so upgrading structure requires re-initializing the DB or restoring a backup
 - Production requires `SESSION_SECRET` env var — app exits without it
 - PM2 process name: `website-admin`. Session secret persisted to `.session_secret` file
 - Security middleware applied globally to all routes except `/setup`, `/health`, static assets, and XHR

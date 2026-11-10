@@ -7,8 +7,10 @@
  *   - 权限/媒体/活动日志：外键与时间线查询；
  *   - 图片分享：分类、用户、状态、url 反查（上传保护中间件依赖）；
  *   - AI 聊天：会话、消息、角色、模型、世界书/记忆/分支；
- *   - OAuth、用户、通知、私信：外键与状态查询。
- * 全部索引用 IF NOT EXISTS 包裹，存量库与增量库均可安全执行。
+ *   - OAuth、用户、通知、私信：外键与状态查询；
+ *   - 唯一约束索引（settings / image_configs / oauth_providers / user_oauth_bindings）：
+ *     原先由启动去重脚本创建，v8.21.0 起并入本模块，建库即生效。
+ * 全部索引用 IF NOT EXISTS 包裹，重复执行安全。
  */
 
 function createIndexes(db) {
@@ -52,8 +54,10 @@ function createIndexes(db) {
     db.run('CREATE INDEX IF NOT EXISTS idx_activity_ip_action ON activity_logs(ip, action, created_at)');
     db.run('CREATE INDEX IF NOT EXISTS idx_activity_user_action ON activity_logs(username, action, created_at)');
 
-    // ===== 设置表：按 key 查询 =====
+    // ===== 设置表：按 key 查询 + key 唯一约束 =====
     db.run('CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(setting_key)');
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_settings_unique_key ON settings(setting_key)');
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_image_configs_unique_key ON image_configs(config_key)');
 
     // ===== 图片分享：分类/用户/状态/时间 =====
     db.run('CREATE INDEX IF NOT EXISTS idx_images_cate ON images(cate_id)');
@@ -88,10 +92,12 @@ function createIndexes(db) {
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_branches_conv ON ai_branches(conversation_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_messages_branch ON ai_messages(conversation_id, branch_id, id)');
 
-    // OAuth相关索引
+    // OAuth相关索引 + 唯一约束
     db.run('CREATE INDEX IF NOT EXISTS idx_oauth_providers_enabled ON oauth_providers(is_enabled)');
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_providers_unique ON oauth_providers(provider)');
     db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_bindings_user ON user_oauth_bindings(user_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_bindings_provider ON user_oauth_bindings(provider, open_id)');
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_oauth_bindings_unique ON user_oauth_bindings(provider, open_id)');
 
     // 用户表索引
     db.run('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');

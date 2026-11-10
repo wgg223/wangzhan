@@ -1,15 +1,13 @@
 /**
- * 数据库表结构定义（DDL 与迁移）
- * 作用：集中定义全站 40+ 张业务表的 CREATE TABLE IF NOT EXISTS，
- *       以及存量数据库的 ALTER TABLE 增量迁移。
+ * 数据库表结构定义（DDL）
+ * 作用：集中定义全站业务表的 CREATE TABLE IF NOT EXISTS，仅用于全新初始化建库。
  * 说明：
  *   - 每个表创建前都有对应的注释（见下方各表段）；
- *   - 迁移语句单独执行并捕获 "duplicate column name" 异常（列已存在的正常噪音），
- *     其余错误打印日志后继续，保证旧库可平滑升级到新结构；
+ *   - 本文件是表结构的唯一事实来源：所有列都直接写在 CREATE TABLE 中，
+ *     不再保留针对存量库的 ALTER TABLE 增量迁移。字段变更请直接修改此处，
+ *     并重新初始化数据库（v8.21.0 起不再支持旧库原地升级）；
  *   - app_setup 表必须第一个创建，因为数据库初始化流程依赖它记录安装状态。
  */
-
-const { queryAll } = require('./db-helpers');
 
 function createTables(db) {
   // 创建安装状态表（必须第一个创建，因为其他函数依赖它）
@@ -33,35 +31,18 @@ function createTables(db) {
     totp_enabled INTEGER DEFAULT 0,
     reset_token TEXT,
     reset_token_expires DATETIME,
+    nickname TEXT,
+    avatar TEXT DEFAULT '/assets/images/default-avatar.png',
+    bio TEXT DEFAULT '',
+    image_no_review INTEGER DEFAULT 0,
+    delete_token TEXT,
+    delete_token_expires DATETIME,
+    deactivated_at DATETIME,
+    uid TEXT DEFAULT '',
+    superior_id INTEGER,
+    ai_chat_help_seen INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-
-  // 用户表字段迁移
-  const userMigrations = [
-    'ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0',
-    'ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0',
-    'ALTER TABLE users ADD COLUMN totp_secret TEXT',
-    'ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0',
-    'ALTER TABLE users ADD COLUMN reset_token TEXT',
-    'ALTER TABLE users ADD COLUMN reset_token_expires DATETIME',
-    'ALTER TABLE users ADD COLUMN nickname TEXT',
-    "ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT '/assets/images/default-avatar.png'",
-    "ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''",
-    'ALTER TABLE users ADD COLUMN image_no_review INTEGER DEFAULT 0',
-    'ALTER TABLE users ADD COLUMN delete_token TEXT',
-    'ALTER TABLE users ADD COLUMN delete_token_expires DATETIME',
-    'ALTER TABLE users ADD COLUMN deactivated_at DATETIME',
-    "ALTER TABLE users ADD COLUMN uid TEXT DEFAULT ''",
-    'ALTER TABLE users ADD COLUMN superior_id INTEGER',
-    'ALTER TABLE users ADD COLUMN ai_chat_help_seen INTEGER DEFAULT 0'
-  ];
-  userMigrations.forEach(sql => {
-    try { db.run(sql); } catch (e) {
-      if (!e.message || !e.message.includes('duplicate column name')) {
-        console.error('[DB迁移] 执行失败:', sql, '错误:', e.message);
-      }
-    }
-  });
 
   // 创建会话表（express-session 自定义 SQLite 存储，降低内存驻留）
   db.run(`CREATE TABLE IF NOT EXISTS sessions (
@@ -85,7 +66,6 @@ function createTables(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-  try { db.run("ALTER TABLE pages ADD COLUMN font_color TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 创建文章表
   db.run(`CREATE TABLE IF NOT EXISTS articles (
@@ -101,7 +81,6 @@ function createTables(db) {
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (author_id) REFERENCES users(id)
   )`);
-  try { db.run("ALTER TABLE articles ADD COLUMN location TEXT DEFAULT 'home'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 文章草稿表
   db.run(`CREATE TABLE IF NOT EXISTS article_drafts (
@@ -190,20 +169,6 @@ function createTables(db) {
     sort_order INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-  // 旧库迁移：补 category / high_risk / sort_order 列（新库建表已含，ALTER 幂等忽略）
-  const permMigrations = [
-    "ALTER TABLE permissions ADD COLUMN category TEXT DEFAULT 'system'",
-    'ALTER TABLE permissions ADD COLUMN high_risk INTEGER DEFAULT 0',
-    'ALTER TABLE permissions ADD COLUMN sort_order INTEGER DEFAULT 0',
-    'ALTER TABLE permissions ADD COLUMN ultra_high_risk INTEGER DEFAULT 0'
-  ];
-  permMigrations.forEach(sql => {
-    try { db.run(sql); } catch (e) {
-      if (!e.message || !e.message.includes('duplicate column name')) {
-        console.error('[DB迁移] 执行失败:', sql, '错误:', e.message);
-      }
-    }
-  });
 
   // 创建用户权限关联表
   // expires_at：权限有效期（NULL=永不过期；到期后权限匹配自动失效）
@@ -217,13 +182,10 @@ function createTables(db) {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (granted_by) REFERENCES users(id)
   )`);
-  try { db.run('ALTER TABLE user_permissions ADD COLUMN expires_at DATETIME'); } catch (e) {
-    if (!e.message || !e.message.includes('duplicate column name')) {
-      console.error('[DB迁移] 列添加失败:', e.message);
-    }
-  }
 
   // 创建权限申请表
+  // 二级审批流字段：approval_stage（1=待对应管理员审批 2=待上级审批）、high_risk（高危标记）、
+  // approved_by_admin / approved_by_superior（一级/二级审批人）、system_confirmed_at（系统确认生效时间）
   db.run(`CREATE TABLE IF NOT EXISTS permission_applications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -232,29 +194,18 @@ function createTables(db) {
     status TEXT DEFAULT 'pending',
     reviewed_by INTEGER,
     reviewed_at DATETIME,
+    reject_reason TEXT DEFAULT '',
+    approval_stage INTEGER DEFAULT 1,
+    high_risk INTEGER DEFAULT 0,
+    approved_by_admin INTEGER,
+    approved_by_admin_at DATETIME,
+    approved_by_superior INTEGER,
+    approved_by_superior_at DATETIME,
+    system_confirmed_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (reviewed_by) REFERENCES users(id)
   )`);
-  try { db.run("ALTER TABLE permission_applications ADD COLUMN reject_reason TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  // 二级审批流字段：approval_stage（1=待对应管理员审批 2=待上级审批）、high_risk（高危标记）、
-  // approved_by_admin / approved_by_superior（一级/二级审批人）、system_confirmed_at（系统确认生效时间）
-  const paMigrations = [
-    'ALTER TABLE permission_applications ADD COLUMN approval_stage INTEGER DEFAULT 1',
-    'ALTER TABLE permission_applications ADD COLUMN high_risk INTEGER DEFAULT 0',
-    'ALTER TABLE permission_applications ADD COLUMN approved_by_admin INTEGER',
-    'ALTER TABLE permission_applications ADD COLUMN approved_by_admin_at DATETIME',
-    'ALTER TABLE permission_applications ADD COLUMN approved_by_superior INTEGER',
-    'ALTER TABLE permission_applications ADD COLUMN approved_by_superior_at DATETIME',
-    'ALTER TABLE permission_applications ADD COLUMN system_confirmed_at DATETIME'
-  ];
-  paMigrations.forEach(sql => {
-    try { db.run(sql); } catch (e) {
-      if (!e.message || !e.message.includes('duplicate column name')) {
-        console.error('[DB迁移] 执行失败:', sql, '错误:', e.message);
-      }
-    }
-  });
 
   // 用户批量导入历史表
   db.run(`CREATE TABLE IF NOT EXISTS user_import_logs (
@@ -343,8 +294,6 @@ function createTables(db) {
     method TEXT DEFAULT '',
     created_at DATETIME
   )`);
-  try { db.run("ALTER TABLE activity_logs ADD COLUMN route TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE activity_logs ADD COLUMN method TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // ============ 图片分享模块表 ============
 
@@ -367,13 +316,13 @@ function createTables(db) {
     cate_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     status INTEGER NOT NULL DEFAULT 0,
+    download_count INTEGER DEFAULT 0,
+    visibility TEXT DEFAULT 'public',
+    allowed_user_ids TEXT DEFAULT '[]',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (cate_id) REFERENCES image_categories(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
   )`);
-  try { db.run('ALTER TABLE images ADD COLUMN download_count INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE images ADD COLUMN visibility TEXT DEFAULT 'public'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE images ADD COLUMN allowed_user_ids TEXT DEFAULT '[]'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // 图片操作日志表
   db.run(`CREATE TABLE IF NOT EXISTS image_logs (
@@ -434,7 +383,7 @@ function createTables(db) {
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_image_tag_unique ON image_tag_relations(image_id, tag_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_image_tag_tag ON image_tag_relations(tag_id)');
 
-  // 图片分享链接表（source_type: image=图片分享 / ai_image=AI生图）
+  // 图片分享链接表（source_type: image=图片分享 / ai_image=AI生图；options 存嵌入开关等扩展配置）
   db.run(`CREATE TABLE IF NOT EXISTS image_shares (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_type TEXT NOT NULL,
@@ -444,6 +393,7 @@ function createTables(db) {
     created_by INTEGER NOT NULL,
     view_count INTEGER DEFAULT 0,
     download_count INTEGER DEFAULT 0,
+    options TEXT DEFAULT '{}',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_image_shares_source ON image_shares(source_type, source_id)');
@@ -586,12 +536,12 @@ function createTables(db) {
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-  try { db.run("ALTER TABLE projects ADD COLUMN github_url TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE projects ADD COLUMN deploy_status TEXT DEFAULT 'none'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // ============ AI 聊天模块表 ============
 
   // AI 会话表
+  // 角色/分支/记忆/RAG 开关、生成参数（SillyTavern 风格，per-conversation 覆盖模型默认值）、
+  // 群聊（Group Chats：is_group + group_members + group_mode）
   db.run(`CREATE TABLE IF NOT EXISTS ai_conversations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -601,12 +551,32 @@ function createTables(db) {
     status TEXT DEFAULT 'active',
     message_count INTEGER DEFAULT 0,
     token_count INTEGER DEFAULT 0,
+    role_id INTEGER,
+    current_branch_id INTEGER DEFAULT 0,
+    memory_enabled INTEGER DEFAULT 1,
+    memory_mode TEXT DEFAULT 'summary',
+    rag_enabled INTEGER DEFAULT 1,
+    gen_temperature REAL,
+    gen_top_p REAL,
+    gen_top_k INTEGER,
+    gen_frequency_penalty REAL,
+    gen_presence_penalty REAL,
+    gen_max_tokens INTEGER,
+    author_note TEXT DEFAULT '',
+    author_note_depth INTEGER DEFAULT 4,
+    prompt_template_id INTEGER,
+    is_group INTEGER DEFAULT 0,
+    group_members TEXT DEFAULT '',
+    group_mode TEXT DEFAULT 'round',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`);
 
   // AI 消息表
+  // 分支/状态/错误信息、消息滑动（alternate_of + is_active）、场景图片消息（is_image + image_url）、
+  // 群聊说话人归属（speaker_role_id）、精确 token 统计（input_tokens / output_tokens）、
+  // 推理过程（reasoning）与生成参数快照（gen_info，swipe_info 语义）
   db.run(`CREATE TABLE IF NOT EXISTS ai_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id INTEGER NOT NULL,
@@ -617,48 +587,25 @@ function createTables(db) {
     is_streaming INTEGER DEFAULT 0,
     is_pinned INTEGER DEFAULT 0,
     quoted_message_id INTEGER,
+    branch_id INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'done',
+    error TEXT DEFAULT '',
+    alternate_of INTEGER,
+    is_active INTEGER DEFAULT 1,
+    speaker_role_id INTEGER,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    is_image INTEGER DEFAULT 0,
+    image_url TEXT DEFAULT '',
+    reasoning TEXT DEFAULT '',
+    gen_info TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
   )`);
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN is_pinned INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN quoted_message_id INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  // 分支/状态/错误信息（AI 聊天模块 v1）
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN branch_id INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_messages ADD COLUMN status TEXT DEFAULT 'done'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_messages ADD COLUMN error TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN role_id INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN current_branch_id INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN memory_enabled INTEGER DEFAULT 1'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_conversations ADD COLUMN memory_mode TEXT DEFAULT 'summary'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN rag_enabled INTEGER DEFAULT 1'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-
-  // 生成参数（SillyTavern 风格，per-conversation 覆盖模型默认值）
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_temperature REAL'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_top_p REAL'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_top_k INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_frequency_penalty REAL'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_presence_penalty REAL'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN gen_max_tokens INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_conversations ADD COLUMN author_note TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN author_note_depth INTEGER DEFAULT 4'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN prompt_template_id INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  // 消息滑动（alternates）：同一位置的多个回复
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN alternate_of INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN is_active INTEGER DEFAULT 1'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  // 场景图片消息：is_image 标记 + image_url 存储
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN is_image INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_messages ADD COLUMN image_url TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  // 群聊（SillyTavern Group Chats）：多角色会话 + 消息说话人归属
-  try { db.run('ALTER TABLE ai_conversations ADD COLUMN is_group INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_conversations ADD COLUMN group_members TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_conversations ADD COLUMN group_mode TEXT DEFAULT 'round'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN speaker_role_id INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-
-  // 精确 token 统计：输入 tokens 和输出 tokens 分开记录
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN input_tokens INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_messages ADD COLUMN output_tokens INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // AI 世界书（World Book）：按触发词注入上下文的设定条目
+  // 增强项（SillyTavern 式）：二级触发词 secondary_keys / 选择性触发 selective /
+  // 概率触发 probability / 深度注入 depth
   db.run(`CREATE TABLE IF NOT EXISTS ai_world_book (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id INTEGER NOT NULL,
@@ -668,16 +615,13 @@ function createTables(db) {
     position TEXT DEFAULT 'before_char',
     sort_order INTEGER DEFAULT 0,
     constant INTEGER DEFAULT 0,
+    secondary_keys TEXT DEFAULT '',
+    selective INTEGER DEFAULT 0,
+    probability INTEGER DEFAULT 100,
+    depth INTEGER DEFAULT 4,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
   )`);
-  try { db.run('ALTER TABLE ai_world_book ADD COLUMN constant INTEGER DEFAULT 0'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  // 世界书增强（SillyTavern 式）：二级触发词 / 选择性触发 / 概率触发 / 深度注入
-  const addAiCol = (table, ddl) => { try { db.run(`ALTER TABLE ${table} ADD COLUMN ${ddl}`); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } } };
-  ['secondary_keys TEXT DEFAULT \'\'', 'selective INTEGER DEFAULT 0', 'probability INTEGER DEFAULT 100', 'depth INTEGER DEFAULT 4'].forEach(ddl => addAiCol('ai_world_book', ddl));
-  // 消息级：推理过程（reasoning_content）与生成参数快照（swipe_info 语义）
-  addAiCol('ai_messages', "reasoning TEXT DEFAULT ''");
-  addAiCol('ai_messages', "gen_info TEXT DEFAULT ''");
 
   // AI 默认世界书（全局模板）：新会话创建时自动复制进会话世界书，后台可管理
   db.run(`CREATE TABLE IF NOT EXISTS ai_default_world_book (
@@ -695,7 +639,6 @@ function createTables(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-  ['secondary_keys TEXT DEFAULT \'\'', 'selective INTEGER DEFAULT 0', 'probability INTEGER DEFAULT 100', 'depth INTEGER DEFAULT 4'].forEach(ddl => addAiCol('ai_default_world_book', ddl));
 
   // AI 正则后处理脚本（SillyTavern Regex / RP-Hub 正则管线 式）：
   // placement=prompt（发送前替换 messages）/ display（渲染前替换正文）/ both；
@@ -717,6 +660,8 @@ function createTables(db) {
   )`);
 
   // AI 记忆（摘要记忆 + 向量记忆）
+  // 记忆系统 v2：逐轮总结（round_index / user_input / status）、逐轮向量（emb_model）、
+  // 二次压缩分组（group_start / group_end）
   db.run(`CREATE TABLE IF NOT EXISTS ai_memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id INTEGER NOT NULL,
@@ -725,16 +670,15 @@ function createTables(db) {
     embedding TEXT,
     source_start_msg INTEGER,
     source_end_msg INTEGER,
+    round_index INTEGER,
+    user_input TEXT DEFAULT '',
+    status TEXT DEFAULT 'done',
+    emb_model TEXT DEFAULT '',
+    group_start INTEGER,
+    group_end INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
   )`);
-  // 记忆系统 v2：逐轮总结 / 逐轮向量 / 二次压缩分组
-  try { db.run('ALTER TABLE ai_memories ADD COLUMN round_index INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_memories ADD COLUMN user_input TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_memories ADD COLUMN status TEXT DEFAULT 'done'"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_memories ADD COLUMN emb_model TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_memories ADD COLUMN group_start INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run('ALTER TABLE ai_memories ADD COLUMN group_end INTEGER'); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // AI 剧情分支
   db.run(`CREATE TABLE IF NOT EXISTS ai_branches (
@@ -758,21 +702,6 @@ function createTables(db) {
     sort_order INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-
-  // 为已有用户生成UID（如果还没有的话）
-  try {
-    const usersWithoutUid = queryAll(db, "SELECT id FROM users WHERE uid IS NULL OR uid = ''");
-    if (usersWithoutUid.length > 0) {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      usersWithoutUid.forEach(u => {
-        let uid = '';
-        for (let i = 0; i < 8; i++) {
-          uid += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        db.run('UPDATE users SET uid = ? WHERE id = ?', [uid, u.id]);
-      });
-    }
-  } catch (e) { /* 忽略 */ }
 
   // ============ 第三方登录模块表 ============
 
@@ -811,7 +740,7 @@ function createTables(db) {
   db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_user ON user_oauth_bindings(user_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_provider ON user_oauth_bindings(provider, open_id)');
 
-  // AI 角色预设表
+  // AI 角色预设表（角色卡：开场白 greeting / 性格 personality / 场景 scenario / 示例对话 examples）
   db.run(`CREATE TABLE IF NOT EXISTS ai_roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -829,12 +758,6 @@ function createTables(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
   )`);
-
-  // AI 角色卡字段（开场白/性格/场景/示例对话）— 存量库迁移
-  try { db.run("ALTER TABLE ai_roles ADD COLUMN greeting TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_roles ADD COLUMN personality TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_roles ADD COLUMN scenario TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
-  try { db.run("ALTER TABLE ai_roles ADD COLUMN examples TEXT DEFAULT ''"); } catch (e) { if (!e.message || !e.message.includes('duplicate column name')) { console.error('[DB迁移] 列添加失败:', e.message); } }
 
   // AI 用户配额表
   db.run(`CREATE TABLE IF NOT EXISTS ai_quota (
@@ -1060,12 +983,6 @@ function createTables(db) {
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash)');
-  // api_tokens 表迁移（存量库补充 token_version 列）
-  try { db.run('ALTER TABLE api_tokens ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) {
-    if (!e.message || !e.message.includes('duplicate column name')) {
-      console.error('[DB迁移] 执行失败: api_tokens.token_version', e.message);
-    }
-  }
 
   // ============ API 访问日志表（原生 App / 客户端访问记录） ============
   db.run(`CREATE TABLE IF NOT EXISTS api_access_logs (
@@ -1103,12 +1020,6 @@ function createTables(db) {
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_aiprovider_key ON ai_image_providers(provider_key)');
-  // 存量表迁移：补充 api_key_url 列
-  try { db.run("ALTER TABLE ai_image_providers ADD COLUMN api_key_url TEXT DEFAULT ''"); } catch (e) {
-    if (!e.message || !e.message.includes('duplicate column name')) {
-      console.error('[DB迁移] ai_image_providers.api_key_url 添加失败:', e.message);
-    }
-  }
 
   // AI 生图生成记录表
   db.run(`CREATE TABLE IF NOT EXISTS ai_image_records (
@@ -1143,19 +1054,9 @@ function createTables(db) {
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_aiimg_user_keys_user ON ai_image_user_keys(user_id)');
 
-  // 存量 admin 补权迁移：admin 权限改为走 user_permissions 表后，
-  // 为已有 admin 用户补齐全量权限记录，避免升级后 admin 丢失后台访问权限。
-  try {
-    const admins = queryAll(db, "SELECT id FROM users WHERE role = 'admin'");
-    admins.forEach(a => {
-      const perms = queryAll(db, 'SELECT perm_key FROM permissions');
-      perms.forEach(p => db.run('INSERT OR IGNORE INTO user_permissions (user_id, perm_key, granted_by) VALUES (?, ?, ?)', [a.id, p.perm_key, a.id]));
-    });
-  } catch (e) { /* 新库无表时忽略 */ }
-
-
   // ============ 在线表格模块表（Univer 重构版） ============
   // 表格元数据表
+  // doc_* 为新版 Univer 文档列；luckysheet_* 为旧版遗留列（仅作历史数据导入源，新数据不写入）
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -1163,61 +1064,23 @@ function createTables(db) {
     created_by INTEGER NOT NULL,
     status TEXT DEFAULT 'active',
     page_size INTEGER DEFAULT 20,
+    luckysheet_data TEXT,
+    is_luckysheet INTEGER DEFAULT 0,
+    is_locked INTEGER DEFAULT 0,
+    locked_by INTEGER,
+    doc_data TEXT,
+    doc_version INTEGER DEFAULT 0,
+    is_public_read INTEGER DEFAULT 0,
+    doc_type TEXT DEFAULT 'spreadsheet',
+    doc_file TEXT DEFAULT '',
+    doc_template TEXT DEFAULT 'blank',
+    slide_count INTEGER DEFAULT 0,
+    word_count INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (created_by) REFERENCES users(id)
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_spreadsheets_status ON spreadsheets(status)');
-  // 字段迁移（先检查列是否存在，避免重复添加报错）
-  try {
-    const existingCols = db.prepare('PRAGMA table_info(spreadsheets)').all().map(function(c) { return c.name; });
-    // 旧功能遗留列（保留作为迁移数据源，避免破坏性变更）
-    if (existingCols.indexOf('luckysheet_data') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN luckysheet_data TEXT`);
-    }
-    if (existingCols.indexOf('is_luckysheet') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN is_luckysheet INTEGER DEFAULT 0`);
-    }
-    if (existingCols.indexOf('is_locked') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN is_locked INTEGER DEFAULT 0`);
-    }
-    if (existingCols.indexOf('locked_by') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN locked_by INTEGER`);
-    }
-    // 新版 Univer 文档列
-    if (existingCols.indexOf('doc_data') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_data TEXT`);
-    }
-    if (existingCols.indexOf('doc_version') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_version INTEGER DEFAULT 0`);
-    }
-    // 公开只读开关：1 = 所有登录用户至少拥有只读查看权限
-    if (existingCols.indexOf('is_public_read') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN is_public_read INTEGER DEFAULT 0`);
-    }
-    // 文档类型：spreadsheet（表格）、document（文档）、presentation（演示文稿）
-    if (existingCols.indexOf('doc_type') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_type TEXT DEFAULT 'spreadsheet'`);
-    }
-    // 文件存储路径（大文档使用文件系统存储，>10MB 自动迁移到文件）
-    if (existingCols.indexOf('doc_file') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_file TEXT DEFAULT ''`);
-    }
-    // 文档子类型/模板（如 document:blank/richtext, presentation:blank/16x9 等）
-    if (existingCols.indexOf('doc_template') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN doc_template TEXT DEFAULT 'blank'`);
-    }
-    // 幻灯片数量（仅 presentation 类型使用）
-    if (existingCols.indexOf('slide_count') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN slide_count INTEGER DEFAULT 0`);
-    }
-    // 文档页数/字数统计
-    if (existingCols.indexOf('word_count') === -1) {
-      db.run(`ALTER TABLE spreadsheets ADD COLUMN word_count INTEGER DEFAULT 0`);
-    }
-  } catch (e) {
-    console.error('迁移 spreadsheets 表字段失败:', e.message);
-  }
 
   // 版本历史表（历史版本记录与恢复）
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_versions (
@@ -1274,7 +1137,7 @@ function createTables(db) {
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_ss_charts ON spreadsheet_charts(spreadsheet_id)');
 
-  // 旧结构化数据表（保留旧数据作为迁移源，新版不写入）
+  // 旧结构化数据表（历史遗留：新版不写入，仅保留表结构以兼容旧读取代码）
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_columns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     spreadsheet_id INTEGER NOT NULL,
@@ -1301,14 +1164,6 @@ function createTables(db) {
     FOREIGN KEY (spreadsheet_id) REFERENCES spreadsheets(id) ON DELETE CASCADE
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_ss_rows_sheet ON spreadsheet_rows(spreadsheet_id, sort_order)');
-
-  // 分享表补充 options 列（存嵌入开关等扩展配置）
-  try {
-    const shareCols = db.prepare('PRAGMA table_info(image_shares)').all().map(function(c) { return c.name; });
-    if (shareCols.indexOf('options') === -1) {
-      db.run(`ALTER TABLE image_shares ADD COLUMN options TEXT DEFAULT '{}'`);
-    }
-  } catch (e) { /* 兼容首次建库顺序 */ }
 
   // 文档级用户权限表（每个表格独立权限）
   db.run(`CREATE TABLE IF NOT EXISTS spreadsheet_user_permissions (

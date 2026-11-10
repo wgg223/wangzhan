@@ -12,7 +12,6 @@
  *   POST /admin/settings/backup/restore—— 恢复配置（禁止恢复敏感项；路径穿越防护）
  *   DELETE /admin/settings/backup/:filename —— 删除备份文件
  *   GET/POST /admin/settings/oauth     —— 第三方登录配置（client_secret 掩码回显）
- *   POST /admin/settings/dedup         —— 数据库去重
  *   POST /admin/settings/vacuum        —— VACUUM + ANALYZE 优化
  * 安全要点：敏感 key（smtp_pass 等）以 ENC: 密文存储；备份导出/恢复双向过滤敏感项；
  *           备份文件路径校验防穿越；OAuth secret 永不回显明文。
@@ -506,30 +505,6 @@ router.post('/settings/oauth', isAuthenticated, isSuperAdmin, (req, res) => {
 });
 
 // ============ 数据库维护 ============
-
-// 手动去重：清理各表重复数据（由 db-dedup 模块执行）
-router.post('/settings/dedup', isAuthenticated, isSuperAdmin, (req, res) => {
-  const db = req.db;
-  const { deduplicateDatabase } = require('../../config/db-dedup');
-
-  try {
-    const results = deduplicateDatabase(db);
-    const totalRemoved = Object.values(results).reduce((sum, count) => sum + count, 0);
-
-    logActivity(db, {
-      user_id: req.session.user.id,
-      username: req.session.user.username,
-      action: 'db_dedup',
-      target_type: 'database',
-      detail: `手动去重完成，清理 ${totalRemoved} 条重复数据`,
-      ip: req.ip
-    });
-
-    res.json({ success: true, removed: totalRemoved, details: results });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
 
 // 数据库优化：VACUUM（回收空间+整理）+ ANALYZE（更新统计信息）
 router.post('/settings/vacuum', isAuthenticated, isSuperAdmin, (req, res) => {
