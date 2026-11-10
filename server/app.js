@@ -294,6 +294,8 @@ app.use((req, res, next) => {
     res.locals.layout = false;                  // IM 聊天页独立
   } else if (req.path === '/ai-chat') {
     res.locals.layout = false;                  // AI 聊天页独立（不依赖主站布局）
+  } else if (req.path === '/characters') {
+    res.locals.layout = false;                  // 角色卡广场独立页面（游客可只读浏览）
   } else {
     res.locals.layout = 'frontend/layout';      // 默认前台布局
   }
@@ -344,6 +346,7 @@ const shareRoutes = require('./routes/share');
 const spreadsheetRoutes = require('./routes/spreadsheet');
 const musicRoutes = require('./routes/music');
 const apiRoutes = require('./routes/api/index');
+const charactersRoutes = require('./routes/characters');
 const { apiAccessLogger } = require('./middlewares/api-access-logger');
 
 app.use('/setup', setupRoutes);                                            // 安装向导
@@ -361,6 +364,7 @@ app.use('/image-share', globalLimiter, imageShareRoutes); // 图片分享站
 app.use('/share', globalLimiter, shareRoutes);          // 分享页面
 app.use('/', globalLimiter, spreadsheetRoutes);       // 在线表格
 app.use('/api/music', globalLimiter, musicRoutes); // 音乐播放歌单接口
+app.use('/', globalLimiter, charactersRoutes);     // 角色卡广场（游客只读 + 登录导入/分享）
 app.use('/', globalLimiter, frontendRoutes);            // 前台页面
 app.use('/', globalLimiter, communityRoutes);           // 社区（动态/关注）
 app.use('/', globalLimiter, privateMessageRoutes);      // 站内私信

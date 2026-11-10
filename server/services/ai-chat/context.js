@@ -275,6 +275,9 @@ function buildContext(db, conv, userMsg, opts = {}) {
       const roleParts = [];
       if (beforeCharBlock) roleParts.push(beforeCharBlock);
       if (role.system_prompt) roleParts.push(role.system_prompt);
+      // description 是 Character Card V2/V3 的主人设字段，许多卡把人设全放这里，
+      // personality/scenario 留空；不注入会导致这类卡得到空人设。
+      if (role.description) roleParts.push('【角色设定】\n' + role.description);
       if (role.personality) roleParts.push('【角色性格】\n' + role.personality);
       if (role.scenario) roleParts.push('【当前场景】\n' + role.scenario);
       if (role.examples) roleParts.push('【示例对话（仅供模仿风格，不要复述）】\n' + role.examples);

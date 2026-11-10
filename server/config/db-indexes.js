@@ -83,6 +83,10 @@ function createIndexes(db) {
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, created_at ASC)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_roles_category ON ai_roles(category, sort_order)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_roles_user ON ai_roles(user_id)');
+    // 角色卡广场：已分享/官方卡的列表查询与热度排序；share_token 唯一（仅对非空 token 生效）
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_roles_hub ON ai_roles(is_shared, is_official, import_count DESC)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_ai_roles_official ON ai_roles(is_official, sort_order, id)');
+    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_roles_share_token ON ai_roles(share_token) WHERE share_token <> ''");
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_models_user ON ai_models(user_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_ai_models_default ON ai_models(is_default, is_enabled)');
 

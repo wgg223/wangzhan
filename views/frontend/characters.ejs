@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>角色卡广场 - <%= settings.site_name || '我的网站' %></title>
+  <meta name="csrf-token" content="<%= csrfToken %>">
+  <meta name="theme-color" content="#5a6ff0">
+  <meta name="description" content="浏览、导入社区分享的角色卡，兼容 SillyTavern / RP-Hub 角色卡规范。">
+  <%
+  function acBust(p) {
+    var u = typeof cdn !== 'undefined' ? cdn.getUrl(p) : p;
+    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261110g';
+  }
+  %>
+  <link rel="stylesheet" href="<%= acBust('/css/ai-chat.css') %>">
+  <link rel="stylesheet" href="<%= acBust('/css/characters.css') %>">
+</head>
+<body>
+<div class="ch-app" id="chApp">
+  <header class="ch-topbar">
+    <div class="ch-topbar-inner">
+      <a class="ch-brand" href="/">
+        <span class="ch-brand-logo">🎭</span>
+        <span class="ch-brand-text">角色卡广场</span>
+      </a>
+      <div class="ch-search">
+        <input type="search" id="chSearch" placeholder="搜索角色名 / 简介 / 作者 / 标签…" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="ch-topbar-actions">
+        <a class="ch-btn ch-btn-ghost" href="/ai-chat">💬 进入聊天</a>
+        <% if (isGuest) { %>
+          <a class="ch-btn ch-btn-primary" href="/login">登录 / 注册</a>
+        <% } else { %>
+          <div class="ch-user">
+            <img class="ch-user-avatar" src="<%= user.avatar || '/assets/default-avatar.png' %>" alt="">
+            <span class="ch-user-name"><%= user.nickname || user.username %></span>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </header>
+
+  <div class="ch-hero">
+    <h1>发现并收藏社区角色卡</h1>
+    <p>完全兼容 SillyTavern / RP-Hub 角色卡规范（V1/V2/V3）。<% if (isGuest) { %>游客可自由浏览，登录后即可一键导入到你的聊天。<% } else { %>导入的卡片仅站内可用，支持世界书与备选开场白。<% } %></p>
+  </div>
+
+  <div class="ch-body">
+    <nav class="ch-scope-tabs" id="chScopeTabs">
+      <button type="button" class="ch-scope-tab active" data-scope="public">🌐 广场</button>
+      <button type="button" class="ch-scope-tab" data-scope="official">⭐ 官方</button>
+      <% if (!isGuest) { %>
+        <button type="button" class="ch-scope-tab" data-scope="mine">📁 我的</button>
+        <button type="button" class="ch-scope-tab" data-scope="shared">🔗 已分享</button>
+        <button type="button" class="ch-scope-tab" data-scope="imported">⬇️ 已导入</button>
+      <% } %>
+    </nav>
+
+    <div class="ch-filters">
+      <div class="ch-filter-row">
+        <label class="ch-filter-label">分类</label>
+        <div class="ch-cat-chips" id="chCatChips"><button type="button" class="ch-chip active" data-cat="">全部</button></div>
+      </div>
+      <div class="ch-filter-row" id="chTagRow" hidden>
+        <label class="ch-filter-label">标签</label>
+        <div class="ch-cat-chips" id="chTagChips"></div>
+      </div>
+      <div class="ch-filter-row">
+        <label class="ch-filter-label">排序</label>
+        <div class="ch-cat-chips" id="chSortChips">
+          <button type="button" class="ch-chip active" data-sort="hot">🔥 最热</button>
+          <button type="button" class="ch-chip" data-sort="new">🆕 最新</button>
+          <button type="button" class="ch-chip" data-sort="views">👀 浏览</button>
+          <button type="button" class="ch-chip" data-sort="name">🔤 名称</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ch-result-bar">
+      <span id="chResultCount">加载中…</span>
+      <% if (isGuest) { %><span class="ch-hint">登录后可导入与分享角色卡</span><% } %>
+    </div>
+
+    <div class="ch-grid" id="chGrid"></div>
+    <div class="ch-empty" id="chEmpty" hidden>
+      <div class="ch-empty-icon">🗂️</div>
+      <p>没有找到符合条件的角色卡</p>
+    </div>
+
+    <div class="ch-pager" id="chPager" hidden>
+      <button type="button" class="ch-btn ch-btn-ghost" id="chPrev">上一页</button>
+      <span class="ch-page-info" id="chPageInfo">1 / 1</span>
+      <button type="button" class="ch-btn ch-btn-ghost" id="chNext">下一页</button>
+    </div>
+  </div>
+
+  <footer class="ch-footer">
+    <p>从广场导入的角色卡仅支持站内使用，不支持导出外溢。请尊重原作者的许可声明。</p>
+  </footer>
+</div>
+
+<!-- 角色卡详情弹窗 -->
+<div class="ac-modal-overlay" id="chDetailModal" hidden>
+  <div class="ac-modal ac-modal-lg">
+    <div class="ac-modal-head">
+      <h2 id="chDetailTitle">角色卡详情</h2>
+      <button class="ac-modal-close" data-ch-close="chDetailModal">×</button>
+    </div>
+    <div class="ac-modal-body" id="chDetailBody" style="max-height:66vh;overflow-y:auto;"></div>
+    <div class="ac-modal-foot" id="chDetailFoot"></div>
+  </div>
+</div>
+
+<script type="application/json" id="characters-data"><%- JSON.stringify({
+  csrfToken: csrfToken,
+  user: user ? { id: user.id, username: user.username, role: user.role } : null,
+  siteName: settings.site_name || '',
+  canImport: !!canImport,
+  isGuest: !!isGuest,
+  uiSettings: (typeof uiSettings !== 'undefined' && uiSettings) ? uiSettings : null
+}).replace(/</g, '\\u003c') %></script>
+<script src="<%= acBust('/js/utils.js') %>"></script>
+<script src="<%= acBust('/js/ai-appearance.js') %>"></script>
+<script src="<%= acBust('/js/characters.js') %>"></script>
+</body>
+</html>

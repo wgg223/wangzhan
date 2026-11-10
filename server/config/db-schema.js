@@ -41,6 +41,7 @@ function createTables(db) {
     uid TEXT DEFAULT '',
     superior_id INTEGER,
     ai_chat_help_seen INTEGER DEFAULT 0,
+    ai_ui_settings TEXT DEFAULT '{}',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
@@ -568,6 +569,7 @@ function createTables(db) {
     is_group INTEGER DEFAULT 0,
     group_members TEXT DEFAULT '',
     group_mode TEXT DEFAULT 'round',
+    book_imported INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -740,7 +742,19 @@ function createTables(db) {
   db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_user ON user_oauth_bindings(user_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_user_oauth_provider ON user_oauth_bindings(provider, open_id)');
 
-  // AI 角色预设表（角色卡：开场白 greeting / 性格 personality / 场景 scenario / 示例对话 examples）
+  // AI 角色预设表（角色卡，完整兼容 Character Card V2/V3 与 SillyTavern 字段）
+  // 卡面字段：description / personality / scenario / greeting(first_mes) / examples(mes_example) /
+  //           system_prompt / post_history_instructions / alternate_greetings / creator_notes /
+  //           creator / character_version / tags
+  // 世界书：world_book 存归一化后的 character_book JSON（{name, description, entries[]}），
+  //         用该角色新建会话时由前端弹窗勾选后注入 ai_world_book（book_imported 防重复弹窗）
+  // 溯源与分享：source_type 四值（self 本站表单创建 / external 外部文件或 URL 导入 /
+  //           hub 从站内广场导入他人卡 / official 官方种子卡）+ source_role_id(站内来源卡)
+  //           + source_url(外部来源) + license(版权标注)；is_shared / share_token 控制是否
+  //           公开到角色卡广场，import_count / view_count 为广场统计；
+  //           self/external 可分享可导出；hub 仅可自己使用：不可再次分享、不可导出（防内容外溢）；
+  //           official 全站可用、由后台治理、不可分享（见 services/ai-chat/characters.js 的
+  //           SOURCE_TYPES / NO_EXPORT_SOURCE / canExportCard / canShareCard）
   db.run(`CREATE TABLE IF NOT EXISTS ai_roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -755,7 +769,25 @@ function createTables(db) {
     is_official INTEGER DEFAULT 0,
     user_id INTEGER,
     sort_order INTEGER DEFAULT 0,
+    post_history_instructions TEXT DEFAULT '',
+    alternate_greetings TEXT DEFAULT '[]',
+    creator_notes TEXT DEFAULT '',
+    creator TEXT DEFAULT '',
+    character_version TEXT DEFAULT '',
+    tags TEXT DEFAULT '[]',
+    world_book TEXT DEFAULT '',
+    extensions TEXT DEFAULT '{}',
+    source_type TEXT DEFAULT 'self',
+    source_role_id INTEGER,
+    source_url TEXT DEFAULT '',
+    license TEXT DEFAULT '',
+    is_shared INTEGER DEFAULT 0,
+    share_token TEXT DEFAULT '',
+    shared_at DATETIME,
+    import_count INTEGER DEFAULT 0,
+    view_count INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
   )`);
 

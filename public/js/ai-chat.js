@@ -82,7 +82,14 @@
     'acRegexMinDepth', 'acRegexMaxDepth', 'acRegexTestSample', 'acRegexTestBtn', 'acRegexTestResult',
     'acRegexDelete', 'acRegexBack', 'acRegexSave',
     'acHelpBtn', 'acHelpModal', 'acHelpSearch', 'acHelpCats', 'acHelpCount', 'acHelpList', 'acHelpOk',
-    'acConvTokens']
+    'acConvTokens',
+    'acNewRoleTags', 'acNewRolePostHistory', 'acNewRoleAltGreetings', 'acNewRoleCreator',
+    'acNewRoleCreatorNotes', 'acNewRoleWorldBook',
+    'acBookModal', 'acBookTitle', 'acBookDesc', 'acBookList', 'acBookCount', 'acBookAll', 'acBookNone',
+    'acBookApply', 'acBookSkip',
+    'acRoleShareModal', 'acRoleShareToggle', 'acRoleShareLicense', 'acRoleShareNotes', 'acRoleShareUrl',
+    'acRoleShareCopy', 'acRoleShareSave',
+    'acGreetingModal', 'acGreetingList']
     .forEach(function (id) { els[id] = document.getElementById(id); });
 
   // ============ 通用请求 ============
@@ -1667,9 +1674,12 @@
       if (roleFilter.favOnly && favs.indexOf(r.id) < 0) return false;
       if (roleFilter.category === 'my' && r.is_official) return false;
       if (roleFilter.category === 'fav') return favs.indexOf(r.id) >= 0;
-      if (roleFilter.category && roleFilter.category !== 'my' && roleFilter.category !== 'fav' && r.category !== roleFilter.category) return false;
+      if (roleFilter.category === 'shared') return !r.is_official && r.is_shared;
+      if (roleFilter.category === 'hub') return r.source_type === 'hub';
+      if (roleFilter.category && ['my', 'fav', 'shared', 'hub'].indexOf(roleFilter.category) < 0 && r.category !== roleFilter.category) return false;
       if (kw) {
-        var hay = (r.name + ' ' + (r.description || '') + ' ' + (r.personality || '')).toLowerCase();
+        // lean 视图不含 personality/system_prompt 全文，搜索走名称+简介+标签+作者
+        var hay = (r.name + ' ' + (r.description || '') + ' ' + (r.tags || []).join(' ') + ' ' + (r.creator || '')).toLowerCase();
         if (hay.indexOf(kw) < 0) return false;
       }
       return true;
@@ -1719,14 +1729,14 @@
       card.appendChild(header);
 
       var p = document.createElement('p');
-      p.textContent = r.description || r.personality || r.system_prompt || '';
+      p.textContent = r.description || (r.greeting ? String(r.greeting).slice(0, 120) : '') || '（暂无简介）';
       card.appendChild(p);
 
       var foot = document.createElement('div');
       foot.className = 'ac-role-card-foot';
       var tag = document.createElement('span');
       tag.className = 'ac-role-tag';
-      tag.textContent = r.is_official ? '官方' : '我的';
+      tag.textContent = r.is_official ? '官方' : (r.source_type === 'hub' ? '广场导入' : '我的');
       foot.appendChild(tag);
       if (r.category && r.category !== 'default') {
         var catTag = document.createElement('span');
@@ -1737,19 +1747,44 @@
       if (r.greeting) {
         var g = document.createElement('span');
         g.className = 'ac-role-tag ac-role-tag-greeting';
-        g.textContent = '有开场白';
+        g.textContent = r.alternate_count ? ('开场白 ×' + (r.alternate_count + 1)) : '有开场白';
         foot.appendChild(g);
       }
-      // 用户自建角色：导出和删除
+      if (r.book_count) {
+        var bk = document.createElement('span');
+        bk.className = 'ac-role-tag ac-role-tag-greeting';
+        bk.textContent = '📖 ' + (r.book_name || '世界书') + ' ×' + r.book_count;
+        bk.title = '该角色卡内嵌世界书，新建会话时会弹窗让你勾选注入';
+        foot.appendChild(bk);
+      }
+      if (r.is_shared) {
+        var sh = document.createElement('span');
+        sh.className = 'ac-role-tag ac-role-tag-greeting';
+        sh.textContent = '已分享 · 导入 ' + (r.import_count || 0);
+        foot.appendChild(sh);
+      }
+      // 用户自建角色：分享 / 导出 / 删除（导出受权限与来源双重限制）
       if (!r.is_official) {
         var actions = document.createElement('div');
         actions.style.cssText = 'display:flex;gap:4px;margin-left:auto;';
-        var expBtn = document.createElement('button');
-        expBtn.type = 'button';
-        expBtn.className = 'ac-role-tag';
-        expBtn.textContent = '⤴';
-        expBtn.title = '导出角色卡';
-        expBtn.addEventListener('click', function (e) { e.stopPropagation(); exportRole(r); });
+        if (r.can_share) {
+          var shareBtn = document.createElement('button');
+          shareBtn.type = 'button';
+          shareBtn.className = 'ac-role-tag';
+          shareBtn.textContent = r.is_shared ? '🔗' : '📤';
+          shareBtn.title = r.is_shared ? '复制分享链接 / 取消分享' : '分享到角色卡广场';
+          shareBtn.addEventListener('click', function (e) { e.stopPropagation(); openRoleShare(r); });
+          actions.appendChild(shareBtn);
+        }
+        if (r.can_export) {
+          var expBtn = document.createElement('button');
+          expBtn.type = 'button';
+          expBtn.className = 'ac-role-tag';
+          expBtn.textContent = '⤴';
+          expBtn.title = '导出角色卡（chara_card_v2 JSON）';
+          expBtn.addEventListener('click', function (e) { e.stopPropagation(); exportRole(r); });
+          actions.appendChild(expBtn);
+        }
         var delBtn = document.createElement('button');
         delBtn.type = 'button';
         delBtn.className = 'ac-role-tag';
@@ -1757,7 +1792,6 @@
         delBtn.title = '删除角色';
         delBtn.style.color = 'var(--danger)';
         delBtn.addEventListener('click', function (e) { e.stopPropagation(); deleteRole(r); });
-        actions.appendChild(expBtn);
         actions.appendChild(delBtn);
         foot.appendChild(actions);
       }
@@ -1770,34 +1804,21 @@
     });
   }
 
-  // 导出指定角色卡
+  // 导出指定角色卡：改由服务端生成（chara_card_v2，含 character_book 世界书）。
+  // 服务端会校验 aichat.export 高危权限，并拒绝导出从广场导入的卡（source_type='hub'），防内容外溢。
   function exportRole(role) {
-    var card = {
-      spec: 'chara_card_v2',
-      spec_version: '2.0',
-      data: {
-        name: role.name,
-        description: role.description || '',
-        personality: role.personality || '',
-        scenario: role.scenario || '',
-        first_mes: role.greeting || '',
-        mes_example: role.examples || '',
-        system_prompt: role.system_prompt || '',
-        avatar: role.avatar || '',
-        creator_notes: 'Exported from AI Chat',
-        character_version: '1.0'
-      }
-    };
-    var blob = new Blob([JSON.stringify(card, null, 2)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
+    if (!role || !role.id) { showToast('角色不存在', 'error'); return; }
+    if (role.can_export === false) {
+      showToast(role.source_type === 'hub' ? '从广场导入的角色卡仅支持站内使用，不能导出' : '该角色卡不支持导出', 'error');
+      return;
+    }
     var a = document.createElement('a');
-    a.href = url;
-    a.download = (role.name || 'character') + '.json';
+    a.href = '/ai-chat/api/roles/export?id=' + encodeURIComponent(role.id);
+    a.rel = 'noopener';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('角色卡已导出', 'success');
+    showToast('角色卡导出已开始（服务端生成）', 'success');
   }
 
   // 删除用户自建角色
@@ -1811,20 +1832,33 @@
   }
 
   // 选择角色 → 开启新会话（沿用旧会话若为空则复用）
-  function startWithRole(roleId) {
+  // greetingIndex：0 = 主开场白，1..n = 备选开场白（角色卡 alternate_greetings）
+  function startWithRole(roleId, greetingIndex) {
+    var role = state.roles.filter(function (r) { return r.id === roleId; })[0];
+    // 带备选开场白的角色：先让用户挑一条，再建会话
+    if (role && role.alternate_count > 0 && greetingIndex === undefined) {
+      openGreetingPicker(role, function (idx) { startWithRole(roleId, idx); });
+      return;
+    }
+    var payload = { role_id: roleId };
+    if (greetingIndex !== undefined) payload.greeting_index = greetingIndex;
+
     if (state.currentConv && !state.messages.length) {
-      api('/ai-chat/api/conversations/role', { id: state.currentConv.id, role_id: roleId })
-        .then(function () {
+      var switchPayload = Object.assign({ id: state.currentConv.id }, payload);
+      api('/ai-chat/api/conversations/role', switchPayload)
+        .then(function (json) {
           state.currentConv.role_id = roleId;
+          if (json && json.data) state.currentConv.book_imported = json.data.book_imported;
           updateRoleLabel();
           showToast('已切换角色', 'success');
           // 重新加载消息（角色带开场白时会注入第一条 AI 消息）
           selectConversation(state.currentConv.id);
+          maybeAskBook(json);
         })
         .catch(function (err) { showToast(err.message, 'error'); });
       return;
     }
-    api('/ai-chat/api/conversations', { title: '新对话', role_id: roleId })
+    api('/ai-chat/api/conversations', Object.assign({ title: '新对话' }, payload))
       .then(function (json) {
         var conv = json.data;
         state.conversations.unshift(conv);
@@ -1835,8 +1869,205 @@
         updateModelLabel();
         // 加载消息（含开场白）
         selectConversation(conv.id);
+        maybeAskBook(json);
       })
       .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  // ============ 角色卡内嵌世界书（character_book）注入 ============
+  // 服务端只下发条目预览，全文留在后端；用户勾选后按 index 提交，服务端取全文写入会话世界书。
+  var pendingBook = null;
+
+  function maybeAskBook(json) {
+    if (!json || !json.pending_book || !json.pending_book.entries || !json.pending_book.entries.length) return;
+    openBookModal(json.pending_book);
+  }
+
+  function openBookModal(book) {
+    pendingBook = book;
+    els.acBookTitle.textContent = '📖 ' + (book.book_name || (book.role_name + ' 的世界书'));
+    els.acBookDesc.textContent = book.book_description ||
+      ('角色「' + book.role_name + '」自带 ' + book.total + ' 条世界书设定，勾选后注入本会话（可随时在世界书面板修改）。');
+    renderBookList();
+    showModal('acBookModal');
+  }
+
+  function renderBookList() {
+    if (!pendingBook) return;
+    els.acBookList.innerHTML = '';
+    pendingBook.entries.forEach(function (e) {
+      var row = document.createElement('label');
+      row.className = 'ac-book-entry';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = e.enabled !== 0;
+      cb.value = e.index;
+      cb.addEventListener('change', updateBookCount);
+      var main = document.createElement('div');
+      main.style.cssText = 'flex:1;min-width:0;';
+      var title = document.createElement('div');
+      title.style.cssText = 'font-size:13px;font-weight:600;';
+      title.textContent = (e.name || e.key || ('条目 ' + (e.index + 1))) +
+        (e.constant ? '  · 常驻' : (e.key ? '  · 触发词：' + e.key : ''));
+      var preview = document.createElement('div');
+      preview.style.cssText = 'font-size:12px;color:var(--ac-muted);white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;';
+      preview.textContent = e.content_preview + (e.content_length > 200 ? '…' : '');
+      var meta = document.createElement('div');
+      meta.style.cssText = 'font-size:11px;color:var(--ac-muted);opacity:.8;';
+      meta.textContent = e.content_length + ' 字符 · 位置 ' + e.position + (e.position === 'in_chat' ? ('（深度 ' + e.depth + '）') : '') + ' · 概率 ' + e.probability + '%';
+      main.appendChild(title);
+      main.appendChild(preview);
+      main.appendChild(meta);
+      row.appendChild(cb);
+      row.appendChild(main);
+      els.acBookList.appendChild(row);
+    });
+    updateBookCount();
+  }
+
+  function selectedBookIndexes() {
+    return Array.prototype.slice.call(els.acBookList.querySelectorAll('input[type=checkbox]'))
+      .filter(function (c) { return c.checked; })
+      .map(function (c) { return parseInt(c.value, 10); });
+  }
+
+  function updateBookCount() {
+    if (!pendingBook) return;
+    var n = selectedBookIndexes().length;
+    els.acBookCount.textContent = '已选 ' + n + ' / ' + pendingBook.total + ' 条';
+    els.acBookApply.disabled = n === 0;
+  }
+
+  function applyBook(skip) {
+    if (!pendingBook || !state.currentConv) return;
+    var convId = state.currentConv.id;
+    var payload = { id: convId };
+    if (skip) payload.skip = true;
+    else payload.selected = selectedBookIndexes();
+    api('/ai-chat/api/conversations/book-apply', payload).then(function (json) {
+      hideModal('acBookModal');
+      var d = (json && json.data) || {};
+      if (skip) {
+        showToast('已跳过世界书注入', 'info');
+      } else {
+        showToast('已注入 ' + (d.imported || 0) + ' 条世界书' + (d.skipped ? ('（跳过重复 ' + d.skipped + ' 条）') : ''), 'success');
+      }
+      state.currentConv.book_imported = 1;
+      pendingBook = null;
+      // 刷新会话世界书面板
+      fetch('/ai-chat/api/world-book?conversation_id=' + convId, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (j.success) { state.worldBook = j.data || []; renderWorldList(); } })
+        .catch(function () { /* 刷新失败不影响注入结果 */ });
+    }).catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  if (els.acBookAll) els.acBookAll.addEventListener('click', function () { setAllBook(true); });
+  if (els.acBookNone) els.acBookNone.addEventListener('click', function () { setAllBook(false); });
+  function setAllBook(checked) {
+    Array.prototype.slice.call(els.acBookList.querySelectorAll('input[type=checkbox]')).forEach(function (c) { c.checked = checked; });
+    updateBookCount();
+  }
+  if (els.acBookApply) els.acBookApply.addEventListener('click', function () { applyBook(false); });
+  if (els.acBookSkip) els.acBookSkip.addEventListener('click', function () { applyBook(true); });
+
+  // ============ 备选开场白选择 ============
+  var greetingCallback = null;
+
+  function openGreetingPicker(role, cb) {
+    greetingCallback = cb;
+    els.acGreetingList.innerHTML = '<p class="ac-modal-hint">加载开场白…</p>';
+    showModal('acGreetingModal');
+    // bootstrap 是 lean 视图，不含备选开场白全文 → 按 id 拉详情
+    csrfFetch('/ai-chat/api/roles/' + encodeURIComponent(role.id), { method: 'GET' }, 20000)
+      .then(function (json) {
+        if (!json.success) throw new Error(json.error || '加载失败');
+        var list = [json.data.greeting].concat(json.data.alternate_greetings || []).filter(function (s) { return String(s || '').trim(); });
+        els.acGreetingList.innerHTML = '';
+        if (list.length <= 1) {
+          hideModal('acGreetingModal');
+          if (greetingCallback) greetingCallback(0);
+          return;
+        }
+        list.forEach(function (text, idx) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'ac-greeting-item';
+          var head = document.createElement('div');
+          head.style.cssText = 'font-size:12px;color:var(--ac-muted);margin-bottom:4px;';
+          head.textContent = idx === 0 ? '主开场白' : ('备选开场白 ' + idx);
+          var body = document.createElement('div');
+          body.style.cssText = 'font-size:13px;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow:auto;text-align:left;';
+          body.textContent = text;
+          btn.appendChild(head);
+          btn.appendChild(body);
+          btn.addEventListener('click', function () {
+            hideModal('acGreetingModal');
+            if (greetingCallback) greetingCallback(idx);
+          });
+          els.acGreetingList.appendChild(btn);
+        });
+      })
+      .catch(function (err) {
+        hideModal('acGreetingModal');
+        showToast(err.message || '加载开场白失败', 'error');
+        if (greetingCallback) greetingCallback(0);
+      });
+  }
+
+  // ============ 分享角色卡到广场 ============
+  var shareTargetRole = null;
+
+  function openRoleShare(role) {
+    shareTargetRole = role;
+    els.acRoleShareToggle.checked = !!role.is_shared;
+    els.acRoleShareLicense.value = role.license || '';
+    els.acRoleShareUrl.value = role.share_url ? (location.origin + role.share_url) : '';
+    els.acRoleShareNotes.value = role.creator_notes || '';
+    // 备注全文不在 lean 视图里，按需补拉
+    if (role.is_shared || !role.creator_notes) {
+      csrfFetch('/ai-chat/api/roles/' + encodeURIComponent(role.id), { method: 'GET' }, 20000)
+        .then(function (json) {
+          if (json.success && json.data) els.acRoleShareNotes.value = json.data.creator_notes || '';
+        })
+        .catch(function () { /* 忽略：备注非关键字段 */ });
+    }
+    showModal('acRoleShareModal');
+  }
+
+  if (els.acRoleShareSave) {
+    els.acRoleShareSave.addEventListener('click', function () {
+      if (!shareTargetRole) return;
+      api('/characters/api/cards/share', {
+        id: shareTargetRole.id,
+        shared: els.acRoleShareToggle.checked ? 1 : 0,
+        license: els.acRoleShareLicense.value.trim(),
+        creator_notes: els.acRoleShareNotes.value.trim()
+      }).then(function (json) {
+        if (!json.success) { showToast(json.error || '操作失败', 'error'); return; }
+        var d = json.data;
+        var local = state.roles.filter(function (r) { return r.id === shareTargetRole.id; })[0];
+        if (local) {
+          local.is_shared = d.is_shared;
+          local.share_token = d.token || '';
+          local.share_url = d.share_url || '';
+          local.license = d.license || '';
+        }
+        els.acRoleShareUrl.value = d.share_url ? (location.origin + d.share_url) : '';
+        hideModal('acRoleShareModal');
+        renderRoleList();
+        showToast(d.is_shared ? '已分享到角色卡广场' : '已取消分享', 'success');
+      }).catch(function (err) { showToast(err.message, 'error'); });
+    });
+  }
+
+  if (els.acRoleShareCopy) {
+    els.acRoleShareCopy.addEventListener('click', function () {
+      var url = els.acRoleShareUrl.value;
+      if (!url) { showToast('尚未生成分享链接，请先勾选分享并保存', 'error'); return; }
+      copyToClipboard(url).then(function () { showToast('分享链接已复制', 'success'); })
+        .catch(function () { showToast('复制失败，请手动选择链接', 'error'); });
+    });
   }
 
   function createRole() {
@@ -1845,6 +2076,22 @@
     var greeting = els.acNewRoleGreeting.value.trim();
     if (!name) { showToast('请输入角色名称', 'error'); return; }
     if (!prompt && !greeting) { showToast('角色设定或开场白至少填写一项', 'error'); return; }
+
+    // 世界书 JSON 先本地校验，避免把非法内容提交后被静默丢弃
+    var bookRaw = els.acNewRoleWorldBook ? els.acNewRoleWorldBook.value.trim() : '';
+    if (bookRaw) {
+      try { JSON.parse(bookRaw); } catch (e) {
+        showToast('世界书不是合法 JSON：' + e.message, 'error');
+        return;
+      }
+    }
+    var altGreetings = els.acNewRoleAltGreetings
+      ? els.acNewRoleAltGreetings.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean)
+      : [];
+    var tags = els.acNewRoleTags
+      ? els.acNewRoleTags.value.split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean)
+      : [];
+
     api('/ai-chat/api/roles', {
       name: name,
       system_prompt: prompt,
@@ -1853,22 +2100,27 @@
       personality: els.acNewRolePersonality.value.trim(),
       scenario: els.acNewRoleScenario.value.trim(),
       examples: els.acNewRoleExamples.value.trim(),
+      post_history_instructions: els.acNewRolePostHistory ? els.acNewRolePostHistory.value.trim() : '',
+      alternate_greetings: altGreetings,
+      creator: els.acNewRoleCreator ? els.acNewRoleCreator.value.trim() : '',
+      creator_notes: els.acNewRoleCreatorNotes ? els.acNewRoleCreatorNotes.value.trim() : '',
+      tags: tags,
+      world_book: bookRaw,
+      source_type: 'self',
       avatar: els.acNewRoleAvatar ? els.acNewRoleAvatar.value.trim() : ''
     }).then(function (json) {
       if (!json.success || !json.data) { showToast(json.error || '角色创建失败', 'error'); return; }
       state.roles.push(json.data);
-      els.acNewRoleName.value = '';
-      els.acNewRolePrompt.value = '';
-      els.acNewRoleGreeting.value = '';
-      els.acNewRoleDesc.value = '';
-      els.acNewRolePersonality.value = '';
-      els.acNewRoleScenario.value = '';
-      els.acNewRoleExamples.value = '';
+      ['acNewRoleName', 'acNewRolePrompt', 'acNewRoleGreeting', 'acNewRoleDesc', 'acNewRolePersonality',
+        'acNewRoleScenario', 'acNewRoleExamples', 'acNewRolePostHistory', 'acNewRoleAltGreetings',
+        'acNewRoleCreator', 'acNewRoleCreatorNotes', 'acNewRoleTags', 'acNewRoleWorldBook'].forEach(function (id) {
+        if (els[id]) els[id].value = '';
+      });
       if (els.acNewRoleAvatar) els.acNewRoleAvatar.value = '';
       updateAvatarPreview('');
       hideModal('acRoleCreateModal');
       renderRoleList();
-      showToast('角色已创建', 'success');
+      showToast(json.data.book_count ? ('角色已创建（含 ' + json.data.book_count + ' 条世界书）') : '角色已创建', 'success');
     }).catch(function (err) { showToast(err.message, 'error'); });
   }
 
@@ -1980,38 +2232,22 @@
   }
 
   // 从角色卡对象创建角色（JSON / PNG 通用）
+  // 完整卡片直接交给服务端归一：兼容 SillyTavern / RP-Hub 的 Character Card V1/V2/V3，
+  // 内嵌世界书（character_book）、备选开场白、post_history_instructions 等一并落库。
   function createRoleFromCard(card, fileName) {
-    var data = card.data || card;
-    var name = (data.name || '').trim().slice(0, 50);
-    var systemPrompt = (data.system_prompt || data.system || data.personality || '').trim();
-    var greeting = (data.first_mes || data.greeting || '').trim().slice(0, 2000);
-    var description = (data.description || data.char_desc || '').trim().slice(0, 500);
-    var personality = (data.personality || '').trim().slice(0, 4000);
-    var scenario = (data.scenario || '').trim().slice(0, 4000);
-    var examples = (data.mes_example || data.examples || data.mesExample || '').trim().slice(0, 8000);
-    var avatar = (data.avatar || data.avatar_url || data.image || '').trim();
-
-    if (!name) {
-      // 尝试从文件名推断
-      name = (fileName || '').replace(/\.(json|png)$/i, '').trim().slice(0, 50);
-    }
-    if (!name) { showToast('角色卡缺少名称', 'error'); return; }
-    if (!systemPrompt && !greeting) { showToast('角色卡缺少设定或开场白', 'error'); return; }
-
+    if (!card || typeof card !== 'object') { showToast('角色卡格式不正确', 'error'); return; }
     api('/ai-chat/api/roles', {
-      name: name,
-      system_prompt: systemPrompt,
-      greeting: greeting,
-      description: description,
-      personality: personality,
-      scenario: scenario,
-      examples: examples,
-      avatar: avatar
+      card: card,
+      file_name: fileName || '',
+      source_type: 'external'
     }).then(function (json) {
       if (!json.success || !json.data) { showToast(json.error || '角色导入失败', 'error'); return; }
       state.roles.push(json.data);
       renderRoleList();
-      showToast('角色「' + name + '」已导入', 'success');
+      var extra = [];
+      if (json.data.book_count) extra.push(json.data.book_count + ' 条世界书');
+      if (json.data.alternate_count) extra.push(json.data.alternate_count + ' 条备选开场白');
+      showToast('角色「' + json.data.name + '」已导入' + (extra.length ? '（含 ' + extra.join('、') + '）' : ''), 'success');
     }).catch(function (err) { showToast(err.message, 'error'); });
   }
 
@@ -3378,18 +3614,27 @@
     els.acFullscreenBtn.addEventListener('click', toggleFullscreen);
   }
 
-  // ============ 深色/浅色主题切换（持久化到 localStorage） ============
+  // ============ 深色/浅色主题切换 ============
+  // 外观自定义模块（ai-appearance.js）接管主题落地；此处按钮仅做快捷切换与图标同步。
+  function syncThemeBtn() {
+    if (!els.acThemeBtn) return;
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    els.acThemeBtn.innerHTML = dark ? '☀️ <span>日间</span>' : '🌙 <span>夜间</span>';
+    els.acThemeBtn.title = dark ? '切换到浅色' : '切换到深色';
+  }
   function applyTheme(theme) {
-    var root = document.documentElement;
-    if (theme === 'dark') root.setAttribute('data-theme', 'dark');
-    else root.removeAttribute('data-theme');
-    if (els.acThemeBtn) {
-      els.acThemeBtn.innerHTML = theme === 'dark' ? '☀️ <span>日间</span>' : '🌙 <span>夜间</span>';
-      els.acThemeBtn.title = theme === 'dark' ? '切换到浅色' : '切换到深色';
+    // 优先走外观模块，保证与设置面板 / 落库偏好一致
+    if (window.ACAppearance) { window.ACAppearance.set({ theme: theme }); } else {
+      var root = document.documentElement;
+      if (theme === 'dark') root.setAttribute('data-theme', 'dark');
+      else root.removeAttribute('data-theme');
+      try { localStorage.setItem('ac_theme', theme); } catch (e) { /* 忽略存储失败 */ }
     }
-    try { localStorage.setItem('ac_theme', theme); } catch (e) { /* 忽略存储失败 */ }
+    syncThemeBtn();
   }
   function initTheme() {
+    // 外观模块已在页面加载时应用主题（含 auto→系统）；无模块时回退到旧的本地偏好逻辑
+    if (window.ACAppearance) { syncThemeBtn(); return; }
     var saved = null;
     try { saved = localStorage.getItem('ac_theme'); } catch (e) { /* 忽略 */ }
     if (!saved) {

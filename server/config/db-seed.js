@@ -5,12 +5,63 @@
  *   - image_categories 图片默认分类（风景/人物/动物/建筑/美食/抽象）
  *   - settings        全站设置（站点名、ICP 备案、SMTP、用户协议/隐私政策等长文本）
  *   - permissions     后台权限点定义
+ *   - ai_roles        内置官方角色 + 官方角色卡语料（server/config/seed-characters/*.json）
  *   - 以及后续各业务模块的默认数据（AI 角色、提示词分类等，见下文分段）
  * 幂等保证：全部使用 INSERT OR IGNORE，重复执行不会产生重复数据；
  * 协议升级：agreement_version 变更时强制覆盖更新用户协议/隐私政策正文。
  */
 
 const { queryAll } = require('./db-helpers');
+const characterCards = require('../services/ai-chat/characters');
+
+/**
+ * 官方角色卡语料播种（Character Card V2/V3 兼容）
+ * 语料来源：server/config/seed-characters/*.json（抓取并人工筛选的公开可分享卡，
+ *          每张卡自带 source.repo / path / url / license 溯源信息）。
+ * 幂等：按名称（官方卡范围内，大小写不敏感）跳过已存在的卡；语料目录不存在时静默跳过。
+ * 归属：is_official=1、user_id=NULL、source_type='official'，保留版权标注（license）与来源 URL。
+ */
+function seedOfficialCharacterCards(db) {
+  let cards = [];
+  try {
+    cards = characterCards.loadSeedCards();
+  } catch (err) {
+    console.warn('[db-seed] 官方角色卡语料加载失败：' + err.message);
+    return;
+  }
+  if (!cards.length) return;
+
+  const existing = new Set(
+    queryAll(db, 'SELECT name FROM ai_roles WHERE is_official = 1').map(r => String(r.name || '').toLowerCase())
+  );
+  const countRow = queryAll(db, 'SELECT COUNT(*) AS c FROM ai_roles WHERE is_official = 1');
+  let sortOrder = countRow.length ? (countRow[0].c || 0) : 0;
+  let inserted = 0;
+  let skipped = 0;
+
+  cards.forEach(card => {
+    const key = String(card.name || '').toLowerCase();
+    if (!key) { skipped++; return; }
+    if (existing.has(key)) { skipped++; return; }
+    existing.add(key);
+    const cols = characterCards.cardToColumns(card);
+    cols.avatar = characterCards.sanitizeAvatar(cols.avatar);
+    db.run(`INSERT INTO ai_roles (
+        name, description, personality, scenario, greeting, system_prompt, post_history_instructions,
+        examples, creator_notes, creator, character_version, category, avatar, alternate_greetings,
+        tags, world_book, extensions, is_official, user_id, sort_order, source_type, source_url, license)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, 'official', ?, ?)`,
+    [cols.name, cols.description, cols.personality, cols.scenario, cols.greeting, cols.system_prompt,
+      cols.post_history_instructions, cols.examples, cols.creator_notes, cols.creator, cols.character_version,
+      cols.category, cols.avatar, cols.alternate_greetings, cols.tags, cols.world_book, cols.extensions,
+      sortOrder++, card.source_url || '', card.license || '']);
+    inserted++;
+  });
+
+  if (inserted) {
+    console.log('[db-seed] 已导入官方角色卡 ' + inserted + ' 张（语料 ' + cards.length + ' 张，跳过重复 ' + skipped + '）');
+  }
+}
 
 function insertDefaultDataIfNeeded(db) {
   // 插入默认图片分享配置
@@ -681,6 +732,9 @@ PHILOSOPHY（价值讨论）：成熟、不给简单答案、承认矛盾。
       console.log('[db-seed] 清理重复官方角色「' + row.name + '」，删除 ' + removeIds.length + ' 条');
     }
   });
+
+  // 官方角色卡语料（server/config/seed-characters/*.json）
+  seedOfficialCharacterCards(db);
 
   // 内置 AI 聊天模型提供商（OpenAI 兼容；前台选提供商自动带出端点/默认模型，填 Key 即用）
   // 数组结构：[provider_key, name, api_base, default_model, models(JSON), api_key_url, sort_order]

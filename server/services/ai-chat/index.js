@@ -9,6 +9,7 @@ const { checkQuota, consumeQuota } = require('./quota');
 const { buildContext, getGroupMembers } = require('./context');
 const { summarizeRound, embedRound, getRounds, markReplyStart, markReplyEnd } = require('./memory');
 const { estimateTokens, normalizeError } = require('./utils');
+const characterCards = require('./characters');
 
 // ============ 会话 ============
 
@@ -41,10 +42,10 @@ function createConversation(db, user, data = {}) {
       e.secondary_keys || '', e.selective || 0, e.probability == null ? 100 : e.probability, e.depth == null ? 4 : e.depth]);
   });
 
-  // 角色开场白：新会话选择带开场白的角色时，自动注入第一条 AI 消息
+  // 角色开场白：新会话选择带开场白的角色时，自动注入第一条 AI 消息（支持备选开场白）
   if (conv.role_id) {
-    const role = queryOne(db, 'SELECT greeting FROM ai_roles WHERE id = ?', [conv.role_id]);
-    const greeting = role && role.greeting ? String(role.greeting).trim() : '';
+    const role = queryOne(db, 'SELECT greeting, alternate_greetings FROM ai_roles WHERE id = ?', [conv.role_id]);
+    const greeting = role ? characterCards.pickGreeting(role, data.greeting_index) : '';
     if (greeting) {
       db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status)
         VALUES (?, 0, 'assistant', ?, ?, '', 'done')`,

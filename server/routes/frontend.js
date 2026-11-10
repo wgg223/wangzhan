@@ -945,6 +945,8 @@ router.use('/', aiImageRoutes);
 // ============ AI 聊天模块 ============
 const crypto = require('crypto');
 const aiChatService = require('../services/ai-chat');
+const characterCards = require('../services/ai-chat/characters');
+const uiPrefs = require('../services/ai-chat/ui-prefs');
 const { checkQuota } = require('../services/ai-chat/quota');
 const { refreshSummary, getMemoryStatus, startBackfill, getBackfillProgress, cancelBackfill } = require('../services/ai-chat/memory');
 const { resolveModel, fetchModelList } = require('../services/ai-chat/provider');
@@ -965,6 +967,21 @@ function csrfCheck(req, res, next) {
 }
 
 const WORLD_BOOK_POSITIONS = ['system_top', 'before_char', 'after_char', 'user_top', 'assistant_top', 'in_chat'];
+
+// 角色卡导出权限（高危权限 aichat.export，超管直通）；从广场导入的卡另在服务层拒绝导出
+function canExportRoleCards(req, res) {
+  const user = req.session.user;
+  if (!user) return false;
+  return user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'aichat.export');
+}
+
+// 角色卡世界书待注入数据（会话尚未处理过、且所选角色带 lorebook 时返回）
+function pendingBookFor(db, conv, userId) {
+  if (!conv || !conv.role_id || conv.book_imported) return null;
+  const role = queryOne(db, 'SELECT id, name, world_book FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)',
+    [conv.role_id, userId]);
+  return role ? characterCards.pendingBookView(role) : null;
+}
 
 // AI 聊天页面（独立页面，不使用主站布局）
 router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
@@ -1010,14 +1027,17 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
   const db = req.db;
   const user = req.session.user;
   const settings = getSettings(db);
+  // 导出角色卡为独立高危权限；导入他人分享的卡永远不可导出（防内容外溢）
+  const canExportCards = user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'aichat.export');
   const conversations = queryAll(db, `SELECT id, title, model, role_id, system_prompt, message_count,
       memory_enabled, memory_mode, rag_enabled, current_branch_id, updated_at,
       gen_temperature, gen_top_p, gen_top_k, gen_frequency_penalty, gen_presence_penalty, gen_max_tokens,
-      author_note, author_note_depth, prompt_template_id, is_group, group_members, group_mode
+      author_note, author_note_depth, prompt_template_id, is_group, group_members, group_mode, book_imported
     FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC, id DESC`, [user.id]);
-  const roles = queryAll(db, `SELECT id, name, avatar, description, category, is_official, user_id,
-      greeting, personality, scenario, examples
-    FROM ai_roles WHERE is_official = 1 OR user_id = ? ORDER BY is_official DESC, sort_order ASC, id ASC`, [user.id]);
+  const roleRows = queryAll(db, `SELECT * FROM ai_roles WHERE is_official = 1 OR user_id = ?
+    ORDER BY is_official DESC, sort_order ASC, id ASC`, [user.id]);
+  // 角色卡走 lean 视图：不下发设定/世界书全文（上百张官方卡会撑爆首屏），需要时按 id 拉详情
+  const roles = roleRows.map(r => characterCards.chatRoleView(r, { canExport: canExportCards, lean: true }));
   const models = queryAll(db, `SELECT id, name, model_key, provider, api_endpoint, api_key, is_default, max_tokens, temperature
     FROM ai_models WHERE user_id = ? ORDER BY is_default DESC, id ASC`, [user.id]);
   models.forEach(m => { m.has_key = Boolean(m.api_key && m.api_key.indexOf('ENC:') === 0); delete m.api_key; });
@@ -1033,8 +1053,9 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
   const presets = queryAll(db, 'SELECT * FROM ai_presets WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC, is_default DESC, id ASC', [user.id]);
   const promptTemplates = queryAll(db, 'SELECT id, name, content, description, is_global FROM ai_prompt_templates WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC, sort_order ASC, id ASC', [user.id]);
   const regexScripts = queryAll(db, 'SELECT id, name, find_regex, replace_string, flags, placement, enabled, sort_order, min_depth, max_depth FROM ai_regex_scripts WHERE user_id = ? ORDER BY sort_order ASC, id ASC', [user.id]);
-  const helpRow = queryOne(db, 'SELECT ai_chat_help_seen FROM users WHERE id = ?', [user.id]);
+  const helpRow = queryOne(db, 'SELECT ai_chat_help_seen, ai_ui_settings FROM users WHERE id = ?', [user.id]);
   const helpSeen = !!(helpRow && helpRow.ai_chat_help_seen);
+  const uiSettings = uiPrefs.sanitize(helpRow && helpRow.ai_ui_settings);
   res.json({
     success: true,
     data: {
@@ -1064,7 +1085,8 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
       // 默认模型（会话未显式指定时）是否为用户自填模型——自有 API 不受站内配额限制
       defaultModelIsOwn: aiChatService.isOwnModel(db, user.id, ''),
       helpSeen,
-      canExport: user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'aichat.export')
+      canExport: canExportCards,
+      uiSettings
     }
   });
 });
@@ -1077,11 +1099,29 @@ router.post('/ai-chat/api/help-seen', isAuthenticated, hasFrontendPermission('ai
   res.json({ success: true });
 });
 
+// 保存外观偏好（RP-Hub 式 UI 自定义；仅作用于 /ai-chat 与 /characters）
+router.post('/ai-chat/api/ui-settings', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const saved = uiPrefs.serialize(req.body && req.body.settings);
+  db.run('UPDATE users SET ai_ui_settings = ? WHERE id = ?', [saved, req.session.user.id]);
+  saveDatabase();
+  res.json({ success: true, data: JSON.parse(saved) });
+});
+
+// 重置外观偏好为默认
+router.post('/ai-chat/api/ui-settings/reset', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const saved = uiPrefs.serialize({});
+  db.run('UPDATE users SET ai_ui_settings = ? WHERE id = ?', [saved, req.session.user.id]);
+  saveDatabase();
+  res.json({ success: true, data: JSON.parse(saved) });
+});
+
 // 新建会话
 router.post('/ai-chat/api/conversations', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
   try {
     const conv = aiChatService.createConversation(req.db, req.session.user, req.body);
-    res.json({ success: true, data: conv });
+    res.json({ success: true, data: conv, pending_book: pendingBookFor(req.db, conv, req.session.user.id) });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
@@ -1116,25 +1156,78 @@ router.post('/ai-chat/api/conversations/role', isAuthenticated, hasFrontendPermi
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const roleId = parseInt(req.body.role_id, 10) || null;
   let greeting = '';
+  let roleRow = null;
   if (roleId) {
-    const role = queryOne(db, 'SELECT id, greeting FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [roleId, req.session.user.id]);
-    if (!role) return res.status(404).json({ error: '角色不存在' });
-    greeting = role.greeting || '';
+    roleRow = queryOne(db, 'SELECT id, greeting, alternate_greetings, world_book FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [roleId, req.session.user.id]);
+    if (!roleRow) return res.status(404).json({ error: '角色不存在' });
+    // 支持备选开场白：greeting_index 0=first_mes，1..n=alternate_greetings[n-1]
+    greeting = characterCards.pickGreeting(roleRow, req.body.greeting_index);
   }
+  const msgCount = queryOne(db, 'SELECT COUNT(*) AS c FROM ai_messages WHERE conversation_id = ?', [conv.id]);
+  const isEmptyConv = !msgCount || msgCount.c === 0;
   db.run('UPDATE ai_conversations SET role_id = ? WHERE id = ?', [roleId, conv.id]);
+  // 空会话切换角色 → 重置世界书注入标记，让新角色的 lorebook 可以再次弹窗勾选；
+  // 已有消息的会话不打扰（可在世界书面板手动「从角色卡导入」）
+  if (roleId && isEmptyConv) {
+    db.run('UPDATE ai_conversations SET book_imported = 0 WHERE id = ?', [conv.id]);
+  }
   // 会话尚无任何消息且角色带开场白 → 注入开场白作为第一条 AI 消息
-  if (greeting) {
-    const msgCount = queryOne(db, 'SELECT COUNT(*) AS c FROM ai_messages WHERE conversation_id = ?', [conv.id]);
-    if (!msgCount || msgCount.c === 0) {
-      const { estimateTokens } = require('../services/ai-chat/utils');
-      db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status)
-        VALUES (?, 0, 'assistant', ?, ?, '', 'done')`,
-      [conv.id, greeting, estimateTokens(greeting)]);
-      db.run('UPDATE ai_conversations SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
-    }
+  if (greeting && isEmptyConv) {
+    const { estimateTokens } = require('../services/ai-chat/utils');
+    db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status)
+      VALUES (?, 0, 'assistant', ?, ?, '', 'done')`,
+    [conv.id, greeting, estimateTokens(greeting)]);
+    db.run('UPDATE ai_conversations SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
   }
   saveDatabase();
-  res.json({ success: true });
+  const updated = queryOne(db, 'SELECT * FROM ai_conversations WHERE id = ?', [conv.id]);
+  res.json({ success: true, data: updated, pending_book: pendingBookFor(db, updated, req.session.user.id) });
+});
+
+// 应用角色卡世界书到当前会话（弹窗勾选后提交；skip=true 表示本次不导入，同样标记已处理避免重复弹窗）
+// 条目内容一律由服务端从角色卡读取，前端只提交选中的 index，避免借该接口写入任意内容
+router.post('/ai-chat/api/conversations/book-apply', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const db = req.db;
+  const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.body.id, 10));
+  if (!conv) return res.status(404).json({ error: '会话不存在' });
+  if (!conv.role_id) return res.status(400).json({ error: '当前会话未选择角色' });
+  const role = queryOne(db, 'SELECT id, name, world_book FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)',
+    [conv.role_id, req.session.user.id]);
+  if (!role) return res.status(404).json({ error: '角色不存在' });
+
+  const entries = characterCards.bookEntriesForInjection(role);
+  if (!entries.length) {
+    db.run('UPDATE ai_conversations SET book_imported = 1 WHERE id = ?', [conv.id]);
+    saveDatabase();
+    return res.json({ success: true, data: { imported: 0, skipped: 0, total: 0 } });
+  }
+  if (req.body.skip === true || req.body.skip === 'true' || req.body.skip === 1) {
+    db.run('UPDATE ai_conversations SET book_imported = 1 WHERE id = ?', [conv.id]);
+    saveDatabase();
+    return res.json({ success: true, data: { imported: 0, skipped: entries.length, total: entries.length, declined: true } });
+  }
+
+  const selected = Array.isArray(req.body.selected)
+    ? req.body.selected.map(i => parseInt(i, 10)).filter(i => !Number.isNaN(i) && i >= 0 && i < entries.length)
+    : null;
+  const chosen = selected ? selected.map(i => entries[i]) : entries;
+  const existing = new Set(queryAll(db, 'SELECT key FROM ai_world_book WHERE conversation_id = ?', [conv.id])
+    .map(r => String(r.key || '').trim().toLowerCase()));
+  let imported = 0;
+  let dupSkipped = 0;
+  chosen.forEach(e => {
+    const k = String(e.key || '').trim().toLowerCase();
+    if (k && existing.has(k)) { dupSkipped++; return; }
+    db.run(`INSERT INTO ai_world_book (conversation_id, key, content, position, sort_order, enabled, constant,
+        secondary_keys, selective, probability, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [conv.id, e.key, e.content, e.position, e.sort_order, e.enabled, e.constant,
+      e.secondary_keys, e.selective, e.probability, e.depth]);
+    if (k) existing.add(k);
+    imported++;
+  });
+  db.run('UPDATE ai_conversations SET book_imported = 1 WHERE id = ?', [conv.id]);
+  saveDatabase();
+  res.json({ success: true, data: { imported, skipped: dupSkipped, total: entries.length, book_name: role.name } });
 });
 
 // 切换会话模型
@@ -1583,40 +1676,71 @@ router.post('/ai-chat/api/memory/backfill/cancel', isAuthenticated, hasFrontendP
   res.json({ success: true });
 });
 
-// 创建用户角色（支持开场白/性格/场景/示例对话等角色卡字段）
+// 创建/导入用户角色卡（完整兼容 Character Card V2/V3：世界书、备选开场白、tags、创作者信息）
 router.post('/ai-chat/api/roles', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatRoleLimiter, (req, res) => {
   const db = req.db;
   const user = req.session.user;
-  const name = String(req.body.name || '').trim().slice(0, 50);
-  const systemPrompt = String(req.body.system_prompt || '').trim().slice(0, 32000);
-  const greeting = String(req.body.greeting || '').trim().slice(0, 2000);
-  if (!name) return res.status(400).json({ error: '角色名称不能为空' });
-  if (!systemPrompt && !greeting) return res.status(400).json({ error: '角色设定或开场白至少填写一项' });
+  const norm = characterCards.parseRolePayload(req.body);
+  if (!norm) return res.status(400).json({ error: '角色卡缺少名称，或设定/开场白/简介全为空' });
+  // 来源标记：表单直填 = self；外部文件 / URL 导入 = external（站内广场导入走 /characters/api/import）
+  const sourceType = req.body.source_type === 'external' ? 'external' : 'self';
   // 角色去重：与官方角色或本人已有角色同名（大小写不敏感）时拒绝
-  const dup = queryOne(db, 'SELECT id, name FROM ai_roles WHERE LOWER(name) = LOWER(?) AND (is_official = 1 OR user_id = ?)', [name, user.id]);
+  const dup = queryOne(db, 'SELECT id, name FROM ai_roles WHERE LOWER(name) = LOWER(?) AND (is_official = 1 OR user_id = ?)', [norm.name, user.id]);
   if (dup) return res.status(400).json({ error: '同名角色「' + dup.name + '」已存在（官方角色或您的角色），请换一个名称' });
-  db.run(`INSERT INTO ai_roles (name, description, system_prompt, greeting, personality, scenario, examples, category, avatar, is_official, user_id, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)`,
-  [name,
-    String(req.body.description || '').slice(0, 500),
-    systemPrompt,
-    greeting,
-    String(req.body.personality || '').slice(0, 4000),
-    String(req.body.scenario || '').slice(0, 4000),
-    String(req.body.examples || '').slice(0, 8000),
-    String(req.body.category || 'default').slice(0, 50),
-    String(req.body.avatar || '').slice(0, 2000),
-    user.id]);
+
+  const cols = characterCards.cardToColumns(norm);
+  cols.avatar = characterCards.sanitizeAvatar(req.body.avatar || cols.avatar);
+  const sourceUrl = characterCards.txt(req.body.source_url, 500);
+  const license = characterCards.txt(req.body.license, 200);
+  const columns = characterCards.ROLE_CARD_COLUMNS;
+  db.run(`INSERT INTO ai_roles (${columns.join(', ')}, is_official, user_id, sort_order, source_type, source_url, license)
+    VALUES (${columns.map(() => '?').join(', ')}, 0, ?, 0, ?, ?, ?)`,
+  columns.map(k => cols[k]).concat([user.id, sourceType, sourceUrl, license]));
+
   const role = queryOne(db, 'SELECT * FROM ai_roles WHERE id = last_insert_rowid()');
   saveDatabase();
-  res.json({ success: true, data: role });
+  res.json({ success: true, data: characterCards.chatRoleView(role, { canExport: canExportRoleCards(req, res) }) });
 });
 
-// 删除用户自建角色（官方角色不可删）
+// 导出角色卡（chara_card_v2 JSON，含 character_book）
+// 双重管控：需 aichat.export 高危权限；从广场导入的卡（source_type='hub'）一律拒绝，防内容外溢
+router.get('/ai-chat/api/roles/export', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  if (!canExportRoleCards(req, res)) {
+    return res.status(403).json({ error: '无导出权限，请先申请「AI聊天导出」权限' });
+  }
+  const id = parseInt(req.query.id, 10) || 0;
+  const row = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [id, user.id]);
+  if (!row) return res.status(404).json({ error: '角色不存在' });
+  if (!characterCards.canExportCard(row)) {
+    return res.status(403).json({ error: '从角色卡广场导入的卡仅限站内使用，不支持导出' });
+  }
+  logActivity(db, {
+    user_id: user.id, username: user.username, action: 'export', target_type: 'ai_role',
+    target_id: row.id, target_title: row.name, detail: '导出角色卡（chara_card_v2）', ip: req.ip
+  });
+  const filename = (row.name || 'character').replace(/[\\/:*?"<>|]/g, '_') + '.json';
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', "attachment; filename=\"card.json\"; filename*=UTF-8''" + encodeURIComponent(filename));
+  res.send(JSON.stringify(characterCards.roleToCard(row), null, 2));
+});
+
+// 角色卡详情（本人卡或官方卡；含设定全文、备选开场白与世界书）
+router.get('/ai-chat/api/roles/:id(\\d+)', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
+  const db = req.db;
+  const row = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)',
+    [parseInt(req.params.id, 10), req.session.user.id]);
+  if (!row) return res.status(404).json({ error: '角色不存在' });
+  res.json({ success: true, data: characterCards.chatRoleView(row, { canExport: canExportRoleCards(req, res) }) });
+});
+
+// 删除用户自建角色（官方角色不可删；同时清理引用该角色的会话）
 router.post('/ai-chat/api/roles/delete', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatRoleLimiter, (req, res) => {
   const db = req.db;
   const role = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ?', [parseInt(req.body.id, 10)]);
   if (!role || role.user_id !== req.session.user.id) return res.status(404).json({ error: '角色不存在' });
+  db.run('UPDATE ai_conversations SET role_id = NULL WHERE role_id = ? AND user_id = ?', [role.id, req.session.user.id]);
   db.run('DELETE FROM ai_roles WHERE id = ?', [role.id]);
   saveDatabase();
   res.json({ success: true });
