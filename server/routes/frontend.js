@@ -975,6 +975,15 @@ function canExportRoleCards(req, res) {
   return user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'aichat.export');
 }
 
+// 角色卡可见性：本人卡或官方卡；被管理员屏蔽（ai_role_blocks）的卡仅上传者本人可见，
+// 官方卡没有归属，屏蔽后对所有人隐藏。已建会话不受影响（与「下架不影响已导入副本」一致）。
+const ROLE_VISIBLE_WHERE = '(is_official = 1 OR user_id = ?) AND ' +
+  '(user_id = ? OR NOT EXISTS (SELECT 1 FROM ai_role_blocks blk WHERE blk.role_id = ai_roles.id))';
+
+function visibleRole(db, id, userId) {
+  return queryOne(db, `SELECT * FROM ai_roles WHERE id = ? AND ${ROLE_VISIBLE_WHERE}`, [id, userId, userId]);
+}
+
 // 角色卡世界书待注入数据（会话尚未处理过、且所选角色带 lorebook 时返回）
 function pendingBookFor(db, conv, userId) {
   if (!conv || !conv.role_id || conv.book_imported) return null;
@@ -1034,8 +1043,8 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
       gen_temperature, gen_top_p, gen_top_k, gen_frequency_penalty, gen_presence_penalty, gen_max_tokens,
       author_note, author_note_depth, prompt_template_id, is_group, group_members, group_mode, book_imported
     FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC, id DESC`, [user.id]);
-  const roleRows = queryAll(db, `SELECT * FROM ai_roles WHERE is_official = 1 OR user_id = ?
-    ORDER BY is_official DESC, sort_order ASC, id ASC`, [user.id]);
+  const roleRows = queryAll(db, `SELECT * FROM ai_roles WHERE ${ROLE_VISIBLE_WHERE}
+    ORDER BY is_official DESC, sort_order ASC, id ASC`, [user.id, user.id]);
   // 角色卡走 lean 视图：不下发设定/世界书全文（上百张官方卡会撑爆首屏），需要时按 id 拉详情
   const roles = roleRows.map(r => characterCards.chatRoleView(r, { canExport: canExportCards, lean: true }));
   const models = queryAll(db, `SELECT id, name, model_key, provider, api_endpoint, api_key, is_default, max_tokens, temperature
@@ -1158,7 +1167,7 @@ router.post('/ai-chat/api/conversations/role', isAuthenticated, hasFrontendPermi
   let greeting = '';
   let roleRow = null;
   if (roleId) {
-    roleRow = queryOne(db, 'SELECT id, greeting, alternate_greetings, world_book FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)', [roleId, req.session.user.id]);
+    roleRow = queryOne(db, `SELECT id, greeting, alternate_greetings, world_book FROM ai_roles WHERE id = ? AND ${ROLE_VISIBLE_WHERE}`, [roleId, req.session.user.id, req.session.user.id]);
     if (!roleRow) return res.status(404).json({ error: '角色不存在' });
     // 支持备选开场白：greeting_index 0=first_mes，1..n=alternate_greetings[n-1]
     greeting = characterCards.pickGreeting(roleRow, req.body.greeting_index);
@@ -1729,8 +1738,7 @@ router.get('/ai-chat/api/roles/export', isAuthenticated, hasFrontendPermission('
 // 角色卡详情（本人卡或官方卡；含设定全文、备选开场白与世界书）
 router.get('/ai-chat/api/roles/:id(\\d+)', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
   const db = req.db;
-  const row = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ? AND (is_official = 1 OR user_id = ?)',
-    [parseInt(req.params.id, 10), req.session.user.id]);
+  const row = visibleRole(db, parseInt(req.params.id, 10), req.session.user.id);
   if (!row) return res.status(404).json({ error: '角色不存在' });
   res.json({ success: true, data: characterCards.chatRoleView(row, { canExport: canExportRoleCards(req, res) }) });
 });
@@ -1741,6 +1749,7 @@ router.post('/ai-chat/api/roles/delete', isAuthenticated, hasFrontendPermission(
   const role = queryOne(db, 'SELECT * FROM ai_roles WHERE id = ?', [parseInt(req.body.id, 10)]);
   if (!role || role.user_id !== req.session.user.id) return res.status(404).json({ error: '角色不存在' });
   db.run('UPDATE ai_conversations SET role_id = NULL WHERE role_id = ? AND user_id = ?', [role.id, req.session.user.id]);
+  db.run('DELETE FROM ai_role_blocks WHERE role_id = ?', [role.id]);
   db.run('DELETE FROM ai_roles WHERE id = ?', [role.id]);
   saveDatabase();
   res.json({ success: true });

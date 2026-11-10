@@ -161,7 +161,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: current })
-      }).then(function (r) { return r.json(); }).then(function (json) {
+      }).then(function (json) {
         if (json && json.success && json.data) { current = sanitize(json.data); }
       }).catch(function () { /* 静默失败，本地已镜像 */ });
     }, 500);

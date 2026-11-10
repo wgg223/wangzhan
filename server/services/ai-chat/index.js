@@ -490,7 +490,7 @@ async function predictReplies(db, user, conv, opts = {}) {
   const count = Math.min(Math.max(parseInt(settings.ai_predict_count, 10) || 3, 1), 5);
   const branchId = conv.current_branch_id || 0;
   const history = queryAll(db, `SELECT role, content, speaker_role_id FROM ai_messages
-    WHERE conversation_id = ? AND branch_id = ? AND status = 'done' ORDER BY id DESC LIMIT 12`,
+    WHERE conversation_id = ? AND branch_id = ? AND status = 'done' ORDER BY id DESC LIMIT 16`,
     [conv.id, branchId]).reverse();
   if (!history.length) return { suggestions: [] };
 
@@ -514,12 +514,27 @@ async function predictReplies(db, user, conv, opts = {}) {
     return who + '：' + String(m.content || '').slice(0, 500);
   }).join('\n');
 
-  const sys = '你是对话预测助手。请站在【用户】的角度，预测用户接下来最可能发送的 ' + count + ' 条消息。' +
-    '要求：口语化、自然、每条不超过 30 个字、彼此内容不同、贴合当前语境与角色。' +
-    '只输出一个 JSON 字符串数组，形如 ["...","...","..."]，不要任何解释或多余文字。';
+  // 本轮重点：明确最近一条 AI 回复与用户上一句，避免建议脱离当前楼层
+  const lastAi = history.filter(m => m.role !== 'user').pop();
+  const lastUser = history.filter(m => m.role === 'user').pop();
+  const focusLines = [];
+  if (lastUser) focusLines.push('用户上一句：' + String(lastUser.content || '').slice(0, 300));
+  if (lastAi) focusLines.push('AI 最新回复：' + String(lastAi.content || '').slice(0, 500));
+
+  const askCount = Math.min(count + 2, 6); // 多要两条候选，过滤掉与用户已说过的话重复后仍有足够可用条目
+  const sys = '你是 RP 对话预测助手。站在【用户】的立场，预测用户看到 AI 最新回复后接下来最可能发送的消息。' +
+    '要求：' +
+    '1) 紧扣【本轮重点】与最近一两轮的具体内容（回应对方刚说的话、追问细节、推进剧情），不要写放之四海皆准的套话；' +
+    '2) 严禁复用、改写或概括用户已经说过的话；' +
+    '3) 每条口语化、第一人称，不超过 30 字，可用括号写简短动作，但不要旁白解说；' +
+    '4) ' + askCount + ' 条之间意图要不同（如追问信息、情绪或立场表达、主动推进剧情、轻微岔开话题），不要近义改写；' +
+    '5) 符合当前角色性格与该角色所在场景，不要 OOC。' +
+    '只输出一个 JSON 字符串数组，形如 ["...","..."]，不要任何解释或多余文字。';
   const messages = [
     { role: 'system', content: sys + (roleBrief ? '\n' + roleBrief : '') },
-    { role: 'user', content: '以下是当前对话记录：\n' + transcript + '\n\n请输出预测的 ' + count + ' 条用户消息（JSON 数组）：' }
+    { role: 'user', content: '以下是当前对话记录（越靠后越新）：\n' + transcript +
+      (focusLines.length ? '\n\n【本轮重点】\n' + focusLines.join('\n') : '') +
+      '\n\n请预测用户看到 AI 最新回复后，接下来最可能发送的 ' + askCount + ' 条消息（JSON 数组）：' }
   ];
 
   let full = '';
@@ -529,7 +544,7 @@ async function predictReplies(db, user, conv, opts = {}) {
       stream: false,
       signal: opts.signal,
       timeout: 30000,
-      genParams: { temperature: 0.8, max_tokens: 200 }
+      genParams: { temperature: 0.75, max_tokens: 480 }
     });
     full = result.content || '';
     usage = result.usage || null;
@@ -538,7 +553,10 @@ async function predictReplies(db, user, conv, opts = {}) {
     throw Object.assign(new Error(normalizeError(err)), { status: 502 });
   }
 
-  const suggestions = parseSuggestions(full, count);
+  const suggestions = parseSuggestions(full, count, {
+    // 最近用户已发过的内容：形态不同的近义改写也一起挡掉
+    blocklist: history.filter(m => m.role === 'user').slice(-6).map(m => String(m.content || ''))
+  });
   const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
   const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
   consumeQuota(db, user, { tokens: inputTokens + outputTokens, count: false, ownApi: modelInfo.is_own });
@@ -546,28 +564,78 @@ async function predictReplies(db, user, conv, opts = {}) {
 }
 
 // 从模型输出中稳健提取字符串数组（容忍 ```json 包裹、前后缀噪声、逐行输出等）
-function parseSuggestions(text, count) {
+function parseSuggestions(text, count, opts = {}) {
+  const block = (opts.blocklist || []).map(x => String(x || '')).filter(Boolean);
   const raw = String(text || '').trim();
   if (!raw) return [];
   let arr = null;
   const m = raw.match(/\[[\s\S]*\]/);
   if (m) { try { arr = JSON.parse(m[0]); } catch (e) { arr = null; } }
   if (!Array.isArray(arr)) {
-    arr = raw.replace(/^```(?:json)?/i, '').replace(/```$/, '')
-      .split('\n').map(s => s.trim())
-      .filter(Boolean)
-      .map(s => s.replace(/^[\d\-.、)）*\s]+/, '').replace(/^["'“”]+|["'“”]+$/g, ''))
-      .filter(Boolean);
+    // JSON 被截断时的兜底：只捞成对的引号片段，绝不把半截 JSON 当成一条建议
+    const quoted = [];
+    const re = /["“]([^"“”]{1,80})["”]/g;
+    let hit = null;
+    while ((hit = re.exec(raw)) !== null) quoted.push(hit[1]);
+    if (quoted.length) {
+      arr = quoted;
+    } else {
+      arr = raw.replace(/^```(?:json)?/i, '').replace(/```$/, '')
+        .split('\n').map(s => s.trim())
+        .filter(Boolean)
+        .map(s => s.replace(/^[\d\-.、)）*\s]+/, '').replace(/^["'\u201c\u201d]+|["'\u201c\u201d]+$/g, ''))
+        .filter(s => s && !/^[\[\]{}]+$/.test(s));
+    }
   }
   const seen = {};
   return arr
     .map(s => String(typeof s === 'string' ? s : (s && s.content) || '').trim().slice(0, 60))
     .filter(s => {
       if (!s || seen[s.toLowerCase()]) return false;
+      if (block.length && block.some(b => isSimilarText(s, b))) return false; // 与用户刚说过的话雷同
       seen[s.toLowerCase()] = 1;
       return true;
     })
     .slice(0, count);
+}
+
+// 归一化：去掉空白、标点、引号、装饰符号，只留实义字符
+function normReplyText(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[\s\u3000]+/g, '')
+    .replace(/[，。！？、；："'“”‘’（）()\[\]{}<>《》~～·…—\-—_*^`|\\/]/g, '');
+}
+
+// 两条建议是否与用户已发内容重复：完全相同 / 互相包含 / 字符或二元组重合度过高
+// 覆盖「换个语序讲同一句」的改写，但不误伤只是用词有交集的正常回复
+function isSimilarText(a, b) {
+  const x = normReplyText(a), y = normReplyText(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const shortLen = Math.min(x.length, y.length);
+  const longLen = Math.max(x.length, y.length);
+  if (shortLen >= 4 && (x.includes(y) || y.includes(x))) return true;
+  if (shortLen < 4) return false;
+  if (shortLen / longLen < 0.55) return false; // 长度差太多，多半不是同一句改写
+
+  const setX = new Set(Array.from(x));
+  const setY = new Set(Array.from(y));
+  const small = setX.size <= setY.size ? setX : setY;
+  const big = setX.size <= setY.size ? setY : setX;
+  let common = 0;
+  small.forEach(ch => { if (big.has(ch)) common++; });
+  if (common / small.size >= 0.8) return true; // 字符重合度：容忍语序调整
+
+  if (shortLen < 5) return false;
+  const grams = (str) => {
+    const set = new Set();
+    for (let i = 0; i < str.length - 1; i++) set.add(str.slice(i, i + 2));
+    return set;
+  };
+  const A = grams(x), B = grams(y);
+  let hit = 0;
+  A.forEach(g => { if (B.has(g)) hit++; });
+  return hit / A.size >= 0.7;
 }
 
 // 判断某会话（或默认）解析出的模型是否为用户自填模型（走自己的 API，不受站内配额限制）

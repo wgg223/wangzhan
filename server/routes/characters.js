@@ -5,14 +5,20 @@
  *   - 卡片列表 / 详情 / 分类标签聚合；
  *   - 「导入到我」：把广场卡复制成自己的私有卡（source_type='hub'，禁止导出与二次分享，防内容外溢）；
  *   - 「分享到广场」开关：仅本人自建/自导入的卡可分享，官方卡与 hub 卡不可再分享；
+ *   - 上传：普通用户可上传自己的角色卡（.json/.png，落库为 source_type='external'）；
+ *     管理员（aichat.manage / 超管）可批量上传，落库为官方卡（is_official=1, source_type='official'）；
+ *   - 治理（管理员）：屏蔽（仅上传者可见）、下架（取消分享 / 取消官方标记）、强制删除，均支持批量；
  *   - 我的分享与统计。
  * 安全说明：
  *   - 写操作统一走 CSRF 双提交校验 + 限流；
  *   - 可见性：is_official=1 或 is_shared=1 的卡公开；其余仅作者本人可见；
+ *     被屏蔽的卡（ai_role_blocks）对所有人隐藏，仅上传者本人可见，治理入口在后台；
  *   - 广场视图永不下发导出能力（can_export 由服务层按 source_type 判定，hub 卡恒为 false）。
  */
 const express = require('express');
 const crypto = require('crypto');
+const path = require('path');
+const multer = require('multer');
 const router = express.Router();
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { getUserPermKeys, hasPermKey } = require('../middlewares/auth');
@@ -21,6 +27,7 @@ const { getSettings } = require('../utils/settings');
 const { renderError } = require('../utils/response');
 const { logActivity } = require('../config/activity');
 const characterCards = require('../services/ai-chat/characters');
+const { parseCardFiles } = require('../services/ai-chat/card-import');
 const uiPrefs = require('../services/ai-chat/ui-prefs');
 
 // 广场功能总开关（沿用 AI 聊天开关；关闭后游客与用户均不可访问）
@@ -50,6 +57,18 @@ function requireAiChatJson(req, res, next) {
   return res.status(403).json({ error: '您没有 AI 聊天权限，请先申请权限' });
 }
 
+// 计算当前请求用户的权限键列表（不依赖 res.locals，供公开 GET 接口直接使用）
+// super_admin 视为拥有全部权限；其余用户读 user_permissions
+function permKeysFor(req) {
+  const db = req.db;
+  const user = req.session && req.session.user;
+  if (!user) return [];
+  if (user.role === 'super_admin') {
+    return queryAll(db, 'SELECT perm_key FROM permissions').map(p => p.perm_key);
+  }
+  return getUserPermKeys(db, user.id);
+}
+
 // CSRF 校验（与 AI 聊天模块一致：POST 头 X-CSRF-Token === session.doubleSubmitToken）
 function csrfCheck(req, res, next) {
   const token = req.headers['x-csrf-token'];
@@ -67,7 +86,7 @@ const hubOpLimiter = createRateLimiter({
 });
 
 // 列表视图所需列（不含 personality/scenario/system_prompt 等长文本，避免上百张卡撑爆响应）
-const LIST_COLUMNS = `id, name, avatar, description, category, tags, creator, character_version, license,
+const LIST_COLUMNS = `id, user_id, name, avatar, description, category, tags, creator, character_version, license,
   is_official, is_shared, source_type, share_token, greeting, alternate_greetings, world_book,
   import_count, view_count, shared_at, created_at`;
 
@@ -80,9 +99,47 @@ const SORTS = {
 
 const SCOPES = ['public', 'official', 'mine', 'shared', 'imported'];
 
-// 卡片可见性：公开（官方或已分享）/ 本人 / 超管
-function canViewCard(row, user) {
+// 是否具备角色卡治理能力（管理员）：super_admin 或持有 aichat.manage
+function canManageCards(req) {
+  const user = req.session && req.session.user;
+  if (!user) return false;
+  if (user.role === 'super_admin') return true;
+  return hasPermKey(permKeysFor(req), 'aichat.manage');
+}
+
+// 批量 id 解析（数组或逗号分隔字符串 → 正整数数组，最多 limit 个）
+function parseIds(body, limit) {
+  const raw = Array.isArray(body.ids) ? body.ids : String(body.ids == null ? (body.id == null ? '' : body.id) : body.ids).split(',');
+  const out = [];
+  raw.forEach(v => {
+    const n = parseInt(v, 10);
+    if (n > 0 && out.indexOf(n) === -1) out.push(n);
+  });
+  return out.slice(0, limit || 100);
+}
+
+// 屏蔽状态查询：返回 { id: {reason, blocked_at} }
+function blockMap(db, ids) {
+  if (!ids || !ids.length) return {};
+  const ph = ids.map(() => '?').join(',');
+  const rows = queryAll(db, `SELECT role_id, reason, blocked_at FROM ai_role_blocks WHERE role_id IN (${ph})`, ids);
+  const map = {};
+  rows.forEach(r => { map[r.role_id] = { reason: r.reason || '', blocked_at: r.blocked_at || '' }; });
+  return map;
+}
+
+// 可见性 SQL 片段：被屏蔽的卡只有上传者本人能看到（管理员在后台治理面板查看全部）
+function blockedFilterSql(user) {
+  return user
+    ? '(NOT EXISTS (SELECT 1 FROM ai_role_blocks blk WHERE blk.role_id = ai_roles.id) OR ai_roles.user_id = ?)'
+    : 'NOT EXISTS (SELECT 1 FROM ai_role_blocks blk WHERE blk.role_id = ai_roles.id)';
+}
+
+// 卡片可见性：公开（官方或已分享）/ 本人 / 超管；被屏蔽的卡仅上传者本人可见
+function canViewCard(db, row, user) {
   if (!row) return false;
+  const blocked = queryOne(db, 'SELECT id FROM ai_role_blocks WHERE role_id = ?', [row.id]);
+  if (blocked) return Boolean(user && row.user_id === user.id);
   if (row.is_official || row.is_shared) return true;
   if (user && row.user_id === user.id) return true;
   return Boolean(user && user.role === 'super_admin');
@@ -113,14 +170,10 @@ router.get('/characters', (req, res) => {
     req.session.doubleSubmitToken = crypto.randomBytes(32).toString('hex');
   }
   const user = req.session.user || null;
-  let userPerms = [];
-  if (user) {
-    userPerms = user.role === 'super_admin'
-      ? queryAll(db, 'SELECT perm_key FROM permissions').map(p => p.perm_key)
-      : getUserPermKeys(db, user.id);
-  }
+  const userPerms = permKeysFor(req);
   res.locals.userPermissions = userPerms;
   const canImport = Boolean(user) && hasPermKey(userPerms, 'aichat.use');
+  const canManage = canManageCards(req);
   let uiSettings = uiPrefs.DEFAULTS;
   if (user) {
     const row = queryOne(db, 'SELECT ai_ui_settings FROM users WHERE id = ?', [user.id]);
@@ -132,6 +185,7 @@ router.get('/characters', (req, res) => {
     settings: getSettings(db),
     csrfToken: req.session.doubleSubmitToken,
     canImport,
+    canManage,
     isGuest: !user,
     uiSettings
   });
@@ -147,7 +201,8 @@ router.get('/characters/api/meta', (req, res) => {
   if (!hubEnabled(db)) return res.status(403).json({ error: '功能未开放' });
   const user = req.session.user || null;
   const rows = queryAll(db, `SELECT category, tags, is_official, is_shared, user_id FROM ai_roles
-    WHERE is_official = 1 OR is_shared = 1${user ? ' OR user_id = ?' : ''}`, user ? [user.id] : []);
+    WHERE (${user ? 'is_official = 1 OR is_shared = 1 OR user_id = ?' : 'is_official = 1 OR is_shared = 1'})
+      AND ${blockedFilterSql(user)}`, user ? [user.id, user.id] : []);
   const categories = {};
   const tagCount = {};
   rows.forEach(r => {
@@ -199,8 +254,11 @@ router.get('/characters/api/cards', (req, res) => {
     if (user) params.push(user.id);
   }
 
-  const q = String(req.query.q || '').trim().slice(0, 60);
-  if (q) {
+  // 被屏蔽的卡对所有人隐藏（上传者本人除外）
+  where.push(blockedFilterSql(user));
+  if (user) params.push(user.id);
+
+  const q = String(req.query.q || '').trim().slice(0, 60); if (q) {
     where.push('(name LIKE ? OR description LIKE ? OR creator LIKE ? OR tags LIKE ?)');
     const like = `%${q}%`;
     params.push(like, like, like, like);
@@ -220,17 +278,29 @@ router.get('/characters/api/cards', (req, res) => {
   const rows = queryAll(db, `SELECT ${LIST_COLUMNS} FROM ai_roles ${whereSql}
     ORDER BY ${orderBy} LIMIT ? OFFSET ?`, params.concat([perPage, (page - 1) * perPage]));
 
+  const blocks = blockMap(db, rows.map(r => r.id));
+  const canManage = canManageCards(req);
+
   res.json({
     success: true,
     data: {
-      items: rows.map(r => characterCards.publicCardView(r, { list: true, guest: !user })),
+      items: rows.map(r => {
+        const v = characterCards.publicCardView(r, { list: true, guest: !user });
+        const b = blocks[r.id];
+        v.id = r.id;
+        v.is_mine = user && r.user_id === user.id ? 1 : 0;
+        v.is_blocked = b ? 1 : 0;
+        v.block_reason = b ? b.reason : '';
+        return v;
+      }),
       page,
       per_page: perPage,
       total,
       pages: Math.max(Math.ceil(total / perPage), 1),
       scope,
       is_guest: !user,
-      can_import: Boolean(user) && hasPermKey(res.locals.userPermissions || [], 'aichat.use')
+      can_import: Boolean(user) && hasPermKey(permKeysFor(req), 'aichat.use'),
+      can_manage: canManage ? 1 : 0
     }
   });
 });
@@ -245,10 +315,12 @@ router.get('/characters/api/cards/:key', (req, res) => {
   if (!hubEnabled(db)) return res.status(403).json({ error: '功能未开放' });
   const user = req.session.user || null;
   const row = resolveCard(db, req.params.key);
-  if (!row || !canViewCard(row, user)) return res.status(404).json({ error: '角色卡不存在或已下架' });
+  if (!row || !canViewCard(db, row, user)) return res.status(404).json({ error: '角色卡不存在或已下架' });
 
-  // 浏览量统计（公开卡才计，且不做去重，仅作为热度参考）
-  if (row.is_official || row.is_shared) {
+  const block = queryOne(db, 'SELECT reason, blocked_at FROM ai_role_blocks WHERE role_id = ?', [row.id]);
+
+  // 浏览量统计（公开卡才计，且不做去重，仅作为热度参考；被屏蔽的卡不计）
+  if (!block && (row.is_official || row.is_shared)) {
     db.run('UPDATE ai_roles SET view_count = view_count + 1 WHERE id = ?', [row.id]);
     saveDatabase();
   }
@@ -257,7 +329,10 @@ router.get('/characters/api/cards/:key', (req, res) => {
   view.id = row.id;
   view.is_owner = isOwner ? 1 : 0;
   view.official_only = row.is_official ? 1 : 0;
-  view.can_import = Boolean(user) && !isOwner && hasPermKey(res.locals.userPermissions || [], 'aichat.use');
+  view.is_blocked = block ? 1 : 0;
+  view.block_reason = block ? (block.reason || '') : '';
+  view.can_manage = canManageCards(req) ? 1 : 0;
+  view.can_import = Boolean(user) && !isOwner && hasPermKey(permKeysFor(req), 'aichat.use');
   if (isOwner) {
     view.can_share = characterCards.canShareCard(row) ? 1 : 0;
     view.source_role_id = row.source_role_id || null;
@@ -277,7 +352,7 @@ router.post('/characters/api/cards/import', requireAuthJson, requireAiChatJson, 
   const user = req.session.user;
   const key = req.body.token || req.body.id || '';
   const src = resolveCard(db, key);
-  if (!src || !canViewCard(src, user)) return res.status(404).json({ error: '角色卡不存在或已下架' });
+  if (!src || !canViewCard(db, src, user)) return res.status(404).json({ error: '角色卡不存在或已下架' });
   if (!(src.is_official || src.is_shared)) return res.status(403).json({ error: '该角色卡未公开分享' });
   if (src.user_id === user.id) return res.status(400).json({ error: '这是你自己的角色卡，无需导入' });
 
@@ -421,6 +496,219 @@ router.get('/characters/api/mine', requireAuthJson, (req, res) => {
       stats,
       items: rows.map(r => characterCards.ownerCardView(r))
     }
+  });
+});
+
+// ==================== 上传（用户自建 / 管理员批量官方卡） ====================
+
+const cardUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 50 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (ext !== '.json' && ext !== '.png') return cb(new Error('仅支持 .json / .png 角色卡'));
+    cb(null, true);
+  }
+});
+
+const UPLOAD_LIMIT_ADMIN = 50; // 管理员批量上传上限
+const UPLOAD_LIMIT_USER = 10; // 普通用户单次上传上限
+const USER_CARD_CAP = 200; // 单个用户在库角色卡总量上限（防刷）
+
+/**
+ * 上传角色卡文件（.json / .png，兼容 Character Card V1/V2/V3 与 SillyTavern PNG 卡）
+ * - 管理员（aichat.manage / 超管）：批量上传，落库为官方卡（is_official=1, source_type='official'），全站可见
+ * - 普通用户：上传到自己的角色卡（source_type='external'，可分享、可导出），默认不公开
+ */
+router.post('/characters/api/cards/upload', requireAuthJson, requireAiChatJson, csrfCheck, hubOpLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const isAdmin = canManageCards(req);
+  const maxFiles = isAdmin ? UPLOAD_LIMIT_ADMIN : UPLOAD_LIMIT_USER;
+
+  cardUpload.array('files', maxFiles)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!hubEnabled(db)) return res.status(403).json({ error: '功能未开放' });
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: '请选择角色卡文件（.json / .png）' });
+    if (files.length > maxFiles) return res.status(400).json({ error: `单次最多上传 ${maxFiles} 个文件` });
+
+    const parsed = parseCardFiles(files);
+    const errors = parsed.errors.slice();
+    const existingNames = new Set(
+      queryAll(db, isAdmin ? 'SELECT name FROM ai_roles WHERE is_official = 1' : 'SELECT name FROM ai_roles WHERE user_id = ?',
+        isAdmin ? [] : [user.id]).map(r => String(r.name).toLowerCase())
+    );
+
+    if (!isAdmin) {
+      const own = queryOne(db, 'SELECT COUNT(*) AS c FROM ai_roles WHERE user_id = ?', [user.id]);
+      if ((own ? own.c : 0) + parsed.items.length > USER_CARD_CAP) {
+        return res.status(400).json({ error: `角色卡数量已达上限（${USER_CARD_CAP} 张），请先清理后再上传` });
+      }
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    const created = [];
+    parsed.items.forEach(item => {
+      const norm = item.norm;
+      const lower = String(norm.name).toLowerCase();
+      if (existingNames.has(lower)) {
+        skipped++;
+        errors.push(item.fileName + '：同名角色卡「' + norm.name + '」已存在，跳过');
+        return;
+      }
+      existingNames.add(lower);
+      const cols = characterCards.cardToColumns(norm);
+      const payload = isAdmin
+        ? Object.assign({}, cols, { is_official: 1, user_id: null, sort_order: 0, source_type: 'official', source_url: '', is_shared: 0, share_token: '' })
+        : Object.assign({}, cols, { is_official: 0, user_id: user.id, sort_order: 0, source_type: 'external', source_url: '', is_shared: 0, share_token: '' });
+      const columns = Object.keys(payload);
+      db.run(`INSERT INTO ai_roles (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+        columns.map(c => payload[c]));
+      const inserted = queryOne(db, 'SELECT id FROM ai_roles WHERE rowid = last_insert_rowid()');
+      imported++;
+      created.push({ id: inserted ? inserted.id : 0, name: norm.name, fileName: item.fileName });
+    });
+    saveDatabase();
+
+    created.forEach(c => logActivity(db, {
+      user_id: user.id, username: user.username, action: 'create', target_type: 'character_card', target_id: c.id,
+      target_title: c.name,
+      detail: `${isAdmin ? '管理员批量上传官方角色卡' : '用户上传角色卡'}：${c.name}（文件 ${c.fileName}，本批成功 ${imported}，跳过 ${skipped}）`,
+      ip: req.ip
+    }));
+
+    res.json({
+      success: true,
+      message: `已上传 ${imported} 张角色卡${skipped ? '，跳过 ' + skipped + ' 张' : ''}`,
+      data: { imported, skipped, errors, official: isAdmin ? 1 : 0, created }
+    });
+  });
+});
+
+// ==================== 治理（管理员：屏蔽 / 下架 / 删除） ====================
+
+// 治理能力校验（JSON 403，不 302 到登录页）
+function requireManageJson(req, res, next) {
+  if (canManageCards(req)) return next();
+  return res.status(403).json({ error: '需要角色卡管理权限' });
+}
+
+/**
+ * 屏蔽 / 解除屏蔽（支持批量）
+ * 屏蔽后：广场列表与详情对所有人隐藏（含管理员），仅上传者本人可见；同时强制取消分享使旧链接失效
+ * body: { ids: [1,2] | '1,2', blocked: 0|1, reason }
+ */
+router.post('/characters/api/cards/block', requireAuthJson, requireManageJson, csrfCheck, hubOpLimiter, (req, res) => {
+  const db = req.db;
+  const ids = parseIds(req.body, 100);
+  if (!ids.length) return res.status(400).json({ error: '请选择要操作的角色卡' });
+  const blocked = String(req.body.blocked) === '0' || req.body.blocked === false ? 0 : 1;
+  const reason = String(req.body.reason || '').trim().slice(0, 200);
+  const ph = ids.map(() => '?').join(',');
+  const rows = queryAll(db, `SELECT id, name, user_id, is_shared, is_official FROM ai_roles WHERE id IN (${ph})`, ids);
+  if (!rows.length) return res.status(404).json({ error: '角色卡不存在' });
+
+  rows.forEach(r => {
+    if (blocked) {
+      // 先删后插，兼容 sql.js 回退引擎（不依赖 UPSERT 语法）
+      db.run('DELETE FROM ai_role_blocks WHERE role_id = ?', [r.id]);
+      db.run('INSERT INTO ai_role_blocks (role_id, reason, blocked_by) VALUES (?, ?, ?)', [r.id, reason, req.session.user.id]);
+      // 屏蔽即从广场消失：顺手清空分享状态，避免旧分享链接继续可用
+      db.run("UPDATE ai_roles SET is_shared = 0, share_token = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [r.id]);
+    } else {
+      db.run('DELETE FROM ai_role_blocks WHERE role_id = ?', [r.id]);
+    }
+  });
+  saveDatabase();
+  rows.forEach(r => logActivity(db, {
+    user_id: req.session.user.id, username: req.session.user.username, action: blocked ? 'block' : 'unblock',
+    target_type: 'character_card', target_id: r.id, target_title: r.name,
+    detail: `${blocked ? '屏蔽角色卡（仅上传者可见）' : '解除屏蔽'}：${r.name}（作者 user_id=${r.user_id || 0}）${blocked && reason ? '，原因：' + reason : ''}`,
+    ip: req.ip
+  }));
+  res.json({ success: true, message: blocked ? `已屏蔽 ${rows.length} 张角色卡` : `已解除屏蔽 ${rows.length} 张角色卡`, data: { updated: rows.length, blocked } });
+});
+
+/**
+ * 下架（支持批量）：用户分享卡 → 强制取消分享；官方卡 → 取消官方标记
+ * 下架后卡片不再出现在广场，作者本人仍可在「我的」里看到
+ * body: { ids }
+ */
+router.post('/characters/api/cards/takedown', requireAuthJson, requireManageJson, csrfCheck, hubOpLimiter, (req, res) => {
+  const db = req.db;
+  const ids = parseIds(req.body, 100);
+  if (!ids.length) return res.status(400).json({ error: '请选择要下架的角色卡' });
+  const ph = ids.map(() => '?').join(',');
+  const rows = queryAll(db, `SELECT id, name, user_id, is_shared, is_official FROM ai_roles WHERE id IN (${ph})`, ids);
+  if (!rows.length) return res.status(404).json({ error: '角色卡不存在' });
+  let unshared = 0;
+  let demoted = 0;
+  const skipped = [];
+  rows.forEach(r => {
+    if (r.is_official) {
+      db.run("UPDATE ai_roles SET is_official = 0, source_type = 'self', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [r.id]);
+      demoted++;
+    } else if (r.is_shared) {
+      db.run("UPDATE ai_roles SET is_shared = 0, share_token = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [r.id]);
+      unshared++;
+    } else {
+      skipped.push(r.name);
+    }
+  });
+  saveDatabase();
+  rows.forEach(r => logActivity(db, {
+    user_id: req.session.user.id, username: req.session.user.username, action: 'takedown',
+    target_type: 'character_card', target_id: r.id, target_title: r.name,
+    detail: `下架角色卡：${r.name}（${r.is_official ? '取消官方标记' : (r.is_shared ? '强制取消分享' : '本就未公开，无需处理')}，作者 user_id=${r.user_id || 0}）`,
+    ip: req.ip
+  }));
+  res.json({
+    success: true,
+    message: `已下架 ${unshared + demoted} 张${skipped.length ? '，' + skipped.length + ' 张本就未公开' : ''}`,
+    data: { updated: unshared + demoted, unshared, demoted, skipped }
+  });
+});
+
+/**
+ * 删除（支持批量）：管理员可删除任意卡；普通用户仅能删除自己的卡
+ * 删除时解除所有会话对该卡的引用，并清理屏蔽记录
+ * body: { ids }
+ */
+router.post('/characters/api/cards/delete', requireAuthJson, requireAiChatJson, csrfCheck, hubOpLimiter, (req, res) => {
+  const db = req.db;
+  const user = req.session.user;
+  const isAdmin = canManageCards(req);
+  const ids = parseIds(req.body, 100);
+  if (!ids.length) return res.status(400).json({ error: '请选择要删除的角色卡' });
+  const ph = ids.map(() => '?').join(',');
+  const rows = queryAll(db, `SELECT id, name, user_id, is_official FROM ai_roles WHERE id IN (${ph})`, ids);
+  if (!rows.length) return res.status(404).json({ error: '角色卡不存在' });
+
+  let deleted = 0;
+  const denied = [];
+  rows.forEach(r => {
+    const owner = Boolean(r.user_id && r.user_id === user.id);
+    if (!isAdmin && !owner) { denied.push(r.name); return; }
+    if (!isAdmin && r.is_official) { denied.push(r.name); return; }
+    db.run('UPDATE ai_conversations SET role_id = NULL WHERE role_id = ?', [r.id]);
+    db.run('DELETE FROM ai_role_blocks WHERE role_id = ?', [r.id]);
+    db.run('DELETE FROM ai_roles WHERE id = ?', [r.id]);
+    deleted++;
+    logActivity(db, {
+      user_id: user.id, username: user.username, action: 'delete', target_type: 'character_card', target_id: r.id,
+      target_title: r.name,
+      detail: `${isAdmin ? '管理员强制删除' : '用户删除自己的'}角色卡：${r.name}（作者 user_id=${r.user_id || 0}）`,
+      ip: req.ip
+    });
+  });
+  saveDatabase();
+  if (!deleted) return res.status(403).json({ error: '没有可删除的角色卡（权限不足）' });
+  res.json({
+    success: true,
+    message: `已删除 ${deleted} 张角色卡${denied.length ? '，' + denied.length + ' 张无权限跳过' : ''}`,
+    data: { deleted, denied }
   });
 });
 

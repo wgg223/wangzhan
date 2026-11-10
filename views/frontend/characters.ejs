@@ -10,7 +10,7 @@
   <%
   function acBust(p) {
     var u = typeof cdn !== 'undefined' ? cdn.getUrl(p) : p;
-    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261110g';
+    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261111b';
   }
   %>
   <link rel="stylesheet" href="<%= acBust('/css/ai-chat.css') %>">
@@ -28,6 +28,10 @@
         <input type="search" id="chSearch" placeholder="搜索角色名 / 简介 / 作者 / 标签…" autocomplete="off" spellcheck="false">
       </div>
       <div class="ch-topbar-actions">
+        <% if (!isGuest && canImport) { %>
+          <button type="button" class="ch-btn ch-btn-ghost" id="chCreateBtn" title="在 AI 聊天页创建一张新角色卡">＋ 创建</button>
+          <button type="button" class="ch-btn ch-btn-primary" id="chUploadBtn" title="上传角色卡文件（.json / .png）">⬆ 上传</button>
+        <% } %>
         <a class="ch-btn ch-btn-ghost" href="/ai-chat">💬 进入聊天</a>
         <% if (isGuest) { %>
           <a class="ch-btn ch-btn-primary" href="/login">登录 / 注册</a>
@@ -79,7 +83,9 @@
 
     <div class="ch-result-bar">
       <span id="chResultCount">加载中…</span>
-      <% if (isGuest) { %><span class="ch-hint">登录后可导入与分享角色卡</span><% } %>
+      <% if (isGuest) { %><span class="ch-hint">登录后可导入与分享角色卡</span>
+      <% } else if (canManage) { %><span class="ch-hint">🛡️ 管理员：点开任意卡片可屏蔽 / 下架 / 删除</span>
+      <% } else { %><span class="ch-hint">上传的卡默认私有，可在详情里分享到广场</span><% } %>
     </div>
 
     <div class="ch-grid" id="chGrid"></div>
@@ -97,6 +103,7 @@
 
   <footer class="ch-footer">
     <p>从广场导入的角色卡仅支持站内使用，不支持导出外溢。请尊重原作者的许可声明。</p>
+    <p class="ch-footer-links"><% if (!isGuest && canImport) { %><a href="/ai-chat?help=plaza">❓ 广场使用指南</a><span>·</span><% } %><a href="/ai-chat">💬 进入 AI 聊天</a></p>
   </footer>
 </div>
 
@@ -112,11 +119,39 @@
   </div>
 </div>
 
+<!-- 上传角色卡弹窗 -->
+<div class="ac-modal-overlay" id="chUploadModal" hidden>
+  <div class="ac-modal">
+    <div class="ac-modal-head">
+      <h2>⬆ 上传角色卡</h2>
+      <button class="ac-modal-close" data-ch-close="chUploadModal">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <p class="ch-upload-hint" id="chUploadHint"></p>
+      <label class="ch-upload-drop" id="chUploadDrop">
+        <input type="file" id="chUploadInput" accept=".json,.png" multiple hidden>
+        <span class="ch-upload-icon">📂</span>
+        <span class="ch-upload-text">点击选择角色卡文件（.json / .png）</span>
+        <span class="ch-upload-sub" id="chUploadSub">支持 SillyTavern / RP-Hub 的 Character Card V1/V2/V3，PNG 卡自动读取内嵌数据与头像</span>
+      </label>
+      <ul class="ch-upload-list" id="chUploadList"></ul>
+      <div class="ch-upload-result" id="chUploadResult" hidden></div>
+    </div>
+    <div class="ac-modal-foot">
+      <span class="ac-modal-hint" id="chUploadFootHint"></span>
+      <span style="flex:1"></span>
+      <button type="button" class="ch-btn ch-btn-ghost" data-ch-close="chUploadModal">取消</button>
+      <button type="button" class="ch-btn ch-btn-primary" id="chUploadSubmit" disabled>开始上传</button>
+    </div>
+  </div>
+</div>
+
 <script type="application/json" id="characters-data"><%- JSON.stringify({
   csrfToken: csrfToken,
   user: user ? { id: user.id, username: user.username, role: user.role } : null,
   siteName: settings.site_name || '',
   canImport: !!canImport,
+  canManage: (typeof canManage !== 'undefined') ? !!canManage : false,
   isGuest: !!isGuest,
   uiSettings: (typeof uiSettings !== 'undefined' && uiSettings) ? uiSettings : null
 }).replace(/</g, '\\u003c') %></script>

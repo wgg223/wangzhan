@@ -296,8 +296,14 @@ function buildContext(db, conv, userMsg, opts = {}) {
     const others = members.filter(m => !role || m.id !== role.id);
     const perCard = others.length ? Math.min(1500, Math.floor(GROUP_CARD_BUDGET / others.length)) : 1500;
     others.forEach(m => {
-      const card = [m.system_prompt, m.personality, m.description].filter(Boolean).join('\n');
-      if (card) groupLines.push('成员「' + m.name + '」的设定：\n' + card.slice(0, perCard));
+      // 成员摘要按重要性排序；scenario 单独预留槽位，避免被大段 description 挤掉后整段丢失
+      const core = [m.system_prompt, m.personality, m.description].filter(Boolean).join('\n');
+      const scen = String(m.scenario || '').trim();
+      const scenPart = scen ? '【所在场景】' + scen : '';
+      const reserve = scenPart ? Math.min(300, scenPart.length) : 0;
+      const coreCut = core.slice(0, Math.max(0, perCard - reserve));
+      const card = [coreCut, scenPart.slice(0, 300)].filter(Boolean).join('\n');
+      if (card) groupLines.push('成员「' + m.name + '」的设定：\n' + card);
     });
     systemParts.push(groupLines.join('\n'));
   }

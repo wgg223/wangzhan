@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.22.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.23.0 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -307,6 +307,23 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.23.0 (2026-11-11)
+
+**新增：角色卡广场上传 + 卡片屏蔽治理 + 后台批量操作 ｜ 修复：智能预测全面重做**
+- **广场上传**（`POST /characters/api/cards/upload`，multipart `files`）：登录 + `aichat.use` + CSRF 才能调用；管理员/超管一次最多 50 个文件、直接入库为官方卡（`is_official=1, user_id=NULL, source_type='official'`），普通用户最多 10 个、落为自己的私有 `external` 卡（`is_shared=0`）需显式分享；单文件 ≤10MB，仅 `.json` / `.png`，按小写名去重，单账户上限 200 张；解析复用 `services/ai-chat/card-import.js`
+- **卡片屏蔽治理**：新增独立表 `ai_role_blocks`（`role_id` UNIQUE + 原因/操作人/时间），遵守「只 CREATE TABLE、不做 ALTER」约定，存量库下次启动自动建表；被屏蔽的卡在广场对所有人隐藏、仅上传者本人可见（官方卡无归属，屏蔽后对全员消失），屏蔽同时清空 `is_shared`/`share_token` 让旧链接失效，并从 AI 聊天角色选择器与详情中过滤（`frontend.js:ROLE_VISIBLE_WHERE`）；已有会话与已导入副本不受影响
+- **下架 / 屏蔽 / 删除三档语义**：下架只收回公开曝光（官方卡降级为 `self`、用户卡失去 `is_shared`/`share_token`）且作者可重新分享；屏蔽对所有人隐藏但上传者可见；删除移除记录并把 `ai_conversations.role_id` 置空。三者均支持批量 `ids`，且每张卡单独写一条活动日志
+- **后台批量操作**：官方卡列表支持批量改分类、批量设/取消官方；超管支持全站批量下架、提升、删除、屏蔽（`?blocked=1|0` 过滤）；默认世界书模板支持批量删除 / 启用 / 常驻 / 位置
+- **智能预测贴合当前楼层**：历史窗口 12→16 条；新增【本轮重点】（用户上一句 300 字 + AI 最新回复 500 字）单列；系统提示词改为 5 条硬约束（紧扣本轮、严禁复用用户说过的话、口语化第一人称 ≤30 字、N 条意图互不相同、不 OOC）；`temperature` 0.75；多要 2 条候选（`min(count+2, 6)`）以便过滤后仍够数
+- **预测去重**：新增 `normReplyText` + `isSimilarText`（完全相同 / 互相包含 / 字符重合率 ≥0.8 / 二元组重合 ≥0.7），对最近 6 条用户发言做 blocklist，能拦住「换个语序讲同一句话」（如 `我丢了那条鱼` vs `我把鱼丢了`）
+- **修复：预测全程不出结果**（根因两层）：① `provider.js` 无条件发送 `stream_options`，预测是非流式请求，被服务商直接拒绝（`stream_options should be set along with stream = true`），改为仅 `stream: true` 时下发——同时修复记忆摘要等处共 3 个非流式调用；② 前端 `fetchPredictions()` 原本嵌在 `loadBootstrap().then()` 里、外层 `catch` 为空，任何刷新异常都会静默跳过预测，改为 `finalizeMessage` 内直接调用，bootstrap 只负责刷新列表且失败留 `console.warn`
+- **修复：模型 JSON 被截断后当成建议**：`max_tokens` 320→480；兜底解析改为只捞成对的引号片段，半截 JSON 一律丢弃（实测同一截断输入由 1 条脏字符串变为 1 条干净建议）
+- **修复：`card-import.js:18` 相对路径少一层**（`../config/app-root` → `../../config/app-root`）。该错误因旧进程在改动前启动而潜伏，一旦重启即 `MODULE_NOT_FOUND` 启动失败
+- **群聊场景注入**：群聊其他成员的卡片摘要此前只拼 `system_prompt/personality/description`，`scenario` 从未进入上下文；现先为场景预留额度（`reserve = min(300, 场景长度)`）再截断主体，避免长卡把人设挤掉场景
+- **思考过程默认折叠**：流式建盒即带 `collapsed`，正文到达不再展开；用户手动展开后以 `data-user-toggled` 标记，自动折叠逻辑不再抢回
+- **修复 `r.json is not a function`**：`utils.js:csrfFetch` 已返回解析后的对象，三处调用又重复 `.json()`（角色卡导入、分享/取消分享、外观自动保存——后者原本 `.catch` 静默失败，等于设置从未落库）
+- 验证：预测解析与相似度离线用例 6 组 ALL PASS（含截断 JSON 兜底）；`node --check` 全部改动文件通过；`/health` 返回 `db: ok`、`errorCount: 0`
 
 ### v8.22.0 (2026-11-10)
 

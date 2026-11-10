@@ -18,6 +18,7 @@
   var boot = readBootstrap();
   var isGuest = Boolean(boot.isGuest);
   var canImport = Boolean(boot.canImport);
+  var canManage = Boolean(boot.canManage);
 
   var state = {
     scope: 'public',
@@ -63,6 +64,7 @@
 
   function badges(card) {
     var out = [];
+    if (card.is_blocked) out.push('<span class="ch-badge ch-badge-blocked" title="' + esc(card.block_reason || '已被管理员屏蔽，仅你可见') + '">⛔ 已屏蔽</span>');
     if (card.is_official) out.push('<span class="ch-badge ch-badge-official">官方</span>');
     if (card.source_type === 'hub') out.push('<span class="ch-badge ch-badge-hub">广场导入</span>');
     else if (card.is_shared && !card.is_official) out.push('<span class="ch-badge ch-badge-shared">已分享</span>');
@@ -126,6 +128,7 @@
         state.pages = d.pages || 1;
         state.page = d.page || 1;
         canImport = Boolean(d.can_import);
+        if (typeof d.can_manage !== 'undefined') canManage = Boolean(d.can_manage);
         renderCards(d.items || []);
         resultCount.textContent = '共 ' + (d.total || 0) + ' 张角色卡';
         pager.hidden = state.pages <= 1;
@@ -234,6 +237,11 @@
         '</div>' +
       '</div></div>';
 
+    if (c.is_blocked) {
+      html += '<div class="ch-detail-lock ch-detail-blocked">⛔ 该角色卡已被管理员屏蔽，仅上传者本人可见。' +
+        (c.block_reason ? '<br>原因：' + esc(c.block_reason) : '') + '</div>';
+    }
+
     if (c.need_login) {
       html += '<div class="ch-detail-lock">🔒 登录后可查看完整设定、世界书与开场白，并导入到你的聊天。</div>';
       html += fieldBlock('简介', c.description);
@@ -282,6 +290,13 @@
     } else {
       foot += '<span class="ac-modal-hint">你没有 AI 聊天权限，无法导入</span>';
     }
+    // 管理员治理操作（屏蔽 / 下架 / 删除）
+    if (canManage) {
+      foot += '<span class="ch-admin-sep" title="管理员治理">🛡️</span>' +
+        '<button type="button" class="ch-btn ch-btn-ghost" id="chAdminBlock">' + (c.is_blocked ? '解除屏蔽' : '屏蔽') + '</button>' +
+        '<button type="button" class="ch-btn ch-btn-ghost" id="chAdminTakedown" title="用户卡取消分享；官方卡取消官方标记">下架</button>' +
+        '<button type="button" class="ch-btn ch-btn-danger" id="chAdminDelete">删除</button>';
+    }
     detailFoot.innerHTML = foot;
 
     var importBtn = document.getElementById('chImportBtn');
@@ -293,6 +308,45 @@
       var url = location.origin + c.share_url;
       if (typeof copyToClipboard === 'function') copyToClipboard(url, '分享链接已复制');
     });
+
+    var adminBlock = document.getElementById('chAdminBlock');
+    if (adminBlock) adminBlock.addEventListener('click', function () {
+      if (c.is_blocked) {
+        adminAction('/characters/api/cards/block', { ids: String(c.id), blocked: '0' }, null, '已解除屏蔽');
+      } else {
+        var reason = window.prompt('屏蔽「' + c.name + '」？屏蔽后仅上传者本人可见，分享链接立即失效。\n可填写屏蔽原因（会展示给上传者，可留空）：', '');
+        if (reason === null) return;
+        adminAction('/characters/api/cards/block', { ids: String(c.id), blocked: '1', reason: reason.trim() }, null, '已屏蔽');
+      }
+    });
+    var adminTakedown = document.getElementById('chAdminTakedown');
+    if (adminTakedown) adminTakedown.addEventListener('click', function () {
+      adminAction('/characters/api/cards/takedown', { ids: String(c.id) },
+        '下架「' + c.name + '」？用户分享卡会取消分享，官方卡会取消官方标记。', '已下架');
+    });
+    var adminDelete = document.getElementById('chAdminDelete');
+    if (adminDelete) adminDelete.addEventListener('click', function () {
+      adminAction('/characters/api/cards/delete', { ids: String(c.id) },
+        '删除「' + c.name + '」？引用该卡的会话会解除关联，此操作不可恢复！', '已删除');
+    });
+  }
+
+  // 管理员治理请求（单条，走广场接口；批量在后台治理面板）
+  function adminAction(path, payload, confirmText, okText) {
+    if (confirmText && !window.confirm(confirmText)) return;
+    csrfFetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (json) {
+      if (!json.success) throw new Error(json.error || '操作失败');
+      if (typeof showToast === 'function') showToast(json.message || okText, 'success');
+      closeDetail();
+      loadMeta();
+      loadCards();
+    }).catch(function (err) {
+      if (typeof showToast === 'function') showToast(err.message, 'error');
+    });
   }
 
   function doImport(c) {
@@ -303,7 +357,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
-    }).then(function (r) { return r.json(); }).then(function (json) {
+    }).then(function (json) {
       if (!json.success) throw new Error(json.error || '导入失败');
       if (typeof showToast === 'function') showToast(json.message || '已导入', 'success');
       closeDetail();
@@ -320,7 +374,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: c.id, shared: next })
-    }).then(function (r) { return r.json(); }).then(function (json) {
+    }).then(function (json) {
       if (!json.success) throw new Error(json.error || '操作失败');
       if (typeof showToast === 'function') showToast(next ? '已分享到广场' : '已取消分享', 'success');
       closeDetail();
@@ -364,11 +418,139 @@
     if (state.page < state.pages) { state.page++; loadCards(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   });
 
+  // ---- 切换视图（含 tab 高亮） ----
+  function switchScope(scope) {
+    state.scope = scope;
+    state.page = 1;
+    document.querySelectorAll('#chScopeTabs .ch-scope-tab').forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-scope') === scope);
+    });
+    loadCards();
+  }
+
+  // ---- 上传角色卡（普通用户 → 自己的卡；管理员 → 批量官方卡） ----
+  var uploadModal = document.getElementById('chUploadModal');
+  var uploadInput = document.getElementById('chUploadInput');
+  var uploadList = document.getElementById('chUploadList');
+  var uploadSubmit = document.getElementById('chUploadSubmit');
+  var uploadResult = document.getElementById('chUploadResult');
+  var uploadHint = document.getElementById('chUploadHint');
+  var uploadFootHint = document.getElementById('chUploadFootHint');
+  var pendingFiles = [];
+
+  function uploadLimit() { return canManage ? 50 : 10; }
+
+  function refreshUploadHint() {
+    if (uploadHint) {
+      uploadHint.textContent = canManage
+        ? '🛡️ 管理员批量上传：单次最多 ' + uploadLimit() + ' 个文件，入库后作为「官方卡」全站可见（同名自动跳过）。'
+        : '上传到你自己的角色卡：单次最多 ' + uploadLimit() + ' 个文件，默认私有，可在卡片详情里分享到广场。';
+    }
+    if (uploadFootHint) {
+      uploadFootHint.textContent = canManage ? '官方卡由后台统一治理' : '自己上传的卡可分享、可导出（受权限控制）';
+    }
+  }
+
+  function renderUploadList() {
+    if (!uploadList) return;
+    uploadList.innerHTML = pendingFiles.map(function (f, i) {
+      return '<li><span class="ch-upload-name">' + esc(f.name) + '</span>' +
+        '<span class="ch-upload-size">' + Math.max(1, Math.round(f.size / 1024)) + ' KB</span>' +
+        '<button type="button" class="ch-upload-del" data-i="' + i + '" aria-label="移除">×</button></li>';
+    }).join('');
+    uploadList.querySelectorAll('.ch-upload-del').forEach(function (b) {
+      b.addEventListener('click', function () {
+        pendingFiles.splice(parseInt(b.getAttribute('data-i'), 10), 1);
+        renderUploadList();
+      });
+    });
+    if (uploadSubmit) {
+      uploadSubmit.disabled = !pendingFiles.length;
+      uploadSubmit.textContent = pendingFiles.length ? ('开始上传（' + pendingFiles.length + '）') : '开始上传';
+    }
+  }
+
+  function addFiles(list) {
+    var limit = uploadLimit();
+    Array.prototype.forEach.call(list || [], function (f) {
+      if (!/\.(json|png)$/i.test(f.name)) {
+        if (typeof showToast === 'function') showToast(f.name + '：仅支持 .json / .png 角色卡', 'error');
+        return;
+      }
+      if (pendingFiles.length >= limit) {
+        if (typeof showToast === 'function') showToast('单次最多上传 ' + limit + ' 个文件', 'error');
+        return;
+      }
+      pendingFiles.push(f);
+    });
+    renderUploadList();
+  }
+
+  function openUpload() {
+    pendingFiles = [];
+    if (uploadResult) { uploadResult.hidden = true; uploadResult.innerHTML = ''; }
+    if (uploadInput) uploadInput.value = '';
+    refreshUploadHint();
+    renderUploadList();
+    if (uploadModal) uploadModal.hidden = false;
+  }
+
+  function doUpload() {
+    if (!pendingFiles.length) return;
+    var fd = new FormData();
+    pendingFiles.forEach(function (f) { fd.append('files', f, f.name); });
+    if (uploadSubmit) { uploadSubmit.disabled = true; uploadSubmit.textContent = '上传中…'; }
+    csrfFetch('/characters/api/cards/upload', { method: 'POST', body: fd }, 180000)
+      .then(function (json) {
+        if (!json.success) throw new Error(json.error || '上传失败');
+        var d = json.data || {};
+        if (uploadResult) {
+          uploadResult.hidden = false;
+          var lines = ['✅ ' + (json.message || ('已上传 ' + (d.imported || 0) + ' 张'))];
+          (d.errors || []).forEach(function (e) { lines.push('⚠️ ' + e); });
+          uploadResult.innerHTML = lines.map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('');
+        }
+        if (typeof showToast === 'function') showToast(json.message || '上传完成', 'success');
+        pendingFiles = [];
+        renderUploadList();
+        loadMeta();
+        switchScope(d.official ? 'official' : 'mine');
+      })
+      .catch(function (err) {
+        if (typeof showToast === 'function') showToast(err.message, 'error');
+        if (uploadSubmit) { uploadSubmit.disabled = false; uploadSubmit.textContent = '开始上传'; }
+      });
+  }
+
+  var uploadBtn = document.getElementById('chUploadBtn');
+  if (uploadBtn) uploadBtn.addEventListener('click', openUpload);
+  var createBtn = document.getElementById('chCreateBtn');
+  if (createBtn) createBtn.addEventListener('click', function () { location.href = '/ai-chat?newrole=1'; });
+  if (uploadInput) uploadInput.addEventListener('change', function () { addFiles(uploadInput.files); uploadInput.value = ''; });
+  if (uploadSubmit) uploadSubmit.addEventListener('click', doUpload);
+  if (uploadModal) {
+    uploadModal.addEventListener('click', function (e) { if (e.target === uploadModal) uploadModal.hidden = true; });
+  }
+  // 拖拽上传（整个弹窗区域）
+  if (uploadModal) {
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      uploadModal.addEventListener(ev, function (e) { e.preventDefault(); uploadModal.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      uploadModal.addEventListener(ev, function (e) {
+        e.preventDefault();
+        uploadModal.classList.remove('dragover');
+        if (ev === 'drop' && e.dataTransfer) addFiles(e.dataTransfer.files);
+      });
+    });
+  }
+
   // ---- 深链：/characters?card=<token> 直接打开详情 ----
   function handleDeepLink() {
     var m = new URLSearchParams(location.search);
     var card = m.get('card');
     if (card) openDetail(card);
+    if (m.get('upload') === '1' && canImport) openUpload();
   }
 
   // ---- 初始化 ----

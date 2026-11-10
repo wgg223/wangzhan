@@ -126,7 +126,13 @@
     <button type="button" class="btn" onclick="document.getElementById('roleImportFile').click()">📥 导入 PNG/JSON</button>
     <input type="file" id="roleImportFile" accept=".json,.png" multiple style="display:none;" onchange="importRoles(this.files)">
     <button type="button" class="btn" onclick="location.href='/admin/ai-chat/roles/export'">📦 导出全部 JSON</button>
-    <button type="button" class="btn btn-danger" id="roleBatchDeleteBtn" style="display:none;" onclick="batchDeleteRoles()">批量删除</button>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="roleSelectAll" onchange="toggleSelectAllRoles(this.checked)" style="width:auto;margin:0;"> 全选</label>
+    <span id="roleBatchBar" style="display:none;">
+      <button type="button" class="btn" onclick="batchCategoryRoles()">批量改分类</button>
+      <button type="button" class="btn" onclick="batchOfficialRoles(1)">批量设为官方</button>
+      <button type="button" class="btn" onclick="batchOfficialRoles(0)">批量取消官方</button>
+      <button type="button" class="btn btn-danger" onclick="batchDeleteRoles()">批量删除</button>
+    </span>
     <button type="button" class="btn btn-primary" onclick="editRole(0)">＋ 新增角色</button>
     <span class="ai-chat-msg" id="roleImportMsg"></span>
   </div>
@@ -251,11 +257,30 @@
 <!-- ============ 默认世界书 ============ -->
 <div class="ai-chat-panel" id="tab-worldbook">
   <div class="ai-chat-hint">默认世界书是全局模板：<strong>用户新建会话时自动复制启用中的条目</strong>到该会话（副本，会话内可自由编辑）；前台世界书弹窗也可手动「从默认模板添加」。触发词留空或勾选常驻 = 始终注入。</div>
+  <div class="ai-chat-actions" id="dwbBatchBar" style="display:none;margin-bottom:10px;">
+    <span class="ai-chat-hint" id="dwbBatchCount"></span>
+    <button type="button" class="btn btn-sm" onclick="dwbBatchEnabled(1)">批量启用</button>
+    <button type="button" class="btn btn-sm" onclick="dwbBatchEnabled(0)">批量停用</button>
+    <button type="button" class="btn btn-sm" onclick="dwbBatchConstant(1)">批量设为常驻</button>
+    <button type="button" class="btn btn-sm" onclick="dwbBatchConstant(0)">批量取消常驻</button>
+    <select id="dwbBatchPosition" style="max-width:190px;">
+      <option value="">批量改位置…</option>
+      <option value="system_top">system_top（系统顶层）</option>
+      <option value="before_char">before_char（角色前）</option>
+      <option value="after_char">after_char（角色后）</option>
+      <option value="user_top">user_top（用户消息前）</option>
+      <option value="assistant_top">assistant_top（助手回复前）</option>
+      <option value="in_chat">in_chat（按深度插入）</option>
+    </select>
+    <button type="button" class="btn btn-sm" onclick="dwbBatchPosition()">应用位置</button>
+    <button type="button" class="btn btn-sm btn-danger" onclick="dwbBatchDelete()">批量删除</button>
+  </div>
   <table class="admin-table" style="max-width:900px;">
-    <thead><tr><th>ID</th><th>触发词</th><th>内容</th><th>位置</th><th>常驻</th><th>状态</th><th>操作</th></tr></thead>
+    <thead><tr><th style="width:32px;"><input type="checkbox" id="dwbSelectAll" onchange="dwbToggleSelectAll(this.checked)" style="width:auto;margin:0;"></th><th>ID</th><th>触发词</th><th>内容</th><th>位置</th><th>常驻</th><th>状态</th><th>操作</th></tr></thead>
     <tbody>
       <% defaultWorldBook.forEach(w => { %>
       <tr data-dwb-id="<%= w.id %>" data-dwb="<%= JSON.stringify(w) %>">
+        <td><input type="checkbox" class="dwb-select" value="<%= w.id %>" onchange="dwbUpdateBatchBar()" style="width:auto;margin:0;"></td>
         <td><%= w.id %></td>
         <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><%= w.key || '（常驻）' %></td>
         <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><%= w.content %></td>
@@ -269,7 +294,7 @@
         </td>
       </tr>
       <% }) %>
-      <% if (!defaultWorldBook.length) { %><tr><td colspan="7" class="text-muted">暂无默认世界书条目</td></tr><% } %>
+      <% if (!defaultWorldBook.length) { %><tr><td colspan="8" class="text-muted">暂无默认世界书条目</td></tr><% } %>
     </tbody>
   </table>
   <button type="button" class="btn btn-primary" onclick="editDefaultWorldBook(0)" style="margin-top:8px;">＋ 新增条目</button>
@@ -419,7 +444,8 @@
 <div class="ai-chat-panel" id="tab-hub">
   <div class="ai-chat-hint">
     查询全站所有用户的角色卡：自建（self）、外部导入（external）、广场导入（hub）、官方（official）。
-    广场导入的卡在服务层就禁止导出与二次分享，防止站内内容外溢。治理动作（强制下架 / 提升官方 / 强制删除）均写入审计日志。
+    广场导入的卡在服务层就禁止导出与二次分享，防止站内内容外溢。治理动作（屏蔽 / 强制下架 / 提升官方 / 强制删除）均写入审计日志。
+    <strong>屏蔽</strong>后该卡在广场仅上传者本人可见，分享链接同时失效；<strong>下架</strong>只取消公开分享，作者仍可自行重新分享。
   </div>
   <div id="hubStats" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:12px;color:var(--gray-500);"></div>
   <div class="ai-chat-actions" style="margin-bottom:10px;flex-wrap:wrap;">
@@ -442,6 +468,11 @@
       <option value="1">官方卡</option>
       <option value="0">用户卡</option>
     </select>
+    <select id="hubBlocked" style="padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-card);color:inherit;font-size:13px;">
+      <option value="">屏蔽状态（全部）</option>
+      <option value="1">已屏蔽</option>
+      <option value="0">未屏蔽</option>
+    </select>
     <select id="hubSort" style="padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-card);color:inherit;font-size:13px;">
       <option value="updated">最近更新</option>
       <option value="new">最新创建</option>
@@ -452,15 +483,25 @@
     <button type="button" class="btn btn-primary" onclick="loadHubRoles(1)">查询</button>
     <span class="ai-chat-msg" id="hubMsg"></span>
   </div>
+  <div class="ai-chat-actions" id="hubBatchBar" style="display:none;margin-bottom:10px;">
+    <span style="font-size:13px;color:var(--gray-500);" id="hubBatchCount"></span>
+    <button type="button" class="btn btn-sm" onclick="hubBatchBlock(1)">批量屏蔽</button>
+    <button type="button" class="btn btn-sm" onclick="hubBatchBlock(0)">批量解除屏蔽</button>
+    <button type="button" class="btn btn-sm" onclick="hubBatchUnshare()">批量强制下架</button>
+    <button type="button" class="btn btn-sm" onclick="hubBatchPromote(1)">批量设为官方</button>
+    <button type="button" class="btn btn-sm" onclick="hubBatchPromote(0)">批量取消官方</button>
+    <button type="button" class="btn btn-sm btn-danger" onclick="hubBatchDelete()">批量删除</button>
+  </div>
   <div style="overflow-x:auto;">
     <table class="admin-table" id="hubTable" style="width:100%;font-size:12px;">
       <thead>
         <tr>
+          <th style="width:32px;"><input type="checkbox" id="hubSelectAll" onchange="hubToggleSelectAll(this.checked)" style="width:auto;margin:0;"></th>
           <th>ID</th><th>名称</th><th>作者/归属</th><th>来源</th><th>分类</th>
-          <th>分享</th><th>世界书</th><th>导入/浏览</th><th>更新时间</th><th>操作</th>
+          <th>分享</th><th>屏蔽</th><th>世界书</th><th>导入/浏览</th><th>更新时间</th><th>操作</th>
         </tr>
       </thead>
-      <tbody id="hubBody"><tr><td colspan="10" style="color:var(--gray-500);">点击「查询」加载全站角色卡</td></tr></tbody>
+      <tbody id="hubBody"><tr><td colspan="12" style="color:var(--gray-500);">点击「查询」加载全站角色卡</td></tr></tbody>
     </table>
   </div>
   <div class="ai-chat-actions" style="margin-top:10px;">
@@ -659,7 +700,53 @@
 
   window.updateBatchBtn = function () {
     var n = document.querySelectorAll('#roleList .role-select:checked').length;
-    document.getElementById('roleBatchDeleteBtn').style.display = n ? '' : 'none';
+    document.getElementById('roleBatchBar').style.display = n ? '' : 'none';
+    var all = document.querySelectorAll('#roleList .role-select');
+    var selAll = document.getElementById('roleSelectAll');
+    if (selAll) selAll.checked = all.length > 0 && n === all.length;
+  };
+
+  window.toggleSelectAllRoles = function (checked) {
+    document.querySelectorAll('#roleList .role-select').forEach(function (c) {
+      // 仅勾选当前可见（未被搜索/分类筛选隐藏）的卡片
+      var card = c.closest('.ai-chat-role-card');
+      if (card && card.style.display === 'none') { c.checked = false; return; }
+      c.checked = checked;
+    });
+    updateBatchBtn();
+  };
+
+  function selectedRoleIds() {
+    return Array.prototype.map.call(document.querySelectorAll('#roleList .role-select:checked'), function (c) { return c.value; });
+  }
+
+  window.batchCategoryRoles = function () {
+    var ids = selectedRoleIds();
+    if (!ids.length) return;
+    var cat = window.prompt('将选中的 ' + ids.length + ' 个角色归入分类（留空为 default）：', '');
+    if (cat === null) return;
+    csrfFetch('/admin/ai-chat/roles/batch-category', { method: 'POST', body: JSON.stringify({ ids: ids, category: cat }) }, 20000)
+      .then(function (json) {
+        if (json.success) location.reload();
+        else alert(json.error || '操作失败');
+      })
+      .catch(function (err) { alert(err.message || '操作失败'); });
+  };
+
+  window.batchOfficialRoles = function (official) {
+    var ids = selectedRoleIds();
+    if (!ids.length) return;
+    var tip = official ? '设为官方后对所有用户可见，确定将选中的 ' + ids.length + ' 个角色设为官方？' : '取消官方后这些角色将降为自建、不再对全站可见，确定取消选中的 ' + ids.length + ' 个？';
+    if (!window.confirm(tip)) return;
+    csrfFetch('/admin/ai-chat/roles/batch-official', { method: 'POST', body: JSON.stringify({ ids: ids, official: official }) }, 20000)
+      .then(function (json) {
+        if (json.success) {
+          var d = json.data || {};
+          if (d.skipped && d.skipped.length) alert('已更新 ' + d.updated + ' 个，跳过同名：' + d.skipped.join('、'));
+          location.reload();
+        } else alert(json.error || '操作失败');
+      })
+      .catch(function (err) { alert(err.message || '操作失败'); });
   };
 
   window.importRoles = function (files) {
@@ -682,7 +769,7 @@
   };
 
   window.batchDeleteRoles = function () {
-    var ids = Array.prototype.map.call(document.querySelectorAll('#roleList .role-select:checked'), function (c) { return c.value; });
+    var ids = selectedRoleIds();
     if (!ids.length) return;
     if (!window.confirm('确定删除选中的 ' + ids.length + ' 个角色？')) return;
     csrfFetch('/admin/ai-chat/roles/batch-delete', { method: 'POST', body: JSON.stringify({ ids: ids }) }, 20000)
@@ -1012,6 +1099,63 @@
       .catch(function (err) { alert(err.message || '删除失败'); });
   };
 
+  // ---- 默认世界书批量操作 ----
+  function dwbSelectedIds() {
+    return Array.prototype.map.call(document.querySelectorAll('.dwb-select:checked'), function (c) { return c.value; });
+  }
+
+  window.dwbUpdateBatchBar = function () {
+    var ids = dwbSelectedIds();
+    var bar = document.getElementById('dwbBatchBar');
+    var all = document.getElementById('dwbSelectAll');
+    var boxes = document.querySelectorAll('.dwb-select');
+    if (bar) bar.style.display = ids.length ? '' : 'none';
+    var cnt = document.getElementById('dwbBatchCount');
+    if (cnt) cnt.textContent = '已选 ' + ids.length + ' 条';
+    if (all) all.checked = boxes.length > 0 && ids.length === boxes.length;
+  };
+
+  window.dwbToggleSelectAll = function (checked) {
+    document.querySelectorAll('.dwb-select').forEach(function (c) { c.checked = checked; });
+    window.dwbUpdateBatchBar();
+  };
+
+  function dwbBatch(path, payload, confirmText) {
+    var ids = dwbSelectedIds();
+    if (!ids.length) { alert('请先勾选要操作的条目'); return; }
+    if (confirmText && !window.confirm(confirmText.replace('{n}', ids.length))) return;
+    var fd = new FormData();
+    fd.append('ids', ids.join(','));
+    if (payload) Object.keys(payload).forEach(function (k) { fd.append(k, payload[k]); });
+    csrfFetch(path, { method: 'POST', body: fd }, 30000)
+      .then(function (json) {
+        if (json.success) location.reload();
+        else alert(json.error || '操作失败');
+      })
+      .catch(function (err) { alert(err.message || '操作失败'); });
+  }
+
+  window.dwbBatchEnabled = function (enabled) {
+    dwbBatch('/admin/ai-chat/world-book-defaults/batch-enabled', { enabled: enabled ? '1' : '0' }, null);
+  };
+
+  window.dwbBatchConstant = function (constant) {
+    dwbBatch('/admin/ai-chat/world-book-defaults/batch-constant', { constant: constant ? '1' : '0' }, null);
+  };
+
+  window.dwbBatchPosition = function () {
+    var sel = document.getElementById('dwbBatchPosition');
+    var pos = sel ? sel.value : '';
+    if (!pos) { alert('请先在下拉里选择要应用的注入位置'); return; }
+    dwbBatch('/admin/ai-chat/world-book-defaults/batch-position', { position: pos },
+      '把选中的 {n} 条世界书条目的注入位置改为 ' + pos + '？');
+  };
+
+  window.dwbBatchDelete = function () {
+    dwbBatch('/admin/ai-chat/world-book-defaults/batch-delete', null,
+      '确定删除选中的 {n} 条默认世界书条目？此操作不可恢复！');
+  };
+
   window.importDefaultWorldBook = function (files) {
     if (!files || !files.length) return;
     var msg = document.getElementById('dwbImportMsg');
@@ -1206,7 +1350,7 @@
         .then(function (json) {
           if (!json.success) return;
           var d = json.data;
-          var chips = ['总计 ' + d.total, '官方 ' + d.official, '已分享 ' + d.shared,
+          var chips = ['总计 ' + d.total, '官方 ' + d.official, '已分享 ' + d.shared, '已屏蔽 ' + (d.blocked || 0),
             '含世界书 ' + d.with_book, '累计导入 ' + d.imports, '累计浏览 ' + d.views];
           (d.by_source || []).forEach(function (s) {
             chips.push((HUB_SOURCE_LABEL[s.source_type] || s.source_type) + ' ' + s.count);
@@ -1226,6 +1370,7 @@
         source_type: document.getElementById('hubSource').value,
         shared: document.getElementById('hubShared').value,
         official: document.getElementById('hubOfficial').value,
+        blocked: document.getElementById('hubBlocked').value,
         sort: document.getElementById('hubSort').value,
         page: String(page),
         per_page: '25'
@@ -1239,7 +1384,8 @@
           hubMsg('共 ' + d.total + ' 张');
           var body = document.getElementById('hubBody');
           if (!d.items.length) {
-            body.innerHTML = '<tr><td colspan="10" style="color:var(--gray-500);">没有匹配的角色卡</td></tr>';
+            body.innerHTML = '<tr><td colspan="12" style="color:var(--gray-500);">没有匹配的角色卡</td></tr>';
+            hubUpdateBatchBar();
           } else {
             body.innerHTML = d.items.map(function (r) {
               var owner = r.user_id ? (hubEsc(r.owner_name || ('#' + r.user_id)) + (r.owner_role ? ' <span style="color:var(--gray-500);">(' + hubEsc(r.owner_role) + ')</span>' : '')) : '<span style="color:var(--gray-500);">系统官方</span>';
@@ -1249,21 +1395,28 @@
               var actions = '<button type="button" class="btn btn-sm" onclick="hubDetail(' + r.id + ')">详情</button>';
               if (!r.is_official) actions += ' <button type="button" class="btn btn-sm" onclick="hubPromote(' + r.id + ',1)">设为官方</button>';
               else actions += ' <button type="button" class="btn btn-sm" onclick="hubPromote(' + r.id + ',0)">取消官方</button>';
+              actions += ' <button type="button" class="btn btn-sm" onclick="hubBlock(' + r.id + ',' + (r.is_blocked ? 0 : 1) + ')">' + (r.is_blocked ? '解除屏蔽' : '屏蔽') + '</button>';
               if (r.is_shared) actions += ' <button type="button" class="btn btn-sm" onclick="hubUnshare(' + r.id + ')">强制下架</button>';
               actions += ' <button type="button" class="btn btn-sm btn-danger" onclick="hubDelete(' + r.id + ')">删除</button>';
+              var blockedCell = r.is_blocked
+                ? '<span style="color:var(--danger);" title="' + hubEsc(r.block_reason || '') + '">⛔ 已屏蔽</span>'
+                : '<span style="color:var(--gray-500);">—</span>';
               return '<tr>' +
+                '<td><input type="checkbox" class="hub-select" value="' + r.id + '" onchange="hubUpdateBatchBar()" style="width:auto;margin:0;"></td>' +
                 '<td>' + r.id + '</td>' +
                 '<td>' + hubEsc(r.name) + '</td>' +
                 '<td>' + owner + '</td>' +
                 '<td>' + hubEsc(HUB_SOURCE_LABEL[r.source_type] || r.source_type) + '</td>' +
                 '<td>' + hubEsc(r.category || 'default') + '</td>' +
                 '<td>' + shared + '</td>' +
+                '<td>' + blockedCell + '</td>' +
                 '<td>' + (r.has_book ? '📖 ' + (r.world_book_length || 0) + ' 字符' : '—') + '</td>' +
                 '<td>' + (r.import_count || 0) + ' / ' + (r.view_count || 0) + '</td>' +
                 '<td>' + hubEsc((r.updated_at || r.created_at || '').slice(0, 16)) + '</td>' +
                 '<td style="white-space:nowrap;">' + actions + '</td>' +
                 '</tr>';
             }).join('');
+            hubUpdateBatchBar();
           }
           var pages = Math.max(Math.ceil(d.total / d.per_page), 1);
           document.getElementById('hubPageInfo').textContent = '第 ' + d.page + ' / ' + pages + ' 页';
@@ -1310,6 +1463,24 @@
         .catch(function (err) { hubMsg(err.message || '操作失败', true); });
     };
 
+    window.hubBlock = function (id, blocked) {
+      var reason = '';
+      if (blocked) {
+        reason = prompt('屏蔽该角色卡？屏蔽后广场仅上传者本人可见，分享链接同时失效。\n请填写屏蔽原因（可留空，仅后台可见）：', '');
+        if (reason === null) return;
+      } else if (!confirm('解除该角色卡的屏蔽？解除后作者需重新分享才能上架（原分享链接已失效）。')) return;
+      var fd = new FormData();
+      fd.append('ids', String(id));
+      fd.append('blocked', blocked ? '1' : '0');
+      fd.append('reason', reason);
+      csrfFetch('/admin/ai-chat/roles/all/batch-block', { method: 'POST', body: fd }, 20000)
+        .then(function (json) {
+          hubMsg(json.success ? (json.message || '已更新') : (json.error || '操作失败'), !json.success);
+          if (json.success) { loadHubRoles(window.hubPage); loadHubStats(); }
+        })
+        .catch(function (err) { hubMsg(err.message || '操作失败', true); });
+    };
+
     window.hubDelete = function (id) {
       if (!confirm('强制删除该角色卡？所有引用它的会话将解除关联，此操作不可恢复。')) return;
       var fd = new FormData();
@@ -1320,6 +1491,71 @@
           if (json.success) { loadHubRoles(window.hubPage); loadHubStats(); }
         })
         .catch(function (err) { hubMsg(err.message || '删除失败', true); });
+    };
+
+    // ---- 批量管理（全站角色卡） ----
+    function hubSelectedIds() {
+      return Array.prototype.map.call(document.querySelectorAll('#hubBody .hub-select:checked'), function (c) { return c.value; });
+    }
+
+    window.hubUpdateBatchBar = function () {
+      var ids = hubSelectedIds();
+      var bar = document.getElementById('hubBatchBar');
+      bar.style.display = ids.length ? '' : 'none';
+      document.getElementById('hubBatchCount').textContent = '已选 ' + ids.length + ' 张';
+      var all = document.querySelectorAll('#hubBody .hub-select');
+      var selAll = document.getElementById('hubSelectAll');
+      if (selAll) selAll.checked = all.length > 0 && ids.length === all.length;
+    };
+
+    window.hubToggleSelectAll = function (checked) {
+      document.querySelectorAll('#hubBody .hub-select').forEach(function (c) { c.checked = checked; });
+      hubUpdateBatchBar();
+    };
+
+    function hubBatchPost(path, payload, confirmText, okText) {
+      var ids = hubSelectedIds();
+      if (!ids.length) return;
+      if (confirmText && !confirm(confirmText.replace('{n}', ids.length))) return;
+      var fd = new FormData();
+      fd.append('ids', ids.join(','));
+      if (payload) Object.keys(payload).forEach(function (k) { fd.append(k, payload[k]); });
+      csrfFetch(path, { method: 'POST', body: fd }, 30000)
+        .then(function (json) {
+          if (json.success) {
+            var d = json.data || {};
+            var n = d.updated != null ? d.updated : (d.deleted != null ? d.deleted : (d.changed != null ? d.changed : ids.length));
+            var msg = json.message || (okText + ' ' + n + ' 张');
+            if (!json.message && d.skipped && d.skipped.length) msg += '，跳过同名：' + d.skipped.join('、');
+            hubMsg(msg);
+            loadHubRoles(window.hubPage); loadHubStats();
+          } else {
+            hubMsg(json.error || '操作失败', true);
+          }
+        })
+        .catch(function (err) { hubMsg(err.message || '操作失败', true); });
+    }
+
+    window.hubBatchBlock = function (blocked) {
+      var reason = '';
+      if (blocked) {
+        reason = prompt('批量屏蔽选中的角色卡？屏蔽后广场仅上传者本人可见，分享链接同时失效。\n请填写屏蔽原因（可留空，仅后台可见）：', '');
+        if (reason === null) return;
+      }
+      hubBatchPost('/admin/ai-chat/roles/all/batch-block', { blocked: blocked ? '1' : '0', reason: reason },
+        blocked ? null : '解除选中的 {n} 张卡的屏蔽？解除后作者需重新分享才能上架。',
+        blocked ? '已屏蔽' : '已解除屏蔽');
+    };
+    window.hubBatchUnshare = function () {
+      hubBatchPost('/admin/ai-chat/roles/all/batch-unshare', null, '强制下架选中的 {n} 张角色卡？分享链接会立即失效（已导入的用户副本不受影响）。', '已下架');
+    };
+    window.hubBatchPromote = function (official) {
+      hubBatchPost('/admin/ai-chat/roles/all/batch-promote', { official: official ? '1' : '0' },
+        official ? '将选中的 {n} 张设为官方？设官方后对全站可见。' : '取消选中的 {n} 张的官方标记？取消后降为自建、不再对全站可见。',
+        official ? '已设为官方' : '已取消官方');
+    };
+    window.hubBatchDelete = function () {
+      hubBatchPost('/admin/ai-chat/roles/all/batch-delete', null, '强制删除选中的 {n} 张角色卡？所有引用会话将解除关联，此操作不可恢复！', '已删除');
     };
 
     ['hubQ', 'hubUserId'].forEach(function (id) {

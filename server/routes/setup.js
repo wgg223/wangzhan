@@ -143,7 +143,10 @@ router.post('/', (req, res) => {
     insertDefaultDataIfNeeded();
 
     // 4. 为超级管理员分配所有权限
-    const adminUser = queryOne(db, 'SELECT id FROM users WHERE username = ?', [username]);
+    const adminUser = queryOne(db, 'SELECT id, username, email, role FROM users WHERE username = ?', [username]);
+    if (!adminUser) {
+      throw new Error('管理员账户创建失败，请重试');
+    }
     if (adminUser) {
       const allPermissions = queryAll(db, 'SELECT perm_key FROM permissions');
       allPermissions.forEach(perm => {

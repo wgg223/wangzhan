@@ -791,6 +791,18 @@ function createTables(db) {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
   )`);
 
+  // 角色卡屏蔽表（管理员治理：被屏蔽的卡在广场仅上传者本人可见）
+  // 独立成表而非给 ai_roles 加列：遵守「只 CREATE TABLE、不做 ALTER 迁移」约定，存量库下次启动自动建表
+  db.run(`CREATE TABLE IF NOT EXISTS ai_role_blocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role_id INTEGER NOT NULL UNIQUE,
+    reason TEXT DEFAULT '',
+    blocked_by INTEGER,
+    blocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES ai_roles(id) ON DELETE CASCADE,
+    FOREIGN KEY (blocked_by) REFERENCES users(id) ON DELETE SET NULL
+  )`);
+
   // AI 用户配额表
   db.run(`CREATE TABLE IF NOT EXISTS ai_quota (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

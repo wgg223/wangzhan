@@ -673,6 +673,7 @@
         renderMessages();
         populatePanel();
         checkAutoCompress();
+        fetchPredictions(); // 切回已有对话时也补一次建议，不必等下一轮回复
       })
       .catch(function (err) { showToast(err.message, 'error'); });
   }
@@ -1232,7 +1233,7 @@
       }
     }
 
-    // 思维链（reasoning_content）流式渲染：折叠盒展示，默认展开、生成结束后收起
+    // 思维链（reasoning_content）流式渲染：折叠盒展示，默认收起（点「展开」才看原文）
     function updateReasoning(text) {
       if (!lastEl) return;
       var body = lastEl.querySelector('.ac-msg-body');
@@ -1240,13 +1241,14 @@
       var box = body.querySelector('.ac-msg-reasoning');
       if (!box) {
         box = document.createElement('div');
-        box.className = 'ac-msg-reasoning streaming';
-        box.innerHTML = '<div class="ac-reasoning-head"><span class="ac-reasoning-dot"></span><span class="ac-reasoning-label">思考中…</span><button type="button" class="ac-reasoning-toggle">收起</button></div><div class="ac-reasoning-body"></div>';
+        box.className = 'ac-msg-reasoning streaming collapsed';
+        box.innerHTML = '<div class="ac-reasoning-head"><span class="ac-reasoning-dot"></span><span class="ac-reasoning-label">思考中…</span><button type="button" class="ac-reasoning-toggle">展开</button></div><div class="ac-reasoning-body"></div>';
         var contentEl = body.querySelector('.ac-msg-content');
         if (contentEl) body.insertBefore(box, contentEl); else body.appendChild(box);
         var tgl = box.querySelector('.ac-reasoning-toggle');
         tgl.addEventListener('click', function () {
           box.classList.toggle('collapsed');
+          box.dataset.userToggled = '1';
           tgl.textContent = box.classList.contains('collapsed') ? '展开' : '收起';
         });
       }
@@ -1259,11 +1261,11 @@
       var box = lastEl.querySelector('.ac-msg-reasoning');
       if (!box) return;
       box.classList.remove('streaming');
-      box.classList.add('collapsed');
+      if (box.dataset.userToggled !== '1') box.classList.add('collapsed');
       var label = box.querySelector('.ac-reasoning-label');
       if (label) label.textContent = '已深度思考';
       var tgl = box.querySelector('.ac-reasoning-toggle');
-      if (tgl) tgl.textContent = '展开';
+      if (tgl) tgl.textContent = box.classList.contains('collapsed') ? '展开' : '收起';
     }
 
     // 平滑节流渲染（RP-Hub api-utils.js:365 / SillyTavern sse-stream 式）：
@@ -1293,7 +1295,8 @@
     function autoCollapseReasoning() {
       if (reasoningAutoCollapsed || !lastEl) return;
       var box = lastEl.querySelector('.ac-msg-reasoning');
-      if (box && box.classList.contains('streaming') && !box.classList.contains('collapsed')) {
+      // 用户手动展开过的盒子不再自动折叠，避免和用户操作打架
+      if (box && box.dataset.userToggled !== '1' && box.classList.contains('streaming') && !box.classList.contains('collapsed')) {
         reasoningAutoCollapsed = true;
         box.classList.add('collapsed');
         var tgl = box.querySelector('.ac-reasoning-toggle');
@@ -1438,6 +1441,8 @@
     updateConvTokens();
     // 刷新会话列表（标题/计数可能变化）与配额，保持当前会话选中
     var convId = state.currentConv ? state.currentConv.id : null;
+    // 预测与 bootstrap 解耦：即使会话列表刷新失败，每轮回复后也必须重新拉一次建议
+    fetchPredictions();
     loadBootstrap({ autoSelect: false })
       .then(function () {
         if (convId) {
@@ -1445,9 +1450,10 @@
           renderConversations();
           updateModelLabel();
         }
-        fetchPredictions();
       })
-      .catch(function () { /* ignore */ });
+      .catch(function (err) {
+        console.warn('[predict] bootstrap 刷新失败: ' + ((err && err.message) || err));
+      });
     scrollToBottom();
   }
 
@@ -3653,6 +3659,7 @@
   // ============ 智能预测（推荐用户可能发送的下一条消息） ============
   var predictOn = false;
   var predictInFlight = false;
+  var predictWarned = false; // 失败提示只弹一次，避免每轮刷屏
 
   function applyPredictAvailability() {
     // 管理员总开关关闭时，彻底隐藏按钮与建议区
@@ -3674,7 +3681,8 @@
   function initPredict() {
     var saved = null;
     try { saved = localStorage.getItem('ac_predict_on'); } catch (e) { /* 忽略 */ }
-    applyPredict(saved === '1'); // 默认关闭，由用户主动开启
+    // 首次访问默认开启：AI 回复后自动弹出建议；用户手动关过则尊重其选择
+    applyPredict(saved === null ? true : saved === '1');
   }
 
   function clearSuggestions() {
@@ -3720,8 +3728,14 @@
         // 期间用户可能已切换会话，丢弃过期结果
         if (!state.currentConv || state.currentConv.id !== convId) return;
         if (json && json.success) renderSuggestions(json.suggestions || []);
+        else console.warn('[predict] 接口返回异常: ' + JSON.stringify(json || {}));
       })
-      .catch(function () { /* 静默失败，不打扰对话 */ })
+      .catch(function (err) {
+        // 不再完全静默：控制台留痕 + 首次失败提示一次，方便定位「没弹出」的原因
+        var msg = (err && err.message) || '预测失败';
+        console.warn('[predict] ' + msg);
+        if (!predictWarned) { predictWarned = true; showToast('预测建议获取失败：' + msg, 'info'); }
+      })
       .then(function () {
         predictInFlight = false;
         if (els.acPredictBtn) els.acPredictBtn.classList.remove('loading');
@@ -4426,9 +4440,20 @@
     { cat: '对话操作', q: '如何重新生成 / 切换回复？', a: 'AI 消息上可「重新生成」；多次生成会形成可切换的候选回复（swipe），用消息上的分支操作左右查看。' },
     { cat: '对话操作', q: '剧情分支怎么用？', a: '在 AI 消息上点「分叉」从该处创建新分支，各分支互不影响；\n可在面板或分支弹窗中查看与切换。' },
     { cat: '对话操作', q: '能编辑 / 删除消息吗？', a: '可以。用户消息可编辑后重新生成，消息也支持删除；\n编辑作用于当前所在分支。' },
-    { cat: '角色与世界书', q: '如何创建自己的角色？', a: '「🎭 角色」→「＋ 创建角色」，填写名称、设定、开场白、性格、场景、示例，可上传头像。\n支持导入角色卡（JSON/PNG）与 URL 抓取。' },
+    { cat: '角色与世界书', q: '如何创建自己的角色？', a: '「🎭 角色」→「＋ 创建角色」，填写名称、设定、开场白、性格、场景、示例，可上传头像。\n支持导入角色卡（JSON/PNG）与 URL 抓取；也可在「🏛️ 广场」点「＋ 创建」直接跳到该表单。' },
     { cat: '角色与世界书', q: '世界书是什么？', a: '世界书是按需注入的背景设定条目。设置触发词后，当对话命中关键词时自动把条目内容插入上下文，节省 token。' },
     { cat: '角色与世界书', q: '世界书有哪些触发方式？', a: '常驻（constant）、主触发词、选择性（需二级触发词同时命中）、概率触发；\n位置可选系统前 / 角色前后 / 用户消息前 / AI 前 / 按深度插入。' },
+    { cat: '角色与世界书', q: '默认世界书模板是什么？', a: '管理员维护的全局模板：新建会话时自动把「启用中」的条目复制到该会话（副本，会话内可自由编辑）；\n世界书弹窗也可手动「从默认模板添加」。后台「AI 聊天 → 默认世界书」支持勾选后批量启用/停用、设为常驻、改注入位置、删除与批量导入。' },
+    { cat: '角色卡广场', q: '角色卡广场在哪里？', a: '聊天页顶部「🏛️ 广场」一键直达 /characters。\n游客可只读浏览与预览，登录并有 AI 聊天权限后可导入、上传、创建与分享。' },
+    { cat: '角色卡广场', q: '怎么把广场的卡用到我的对话？', a: '打开卡片详情点「导入到我」，会复制成你自己的私有卡，然后在「🎭 角色」里选用。\n从广场导入的卡（hub）仅限站内使用：不能导出，也不能再次分享到广场，防止内容外溢。' },
+    { cat: '角色卡广场', q: '我能上传自己的角色卡吗？', a: '可以。广场右上「⬆ 上传」，支持 .json / .png（PNG 需内含 chara 角色数据），单个文件 ≤10MB。\n普通用户单次最多 10 个文件、账户总量上限 200 张；上传后默认私有，需在详情里开启「分享到广场」才公开。' },
+    { cat: '角色卡广场', q: '「＋ 创建」和「⬆ 上传」有什么区别？', a: '「＋ 创建」跳到聊天页的角色表单在线填写人设；「⬆ 上传」导入现成的角色卡文件（可多选、可拖拽）。\n两者都需要 AI 聊天权限，上传成功的卡会出现在「我的」标签下。' },
+    { cat: '角色卡广场', q: '管理员批量上传有什么不同？', a: '拥有角色卡管理权限（aichat.manage）或超管：单次最多 50 个文件，上传后直接成为官方卡，对全站可见。\n同名卡自动跳过，结果弹窗会逐个列出成功、跳过与失败原因。' },
+    { cat: '角色卡广场', q: '上传失败常见原因有哪些？', a: '仅支持 .json / .png；PNG 必须含 chara 字段；JSON 需能解析出名称与设定/开场白。\nJSON 可以是单张卡、卡片数组，或 { roles: [...] } / { characters: [...] } 包装；同名卡会跳过而不是覆盖。' },
+    { cat: '角色卡广场', q: '分享后怎么下架？', a: '在卡片详情关闭「分享到广场」即可，分享链接立即失效。\n已经被别人导入的副本不受影响（那是他们自己的私有卡）。' },
+    { cat: '角色卡广场', q: '屏蔽、下架、删除有什么区别？', a: '屏蔽：广场仅上传者本人可见（官方卡无归属则对所有人隐藏），分享链接同时失效，聊天页角色选择器也不再出现；\n下架：只取消公开分享或官方标记，作者仍可重新分享；删除：彻底移除并解除会话引用，不可恢复。\n三者管理员都可批量执行，且全部写入审计日志。' },
+    { cat: '角色卡广场', q: '我的卡被屏蔽了怎么办？', a: '卡片会带「⛔ 已屏蔽」标记，只有你自己看得到，别人无法访问或导入。\n可修改内容后联系管理员解除屏蔽；解除后原分享链接已失效，需要重新开启分享。' },
+    { cat: '角色卡广场', q: '为什么广场里的卡不能导出？', a: '防内容外溢：广场视图永远不下发导出能力，从广场导入的卡（hub）在服务层就被禁止导出与二次分享。\n自建（self）、自行上传（external）与官方（official）卡则可在聊天页凭「AI聊天导出」权限导出。' },
     { cat: '记忆与上下文', q: 'AI 会记住之前的剧情吗？', a: '开启记忆后，系统会逐轮总结（摘要记忆）；增强模式还会做向量召回，让长对话也能回忆早期内容。' },
     { cat: '记忆与上下文', q: '自动压缩是什么？', a: '对话过长时按设定保留最近 N 条、把更早内容压缩成摘要，避免超出模型上下文。\n可在设置面板调「自动压缩」与保留条数，也可手动「立即压缩」。' },
     { cat: '记忆与上下文', q: '如何查看实际发给模型的内容？', a: '设置面板「上下文」→「🔍 预览上下文」，逐条显示来源（系统提示 / 世界书 / 记忆 / 角色卡 / 历史…）与 token 估算，所见即所送。' },
@@ -4608,5 +4633,24 @@
   // 初始化
   loadBootstrap().catch(function (err) {
     showToast(err.message, 'error');
+  }).then(function () {
+    // 深链：/ai-chat?newrole=1 → 自动打开「创建角色卡」表单（角色卡广场「＋ 创建」入口）
+    // 深链：/ai-chat?help=1 → 打开指南；?help=plaza → 直接定位「角色卡广场」分类（广场页脚入口）
+    try {
+      var params = new URLSearchParams(location.search);
+      var wantRole = params.get('newrole') === '1';
+      var wantHelp = params.get('help');
+      if (wantRole) {
+        openRoleModal();
+        showModal('acRoleCreateModal');
+      }
+      if (wantHelp === '1' || wantHelp === 'plaza') {
+        if (wantHelp === 'plaza') helpActiveCat = '角色卡广场';
+        openHelp();
+      }
+      if ((wantRole || wantHelp) && window.history && history.replaceState) {
+        history.replaceState(null, '', location.pathname);
+      }
+    } catch (e) { /* 深链失败不影响正常使用 */ }
   });
 })();

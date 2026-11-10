@@ -9,7 +9,7 @@
   <%
   function acBust(p) {
     var u = typeof cdn !== 'undefined' ? cdn.getUrl(p) : p;
-    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261110g';
+    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261111b';
   }
   %>
   <link rel="stylesheet" href="<%= acBust('/css/ai-chat.css') %>">
@@ -47,6 +47,7 @@
         <button class="ac-tool" id="acShareBtn" title="分享" style="display:none;">🔗 <span>分享</span></button>
         <button class="ac-tool" id="acModelBtn" title="切换模型">⚙️ <span id="acModelLabel">自动</span></button>
         <button class="ac-tool" id="acRoleBtn" title="角色预设">🎭 <span id="acRoleLabel">角色</span></button>
+        <button class="ac-tool" id="acPlazaBtn" title="角色卡广场：浏览 / 导入 / 分享角色卡" onclick="location.href='/characters'">🏛️ <span>广场</span></button>
         <button class="ac-tool" id="acPanelToggle" title="设置面板">🎛️ <span>设置</span></button>
       </div>
     </header>

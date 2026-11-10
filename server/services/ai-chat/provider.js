@@ -151,13 +151,12 @@ async function callChatCompletion(modelInfo, messages, opts = {}) {
     temperature: gp.temperature != null ? gp.temperature : modelInfo.temperature,
     max_tokens: gp.max_tokens != null ? gp.max_tokens : modelInfo.max_tokens
   };
-  // 请求返回 usage 信息（部分服务商支持）
-  body.stream_options = { include_usage: true };
   if (gp.top_p != null && gp.top_p < 1) body.top_p = gp.top_p;
   if (gp.top_k != null && gp.top_k > 0) body.top_k = gp.top_k;
   if (gp.frequency_penalty != null && gp.frequency_penalty !== 0) body.frequency_penalty = gp.frequency_penalty;
   if (gp.presence_penalty != null && gp.presence_penalty !== 0) body.presence_penalty = gp.presence_penalty;
-  if (stream) body.stream = true;
+  // stream_options 只能随 stream=true 发送，否则服务商会直接报错（预测是非流式请求）
+  if (stream) { body.stream = true; body.stream_options = { include_usage: true }; }
 
   if (stream) {
     return streamCompletion(url, headers, body, signal, onDelta, onReasoning, idleTimeout);
