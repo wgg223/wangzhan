@@ -442,6 +442,9 @@
     // 私信弹窗
     var currentChatConvId = null;
     var currentChatUserId = null;
+    // 内联脚本注入 JSON 必须用 jsJson()（原始输出）；转义输出会把双引号变成 HTML 实体，导致 SyntaxError
+    var chatSelfId = <%- jsJson(user.id) %>;
+    var chatSelfAvatar = <%- jsJson(user.avatar || '/assets/images/default-avatar.png') %>;
     
     // 打开私信弹窗（与指定用户）
     async function openChatWithUser(userId, username, avatar) {
@@ -498,9 +501,9 @@
             container.innerHTML = '<div class="chat-modal-empty">暂无消息，开始聊天吧</div>';
           } else {
             container.innerHTML = messages.map(function(msg) {
-              var isSent = msg.sender_id === <%= user.id %>;
+              var isSent = msg.sender_id === chatSelfId;
               return '<div class="chat-modal-msg ' + (isSent ? 'sent' : 'received') + '">' +
-                '<img src="' + (isSent ? <%= JSON.stringify(user.avatar || "/assets/images/default-avatar.png").replace(/</g, '\\u003c') %> : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="msg-avatar">' +
+                '<img src="' + (isSent ? chatSelfAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="msg-avatar">' +
                 '<div>' +
                   '<div class="msg-content">' + escapeHtml(msg.content) + '</div>' +
                   '<div class="msg-time">' + formatTime(msg.created_at) + '</div>' +
@@ -549,7 +552,7 @@
           if (emptyMsg) emptyMsg.remove();
           
           var msgHtml = '<div class="chat-modal-msg sent">' +
-            '<img src="<%= user.avatar || "/assets/images/default-avatar.png" %>" alt="" class="msg-avatar">' +
+            '<img src="' + escapeHtml(chatSelfAvatar) + '" alt="" class="msg-avatar">' +
             '<div>' +
               '<div class="msg-content">' + escapeHtml(content) + '</div>' +
               '<div class="msg-time">刚刚</div>' +

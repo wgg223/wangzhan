@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.23.1 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.23.2 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -307,6 +307,16 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.23.2 (2026-11-11)
+
+**修复：登录态页面内联脚本 `Uncaught SyntaxError: Unexpected token '&'`（私信弹窗与私信页整体失效）**
+- **根因**：内联 `<script>` 里用 EJS 的**转义输出标签**注入 `JSON.stringify(...)`。转义输出会把 JSON 的双引号写成 `&quot;`，而浏览器是先把 `<script>` 内容当纯 JS 解析、**不做 HTML 实体解码**，于是在 `&` 处直接抛 `SyntaxError`，整段脚本一行都不执行。线上表现为登录后控制台报 `Unexpected token '&' (at ...:1321:42)`，私信弹窗打不开、私信页消息不加载；游客页不渲染这段脚本所以看起来正常
+- **影响范围**：`views/frontend/layout.ejs` 私信弹窗（登录态每个前台页面都注入）、`views/frontend/chat.ejs` 私信页的 `loadMessages` 与 `appendMessage`。HTML **属性**里的 `data-*` / `onclick` 用转义输出是正确的（浏览器会先解码实体再交给 JS），本次未改动
+- **统一修法**：新增全局模板助手 `app.locals.jsJson`（`server/app.js`），模板内联脚本一律 `<%- jsJson(value) %>`。它用原始输出避免实体转义，并额外把 `<` `>` 转成 `\u003c` `\u003e`（防 `</script>` 提前截断）、把 U+2028/U+2029 转成 `\u2028` `\u2029`（防 JS 行分隔符断行），`undefined` 归一为 `null`
+- **落点**：`layout.ejs` 提出 `chatSelfId` / `chatSelfAvatar` 两个变量替换 3 处内联注入；`chat.ejs` 提出 `currentUserAvatar` 替换 2 处，`otherUser.avatar` 也改走 `jsJson`
+- **顺带修掉一个模板陷阱**：EJS 注释/JS 注释里若出现字面的 `<%-`、`<%=`，会被当成真实标签解析，导致 `Could not find matching close tag` 编译失败；注释文案已改为不含标签字符的表述
+- 验证：全部 **106 个 EJS 模板编译通过**；静态扫描确认内联脚本中已无转义输出 JSON（其余 `<%= %>` 均为整数/布尔/枚举/CSRF 十六进制串，不受影响）；**隔离临时根目录建库 + 真实 HTTP 渲染**（安装→登录→把头像换成含 `" ' </script> <img onerror> U+2028` 的恶意串→首页与 `/chat/:id`），逐段内联脚本用 `vm.Script` 语法检查全部通过、页面无 `&quot;`、`</script>` 正确转义；`/chat`、`/ai-chat`、`/characters`、`/admin`、`/admin/ai-chat` 均 200；`eslint server/app.js` 0 error；真实 `database.sqlite` 全程未被触碰
 
 ### v8.23.1 (2026-11-11)
 

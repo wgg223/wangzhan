@@ -255,10 +255,12 @@
 
 <script>
 var currentUserId = <%= user.id %>;
+// 内联脚本注入 JSON 必须用 jsJson()（原始输出）；转义输出会把双引号变成 HTML 实体，导致 SyntaxError
+var currentUserAvatar = <%- jsJson(user.avatar || '/assets/images/default-avatar.png') %>;
 var conversationId = <%= conversation.id %>;
 var otherUser = {
   id: <%= otherUser.id %>,
-  avatar: <%- JSON.stringify(otherUser.avatar || "/assets/images/default-avatar.png").replace(/</g, '\\u003c') %>
+  avatar: <%- jsJson(otherUser.avatar || '/assets/images/default-avatar.png') %>
 };
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -310,7 +312,7 @@ async function loadMessages() {
         container.innerHTML = messages.map(function(msg) {
           var isSent = msg.sender_id === currentUserId;
           return '<div class="message-bubble ' + (isSent ? 'sent' : 'received') + '">' +
-            '<img src="' + (isSent ? <%= JSON.stringify(user.avatar || "/assets/images/default-avatar.png").replace(/</g, '\\u003c') %> : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="message-avatar">' +
+            '<img src="' + (isSent ? currentUserAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="message-avatar">' +
             '<div>' +
               '<div class="message-content">' + escapeHtml(msg.content) + '</div>' +
               '<div class="message-time">' + formatTime(msg.created_at) + '</div>' +
@@ -332,7 +334,7 @@ function appendMessage(msg) {
   
   var isSent = msg.sender_id === currentUserId;
   var html = '<div class="message-bubble ' + (isSent ? 'sent' : 'received') + '">' +
-    '<img src="' + (isSent ? <%= JSON.stringify(user.avatar || "/assets/images/default-avatar.png").replace(/</g, '\\u003c') %> : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="message-avatar">' +
+    '<img src="' + (isSent ? currentUserAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="message-avatar">' +
     '<div>' +
       '<div class="message-content">' + escapeHtml(msg.content) + '</div>' +
       '<div class="message-time">' + formatTime(msg.created_at) + '</div>' +

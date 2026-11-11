@@ -2,6 +2,14 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.23.2 (2026-11-11)
+
+**修复：登录态页面内联脚本 `Uncaught SyntaxError: Unexpected token '&'`（私信功能整体失效）**
+- 根因：内联 `<script>` 里用 EJS 转义输出标签注入 `JSON.stringify(...)`，双引号被写成 `&quot;`，浏览器解析脚本即在 `&` 处报错，整段脚本（私信弹窗 / 私信页）全部不执行
+- 新增全局模板助手 `app.locals.jsJson`：原始输出 JSON，并把 `< >` 与 U+2028/U+2029 转成 JS 转义序列，防 `</script>` 截断与行分隔符断行
+- `layout.ejs` 私信弹窗改用 `chatSelfId` / `chatSelfAvatar`，`chat.ejs` 新增 `currentUserAvatar`，共 5 处内联注入统一走 `jsJson`
+- 验证：106 个 EJS 模板全部编译通过、内联脚本已无转义输出 JSON；隔离建库真实 HTTP 渲染（含恶意头像 payload）逐段脚本语法检查全部通过
+
 ## v8.23.1 (2026-11-11)
 
 **修复：在线更新后重启失效（版本号变了但功能没变 / PM2 无限重启）**

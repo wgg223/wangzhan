@@ -225,6 +225,20 @@ app.set('view engine', 'ejs');      // 视图引擎 = EJS
 app.set('views', path.join(__dirname, '../views')); // 视图目录
 app.set('layout', 'frontend/layout');               // 默认布局（后续按路由覆盖）
 
+/**
+ * 内联 <script> 里注入 JSON 的安全写法：模板中用 <%- jsJson(value) %>
+ * 必须用 <%-（原始输出）——<%= 会把 JSON 的双引号转义成 &quot;，
+ * 浏览器解析内联脚本时直接抛 SyntaxError: Unexpected token '&'，整段脚本失效。
+ * 这里额外把 < > 与 U+2028/U+2029 转成 JS 转义序列，防 </script> 截断与行分隔符断行。
+ */
+app.locals.jsJson = function (value) {
+  return JSON.stringify(value === undefined ? null : value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+};
+
 // 导航页缓存：顶级已发布页面列表（导航菜单用），pageCache 缓存
 function getCachedNavPages(db) {
   const cacheKey = 'nav_pages';
