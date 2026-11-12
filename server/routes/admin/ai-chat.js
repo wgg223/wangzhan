@@ -645,6 +645,11 @@ router.post('/ai-chat/settings/save', isAuthenticated, hasPermission('aichat.man
     ai_world_recursion_steps: String(Math.min(Math.max(toInt(first(req.body.ai_world_recursion_steps), 4), 1), 10)),
     ai_world_budget_percent: String(Math.min(Math.max(toInt(first(req.body.ai_world_budget_percent), 25), 0), 100)),
     ai_world_scan_depth: String(Math.min(Math.max(toInt(first(req.body.ai_world_scan_depth), 6), 1), 50)),
+    // 世界书自动识别（扫描期叠加，不改用户原始条目）：只有显式传 '0' 才关闭，
+    // 字段缺失（旧页面缓存/旧库无该设置行）时保持默认开启，避免静默关掉召回增强。
+    ai_world_auto_enhance: first(req.body.ai_world_auto_enhance) === '0' ? '0' : '1',
+    ai_world_auto_secondary: first(req.body.ai_world_auto_secondary) === '0' ? '0' : '1',
+    ai_world_auto_constant: first(req.body.ai_world_auto_constant) === '0' ? '0' : '1',
     // 上下文预算与抗截断续写
     ai_context_size: String(Math.min(Math.max(toInt(first(req.body.ai_context_size), 16000), 2000), 1000000)),
     ai_history_window: String(Math.min(Math.max(toInt(first(req.body.ai_history_window), 3000), 500), 200000)),

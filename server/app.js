@@ -32,6 +32,8 @@ const { monitor } = require('./config/monitor');
 const { globalLimiter, loginLimiter, apiLimiter } = require('./middlewares/rate-limiter');
 // 维护模式中间件
 const { maintenanceMiddleware } = require('./middlewares/maintenance');
+// CSRF 双提交令牌生成器（与 doubleSubmitCookie 校验共用同一套令牌）
+const { generateToken } = require('./middlewares/security');
 // CDN 配置模块（静态资源域名分流）
 const cdnConfig = require('../cdn-config');
 // 设置读取工具（settings 表 → 键值对象）
@@ -286,7 +288,14 @@ app.use((req, res, next) => {
   res.locals.user = req.session.user || null;   // 当前登录用户（模板可用）
   res.locals.settings = getSettings(req.db);    // 站点设置对象
   res.locals.navPages = getCachedNavPages(req.db); // 导航菜单页面
-  res.locals.csrfToken = '';                    // CSRF 占位（具体路由内按需填充）
+  // CSRF 双提交令牌：必须在这里就生成并暴露给模板。
+  // 原先是 '' 占位，只有 /admin 与少数 POST 路由会跑 doubleSubmitCookie 去填充，
+  // 于是前台页面 meta[name="csrf-token"] 恒为空 —— 个人主页改头像/简介等写操作一律 403「CSRF 验证失败」。
+  // 这里与 doubleSubmitCookie 共用 req.session.doubleSubmitToken，校验逻辑不变。
+  if (req.session && !req.session.doubleSubmitToken) {
+    req.session.doubleSubmitToken = generateToken();
+  }
+  res.locals.csrfToken = (req.session && req.session.doubleSubmitToken) || '';
   res.locals.cdn = cdnConfig;                   // CDN 配置（模板生成资源 URL）
 
   // 按路径前缀选择布局模板（使用 res.locals.layout 替代 app.set 避免并发竞态）

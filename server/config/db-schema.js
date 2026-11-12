@@ -867,6 +867,10 @@ function createTables(db) {
     ['ai_world_recursion_steps', '4'],
     ['ai_world_budget_percent', '25'],
     ['ai_world_scan_depth', '6'],
+    // 世界书自动识别（扫描期叠加，不改用户原始条目）：总开关 / 自动二级键 / 自动常驻
+    ['ai_world_auto_enhance', '1'],
+    ['ai_world_auto_secondary', '1'],
+    ['ai_world_auto_constant', '1'],
     // 上下文与生成：总上下文预算（token）、历史窗口、抗截断自动续写
     ['ai_context_size', '16000'],
     ['ai_history_window', '3000'],

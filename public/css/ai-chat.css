@@ -713,6 +713,7 @@ a:hover { text-decoration: underline; }
 /* 世界书 */
 .ac-world-toolbar { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
 .ac-world-count { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.ac-world-hint { font-size: 11px; line-height: 1.6; color: var(--text-muted); margin: 0 0 8px; }
 .ac-world-batch { display: flex; gap: 6px; padding: 9px 0 0; border-top: 1px dashed var(--border-color); margin-top: 8px; }
 .ac-world-item {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-sm);
@@ -729,6 +730,11 @@ a:hover { text-decoration: underline; }
 .ac-world-sel { background: var(--info-bg); color: var(--info-dark); }
 .ac-world-prob { background: var(--warning-bg); color: var(--warning-dark); }
 .ac-world-depth { background: var(--success-bg); color: var(--success-dark); }
+.ac-world-auto { background: var(--primary-focus); color: var(--primary); border: 1px dashed var(--primary-border); }
+.ac-world-auto-hint {
+  font-size: 11px; line-height: 1.6; color: var(--text-secondary); background: var(--primary-bg);
+  border: 1px dashed var(--primary-border); border-radius: var(--radius-sm); padding: 7px 10px; margin: -4px 0 10px;
+}
 .ac-world-toggle {
   flex: 0 0 auto; border: 1px solid var(--border-color); background: var(--bg-card);
   color: var(--text-secondary); font-size: 10px; padding: 3px 10px; border-radius: var(--radius-full);
@@ -945,6 +951,23 @@ a:hover { text-decoration: underline; }
 .ac-context-msg.user { background: var(--info-bg); border-color: var(--info-border); }
 .ac-context-msg.assistant { background: var(--success-bg); border-color: var(--success-border); }
 .ac-context-msg-content { white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; }
+
+/* 上下文预览：世界书命中诊断 */
+.ac-context-wmeta { font-size: 11px; line-height: 1.7; color: var(--text-muted); margin-bottom: 8px; }
+.ac-context-wlist { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.ac-context-witem { padding: 7px 10px; border-radius: var(--radius-sm); border: 1px solid var(--glass-border); background: var(--bg-card); font-size: 11px; }
+.ac-context-witem.on { border-color: var(--success-border); background: var(--success-bg); }
+.ac-context-witem.off { opacity: 0.72; }
+.ac-context-whead { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-bottom: 3px; }
+.ac-context-wkey { font-weight: var(--font-semibold); font-size: 12px; color: var(--text-primary); }
+.ac-context-wtag { padding: 1px 6px; border-radius: var(--radius-full); font-size: 9px; background: var(--bg-tertiary); color: var(--text-secondary); white-space: nowrap; }
+.ac-context-wtag.const { background: var(--primary-focus); color: var(--primary); }
+.ac-context-wtag.auto { background: var(--primary-focus); color: var(--primary); border: 1px dashed var(--primary-border); }
+.ac-context-wtag.sel { background: var(--info-bg); color: var(--info-dark); }
+.ac-context-wpos { font-size: 10px; color: var(--text-muted); }
+.ac-context-wtok { margin-left: auto; font-size: 9px; color: var(--text-muted); opacity: 0.75; }
+.ac-context-wreason { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+.ac-context-wexcerpt { font-size: 10px; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 消息滑动（alternates） */
 .ac-msg-swipe { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; font-size: 11px; color: var(--text-muted); }

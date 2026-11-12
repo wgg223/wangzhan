@@ -1497,13 +1497,35 @@ router.post('/ai-chat/api/branches/delete', isAuthenticated, hasFrontendPermissi
   res.json({ success: true });
 });
 
-// 世界书列表
+// 世界书列表（附自动识别诊断：哪些条目会被自动常驻 / 自动补了哪些二级触发词）
 router.get('/ai-chat/api/world-book', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
   const db = req.db;
   const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.query.conversation_id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const list = queryAll(db, 'SELECT id, key, content, position, enabled, constant, sort_order, secondary_keys, selective, probability, depth FROM ai_world_book WHERE conversation_id = ? ORDER BY sort_order ASC, id ASC', [conv.id]);
-  res.json({ success: true, data: list });
+  const { worldBookConfig } = require('../services/ai-chat/context');
+  const worldBookAuto = require('../services/ai-chat/world-book');
+  const cfg = worldBookConfig(getSettings(db));
+  const enhanced = worldBookAuto.enhanceEntries(list, { autoSecondary: cfg.autoSecondary, autoConstant: cfg.autoConstant });
+  const data = list.map((row, i) => {
+    const auto = enhanced.entries[i]._auto || { keys: [], constant: false, reason: '' };
+    return Object.assign({}, row, {
+      auto_constant: auto.constant,
+      auto_reason: auto.reason,
+      auto_secondary_keys: auto.keys
+    });
+  });
+  res.json({
+    success: true,
+    data,
+    auto: {
+      enabled: cfg.autoEnhance,
+      secondary: cfg.autoSecondary,
+      constant: cfg.autoConstant,
+      autoConstantCount: enhanced.autoConstantCount,
+      autoSecondaryCount: enhanced.autoSecondaryCount
+    }
+  });
 });
 
 // 世界书保存（新建/更新）
@@ -2530,14 +2552,17 @@ router.post('/ai-chat/api/messages/swipe-regenerate', isAuthenticated, hasFronte
   });
 });
 
-// 上下文预览（调试用：返回当前会话的完整 prompt 组装结果）
+// 上下文预览（调试用：返回当前会话的完整 prompt 组装结果 + 世界书逐条命中诊断）
+// 可选 ?msg=… 用指定输入试算触发（默认「（预览）」），便于验证自动二级键/自动常驻是否生效
 router.get('/ai-chat/api/conversations/:id/context-preview', isAuthenticated, hasFrontendPermission('aichat.use'), (req, res) => {
   const db = req.db;
   const conv = aiChatService.getOwnConversation(db, req.session.user, parseInt(req.params.id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
-  const { buildContext } = require('../services/ai-chat/context');
+  const { buildContext, inspectWorldBook } = require('../services/ai-chat/context');
   const { estimateTokens } = require('../services/ai-chat/utils');
-  const messages = buildContext(db, conv, '（预览）', {});
+  const previewMsg = String(req.query.msg || '').trim().slice(0, 2000) || '（预览）';
+  const messages = buildContext(db, conv, previewMsg, {});
+  const worldBook = inspectWorldBook(db, conv, previewMsg);
   const totalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
   // 启发式来源标注（便于调试各注入块）：不改变 buildContext 产物，仅附加 source 标签
   const labelSource = (m, idx) => {
@@ -2555,7 +2580,7 @@ router.get('/ai-chat/api/conversations/:id/context-preview', isAuthenticated, ha
     return '注入块';
   };
   const annotated = messages.map((m, idx) => ({ role: m.role, content: m.content, source: labelSource(m, idx), tokens: estimateTokens(m.content) }));
-  res.json({ success: true, data: { messages: annotated, totalTokens } });
+  res.json({ success: true, data: { messages: annotated, totalTokens, previewMsg, worldBook } });
 });
 
 module.exports = router;

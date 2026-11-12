@@ -2,6 +2,20 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.24.0 (2026-11-12)
+
+**新增：世界书自动识别（自动补二级触发词 + 自动常驻）+ 命中诊断 ｜ 修复：前台 CSRF 令牌为空导致写操作 403**
+
+- 新增纯函数模块 `services/ai-chat/world-book.js`（扫描期叠加，不写库、不改用户条目）：
+  - 自动二级键：内容按「引号专名 > `名称：`/`武器：` 定义值 > 定义行左侧专名 > 英文专名 > 高频中文 2–6 字词」抽词，去停用词/功能字边界/更长词碎片，最多 8 个补进 `secondary_keys`
+  - 自动常驻：无触发词 / 触发词全是 `世界观、设定、背景、lore…` 全局标签 / 条目名或内容自称全局设定 → 按常驻注入
+- 触发语义修正（`context.js:scanWorldBook`）：「未勾选选择性」= 主键**或**二级键任一命中（补充触发词只扩大召回）；「勾选选择性」保持 SillyTavern 的 **AND** 语义，且只给非选择性条目自动补键，避免凭空补键反而收窄触发
+- 触发词切分与 RP-Hub / SillyTavern 对齐：只按逗号家族 + 换行切分，英文多词键保持整体，含中文的片段才额外按空白切
+- 后台开关 `ai_world_auto_enhance` / `ai_world_auto_secondary` / `ai_world_auto_constant`（默认开启，旧库缺行也按开启处理，只有显式 `0` 才关闭）
+- 可观测：世界书列表返回 `auto_constant` / `auto_reason` / `auto_secondary_keys` 并显示「自动常驻 / 自动二级键 N」徽标；编辑弹窗提示自动补键内容；「🔍 预览上下文」新增试算输入 + 逐条命中诊断（是否注入 / 命中词 / 未命中原因 / 第几层递归）
+- **修复：前台 CSRF 令牌为空**（`server/app.js`）。`res.locals.csrfToken` 原先是 `''` 占位，只有 `/admin` 等少数路由会跑 `doubleSubmitCookie` 填充，导致登录态前台页面 `meta[name="csrf-token"]` 恒为空，个人主页「裁剪头像 → 确认上传」等写操作全部 403「CSRF 验证失败」。现改为在全局 locals 中间件里按会话生成/复用 `req.session.doubleSubmitToken`，与校验逻辑共用同一令牌
+- 验证：纯函数断言 38/38；隔离临时数据目录 E2E 26/26（真实 `database.sqlite` 未触碰），覆盖「主键不命中但自动二级键命中 → 注入」「全局标签条目自动常驻」「选择性条目仍需双键」「后台关闭自动识别后同句 0 命中、重开恢复」；106 个 EJS 模板编译通过；`eslint` 0 error
+
 ## v8.23.2 (2026-11-11)
 
 **修复：登录态页面内联脚本 `Uncaught SyntaxError: Unexpected token '&'`（私信功能整体失效）**

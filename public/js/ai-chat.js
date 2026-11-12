@@ -42,7 +42,7 @@
     'acModelBtn', 'acModelLabel', 'acModelModal', 'acModelList',
     'acRoleModal', 'acRoleList', 'acRoleCreate', 'acRoleCreateModal', 'acNewRoleName', 'acNewRolePrompt', 'acNewRoleGreeting', 'acNewRoleDesc', 'acNewRolePersonality', 'acNewRoleScenario', 'acNewRoleExamples', 'acRoleSave',
     'acWorldList', 'acWorldAdd', 'acWorldImport', 'acWorldEditModal', 'acWorldEditTitle', 'acWorldKey', 'acWorldPos',
-    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acWorldSecondary', 'acWorldSelective', 'acWorldProbability', 'acWorldDepth', 'acWorldSelectiveWrap', 'acWorldDepthWrap',
+    'acWorldContent', 'acWorldConstant', 'acWorldSave', 'acWorldDelete', 'acWorldSecondary', 'acWorldSelective', 'acWorldProbability', 'acWorldDepth', 'acWorldSelectiveWrap', 'acWorldDepthWrap', 'acWorldAutoHint',
     'acMemoryEnabled', 'acRagEnabled', 'acMemoryMode', 'acMemorySave', 'acMemoryRefresh',
     'acAutoCompress', 'acCompressKeep', 'acCompressKeepVal', 'acCompressNow',
     'acMemoryBackfill', 'acMemoryBackfillModal', 'acBackfillStatus', 'acBackfillEmbWarn',
@@ -74,6 +74,7 @@
     'acTemplateModal', 'acTemplateList', 'acTemplateName', 'acTemplateContent', 'acTemplateSave',
     'acPresetSaveModal', 'acPresetName', 'acPresetDefault', 'acPresetSaveConfirm',
     'acContextModal', 'acContextInfo', 'acContextMessages',
+    'acContextTestInput', 'acContextTestBtn', 'acContextWorld', 'acContextWorldWrap',
     'acBranchModal',
     'acNewGroup', 'acGroupBar', 'acGroupMembers', 'acGroupEdit',
     'acGroupModal', 'acGroupModalTitle', 'acGroupName', 'acGroupMode', 'acGroupMemberList', 'acGroupSave',
@@ -2524,7 +2525,10 @@
     if (els.acWorldCount) {
       var total = state.worldBook.length;
       var enabled = state.worldBook.filter(function (w) { return w.enabled; }).length;
-      els.acWorldCount.textContent = (kw ? list.length + '/' : '') + total + ' 条（' + enabled + ' 启用）';
+      var autoConst = state.worldBook.filter(function (w) { return w.auto_constant; }).length;
+      var autoSec = state.worldBook.filter(function (w) { return w.auto_secondary_keys && w.auto_secondary_keys.length; }).length;
+      var autoTxt = (autoConst || autoSec) ? ' · 自动识别 ' + autoConst + ' 常驻 / ' + autoSec + ' 补键' : '';
+      els.acWorldCount.textContent = (kw ? list.length + '/' : '') + total + ' 条（' + enabled + ' 启用）' + autoTxt;
     }
 
     if (!list.length) {
@@ -2534,7 +2538,7 @@
     }
     list.forEach(function (w) {
       var item = document.createElement('div');
-      item.className = 'ac-world-item' + (w.enabled ? '' : ' off') + (w.constant ? ' constant' : '');
+      item.className = 'ac-world-item' + (w.enabled ? '' : ' off') + ((w.constant || w.auto_constant) ? ' constant' : '');
       var key = document.createElement('span');
       key.className = 'ac-world-key';
       key.textContent = w.key || '（常驻）';
@@ -2559,6 +2563,20 @@
         stag.textContent = '二级键';
         stag.title = '需同时命中：' + w.secondary_keys;
         item.appendChild(stag);
+      }
+      if (w.auto_constant) {
+        var actag = document.createElement('span');
+        actag.className = 'ac-world-pos ac-world-auto';
+        actag.textContent = '自动常驻';
+        actag.title = w.auto_reason || '自动识别为全局设定，始终注入';
+        item.appendChild(actag);
+      }
+      if (w.auto_secondary_keys && w.auto_secondary_keys.length) {
+        var astag = document.createElement('span');
+        astag.className = 'ac-world-pos ac-world-auto';
+        astag.textContent = '自动二级键 ' + w.auto_secondary_keys.length;
+        astag.title = '自动补充触发词（主键或这些词任一命中即注入）：' + w.auto_secondary_keys.join('、');
+        item.appendChild(astag);
       }
       var prob = w.probability == null ? 100 : Number(w.probability);
       if (prob < 100) {
@@ -2751,19 +2769,33 @@
     if (els.acWorldDepth) els.acWorldDepth.value = w && w.depth != null ? w.depth : 4;
     els.acWorldDelete.style.display = w ? 'inline-block' : 'none';
     els.acWorldEditModal.dataset.id = w ? w.id : '';
+    renderWorldAutoHint(w);
     updateWorldAdvancedVisibility();
     showModal('acWorldEditModal');
   }
 
-  // 依据「位置/选择性」联动显示二级键、深度输入
+  // 自动识别提示：告诉用户这条会被自动常驻 / 自动补了哪些触发词（不改用户填写的字段）
+  function renderWorldAutoHint(w) {
+    var box = els.acWorldAutoHint;
+    if (!box) return;
+    if (!w) { box.hidden = true; box.textContent = ''; return; }
+    var parts = [];
+    if (w.auto_constant) parts.push('自动常驻：' + (w.auto_reason || '识别为全局设定') + '（始终注入，无需命中触发词）');
+    if (w.auto_secondary_keys && w.auto_secondary_keys.length) {
+      parts.push('自动补充触发词：' + w.auto_secondary_keys.join('、') + '（主键或这些词任一命中即注入；想固定触发词请自行填写二级键）');
+    }
+    if (!parts.length) { box.hidden = true; box.textContent = ''; return; }
+    box.hidden = false;
+    box.textContent = '🤖 ' + parts.join('；');
+  }
+
+  // 依据「位置」联动显示深度输入。
+  // 二级键不再随「选择性」禁用：未勾选选择性时它是补充触发词（OR），同样有效。
   function updateWorldAdvancedVisibility() {
     if (els.acWorldDepthWrap) {
       els.acWorldDepthWrap.style.display = (els.acWorldPos && els.acWorldPos.value === 'in_chat') ? '' : 'none';
     }
-    if (els.acWorldSelectiveWrap) {
-      var on = els.acWorldSelective && els.acWorldSelective.checked;
-      els.acWorldSecondary && (els.acWorldSecondary.disabled = !on);
-    }
+    if (els.acWorldSecondary) els.acWorldSecondary.disabled = false;
   }
 
   function saveWorldEntry() {
@@ -4442,7 +4474,9 @@
     { cat: '对话操作', q: '能编辑 / 删除消息吗？', a: '可以。用户消息可编辑后重新生成，消息也支持删除；\n编辑作用于当前所在分支。' },
     { cat: '角色与世界书', q: '如何创建自己的角色？', a: '「🎭 角色」→「＋ 创建角色」，填写名称、设定、开场白、性格、场景、示例，可上传头像。\n支持导入角色卡（JSON/PNG）与 URL 抓取；也可在「🏛️ 广场」点「＋ 创建」直接跳到该表单。' },
     { cat: '角色与世界书', q: '世界书是什么？', a: '世界书是按需注入的背景设定条目。设置触发词后，当对话命中关键词时自动把条目内容插入上下文，节省 token。' },
-    { cat: '角色与世界书', q: '世界书有哪些触发方式？', a: '常驻（constant）、主触发词、选择性（需二级触发词同时命中）、概率触发；\n位置可选系统前 / 角色前后 / 用户消息前 / AI 前 / 按深度插入。' },
+    { cat: '角色与世界书', q: '世界书有哪些触发方式？', a: '常驻（constant）、主触发词、二级触发词、选择性、概率触发；\n未勾选「选择性」时：主触发词或二级触发词任一命中即注入（二级键是补充触发词）；\n勾选「选择性」后：主键命中且二级键也命中才注入（SillyTavern AND 语义）；\n位置可选系统前 / 角色前后 / 用户消息前 / AI 前 / 按深度插入。' },
+    { cat: '角色与世界书', q: '设定写了却没注入怎么办？', a: '多半是触发词太窄或写成了「世界观 / 设定」这类不会出现在对话里的标签词。\n系统默认开启「自动识别」：① 从条目内容里抽专名/术语自动补成二级触发词（主键或补充词任一命中即注入）；② 触发词为空、全是全局标签、或条目名与内容自称全局设定的条目自动按常驻注入。\n自动识别只在扫描时叠加，不会改写你填写的字段；世界书列表会显示「自动常驻 / 自动二级键」徽标，编辑弹窗里能看到具体补了哪些词。想完全自己控制就把二级键填满或勾选常驻。' },
+    { cat: '角色与世界书', q: '怎么确认某句话能触发哪些条目？', a: '设置面板「上下文」→「🔍 预览上下文」，在顶部输入框写一句话点「试算」（或回车），\n展开「世界书命中诊断」即可逐条看到：是否注入、命中了哪些词、未命中的原因（触发词未命中 / 概率未通过 / 预算不足）、是否自动常驻或自动补键，以及递归第几层被激活。' },
     { cat: '角色与世界书', q: '默认世界书模板是什么？', a: '管理员维护的全局模板：新建会话时自动把「启用中」的条目复制到该会话（副本，会话内可自由编辑）；\n世界书弹窗也可手动「从默认模板添加」。后台「AI 聊天 → 默认世界书」支持勾选后批量启用/停用、设为常驻、改注入位置、删除与批量导入。' },
     { cat: '角色卡广场', q: '角色卡广场在哪里？', a: '聊天页顶部「🏛️ 广场」一键直达 /characters。\n游客可只读浏览与预览，登录并有 AI 聊天权限后可导入、上传、创建与分享。' },
     { cat: '角色卡广场', q: '怎么把广场的卡用到我的对话？', a: '打开卡片详情点「导入到我」，会复制成你自己的私有卡，然后在「🎭 角色」里选用。\n从广场导入的卡（hub）仅限站内使用：不能导出，也不能再次分享到广场，防止内容外溢。' },
@@ -4456,7 +4490,7 @@
     { cat: '角色卡广场', q: '为什么广场里的卡不能导出？', a: '防内容外溢：广场视图永远不下发导出能力，从广场导入的卡（hub）在服务层就被禁止导出与二次分享。\n自建（self）、自行上传（external）与官方（official）卡则可在聊天页凭「AI聊天导出」权限导出。' },
     { cat: '记忆与上下文', q: 'AI 会记住之前的剧情吗？', a: '开启记忆后，系统会逐轮总结（摘要记忆）；增强模式还会做向量召回，让长对话也能回忆早期内容。' },
     { cat: '记忆与上下文', q: '自动压缩是什么？', a: '对话过长时按设定保留最近 N 条、把更早内容压缩成摘要，避免超出模型上下文。\n可在设置面板调「自动压缩」与保留条数，也可手动「立即压缩」。' },
-    { cat: '记忆与上下文', q: '如何查看实际发给模型的内容？', a: '设置面板「上下文」→「🔍 预览上下文」，逐条显示来源（系统提示 / 世界书 / 记忆 / 角色卡 / 历史…）与 token 估算，所见即所送。' },
+    { cat: '记忆与上下文', q: '如何查看实际发给模型的内容？', a: '设置面板「上下文」→「🔍 预览上下文」，逐条显示来源（系统提示 / 世界书 / 记忆 / 角色卡 / 历史…）与 token 估算，所见即所送；\n顶部还能输入一句话「试算」世界书触发，并展开「世界书命中诊断」看每条为什么注入/没注入。' },
     { cat: '记忆与上下文', q: '作者注释（Author\'s Note）有什么用？', a: '在指定深度插入一段临时指令（如文风、节奏要求），不改变角色卡，适合临时调控。' },
     { cat: '高级功能', q: '正则后处理脚本能做什么？', a: '设置面板「🧩 管理正则脚本」。发送侧（prompt）在发给模型前替换上下文；渲染侧（display）在显示前美化正文（如去除思考标签、统一格式）。\n支持标志、深度范围与实时测试。' },
     { cat: '高级功能', q: '提示词模板与预设有什么区别？', a: '模板（管理模板）定义角色卡的组装方式，支持 {{char}} / {{user}} 等占位符；\n预设保存一套生成参数（温度、top_p 等）便于快速切换。' },
@@ -4564,30 +4598,91 @@
 
   // ============ 上下文预览 ============
 
+  // 世界书逐条命中诊断：让用户看清「为什么这条注入/没注入」，以及哪些是自动识别的结果
+  function renderWorldDiagnostics(wb) {
+    if (!els.acContextWorld || !els.acContextWorldWrap) return;
+    if (!wb || !wb.details || !wb.details.length) {
+      els.acContextWorldWrap.hidden = true;
+      els.acContextWorld.innerHTML = '';
+      return;
+    }
+    els.acContextWorldWrap.hidden = false;
+    var cfg = wb.config || {};
+    var head = '命中 ' + (wb.activatedCount || 0) + '/' + (wb.total || 0) + ' 条 · 世界书用 ' + (wb.budgetUsed || 0) +
+      '/' + (cfg.budgetTokens || 0) + ' tokens · 扫描最近 ' + (cfg.scanDepth || 0) + ' 条消息' +
+      (cfg.recursion ? ' · 递归 ' + (cfg.recursionSteps || 0) + ' 层' : ' · 递归关闭');
+    var autoLine = cfg.autoEnhance
+      ? '自动识别：开启（本次自动常驻 ' + (wb.autoConstantCount || 0) + ' 条 · 自动补二级键 ' + (wb.autoSecondaryCount || 0) + ' 条）'
+      : '自动识别：关闭（后台「AI 聊天 → 世界书」可开启）';
+    var html = '<div class="ac-context-wmeta">' + escapeHtml(head) + '<br>' + escapeHtml(autoLine) + '</div><div class="ac-context-wlist">';
+    wb.details.forEach(function (d) {
+      var auto = d.auto || {};
+      var tags = '';
+      if (d.constant) tags += '<span class="ac-context-wtag const">常驻</span>';
+      if (auto.constant) tags += '<span class="ac-context-wtag auto" title="' + escapeHtml(auto.reason || '自动识别为全局设定') + '">自动常驻</span>';
+      if (d.selective) tags += '<span class="ac-context-wtag sel">选择性 AND</span>';
+      if (auto.keys && auto.keys.length) {
+        tags += '<span class="ac-context-wtag auto" title="' + escapeHtml('自动补充触发词：' + auto.keys.join('、')) + '">自动二级键 ' + auto.keys.length + '</span>';
+      }
+      var matched = (d.matchedKeys && d.matchedKeys.length) ? ' · 命中：' + d.matchedKeys.join('、') : '';
+      var step = (d.activated && d.step > 0) ? ' · 第 ' + (d.step + 1) + ' 层递归激活' : '';
+      html += '<div class="ac-context-witem ' + (d.activated ? 'on' : 'off') + '">' +
+        '<div class="ac-context-whead"><span class="ac-context-wkey">' + escapeHtml(d.key || '（无触发词）') + '</span>' + tags +
+        '<span class="ac-context-wpos">' + escapeHtml(positionLabel(d.position)) + '</span>' +
+        '<span class="ac-context-wtok">' + (d.tokens || 0) + ' tok</span></div>' +
+        '<div class="ac-context-wreason">' + escapeHtml((d.reason || '') + matched + step) + '</div>' +
+        (d.excerpt ? '<div class="ac-context-wexcerpt">' + escapeHtml(d.excerpt) + '…</div>' : '') +
+        '</div>';
+    });
+    els.acContextWorld.innerHTML = html + '</div>';
+  }
+
+  function loadContextPreview(msg) {
+    if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
+    els.acContextInfo.textContent = '加载中…';
+    els.acContextMessages.innerHTML = '';
+    var url = '/ai-chat/api/conversations/' + state.currentConv.id + '/context-preview';
+    if (msg) url += '?msg=' + encodeURIComponent(msg);
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (json) {
+        if (!json.success) throw new Error(json.error || '加载失败');
+        var d = json.data;
+        els.acContextInfo.textContent = '共 ' + (d.messages || []).length + ' 条消息 · 估算 ' + (d.totalTokens || 0) + ' tokens' +
+          (d.previewMsg && d.previewMsg !== '（预览）' ? ' · 试算输入：' + d.previewMsg : '');
+        renderWorldDiagnostics(d.worldBook);
+        els.acContextMessages.innerHTML = '';
+        (d.messages || []).forEach(function (m) {
+          var div = document.createElement('div');
+          div.className = 'ac-context-msg ' + (m.role || 'system');
+          var srcTag = m.source ? '<span class="ac-context-src">' + escapeHtml(m.source) + '</span>' : '';
+          var tokTag = m.tokens != null ? '<span class="ac-context-tok">' + m.tokens + ' tok</span>' : '';
+          div.innerHTML = '<div class="ac-context-msg-role">' + escapeHtml(m.role || 'system') + srcTag + tokTag + '</div>' +
+            '<div class="ac-context-msg-content">' + escapeHtml(m.content || '') + '</div>';
+          els.acContextMessages.appendChild(div);
+        });
+      })
+      .catch(function (err) { els.acContextInfo.textContent = err.message; });
+  }
+
   if (els.acContextPreview) {
     els.acContextPreview.addEventListener('click', function () {
       if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
-      els.acContextInfo.textContent = '加载中…';
-      els.acContextMessages.innerHTML = '';
       showModal('acContextModal');
-      fetch('/ai-chat/api/conversations/' + state.currentConv.id + '/context-preview', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(function (r) { return r.json(); })
-        .then(function (json) {
-          if (!json.success) throw new Error(json.error || '加载失败');
-          var d = json.data;
-          els.acContextInfo.textContent = '共 ' + (d.messages || []).length + ' 条消息 · 估算 ' + (d.totalTokens || 0) + ' tokens';
-          els.acContextMessages.innerHTML = '';
-          (d.messages || []).forEach(function (m) {
-            var div = document.createElement('div');
-            div.className = 'ac-context-msg ' + (m.role || 'system');
-            var srcTag = m.source ? '<span class="ac-context-src">' + escapeHtml(m.source) + '</span>' : '';
-            var tokTag = m.tokens != null ? '<span class="ac-context-tok">' + m.tokens + ' tok</span>' : '';
-            div.innerHTML = '<div class="ac-context-msg-role">' + escapeHtml(m.role || 'system') + srcTag + tokTag + '</div>' +
-              '<div class="ac-context-msg-content">' + escapeHtml(m.content || '') + '</div>';
-            els.acContextMessages.appendChild(div);
-          });
-        })
-        .catch(function (err) { els.acContextInfo.textContent = err.message; });
+      loadContextPreview(els.acContextTestInput ? String(els.acContextTestInput.value || '').trim() : '');
+    });
+  }
+  if (els.acContextTestBtn) {
+    els.acContextTestBtn.addEventListener('click', function () {
+      loadContextPreview(els.acContextTestInput ? String(els.acContextTestInput.value || '').trim() : '');
+    });
+  }
+  if (els.acContextTestInput) {
+    els.acContextTestInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadContextPreview(String(els.acContextTestInput.value || '').trim());
+      }
     });
   }
 

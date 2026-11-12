@@ -7,10 +7,16 @@
  * 世界书扫描（scanWorldBook）：
  *  - constant 常驻；key 为空视为常驻（向后兼容）
  *  - 主触发词命中「当前消息 + 最近 N 条消息」缓冲区即激活
- *  - selective=1 时还需二级触发词（secondary_keys）命中任一才激活
+ *  - selective=1：主键命中 **且** 二级触发词命中任一才激活（SillyTavern AND 语义）
+ *  - selective=0：主键 **或** 二级触发词命中任一即激活（二级键是补充触发词，用于扩大召回）
  *  - probability 概率触发（单次生成内只掷一次骰子）
  *  - 递归扫描：新激活条目内容回灌缓冲区再扫，受最大递归步数与 token 预算限制
  *  - in_chat 位置：按 depth 注入到历史窗口倒数第 depth 条消息之前
+ *
+ * 自动增强（services/ai-chat/world-book.js，扫描期叠加、不落库、不改用户原始数据）：
+ *  - 自动二级键：从条目内容抽取专名/术语补进 secondary_keys（仅未勾选选择性时，避免 AND 反而收窄）
+ *  - 自动常驻：无触发词 / 触发词全是「世界观」这类全局标签 / 条目名或内容自称全局设定 → 视作 constant
+ *  目的：避免设定写了却因为触发词太窄而漏注入（RP-Hub 的「自动生图」条目正是 keys=[] + constant 才必然生效）。
  */
 const { queryAll, queryOne } = require('../../config/database');
 const { getSettings } = require('../../utils/settings');
@@ -18,6 +24,7 @@ const { estimateTokens } = require('./utils');
 const { buildMemoryBlock, memorySettings, getRounds, getRoundSummaryMap, recallRounds, buildRecallBlock } = require('./memory');
 const { searchRag, buildRagBlock } = require('./rag');
 const { getRegexScripts, applyPromptRegex } = require('./regex');
+const worldBookAuto = require('./world-book');
 
 const HISTORY_TOKEN_WINDOW = 3000;
 // 世界书触发词扫描深度默认值：同时检查当前消息与最近 N 条消息，避免关键词出现在上一条就失配
@@ -82,17 +89,59 @@ function getWorldBook(db, convId) {
   return queryAll(db, 'SELECT * FROM ai_world_book WHERE conversation_id = ? AND enabled = 1 ORDER BY sort_order ASC, id ASC', [convId]);
 }
 
-function splitKeys(keyStr) {
-  return String(keyStr || '').split(/[,，、;；\s]+/).map(k => k.trim().toLowerCase()).filter(Boolean);
+// 触发词切分统一走 world-book 模块：逗号家族 + 换行切分，英文多词键保持整体（与 RP-Hub / ST 对齐）
+const splitKeys = worldBookAuto.splitKeys;
+
+/**
+ * 世界书相关后台设置（缺省值兼容旧库：新设置行不存在时按开启处理）
+ */
+function worldBookConfig(settings) {
+  const s = settings || {};
+  const contextSize = Math.max(2000, parseInt(s.ai_context_size, 10) || 16000);
+  const worldBudgetPct = Math.max(0, Math.min(100, parseInt(s.ai_world_budget_percent, 10) || 25));
+  const autoOn = String(s.ai_world_auto_enhance ?? '1') !== '0';
+  return {
+    contextSize,
+    scanDepth: Math.max(1, parseInt(s.ai_world_scan_depth, 10) || WORLD_SCAN_DEPTH),
+    recursion: String(s.ai_world_recursion ?? '1') !== '0',
+    recursionSteps: parseInt(s.ai_world_recursion_steps, 10) || 4,
+    budgetTokens: Math.floor(contextSize * worldBudgetPct / 100),
+    autoEnhance: autoOn,
+    autoSecondary: autoOn && String(s.ai_world_auto_secondary ?? '1') !== '0',
+    autoConstant: autoOn && String(s.ai_world_auto_constant ?? '1') !== '0'
+  };
 }
 
 /**
- * SillyTavern 式世界书扫描：主键 + 二级键（selective）+ 概率 + 递归激活 + token 预算
- * @param {Array} entries - 启用中的条目（已压缩去重）
+ * 取会话世界书 → 压缩去重 → 自动增强（扫描期叠加，不写库）
+ * @returns {{entries:Array, cfg:Object, autoConstantCount:number, autoSecondaryCount:number}}
+ */
+function prepareWorldBook(db, conv, settings) {
+  const cfg = worldBookConfig(settings || getSettings(db));
+  const entries = compressWorldBookEntries(getWorldBook(db, conv.id));
+  if (!cfg.autoEnhance || (!cfg.autoSecondary && !cfg.autoConstant)) {
+    return { entries, cfg, autoConstantCount: 0, autoSecondaryCount: 0 };
+  }
+  const enhanced = worldBookAuto.enhanceEntries(entries, {
+    autoSecondary: cfg.autoSecondary,
+    autoConstant: cfg.autoConstant
+  });
+  return {
+    entries: enhanced.entries,
+    cfg,
+    autoConstantCount: enhanced.autoConstantCount,
+    autoSecondaryCount: enhanced.autoSecondaryCount
+  };
+}
+
+/**
+ * SillyTavern 式世界书扫描：主键 + 二级键 + 概率 + 递归激活 + token 预算
+ * @param {Array} entries - 启用中的条目（已压缩去重，可含自动增强叠加）
  * @param {string} userMsg - 当前用户消息
  * @param {Array} recentMsgs - 最近 N 条消息（扫描缓冲区来源）
- * @param {Object} cfg - { recursion, recursionSteps, budgetTokens, scanDepth }
- * @returns {Object} { byPosition: { system_top: [...], ..., in_chat: [...] }, activatedCount, budgetUsed }
+ * @param {Object} cfg - { recursion, recursionSteps, budgetTokens, details }
+ * @returns {Object} { byPosition, activatedCount, budgetUsed, details? }
+ *   details（cfg.details=true 时）：逐条命中诊断，供上下文预览展示
  */
 function scanWorldBook(entries, userMsg, recentMsgs, cfg = {}) {
   const list = entries || [];
@@ -105,44 +154,78 @@ function scanWorldBook(entries, userMsg, recentMsgs, cfg = {}) {
   const recursion = cfg.recursion !== false;
   const maxSteps = Math.max(1, Math.min(parseInt(cfg.recursionSteps, 10) || 4, 10));
   const budget = Math.max(0, parseInt(cfg.budgetTokens, 10) || 0);
+  const wantDetails = cfg.details === true;
 
   const activated = new Set();   // 条目 id
   const probRoll = new Map();    // 条目 id → 本次生成的概率掷骰结果（只掷一次）
+  const info = new Map();        // 条目 id → 诊断（命中原因 / 命中词 / 激活步数）
   const byPosition = {};
   let budgetUsed = 0;
 
-  const tryActivate = (e) => {
+  const setInfo = (e, reason, matched, step) => {
+    if (!wantDetails) return;
+    info.set(e.id, {
+      id: e.id,
+      key: String(e.key || ''),
+      position: WORLD_POSITIONS.indexOf(e.position) !== -1 ? e.position : 'before_char',
+      constant: Boolean(e.constant),
+      selective: Boolean(e.selective),
+      activated: activated.has(e.id),
+      reason,
+      matchedKeys: matched || [],
+      secondaryKeys: splitKeys(e.secondary_keys),
+      auto: e._auto || null,
+      step: step == null ? null : step
+    });
+  };
+
+  const tryActivate = (e, step) => {
     if (activated.has(e.id)) return false;
     // 概率触发（单次生成内只掷一次）
     const prob = e.probability == null ? 100 : Math.max(0, Math.min(100, parseInt(e.probability, 10) || 0));
     if (!probRoll.has(e.id)) probRoll.set(e.id, Math.random() * 100 < prob);
-    if (!probRoll.get(e.id)) return false;
+    if (!probRoll.get(e.id)) { setInfo(e, '概率未通过（' + prob + '%）', [], step); return false; }
 
+    let reason = '常驻注入';
+    let matched = [];
     if (!e.constant) {
       const keys = splitKeys(e.key);
+      const sec = splitKeys(e.secondary_keys);
+      const hit = (arr) => arr.filter(k => buffer.indexOf(k) !== -1);
+      const primaryHits = hit(keys);
+      const secondaryHits = hit(sec);
       // 无触发词 → 视作常驻注入（向后兼容）
-      if (keys.length && !keys.some(k => buffer.indexOf(k) !== -1)) return false;
-      // selective：还需二级触发词命中任一（SillyTavern AND 语义）
-      if (e.selective) {
-        const sec = splitKeys(e.secondary_keys);
-        if (sec.length && !sec.some(k => buffer.indexOf(k) !== -1)) return false;
+      if (keys.length) {
+        if (e.selective) {
+          // 选择性：主键必须命中，且二级键（若填写）也需命中任一（SillyTavern AND 语义）
+          if (!primaryHits.length) { setInfo(e, '主触发词未命中', [], step); return false; }
+          if (sec.length && !secondaryHits.length) { setInfo(e, '二级触发词未命中（选择性 AND）', primaryHits, step); return false; }
+          reason = '主键 + 二级键命中（选择性）';
+          matched = primaryHits.concat(secondaryHits);
+        } else {
+          // 非选择性：主键或二级键任一命中即可（自动二级键在此扩大召回，不会收窄）
+          if (!primaryHits.length && !secondaryHits.length) { setInfo(e, '触发词未命中', [], step); return false; }
+          reason = primaryHits.length ? '主触发词命中' : '二级触发词命中';
+          matched = primaryHits.length ? primaryHits : secondaryHits;
+        }
       }
     }
     // token 预算控制
     const tokens = estimateTokens(String(e.content || ''));
-    if (budget > 0 && budgetUsed + tokens > budget) return false;
+    if (budget > 0 && budgetUsed + tokens > budget) { setInfo(e, '世界书 token 预算不足', matched, step); return false; }
     budgetUsed += tokens;
     activated.add(e.id);
     const pos = WORLD_POSITIONS.indexOf(e.position) !== -1 ? e.position : 'before_char';
     if (!byPosition[pos]) byPosition[pos] = [];
     byPosition[pos].push(e);
+    setInfo(e, reason, matched, step);
     return true;
   };
 
   // 递归扫描状态机：新激活条目内容回灌缓冲区再扫，直到无新激活或达到步数上限
   for (let step = 0; step < maxSteps; step++) {
     const newlyActivated = [];
-    list.forEach(e => { if (tryActivate(e)) newlyActivated.push(e); });
+    list.forEach(e => { if (tryActivate(e, step)) newlyActivated.push(e); });
     if (!newlyActivated.length || !recursion) break;
     buffer += '\n' + newlyActivated.map(e => String(e.content || '')).join('\n').toLowerCase();
   }
@@ -151,7 +234,61 @@ function scanWorldBook(entries, userMsg, recentMsgs, cfg = {}) {
   Object.keys(byPosition).forEach(pos => {
     byPosition[pos].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.id - b.id);
   });
-  return { byPosition, activatedCount: activated.size, budgetUsed };
+  const out = { byPosition, activatedCount: activated.size, budgetUsed };
+  if (wantDetails) {
+    out.details = list.map(e => info.get(e.id) || {
+      id: e.id, key: String(e.key || ''), position: e.position, constant: Boolean(e.constant),
+      selective: Boolean(e.selective), activated: false, reason: '未参与扫描', matchedKeys: [],
+      secondaryKeys: splitKeys(e.secondary_keys), auto: e._auto || null, step: null
+    });
+  }
+  return out;
+}
+
+/**
+ * 世界书命中诊断（上下文预览用）：与 buildContext 走同一套准备 + 扫描逻辑
+ * @returns {{config:Object, autoConstantCount:number, autoSecondaryCount:number,
+ *            activatedCount:number, budgetUsed:number, details:Array}}
+ */
+function inspectWorldBook(db, conv, userMsg, opts = {}) {
+  const prepared = prepareWorldBook(db, conv, getSettings(db));
+  const scanDepth = prepared.cfg.scanDepth;
+  const branchId = conv.current_branch_id || 0;
+  const history = queryAll(db, 'SELECT * FROM ai_messages WHERE conversation_id = ? AND branch_id = ? ORDER BY id ASC',
+    [conv.id, branchId]);
+  const recentForScan = history
+    .filter(m => !(opts.excludeMsgId && m.id === opts.excludeMsgId))
+    .slice(-scanDepth);
+  const scan = scanWorldBook(prepared.entries, userMsg, recentForScan, {
+    recursion: prepared.cfg.recursion,
+    recursionSteps: prepared.cfg.recursionSteps,
+    budgetTokens: prepared.cfg.budgetTokens,
+    details: true
+  });
+  const contentById = new Map(prepared.entries.map(e => [e.id, String(e.content || '')]));
+  return {
+    config: {
+      scanDepth,
+      recursion: prepared.cfg.recursion,
+      recursionSteps: prepared.cfg.recursionSteps,
+      budgetTokens: prepared.cfg.budgetTokens,
+      autoEnhance: prepared.cfg.autoEnhance,
+      autoSecondary: prepared.cfg.autoSecondary,
+      autoConstant: prepared.cfg.autoConstant
+    },
+    total: prepared.entries.length,
+    autoConstantCount: prepared.autoConstantCount,
+    autoSecondaryCount: prepared.autoSecondaryCount,
+    activatedCount: scan.activatedCount,
+    budgetUsed: scan.budgetUsed,
+    details: scan.details.map(d => {
+      const content = contentById.get(d.id) || '';
+      return Object.assign({}, d, {
+        excerpt: content.slice(0, 60),
+        tokens: estimateTokens(content)
+      });
+    })
+  };
 }
 
 /**
@@ -196,15 +333,13 @@ function buildContext(db, conv, userMsg, opts = {}) {
   const members = isGroup ? getGroupMembers(db, conv) : [];
   const speaker = isGroup ? (members.find(m => m.id === speakerRoleId) || members[0] || null) : null;
   const role = isGroup ? speaker : getRole(db, conv.role_id);
-  const rawEntries = getWorldBook(db, conv.id);
-  const entries = compressWorldBookEntries(rawEntries);
+  // 世界书：压缩去重 + 自动增强（自动二级键 / 自动常驻，扫描期叠加不落库）
+  const prepared = prepareWorldBook(db, conv, settings);
+  const entries = prepared.entries;
 
-  // ---- 世界书扫描（后台可配：递归/步数/预算/扫描深度） ----
-  const contextSize = Math.max(2000, parseInt(settings.ai_context_size, 10) || 16000);
-  const worldBudgetPct = Math.max(0, Math.min(100, parseInt(settings.ai_world_budget_percent, 10) || 25));
-  const scanDepth = Math.max(1, parseInt(settings.ai_world_scan_depth, 10) || WORLD_SCAN_DEPTH);
-  const recursionOn = String(settings.ai_world_recursion ?? '1') !== '0';
-  const recursionSteps = parseInt(settings.ai_world_recursion_steps, 10) || 4;
+  // ---- 世界书扫描（后台可配：递归/步数/预算/扫描深度/自动增强） ----
+  const contextSize = prepared.cfg.contextSize;
+  const scanDepth = prepared.cfg.scanDepth;
 
   // ---- 当前分支历史（先取历史，供世界书触发词扫描与对话窗口复用） ----
   const branchId = conv.current_branch_id || 0;
@@ -215,9 +350,9 @@ function buildContext(db, conv, userMsg, opts = {}) {
     .slice(-scanDepth);
 
   const scan = scanWorldBook(entries, userMsg, recentForScan, {
-    recursion: recursionOn,
-    recursionSteps,
-    budgetTokens: Math.floor(contextSize * worldBudgetPct / 100)
+    recursion: prepared.cfg.recursion,
+    recursionSteps: prepared.cfg.recursionSteps,
+    budgetTokens: prepared.cfg.budgetTokens
   });
   const byPos = scan.byPosition;
   const joinEntries = (pos) => (byPos[pos] || []).map(e => String(e.content || '')).filter(Boolean).join('\n');
@@ -464,5 +599,6 @@ function getTemplateContent(db, conv) {
 
 module.exports = {
   buildContext, getRole, getGroupMembers, getWorldBook, matchWorldBook, scanWorldBook,
+  prepareWorldBook, worldBookConfig, inspectWorldBook,
   trimMessagesToBudget, WORLD_POSITIONS, HISTORY_TOKEN_WINDOW
 };

@@ -247,6 +247,10 @@
     <label>递归最大层数<input id="s_ai_world_recursion_steps" type="number" min="1" max="10" value="<%= aiSettings.ai_world_recursion_steps || 4 %>"></label>
     <label>世界书预算占比 %<input id="s_ai_world_budget_percent" type="number" min="0" max="100" value="<%= aiSettings.ai_world_budget_percent != null ? aiSettings.ai_world_budget_percent : 25 %>"></label>
     <label>扫描深度（最近 N 条）<input id="s_ai_world_scan_depth" type="number" min="1" max="50" value="<%= aiSettings.ai_world_scan_depth || 6 %>"></label>
+    <label>自动识别增强<select id="s_ai_world_auto_enhance"><option value="1" <%= aiSettings.ai_world_auto_enhance !== '0' ? 'selected' : '' %>>开启</option><option value="0" <%= aiSettings.ai_world_auto_enhance === '0' ? 'selected' : '' %>>关闭</option></select></label>
+    <label>自动补二级触发词<select id="s_ai_world_auto_secondary"><option value="1" <%= aiSettings.ai_world_auto_secondary !== '0' ? 'selected' : '' %>>开启</option><option value="0" <%= aiSettings.ai_world_auto_secondary === '0' ? 'selected' : '' %>>关闭</option></select></label>
+    <label>自动识别常驻<select id="s_ai_world_auto_constant"><option value="1" <%= aiSettings.ai_world_auto_constant !== '0' ? 'selected' : '' %>>开启</option><option value="0" <%= aiSettings.ai_world_auto_constant === '0' ? 'selected' : '' %>>关闭</option></select></label>
+    <div class="full ai-chat-hint" style="margin-top:2px;">自动识别只在<strong>扫描时叠加</strong>，不会改写用户填写的触发词/二级键/常驻勾选：未勾选「选择性」的条目会从内容里抽专名补成补充触发词（主键或二级键任一命中即注入）；触发词为空、全是「世界观/设定」这类全局标签、或条目名与内容自称全局设定的条目按常驻注入。前台世界书列表与「上下文查看器」会标注哪些条目是自动增强的结果。</div>
   </div>
   <div class="ai-chat-actions">
     <button type="button" class="btn btn-primary" onclick="saveSettings()">保存设置</button>
@@ -942,6 +946,7 @@
       's_ai_embedding_api_base', 's_ai_embedding_model', 's_ai_embedding_api_key',
       's_ai_context_size', 's_ai_history_window', 's_ai_reasoning_enabled', 's_ai_auto_continue', 's_ai_auto_continue_max',
       's_ai_world_recursion', 's_ai_world_recursion_steps', 's_ai_world_budget_percent', 's_ai_world_scan_depth',
+      's_ai_world_auto_enhance', 's_ai_world_auto_secondary', 's_ai_world_auto_constant',
       's_ai_predict_enabled', 's_ai_predict_count'].forEach(function (id) {
       // 服务端读取不带 s_ 前缀的字段名，此处剥离前缀以对齐（历史遗留：此前未剥离导致保存被忽略）
       form.append(id.replace(/^s_/, ''), document.getElementById(id).value);
