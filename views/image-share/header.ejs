@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fdf5f9; color: #43303e; min-height: 100vh; }
+    body { font-family: var(--font-sans); background: #fdf5f9; color: #43303e; min-height: 100vh; }
     a { text-decoration: none; color: inherit; }
     .nav { background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(236,72,153,0.25); }
     .nav .logo { font-size: 20px; font-weight: bold; }
@@ -98,6 +98,8 @@
       table th, table td { padding: 8px 6px; }
     }
   </style>
+  <%# 设计令牌：anime-theme.css 的颜色统一走 variables.css，必须先加载令牌层 %>
+  <link rel="stylesheet" href="/css/variables.css">
   <link rel="stylesheet" href="/css/anime-theme.css">
 </head>
 <body>
@@ -114,7 +116,11 @@
         <% } %>
         <span style="color: rgba(255,255,255,0.7);">|</span>
         <a href="/image-share/user/profile"><i class="fas fa-user-circle"></i> <%= user.nickname || user.username %></a>
-        <a href="/image-share/logout"><i class="fas fa-sign-out-alt"></i> 退出</a>
+        <%# 登出为 POST + CSRF（防跨站 GET 触发会话销毁），按钮样式沿用 .nav-links a %>
+        <form method="POST" action="/image-share/logout" style="display:inline;margin:0;">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.9);padding:8px 12px;border-radius:6px;font-size:inherit;font-family:inherit;"><i class="fas fa-sign-out-alt"></i> 退出</button>
+        </form>
       <% } else { %>
         <a href="/image-share/login"><i class="fas fa-sign-in-alt"></i> 登录</a>
         <a href="/image-share/register"><i class="fas fa-user-plus"></i> 注册</a>

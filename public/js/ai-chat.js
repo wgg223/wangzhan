@@ -610,6 +610,11 @@
       item.addEventListener('dblclick', function () { renameConversation(c); });
       item.querySelector('.ac-conv-del').addEventListener('click', function (e) {
         e.stopPropagation();
+        // 流式中删除当前会话会清空 state.messages/DOM，导致进行中的回复渲染错位
+        if (state.streaming && state.currentConv && state.currentConv.id === c.id) {
+          showToast('正在生成中，请稍候再删除当前会话', 'error');
+          return;
+        }
         if (!window.confirm('确定删除该会话？所有消息将一并删除')) return;
         api('/ai-chat/api/conversations/delete', { id: c.id }).then(function () {
           state.conversations = state.conversations.filter(function (x) { return x.id !== c.id; });
@@ -648,6 +653,9 @@
   // ============ 会话选择 / 消息加载 ============
 
   function selectConversation(convId) {
+    // 流式生成中禁止切换/刷新会话：否则 state.messages 被新会话覆盖，
+    // startStream 闭包里的 finalizeMessage 会把完成回复渲染进错误会话的 DOM
+    if (state.streaming) { showToast('正在生成中，请稍候再切换会话', 'error'); return; }
     var conv = state.conversations.filter(function (c) { return c.id === convId; })[0];
     if (!conv) return;
     clearSuggestions();
@@ -1546,6 +1554,8 @@
   }
 
   function saveGroup() {
+    // 流式中禁止创建/编辑群聊后跳转，避免与进行中的回复竞态
+    if (state.streaming) { showToast('正在生成中，请稍候再操作', 'error'); return; }
     var members = [];
     els.acGroupMemberList.querySelectorAll('input[type="checkbox"]:checked').forEach(function (cb) {
       members.push(parseInt(cb.value, 10));
@@ -1841,6 +1851,8 @@
   // 选择角色 → 开启新会话（沿用旧会话若为空则复用）
   // greetingIndex：0 = 主开场白，1..n = 备选开场白（角色卡 alternate_greetings）
   function startWithRole(roleId, greetingIndex) {
+    // 流式中禁止开新会话/复用空会话：此路径会先改写 state.currentConv 再加载消息
+    if (state.streaming) { showToast('正在生成中，请稍候再切换会话', 'error'); return; }
     var role = state.roles.filter(function (r) { return r.id === roleId; })[0];
     // 带备选开场白的角色：先让用户挑一条，再建会话
     if (role && role.alternate_count > 0 && greetingIndex === undefined) {

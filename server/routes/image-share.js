@@ -16,6 +16,7 @@ const fs = require('fs');
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
 const { isAuthenticated, hasFrontendPermission, hasPermission, getUserPermissions } = require('../middlewares/auth');
+const { doubleSubmitCookie } = require('../middlewares/security');
 const { validateMagicBytes } = require('../utils/file-validator');
 const { getImageConfigs, saveImageShareConfigs } = require('../utils/settings');
 const { addImageLog } = require('../utils/image-utils');
@@ -396,6 +397,15 @@ router.post('/user/upload', isAuthenticated, (req, res) => {
       });
     }
 
+    // CSRF 校验：原生 multipart 表单通过 _csrf 隐藏域提交令牌，须在 multer 解析后校验。
+    // doubleSubmitCookie 为同步中间件：失败时已直接渲染 403 错误页，这里清理落盘文件后返回。
+    let csrfPassed = false;
+    doubleSubmitCookie(req, res, () => { csrfPassed = true; });
+    if (!csrfPassed) {
+      try { if (req.file) fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+      return;
+    }
+
     const db = req.db;
     const user = req.session.user;
     const config = getImageConfigs(db);
@@ -543,6 +553,17 @@ router.post('/user/upload-batch', isAuthenticated, (req, res) => {
       });
     }
 
+    // CSRF 校验：原生 multipart 表单通过 _csrf 隐藏域提交令牌，须在 multer 解析后校验。
+    // doubleSubmitCookie 为同步中间件：失败时已直接渲染 403 错误页，这里清理落盘文件后返回。
+    let csrfPassed = false;
+    doubleSubmitCookie(req, res, () => { csrfPassed = true; });
+    if (!csrfPassed) {
+      for (const file of (req.files || [])) {
+        try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
+      }
+      return;
+    }
+
     const db = req.db;
     const user = req.session.user;
     const config = getImageConfigs(db);
@@ -681,7 +702,7 @@ router.get('/user/edit', isAuthenticated, (req, res) => {
 });
 
 // 处理编辑
-router.post('/user/edit', isAuthenticated, (req, res) => {
+router.post('/user/edit', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const config = getImageConfigs(db);
@@ -709,7 +730,7 @@ router.post('/user/edit', isAuthenticated, (req, res) => {
 });
 
 // 删除图片
-router.post('/user/delete', isAuthenticated, (req, res) => {
+router.post('/user/delete', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const config = getImageConfigs(db);
@@ -792,7 +813,7 @@ router.get('/download', isAuthenticated, (req, res) => {
 // ============ 功能2：图片评论 API ============
 
 // 添加评论
-router.post('/comment/add', isAuthenticated, (req, res) => {
+router.post('/comment/add', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const config = getImageConfigs(db);
@@ -820,7 +841,7 @@ router.post('/comment/add', isAuthenticated, (req, res) => {
 });
 
 // 删除评论（仅评论作者可删除）
-router.post('/comment/delete', isAuthenticated, (req, res) => {
+router.post('/comment/delete', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const config = getImageConfigs(db);
@@ -860,11 +881,11 @@ router.get('/admin/images', isAuthenticated, (req, res) => {
   res.redirect('/admin/image-share/images' + query);
 });
 
-router.post('/admin/review', isAuthenticated, (req, res) => {
+router.post('/admin/review', isAuthenticated, doubleSubmitCookie, (req, res) => {
   res.redirect('/admin/image-share');
 });
 
-router.post('/admin/delete', isAuthenticated, (req, res) => {
+router.post('/admin/delete', isAuthenticated, doubleSubmitCookie, (req, res) => {
   res.redirect('/admin/image-share');
 });
 
@@ -872,15 +893,15 @@ router.get('/admin/categories', isAuthenticated, (req, res) => {
   res.redirect('/admin/image-share/categories');
 });
 
-router.post('/admin/categories/add', isAuthenticated, (req, res) => {
+router.post('/admin/categories/add', isAuthenticated, doubleSubmitCookie, (req, res) => {
   res.redirect('/admin/image-share');
 });
 
-router.post('/admin/categories/edit', isAuthenticated, (req, res) => {
+router.post('/admin/categories/edit', isAuthenticated, doubleSubmitCookie, (req, res) => {
   res.redirect('/admin/image-share');
 });
 
-router.post('/admin/categories/delete', isAuthenticated, (req, res) => {
+router.post('/admin/categories/delete', isAuthenticated, doubleSubmitCookie, (req, res) => {
   res.redirect('/admin/image-share');
 });
 
@@ -888,7 +909,7 @@ router.get('/admin/users', isAuthenticated, (req, res) => {
   res.redirect('/admin/image-share');
 });
 
-router.post('/admin/users/toggle', isAuthenticated, (req, res) => {
+router.post('/admin/users/toggle', isAuthenticated, doubleSubmitCookie, (req, res) => {
   res.redirect('/admin/image-share');
 });
 
@@ -899,7 +920,7 @@ router.get('/admin/settings', isAuthenticated, (req, res) => {
   res.redirect('/admin/image-share/settings');
 });
 
-router.post('/admin/settings', isAuthenticated, hasPermission('image-share.manage'), (req, res) => {
+router.post('/admin/settings', isAuthenticated, hasPermission('image-share.manage'), doubleSubmitCookie, (req, res) => {
   const db = req.db;
 
   saveImageShareConfigs(db, req.body);
@@ -928,7 +949,7 @@ router.get('/user/profile', isAuthenticated, (req, res) => {
 });
 
 // 更新资料
-router.post('/user/profile', isAuthenticated, (req, res) => {
+router.post('/user/profile', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const config = getImageConfigs(db);
@@ -992,7 +1013,7 @@ router.get('/login', (req, res) => {
 });
 
 // 处理登录 - 重定向到统一认证页面（307保留POST方法）
-router.post('/login', (req, res) => {
+router.post('/login', doubleSubmitCookie, (req, res) => {
   // 无权限直接渲染message，不进行POST重定向
   const db = req.db;
   const user = req.session.user;
@@ -1011,7 +1032,7 @@ router.get('/register', (req, res) => {
 });
 
 // 处理注册 - 直接渲染提示页面，不进行POST重定向
-router.post('/register', (req, res) => {
+router.post('/register', doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const config = getImageConfigs(db);
@@ -1023,8 +1044,8 @@ router.post('/register', (req, res) => {
   });
 });
 
-// 退出登录
-router.get('/logout', (req, res) => {
+// 退出登录（POST + CSRF：GET 登出可被跨站请求触发会话销毁）
+router.post('/logout', doubleSubmitCookie, (req, res) => {
   try {
     if (req.session.user && req.db) {
       logActivity(req.db, {
@@ -1049,7 +1070,7 @@ router.get('/logout', (req, res) => {
 /**
  * 收藏/取消收藏图片
  */
-router.post('/api/image/:id/favorite', isAuthenticated, (req, res) => {
+router.post('/api/image/:id/favorite', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
   const imageId = parseInt(req.params.id);
@@ -1154,7 +1175,7 @@ router.get('/api/user/favorites', isAuthenticated, (req, res) => {
 /**
  * 批量审核图片（管理员）
  */
-router.post('/api/admin/images/batch-review', isAuthenticated, (req, res) => {
+router.post('/api/admin/images/batch-review', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
   const { image_ids, status } = req.body;
@@ -1196,7 +1217,7 @@ router.post('/api/admin/images/batch-review', isAuthenticated, (req, res) => {
 /**
  * 批量移动图片分类（管理员）
  */
-router.post('/api/admin/images/batch-move-category', isAuthenticated, (req, res) => {
+router.post('/api/admin/images/batch-move-category', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
   const { image_ids, cate_id } = req.body;
@@ -1242,7 +1263,7 @@ router.post('/api/admin/images/batch-move-category', isAuthenticated, (req, res)
 /**
  * 批量删除图片（管理员）
  */
-router.post('/api/admin/images/batch-delete', isAuthenticated, (req, res) => {
+router.post('/api/admin/images/batch-delete', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
   const { image_ids } = req.body;
@@ -1301,7 +1322,7 @@ router.post('/api/admin/images/batch-delete', isAuthenticated, (req, res) => {
 /**
  * 为图片添加标签
  */
-router.post('/api/image/:id/tags', isAuthenticated, (req, res) => {
+router.post('/api/image/:id/tags', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
   const imageId = parseInt(req.params.id);
@@ -1370,7 +1391,7 @@ router.get('/api/image/:id/tags', (req, res) => {
 /**
  * 删除图片标签
  */
-router.delete('/api/image/:id/tags', isAuthenticated, (req, res) => {
+router.delete('/api/image/:id/tags', isAuthenticated, doubleSubmitCookie, (req, res) => {
   const db = req.db;
   const userId = req.session.user.id;
   const imageId = parseInt(req.params.id);

@@ -15,8 +15,13 @@ const express = require('express');
 const router = express.Router();
 const { queryOne, queryAll, getDb, saveDatabase } = require('../config/database');
 const { isAuthenticated } = require('../middlewares/auth');
+const { doubleSubmitCookie } = require('../middlewares/security');
 const { createNotification } = require('./community');
 const { sanitize } = require('../utils/html-sanitizer');
+
+// CSRF 双提交校验：写操作（POST/PUT/PATCH）必须携带 X-CSRF-Token 请求头或 _csrf 字段。
+// 前端（layout 私信弹窗 / chat-list / chat 页）统一通过请求头携带令牌。
+router.use(doubleSubmitCookie);
 
 // 检查是否可以给目标用户发私信
 function canSendMessage(db, senderId, targetUserId) {

@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
 const fsSafe = require('../utils/fs-safe');
-const { setUseNativeSql, queryOne, queryAll, generateUid } = require('./db-helpers');
+const { setUseNativeSql, queryOne, queryAll, generateUid, clearStmtCache } = require('./db-helpers');
 const { createTables } = require('./db-schema');        // 建表
 const { insertDefaultDataIfNeeded } = require('./db-seed'); // 默认数据
 const { createIndexes } = require('./db-indexes');      // 索引与唯一约束
@@ -185,6 +185,31 @@ async function initDatabase() {
     db.run('PRAGMA journal_size_limit = 2097152');
     db.run('PRAGMA locking_mode = NORMAL');
     db.run('PRAGMA secure_delete = FAST');
+
+    // 包装 db.run：sql.js 原生 run 返回 Database 自身（无 lastInsertRowid/changes），
+    // 补查 last_insert_rowid()/changes() 对齐 better-sqlite3 的 RunResult，
+    // 否则依赖 result.lastInsertRowid 的路由在 WASM 回退模式下全部拿到 undefined
+    const rawRun = db.run.bind(db);
+    db.run = function(sql, params) {
+      try {
+        rawRun(sql, params || []);
+        let lastInsertRowid = 0;
+        let changes = 0;
+        try {
+          const stmt = db.prepare('SELECT last_insert_rowid() AS id, changes() AS n');
+          if (stmt.step()) {
+            const v = stmt.get();
+            lastInsertRowid = v[0];
+            changes = v[1];
+          }
+          stmt.free();
+        } catch (e) { /* 查询失败时保持默认值 */ }
+        return { lastInsertRowid, changes };
+      } catch (err) {
+        console.error('SQL执行错误:', err.message, 'SQL:', sql);
+        throw err;
+      }
+    };
   }
 
   // 创建所有表结构（CREATE TABLE IF NOT EXISTS）
@@ -425,6 +450,7 @@ function closeDatabase() {
       }
       db.close();   // 关闭连接
       db = null;
+      clearStmtCache(); // 清空 prepared 缓存，防止重初始化后缓存语句指向已关闭连接
     } catch (err) {
       logger.error('关闭数据库失败:', err.message);
     }
@@ -437,16 +463,24 @@ function closeDatabase() {
  */
 function closeAndDeleteDatabase() {
   closeDatabase();
-  try {
-    fsSafe.safeUnlinkSync(dbPath);           // 删除数据库文件
-    const tempPath = dbPath + '.tmp';
-    fsSafe.safeUnlinkSync(tempPath);         // 删除临时文件
-    const fileMarker = path.join(require('./app-root').projectRoot, '.setup_completed');
-    fsSafe.safeUnlinkSync(fileMarker);       // 删除安装标记
-    logger.info('数据库文件及相关文件已删除');
-  } catch (err) {
-    logger.error('删除数据库文件失败:', err && err.message ? err.message : err);
+  let deletedCount = 0;
+  const targets = [
+    dbPath,                                  // 数据库文件
+    dbPath + '.tmp',                         // 临时文件
+    path.join(require('./app-root').projectRoot, '.setup_completed') // 安装标记
+  ];
+  for (const target of targets) {
+    try {
+      if (fs.existsSync(target)) {
+        fsSafe.safeUnlinkSync(target);
+        deletedCount++;
+      }
+    } catch (err) {
+      logger.error('删除数据库文件失败:', err && err.message ? err.message : err);
+    }
   }
+  logger.info('数据库文件及相关文件已删除');
+  return deletedCount;
 }
 
 /**

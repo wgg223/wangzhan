@@ -1019,6 +1019,10 @@ router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (re
   // 导出为独立高危权限，普通用户默认无导出权限
   const canExport = user.role === 'super_admin' || hasPermKey(userPerms, 'aichat.export');
 
+  // 外观偏好：读取落库设置首屏即应用（与 /characters 一致，保证跨设备同步）
+  const uiRow = queryOne(db, 'SELECT ai_ui_settings FROM users WHERE id = ?', [user.id]);
+  const uiSettings = uiPrefs.sanitize(uiRow && uiRow.ai_ui_settings);
+
   res.render('frontend/ai-chat', {
     layout: false,
     user,
@@ -1027,7 +1031,8 @@ router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (re
     canPickPrompt,
     canShareLink,
     canExport,
-    prompts
+    prompts,
+    uiSettings
   });
 });
 
@@ -1784,55 +1789,34 @@ router.post('/ai-chat/api/roles/fetch-url', isAuthenticated, hasFrontendPermissi
   if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'URL 格式不正确' });
 
   try {
-    const https = require('https');
-    const http = require('http');
-    const client = url.startsWith('https') ? https : http;
+    // 安全抓取：禁内网/元数据地址、限重定向、限响应体积（防 SSRF 与内存耗尽）
+    const { safeFetchBuffer } = require('../utils/safe-fetch');
+    const { buffer: buf, contentType: ct } = await safeFetchBuffer(url, { maxBytes: 2 * 1024 * 1024, maxRedirects: 3, timeoutMs: 15000 });
 
-    const body = await new Promise((resolve, reject) => {
-      const doRequest = (reqUrl, reqClient) => {
-        const req = reqClient.get(reqUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }, (resp) => {
-          if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
-            const redirectUrl = resp.headers.location;
-            const rClient = redirectUrl.startsWith('https') ? https : http;
-            doRequest(redirectUrl, rClient);
-            return;
-          }
-          const chunks = [];
-          resp.on('data', chunk => chunks.push(chunk));
-          resp.on('end', () => {
-            const buf = Buffer.concat(chunks);
-            const ct = (resp.headers['content-type'] || '').toLowerCase();
-            let encoding = 'utf-8';
-            const charsetMatch = ct.match(/charset=([^\s;]+)/);
-            if (charsetMatch) {
-              const detected = charsetMatch[1].replace(/['"]/g, '').toLowerCase();
-              if (detected === 'gbk' || detected === 'gb2312' || detected === 'gb18030') encoding = 'gbk';
-              else if (detected === 'latin1' || detected === 'iso-8859-1') encoding = 'latin1';
-            }
-            if (encoding !== 'utf-8') {
-              try {
-                const iconv = require('iconv-lite');
-                resolve(iconv.decode(buf, encoding));
-              } catch (e) { resolve(buf.toString('utf-8')); }
-            } else {
-              const raw = buf.toString('utf-8');
-              const metaCharset = raw.match(/<meta[^>]+charset=["']?([^"'\s;>]+)/i);
-              if (metaCharset) {
-                const mc = metaCharset[1].toLowerCase();
-                if (mc === 'gbk' || mc === 'gb2312' || mc === 'gb18030') {
-                  try { const iconv = require('iconv-lite'); resolve(iconv.decode(buf, 'gbk')); return; } catch (e) { /* fallback */ }
-                }
-              }
-              resolve(raw);
-            }
-          });
-          resp.on('error', reject);
-        });
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('请求超时')); });
-      };
-      doRequest(url, client);
-    });
+    let body;
+    let encoding = 'utf-8';
+    const charsetMatch = ct.toLowerCase().match(/charset=([^\s;]+)/);
+    if (charsetMatch) {
+      const detected = charsetMatch[1].replace(/['"]/g, '').toLowerCase();
+      if (detected === 'gbk' || detected === 'gb2312' || detected === 'gb18030') encoding = 'gbk';
+      else if (detected === 'latin1' || detected === 'iso-8859-1') encoding = 'latin1';
+    }
+    if (encoding !== 'utf-8') {
+      try {
+        const iconv = require('iconv-lite');
+        body = iconv.decode(buf, encoding);
+      } catch (e) { body = buf.toString('utf-8'); }
+    } else {
+      const raw = buf.toString('utf-8');
+      const metaCharset = raw.match(/<meta[^>]+charset=["']?([^"'\s;>]+)/i);
+      if (metaCharset) {
+        const mc = metaCharset[1].toLowerCase();
+        if (mc === 'gbk' || mc === 'gb2312' || mc === 'gb18030') {
+          try { const iconv = require('iconv-lite'); body = iconv.decode(buf, 'gbk'); } catch (e) { body = raw; }
+        }
+      }
+      if (body === undefined) body = raw;
+    }
 
     let charData = null;
 

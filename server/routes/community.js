@@ -13,9 +13,15 @@ const express = require('express');
 const router = express.Router();
 const { queryOne, queryAll, getDb } = require('../config/database');
 const { isAuthenticated, hasPermission } = require('../middlewares/auth');
+const { doubleSubmitCookie } = require('../middlewares/security');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+
+// CSRF 双提交校验：本模块全部为 /api/* 接口，写操作（POST/PATCH/DELETE）必须携带
+// X-CSRF-Token 请求头或 _csrf 字段（multipart 发动态由前端在 FormData 之外设置请求头）。
+// 安全方法（GET/HEAD/OPTIONS）中间件内部自动跳过。
+router.use(doubleSubmitCookie);
 
 // 动态图片上传配置
 const dynamicsDir = path.join(__dirname, '../../public/uploads/dynamics');

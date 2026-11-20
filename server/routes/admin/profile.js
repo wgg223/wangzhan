@@ -17,9 +17,19 @@ const path = require('path');
 const fs = require('fs');
 const { isAuthenticated, canAccessAdmin, validatePassword } = require('../../middlewares/auth');
 const { saveDatabase, queryOne } = require('../../config/database');
+const { validateMagicBytes } = require('../../utils/file-validator');
+const { isUnsafeUserText } = require('../../utils/html-sanitizer');
 const logger = require('../../utils/logger');
 
 // 头像上传配置：保存到 public/uploads/avatars，文件名=用户ID+时间戳+随机数
+// 安全：扩展名由 MIME 白名单映射决定，绝不取用户原始文件名（防 .html/.svg 落盘造成存储型 XSS）
+const AVATAR_EXT_BY_MIME = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp'
+};
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, '../../../public/uploads/avatars');
@@ -30,7 +40,8 @@ const avatarStorage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'avatar-' + req.session.user.id + '-' + uniqueSuffix + path.extname(file.originalname));
+    const ext = AVATAR_EXT_BY_MIME[file.mimetype] || '.jpg';
+    cb(null, 'avatar-' + req.session.user.id + '-' + uniqueSuffix + ext);
   }
 });
 
@@ -75,6 +86,11 @@ router.post('/profile/update', isAuthenticated, (req, res) => {
   if (!username || username.length < 3) {
     logger.warn('[profile/update] 用户名太短', { username });
     return res.redirect('/admin/profile?error=用户名至少3个字符');
+  }
+
+  // 与 API 版对齐：用户名会被拼入 innerHTML 渲染，拒绝危险字符（防存储型 XSS）
+  if (isUnsafeUserText(username)) {
+    return res.redirect('/admin/profile?error=' + encodeURIComponent('用户名不能包含 < > " \' 等特殊字符'));
   }
 
   const existingUser = queryOne(db, 'SELECT id FROM users WHERE username = ? AND id != ?', [username, userId]);
@@ -140,6 +156,23 @@ router.post('/profile/avatar', isAuthenticated, avatarUpload.single('avatar'), (
 
   if (!req.file) {
     return res.status(400).json({ success: false, error: '请选择要上传的图片' });
+  }
+
+  // 魔数校验：不信任客户端 MIME，读取文件头确认真实图片格式，不符立即删除
+  const filePath = path.join(req.file.destination, req.file.filename);
+  let headerBuf;
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    headerBuf = Buffer.alloc(16);
+    const bytesRead = fs.readSync(fd, headerBuf, 0, 16, 0);
+    fs.closeSync(fd);
+    headerBuf = headerBuf.subarray(0, bytesRead);
+  } catch (e) {
+    headerBuf = Buffer.alloc(0);
+  }
+  if (!validateMagicBytes(headerBuf, req.file.mimetype)) {
+    try { fs.unlinkSync(filePath); } catch (e) { /* 忽略 */ }
+    return res.status(400).json({ success: false, error: '文件内容不是有效的图片格式' });
   }
 
   const avatarUrl = '/uploads/avatars/' + req.file.filename;

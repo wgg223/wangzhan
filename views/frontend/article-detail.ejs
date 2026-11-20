@@ -593,7 +593,7 @@ document.addEventListener('DOMContentLoaded', function() {
       try {
         var res = await fetch('/api/user/' + userId + '/follow', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() }
         });
         var data = await res.json();
         
@@ -620,7 +620,7 @@ document.addEventListener('DOMContentLoaded', function() {
       try {
         var res = await fetch('/api/like/' + type + '/' + id, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() }
         });
         var data = await res.json();
         

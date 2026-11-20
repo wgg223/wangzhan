@@ -10,7 +10,7 @@
   <%
   function acBust(p) {
     var u = typeof cdn !== 'undefined' ? cdn.getUrl(p) : p;
-    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261111b';
+    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261120a';
   }
   %>
   <link rel="stylesheet" href="<%= acBust('/css/ai-chat.css') %>">
@@ -20,7 +20,7 @@
 <div class="ch-app" id="chApp">
   <header class="ch-topbar">
     <div class="ch-topbar-inner">
-      <a class="ch-brand" href="/">
+      <a class="ch-brand" href="/characters" title="角色卡广场">
         <span class="ch-brand-logo">🎭</span>
         <span class="ch-brand-text">角色卡广场</span>
       </a>
@@ -28,6 +28,7 @@
         <input type="search" id="chSearch" placeholder="搜索角色名 / 简介 / 作者 / 标签…" autocomplete="off" spellcheck="false">
       </div>
       <div class="ch-topbar-actions">
+        <a class="ch-btn ch-home-link" href="/" title="返回主站">🏠 主站</a>
         <% if (!isGuest && canImport) { %>
           <button type="button" class="ch-btn ch-btn-ghost" id="chCreateBtn" title="在 AI 聊天页创建一张新角色卡">＋ 创建</button>
           <button type="button" class="ch-btn ch-btn-primary" id="chUploadBtn" title="上传角色卡文件（.json / .png）">⬆ 上传</button>

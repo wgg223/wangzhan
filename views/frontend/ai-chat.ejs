@@ -9,7 +9,7 @@
   <%
   function acBust(p) {
     var u = typeof cdn !== 'undefined' ? cdn.getUrl(p) : p;
-    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261111b';
+    return u + (u.indexOf('?') !== -1 ? '&' : '?') + 'v=20261120a';
   }
   %>
   <link rel="stylesheet" href="<%= acBust('/css/ai-chat.css') %>">
@@ -41,6 +41,7 @@
       <div class="ac-conv-title" id="acConvTitle">新对话</div>
       <span class="ac-conv-tokens" id="acConvTokens"></span>
       <div class="ac-toolbar">
+        <a class="ac-tool ac-home-link" href="/" title="返回主站">🏠 <span>主站</span></a>
         <button class="ac-tool" id="acHelpBtn" title="使用指南">❓ <span>指南</span></button>
         <button class="ac-tool" id="acThemeBtn" title="切换深色/浅色">🌙 <span>夜间</span></button>
         <button class="ac-tool" id="acFullscreenBtn" title="全屏聊天">⛶ <span>全屏</span></button>

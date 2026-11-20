@@ -330,7 +330,7 @@ async function createConversationAndRedirect(targetUserId) {
   try {
     var res = await fetch('/api/messages/conversations', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
       body: JSON.stringify({ target_user_id: targetUserId })
     });
     var data = await res.json();
@@ -359,7 +359,7 @@ async function loadConversations() {
     if (data.success && data.data && data.data.length > 0) {
       list.innerHTML = data.data.map(function(conv) {
         return '<a href="/chat/' + conv.id + '" class="conv-item">' +
-          '<img src="' + (conv.other_avatar || '/assets/images/default-avatar.png') + '" alt="" class="conv-avatar">' +
+          '<img src="' + escapeHtml(conv.other_avatar || '/assets/images/default-avatar.png') + '" alt="" class="conv-avatar">' +
           '<div class="conv-info">' +
             '<div class="conv-name">' +
               '<span>' + escapeHtml(conv.other_nickname || conv.other_username) + '</span>' +
@@ -393,10 +393,10 @@ function formatTime(timeStr) {
 }
 
 function escapeHtml(text) {
-  if (!text) return '';
-  var div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 async function openSettingsModal() {
@@ -422,7 +422,7 @@ async function saveSettings() {
   try {
     var res = await fetch('/api/messages/settings', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
       body: JSON.stringify({ allow_from: selected.value })
     });
     var data = await res.json();

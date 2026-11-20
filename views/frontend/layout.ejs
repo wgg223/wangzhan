@@ -70,6 +70,7 @@
               <li><a href="/ai-prompts" data-i18n="nav.aiPrompts">AI 提示词</a></li>
               <li><a href="/ai-image" data-i18n="nav.aiImage">AI 生图</a></li>
               <li><a href="/ai-chat" data-i18n="nav.aiChat">AI 聊天</a></li>
+              <li><a href="/characters" data-i18n="nav.characters">角色卡广场</a></li>
             </ul>
           </li>
           <li><a href="/office" data-i18n="nav.spreadsheet">在线文档</a></li>
@@ -153,7 +154,11 @@
               <a href="/admin" data-i18n="menu.admin">🔧 后台管理</a>
               <a href="/auth/change-password" data-i18n="menu.changePassword">🔑 修改密码</a>
               <div class="dropdown-divider"></div>
-              <a href="/auth/logout" class="danger" data-i18n="menu.logout">🚪 退出登录</a>
+              <%# 登出为 POST + CSRF（防跨站 GET 触发会话销毁），按钮样式沿用 .dropdown-menu a %>
+              <form method="POST" action="/auth/logout" style="margin:0;">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="danger" data-i18n="menu.logout" style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;font-size:14px;background:none;border:none;border-radius:8px;cursor:pointer;font-family:inherit;text-align:left;">🚪 退出登录</button>
+              </form>
             </div>
           </div>
         <% } else { %>
@@ -186,14 +191,14 @@
 
   <% if (typeof user !== 'undefined' && user && settings.message_popup_enabled === '1') { %>
   <div id="message-popup" style="display:none;position:fixed;z-index:99999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
-    <div style="position:relative;background:#fff;margin:10% auto;padding:0;width:500px;max-width:90%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
-      <div style="background:#007bff;color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
+    <div style="position:relative;background:var(--bg-card);margin:10% auto;padding:0;width:500px;max-width:90%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
+      <div style="background:linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
         <h3 style="margin:0;font-size:18px;" id="popup-title" data-i18n="popup.messageTitle">站内信</h3>
         <button type="button" onclick="closeMessagePopup()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
       </div>
       <div style="padding:24px;max-height:350px;overflow-y:auto;" id="popup-content"></div>
-      <div style="padding:16px 24px;border-top:1px solid #eee;text-align:right;">
-        <a href="/messages" class="btn" style="background:#007bff;color:#fff;text-decoration:none;padding:8px 20px;border-radius:5px;" data-i18n="popup.viewAllMessages">查看所有站内信</a>
+      <div style="padding:16px 24px;border-top:1px solid var(--border-color);text-align:right;">
+        <a href="/messages" class="btn" style="background:var(--primary-dark);color:var(--text-inverse);text-decoration:none;padding:8px 20px;border-radius:5px;" data-i18n="popup.viewAllMessages">查看所有站内信</a>
       </div>
     </div>
   </div>
@@ -201,15 +206,15 @@
 
   <% if (settings.welcome_popup_enabled === '1') { %>
   <div id="welcome-popup" style="display:none;position:fixed;z-index:99990;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
-    <div style="position:relative;background:#fff;margin:8% auto;padding:0;width:550px;max-width:90%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
+    <div style="position:relative;background:var(--bg-card);margin:8% auto;padding:0;width:550px;max-width:90%;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
       <div style="background:linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
         <h3 style="margin:0;font-size:18px;" id="welcome-popup-title"><%= settings.welcome_popup_title || '欢迎访问' %></h3>
         <button type="button" onclick="closeWelcomePopup()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
       </div>
-      <div style="padding:24px;max-height:400px;overflow-y:auto;line-height:1.8;color:#555;" id="welcome-popup-content">
+      <div style="padding:24px;max-height:400px;overflow-y:auto;line-height:1.8;color:var(--text-secondary);" id="welcome-popup-content">
         <%- settings.welcome_popup_content || '<p>欢迎来到本站！</p>' %>
       </div>
-      <div style="padding:16px 24px;border-top:1px solid #eee;text-align:right;">
+      <div style="padding:16px 24px;border-top:1px solid var(--border-color);text-align:right;">
         <button type="button" onclick="closeWelcomePopup()" class="btn" style="background:linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.gotIt">我知道了</button>
       </div>
     </div>
@@ -219,18 +224,18 @@
   <% if (settings.privacy_popup_enabled !== '0') { %>
   <!-- 首次启动隐私政策弹窗（内容来自后台设置，网站/EXE/APK 通用） -->
   <div id="privacy-popup" style="display:none;position:fixed;z-index:999999;inset:0;background:rgba(0,0,0,0.65);">
-    <div style="background:#fff;margin:5% auto;width:560px;max-width:92%;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
+    <div style="background:var(--bg-card);margin:5% auto;width:560px;max-width:92%;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
       <div style="background:linear-gradient(135deg,#ec4899 0%,#8b5cf6 100%);color:#fff;padding:16px 24px;text-align:center;">
         <h3 style="margin:0;font-size:19px;" data-i18n="popup.privacyTitle">用户协议与隐私政策</h3>
       </div>
-      <div style="padding:24px;max-height:50vh;overflow-y:auto;line-height:1.8;color:#555;" id="privacy-popup-content">
+      <div style="padding:24px;max-height:50vh;overflow-y:auto;line-height:1.8;color:var(--text-secondary);" id="privacy-popup-content">
         <h4 data-i18n="popup.privacyTerms">用户协议</h4>
         <div><%- settings.user_agreement || '<p>（未填写用户协议）</p>' %></div>
         <h4 data-i18n="popup.privacyPolicy">隐私政策</h4>
         <div><%- settings.privacy_policy || '<p>（未填写隐私政策）</p>' %></div>
       </div>
-      <div style="padding:16px 24px;border-top:1px solid #eee;text-align:center;">
-        <button type="button" id="privacy-reject" class="btn" style="background:#eee;color:#555;margin-right:12px;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.disagree">不同意</button>
+      <div style="padding:16px 24px;border-top:1px solid var(--border-color);text-align:center;">
+        <button type="button" id="privacy-reject" class="btn" style="background:var(--bg-secondary);color:var(--text-secondary);margin-right:12px;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.disagree">不同意</button>
         <button type="button" id="privacy-accept" class="btn" style="background:linear-gradient(135deg,#ec4899 0%,#8b5cf6 100%);color:#fff;border:none;padding:10px 30px;border-radius:5px;cursor:pointer;font-size:15px;" data-i18n="popup.agree">同意并继续</button>
       </div>
     </div>
@@ -290,7 +295,7 @@
       if (markAllRead) {
         markAllRead.addEventListener('click', async function() {
           try {
-            await fetch('/api/notifications/read-all', { method: 'PATCH' });
+            await fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'X-CSRF-Token': getCsrfToken() } });
             loadNotifications();
             updateNotifBadge();
           } catch (err) {
@@ -349,7 +354,7 @@
             var id = this.dataset.id;
             var url = this.dataset.url;
             if (this.classList.contains('unread')) {
-              fetch('/api/notifications/' + id + '/read', { method: 'PATCH' });
+              fetch('/api/notifications/' + id + '/read', { method: 'PATCH', headers: { 'X-CSRF-Token': getCsrfToken() } });
               this.classList.remove('unread');
               updateNotifBadge();
             }
@@ -362,10 +367,10 @@
       }
 
       function escapeHtml(text) {
-        if (!text) return '';
-        var div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (text === null || text === undefined) return '';
+        return String(text)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
       }
 
       async function updateNotifBadge() {
@@ -457,7 +462,7 @@
       try {
         var res = await fetch('/api/messages/conversations', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           body: JSON.stringify({ target_user_id: userId })
         });
         var data = await res.json();
@@ -503,7 +508,7 @@
             container.innerHTML = messages.map(function(msg) {
               var isSent = msg.sender_id === chatSelfId;
               return '<div class="chat-modal-msg ' + (isSent ? 'sent' : 'received') + '">' +
-                '<img src="' + (isSent ? chatSelfAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="msg-avatar">' +
+                '<img src="' + escapeHtml(isSent ? chatSelfAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="msg-avatar">' +
                 '<div>' +
                   '<div class="msg-content">' + escapeHtml(msg.content) + '</div>' +
                   '<div class="msg-time">' + formatTime(msg.created_at) + '</div>' +
@@ -514,7 +519,7 @@
           }
           
           // 标记已读
-          fetch('/api/messages/conversations/' + convId + '/read', { method: 'PATCH' });
+          fetch('/api/messages/conversations/' + convId + '/read', { method: 'PATCH', headers: { 'X-CSRF-Token': getCsrfToken() } });
         }
       } catch (err) {
         container.innerHTML = '<div class="chat-modal-empty">加载失败</div>';
@@ -539,7 +544,7 @@
       try {
         var res = await fetch('/api/messages/conversations/' + currentChatConvId, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           body: JSON.stringify({ content: content })
         });
         var data = await res.json();
@@ -569,10 +574,10 @@
     });
     
     function escapeHtml(text) {
-      if (!text) return '';
-      var div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
+      if (text === null || text === undefined) return '';
+      return String(text)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     
     function formatTime(timeStr) {

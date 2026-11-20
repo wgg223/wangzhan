@@ -12,10 +12,28 @@
   background: var(--header-bg); border-bottom: 1px solid var(--glass-border);
   -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
 }
+/* 品牌桥接：顶栏上沿主站樱花粉×薰衣草紫渐变细线 */
+.ch-topbar::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, #ec4899, #8b5cf6); pointer-events: none;
+}
 .ch-topbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
 .ch-brand { display: flex; align-items: center; gap: 9px; color: var(--text-primary); text-decoration: none; flex-shrink: 0; }
-.ch-brand-logo { font-size: 24px; }
+/* 品牌桥接：logo 升级为主站粉紫渐变徽章 */
+.ch-brand-logo {
+  width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 18px; border-radius: 10px;
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  box-shadow: 0 4px 12px -6px rgba(236, 72, 153, 0.5);
+}
 .ch-brand-text { font-family: var(--font-serif); font-size: 18px; font-weight: var(--font-semibold); }
+/* 品牌桥接：返回主站入口（主站粉紫渐变按钮，明暗模式通用） */
+.ch-btn.ch-home-link {
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  border: none; color: #fff;
+  box-shadow: 0 4px 12px -6px rgba(236, 72, 153, 0.5);
+}
+.ch-btn.ch-home-link:hover { color: #fff; border: none; opacity: 0.9; transform: translateY(-1px); }
 .ch-search { flex: 1; min-width: 0; }
 .ch-search input {
   width: 100%; padding: 9px 15px; border-radius: var(--radius-full);

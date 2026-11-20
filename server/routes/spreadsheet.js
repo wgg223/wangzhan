@@ -64,6 +64,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { isAuthenticated, hasFrontendPermission } = require('../middlewares/auth');
+const { doubleSubmitCookie } = require('../middlewares/security');
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
 const { createNotification } = require('./community');
@@ -87,6 +88,12 @@ const {
 const MAX_DOC_SIZE = 50 * 1024 * 1024; // 文档 JSON 上限
 const MAX_CELLS_PER_BATCH = 500; // 单次变更批次单元格上限
 const MAX_CELL_JSON = 4 * 1024; // 单格数据上限
+
+// CSRF 双提交校验：/api/spreadsheet 下所有写操作（POST/PUT/DELETE）必须携带
+// X-CSRF-Token 请求头或 body._csrf（sendBeacon 自动保存走后者）。
+// 三个编辑器（spreadsheet/document/presentation）的 csrfFetch 封装与 multipart
+// 导入/配图上传均已携带请求头令牌；安全方法中间件内部自动跳过。
+router.use('/api/spreadsheet', doubleSubmitCookie);
 
 // ============ 权限辅助 ============
 

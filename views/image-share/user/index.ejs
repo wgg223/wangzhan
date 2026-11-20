@@ -73,11 +73,17 @@
 var shareToken = null;
 var shareEnabled = true;
 
+// image-share 页面不加载 utils.js，这里自带 CSRF 令牌读取（meta 由 header.ejs 注入）
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
+
 function openShare(imgId) {
   var modal = document.getElementById('shareModal');
   fetch('/share/api/create', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ source_type: 'image', source_id: imgId })
   }).then(function(r) { return r.json(); }).then(function(json) {
     if (json.success) {
@@ -109,7 +115,7 @@ function copyShareUrl() {
 function toggleShare() {
   fetch('/share/api/' + (shareEnabled ? 'disable' : 'enable'), {
     method: 'POST',
-    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ token: shareToken })
   }).then(function(r) { return r.json(); }).then(function(json) {
     if (json.success) {

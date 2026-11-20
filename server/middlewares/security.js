@@ -45,17 +45,14 @@ function doubleSubmitCookie(req, res, next) {
     return next();
   }
 
-  // multipart/form-data 上传请求：CSRF token 通过自定义请求头传递（前端在 FormData 之外设置 X-CSRF-Token），
-  // 不再按 Content-Type 整体跳过，而是要求 multipart 请求也携带有效 token
-  const contentType = req.headers['content-type'] || '';
-  const isMultipart = contentType.startsWith('multipart/form-data');
-
   // 验证 CSRF token
   // 兼容多种前端约定：X-CSRF-Token / CSRF-Token / X-XSRF-Token / body._csrf
+  // multipart 请求在 multer 解析前 req.body 为 undefined（可选链自然跳过，只能走请求头）；
+  // 解析后（如把本中间件放在 multer 回调内）原生表单的 _csrf 隐藏域同样可用。
   const submittedToken = req.headers['x-csrf-token']
     || req.headers['csrf-token']
     || req.headers['x-xsrf-token']
-    || (!isMultipart ? req.body?._csrf : null); // multipart 请求体未解析，不读 body
+    || req.body?._csrf;
 
   // 时序安全比较：防止 timing attack 逐字符猜测 token
   const expected = req.session.doubleSubmitToken;

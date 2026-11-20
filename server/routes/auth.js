@@ -7,7 +7,7 @@
  *   /:source/register/resend-code、/:source/forgot-password/send-code|reset
  *   /:source/change-password、/:source/change-username、/:source/force-change-password
  *   /admin-reset-password/:userId（管理员重置）、/delete-account/send-code、/delete-account
- * 其他：GET /captcha /captcha/json、GET /logout、/2fa/status|setup|verify|disable
+ * 其他：GET /captcha /captcha/json、POST /logout（CSRF 校验）、/2fa/status|setup|verify|disable
  *       GET /admin/login-anomalies（登录异常检测管理）
  * 安全要点：各接口独立限流器；登录异常检测（IP/设备/频率）；验证码防爆破；
  *           密码 bcrypt + SHA-256 旧密码自动升级；改密/改用户名后 token_version 递增；
@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const { generateCaptcha, verifyCaptcha } = require('../config/captcha');
 const { createRateLimiter, loginLimiter } = require('../middlewares/rate-limiter');
+const { doubleSubmitCookie } = require('../middlewares/security');
 
 // ============ 频率限制器 ============
 const registerLimiter = createRateLimiter({
@@ -1866,7 +1867,9 @@ router.get('/captcha/json', (req, res) => {
 // 登出
 // ============================================================
 
-router.get('/logout', (req, res) => {
+// 登出改为 POST + CSRF 校验：GET 登出可被 <img>/链接等跨站请求触发（会话销毁副作用）。
+// 各布局的退出入口已改为携带 _csrf 隐藏域的 POST 表单。
+router.post('/logout', doubleSubmitCookie, (req, res) => {
   // 记录登出日志
   try {
     if (req.session.user) {

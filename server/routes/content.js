@@ -12,6 +12,11 @@ const express = require('express');
 const router = express.Router();
 const { queryOne, queryAll, getDb } = require('../config/database');
 const { isAuthenticated } = require('../middlewares/auth');
+const { doubleSubmitCookie } = require('../middlewares/security');
+
+// CSRF 双提交校验：草稿/标签/版本等写操作（POST/DELETE）必须携带
+// X-CSRF-Token 请求头或 _csrf 字段；安全方法中间件内部自动跳过。
+router.use(doubleSubmitCookie);
 
 // ==================== 文章草稿自动保存 ====================
 

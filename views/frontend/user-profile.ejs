@@ -595,7 +595,7 @@ document.addEventListener('DOMContentLoaded', function() {
       try {
         var res = await fetch('/api/user/' + userId + '/follow', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() }
         });
         var data = await res.json();
         if (data.success) {
@@ -763,9 +763,9 @@ async function saveBio() {
 }
 
 function escapeHtml(text) {
-  if (!text) return '';
-  var div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 </script>

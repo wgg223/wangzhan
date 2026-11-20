@@ -647,6 +647,7 @@ function submitPost() {
 
   fetch('/api/community/posts', {
     method: 'POST',
+    headers: { 'X-CSRF-Token': getCsrfToken() },
     body: formData
   }).then(function(res) { return res.json(); }).then(function(data) {
     if (data.success) {

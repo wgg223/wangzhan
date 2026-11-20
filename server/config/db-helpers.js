@@ -67,21 +67,23 @@ function queryOne(dbInstance, sql, params = []) {
       return getCachedStmt(dbInstance, sql).get(params) || null;
     } else {
       const stmt = dbInstance.prepare(sql);
-      if (params.length > 0) {
-        stmt.bind(params);
+      try {
+        if (params.length > 0) {
+          stmt.bind(params);
+        }
+        if (stmt.step()) {
+          const columns = stmt.getColumnNames();
+          const values = stmt.get();
+          const result = {};
+          columns.forEach((col, index) => {
+            result[col] = values[index];
+          });
+          return result;
+        }
+        return null;
+      } finally {
+        stmt.free(); // 异常路径也释放，防 WASM 内存泄漏
       }
-      if (stmt.step()) {
-        const columns = stmt.getColumnNames();
-        const values = stmt.get();
-        stmt.free();
-        const result = {};
-        columns.forEach((col, index) => {
-          result[col] = values[index];
-        });
-        return result;
-      }
-      stmt.free();
-      return null;
     }
   } catch (err) {
     console.error('查询单条记录失败:', err.message, 'SQL:', sql);
@@ -102,21 +104,24 @@ function queryAll(dbInstance, sql, params = []) {
       return getCachedStmt(dbInstance, sql).all(params);
     } else {
       const stmt = dbInstance.prepare(sql);
-      if (params.length > 0) {
-        stmt.bind(params);
+      try {
+        if (params.length > 0) {
+          stmt.bind(params);
+        }
+        const results = [];
+        while (stmt.step()) {
+          const columns = stmt.getColumnNames();
+          const values = stmt.get();
+          const row = {};
+          columns.forEach((col, index) => {
+            row[col] = values[index];
+          });
+          results.push(row);
+        }
+        return results;
+      } finally {
+        stmt.free(); // 异常路径也释放，防 WASM 内存泄漏
       }
-      const results = [];
-      while (stmt.step()) {
-        const columns = stmt.getColumnNames();
-        const values = stmt.get();
-        const row = {};
-        columns.forEach((col, index) => {
-          row[col] = values[index];
-        });
-        results.push(row);
-      }
-      stmt.free();
-      return results;
     }
   } catch (err) {
     console.error('查询多条记录失败:', err.message, 'SQL:', sql);

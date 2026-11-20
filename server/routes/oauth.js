@@ -13,6 +13,7 @@ const router = express.Router();
 const { queryOne, queryAll, saveDatabase, generateUid } = require('../config/database');
 const { logActivity } = require('../config/activity');
 const { grantDefaultPermissions } = require('../config/db-helpers');
+const { sanitizeAvatarUrl } = require('../utils/sanitize-avatar');
 const bcrypt = require('bcryptjs');
 
 // OAuth 配置
@@ -227,8 +228,10 @@ async function getAccessToken(provider, config, code, redirectUri) {
 // QQ/微博/微信等返回的是 http:// 绝对地址，存库后在 HTTPS 页面里会触发浏览器混合内容拦截
 // （头像裂开 + console 报 Mixed Content），这些图床均支持 HTTPS，写入前直接改写协议即可
 function normalizeAvatarUrl(url) {
-  if (typeof url !== 'string' || !url) return url;
-  return url.startsWith('http://') ? 'https://' + url.slice(7) : url;
+  if (typeof url !== 'string' || !url) return '';
+  const httpsUrl = url.startsWith('http://') ? 'https://' + url.slice(7) : url;
+  // 安全：第三方返回的头像 URL 也可能含引号/尖括号，写库前统一做属性注入校验
+  return sanitizeAvatarUrl(httpsUrl);
 }
 
 // 获取用户信息

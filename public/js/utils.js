@@ -7,10 +7,12 @@
  * HTML 转义，防止 XSS
  */
 function escapeHtml(text) {
-  if (typeof text !== 'string') return '';
-  var div = document.createElement('div');
-  div.appendChild(document.createTextNode(text));
-  return div.innerHTML;
+  if (text === null || text === undefined) return '';
+  // 注意：必须转义引号 —— 结果常被拼进 HTML 属性（如 <img src="...">），
+  // textContent 法不转义引号，会导致属性注入 XSS
+  return String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 /**

@@ -94,7 +94,9 @@ async function fetchModelList(apiEndpoint, apiKey) {
   const url = base + '/models';
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
-  const resp = await axios.get(url, { headers, timeout: 30000 });
+  // 限制响应体积与重定向次数，防止恶意端点无界缓冲打爆内存
+  // （端点为用户自填 AI API，可能合法位于内网如本机 Ollama，故不做内网拦截）
+  const resp = await axios.get(url, { headers, timeout: 30000, maxContentLength: 2 * 1024 * 1024, maxBodyLength: 2 * 1024 * 1024, maxRedirects: 3 });
   const data = resp.data && resp.data.data;
   if (!Array.isArray(data)) throw Object.assign(new Error('接口未返回模型列表（非 OpenAI 兼容）'), { status: 400 });
   const list = data

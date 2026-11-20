@@ -123,7 +123,10 @@ app.use(session({
   rolling: true,          // 每次响应刷新会话有效期（活跃用户不掉线）
   name: 'connect.sid',    // 会话 Cookie 名
   cookie: {
-    secure: 'auto',       // 注意：字符串 'auto' 为真值 → 等同 secure:true（仅 HTTPS 下发送）
+    // 'auto'：express-session 按"连接是否加密"决定 Secure 标记（并非恒为 true）。
+    // 反代 TLS 终结部署必须设置 TRUST_PROXY=1，否则 req.secure 恒 false，
+    // Cookie 不带 Secure 标记，HTTP 明文访问时可被嗅探。直连 HTTPS 部署无需配置。
+    secure: 'auto',
     httpOnly: true,       // 禁止 JS 读取（防 XSS 窃取会话）
     sameSite: 'lax',      // CSRF 基础防护（同站请求携带，跨站 POST 不带）
     path: '/',
@@ -460,7 +463,9 @@ app.use((err, req, res, next) => {
   // API 路由：返回 JSON 错误（multer 文件限制映射为 400/413）
   if (req.path.startsWith('/api/')) {
     const status = err.status || (err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE' ? 400 : 500);
-    const message = err.code === 'LIMIT_FILE_SIZE' ? '文件大小超出限制' : (err.message || '服务器内部错误');
+    // 生产环境 5xx 不透出原始 err.message（可能含 SQL/路径/堆栈信息），统一泛化
+    const message = err.code === 'LIMIT_FILE_SIZE' ? '文件大小超出限制'
+      : (status >= 500 && process.env.NODE_ENV === 'production' ? '服务器内部错误' : (err.message || '服务器内部错误'));
     return res.status(status).json({ error: message });
   }
 

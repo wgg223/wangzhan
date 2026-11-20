@@ -356,9 +356,9 @@ router.post('/characters/api/cards/import', requireAuthJson, requireAiChatJson, 
   if (!(src.is_official || src.is_shared)) return res.status(403).json({ error: '该角色卡未公开分享' });
   if (src.user_id === user.id) return res.status(400).json({ error: '这是你自己的角色卡，无需导入' });
 
-  // 单用户角色卡数量上限（与 AI 聊天模块保持一致的宽松上限）
+  // 单用户角色卡数量上限（与上传入口一致：200 张，防经导入绕过上限）
   const countRow = queryOne(db, 'SELECT COUNT(*) AS c FROM ai_roles WHERE user_id = ?', [user.id]);
-  if (countRow && countRow.c >= 500) return res.status(400).json({ error: '你的角色卡数量已达上限（500 张）' });
+  if (countRow && countRow.c >= 200) return res.status(400).json({ error: '你的角色卡数量已达上限（200 张）' });
 
   let extensions = '{}';
   try { extensions = JSON.stringify(JSON.parse(src.extensions || '{}')); } catch (e) { extensions = '{}'; }

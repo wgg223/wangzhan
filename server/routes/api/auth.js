@@ -273,12 +273,9 @@ router.put('/profile', apiAuth, (req, res) => {
     return res.status(400).json({ error: '简介不能超过200个字符' });
   }
 
-  // 校验 avatar 路径：必须是合法的 uploads 路径或默认头像（防任意路径/目录穿越）
+  // 校验 avatar 路径：必须是合法的 uploads/assets 路径（严格字符白名单，防目录穿越与属性注入 XSS）
   if (req.body.avatar !== undefined) {
-    if (avatar && !avatar.startsWith('/assets/') && !avatar.startsWith('/uploads/avatars/')) {
-      return res.status(400).json({ error: '非法的头像路径' });
-    }
-    if (avatar && avatar.includes('..')) {
+    if (avatar && !/^\/(uploads\/avatars|assets)\/[A-Za-z0-9._\-/]+$/.test(avatar)) {
       return res.status(400).json({ error: '非法的头像路径' });
     }
   }

@@ -14,9 +14,8 @@ const characterCards = require('./characters');
 // ============ 会话 ============
 
 function createConversation(db, user, data = {}) {
-  // 新会话默认知识库开关：跟随全局 RAG 设置
-  const ragSetting = queryOne(db, "SELECT value FROM ai_settings WHERE key = 'ai_rag_enabled'");
-  const ragEnabled = ragSetting && String(ragSetting.value) === '1' ? 1 : 0;
+  // 新会话默认知识库开关：跟随全局 RAG 设置（存于 settings 表，经 getSettings 读取）
+  const ragEnabled = String(getSettings(db).ai_rag_enabled || '0') === '1' ? 1 : 0;
   const isGroup = data.is_group ? 1 : 0;
   const members = isGroup ? validateGroupMembers(db, user, data.group_members) : [];
   if (isGroup && members.length < 2) {
@@ -222,7 +221,8 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
       const inputTokens = usage ? usage.prompt_tokens : estimateTokens(messages.map(m => m.content).join('\n'));
       const outputTokens = usage ? usage.completion_tokens : estimateTokens(full);
       const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'stopped', '', opts.speakerRoleId, inputTokens, outputTokens,
-        { reasoning, genInfo: buildGenInfo(modelInfo, genParams, finishReason, continuePasses) });
+        { reasoning, countDelta: opts.countDelta,
+          genInfo: buildGenInfo(modelInfo, genParams, finishReason, continuePasses) });
       return {
         messageId: msgId, content: full, tokens: inputTokens + outputTokens,
         inputTokens, outputTokens, aborted: true, reasoning,
@@ -230,7 +230,7 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
       };
     }
     const reason = normalizeError(err);
-    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason, opts.speakerRoleId, 0, 0);
+    const msgId = saveAssistantMessage(db, conv, '', modelInfo, 'error', reason, opts.speakerRoleId, 0, 0, { countDelta: opts.countDelta });
     consumeQuota(db, user, { tokens: 0, count: true, ownApi: modelInfo.is_own }); // 失败计次数
     throw Object.assign(new Error(reason), { status: 502, messageId: msgId });
   }
@@ -241,7 +241,8 @@ async function runCompletion(db, user, conv, modelInfo, messages, opts, quotaChe
   const totalTokens = inputTokens + outputTokens;
 
   const msgId = saveAssistantMessage(db, conv, full, modelInfo, 'done', '', opts.speakerRoleId, inputTokens, outputTokens,
-    { reasoning, genInfo: buildGenInfo(modelInfo, genParams, finishReason, continuePasses) });
+    { reasoning, countDelta: opts.countDelta,
+      genInfo: buildGenInfo(modelInfo, genParams, finishReason, continuePasses) });
   consumeQuota(db, user, { tokens: totalTokens, count: true, ownApi: modelInfo.is_own });
   return {
     messageId: msgId, content: full, tokens: totalTokens,
@@ -360,6 +361,8 @@ async function sendGroupRound(db, user, conv, userMsg, opts, ctxOpts) {
   if (!speakers.length) throw Object.assign(new Error('指定的角色不在群成员中'), { status: 400 });
   const modelInfo = resolveModel(db, user.id, conv.model);
   let last = null;
+  // 首位说话人与 sendMessageInner 已落库的用户消息合计 +2，其后每位说话人只新增一条 AI 消息 +1
+  let firstSpeaker = true;
   for (const sp of speakers) {
     if (opts.signal && opts.signal.aborted) break;
     const quotaCheck = checkQuota(db, user, { ownApi: modelInfo.is_own });
@@ -370,7 +373,8 @@ async function sendGroupRound(db, user, conv, userMsg, opts, ctxOpts) {
     if (opts.onSpeaker) opts.onSpeaker({ role_id: sp.id, name: sp.name, avatar: sp.avatar || '' });
     const messages = buildContext(db, conv, userMsg, Object.assign({}, ctxOpts, { speakerRoleId: sp.id }));
     last = await runCompletion(db, user, conv, modelInfo, messages,
-      Object.assign({}, opts, { speakerRoleId: sp.id }), quotaCheck);
+      Object.assign({}, opts, { speakerRoleId: sp.id, countDelta: firstSpeaker ? 2 : 1 }), quotaCheck);
+    firstSpeaker = false;
     if (opts.onResult) opts.onResult(last, sp);
     if (last.aborted) break;
   }
@@ -406,8 +410,9 @@ async function groupReplyInner(db, user, conv, roleId, opts = {}) {
     [conv.id, conv.current_branch_id || 0]);
   const messages = buildContext(db, conv, lastUser ? lastUser.content : '', { speakerRoleId: sp.id, noUserMsg: true });
   if (opts.onSpeaker) opts.onSpeaker({ role_id: sp.id, name: sp.name, avatar: sp.avatar || '' });
+  // 手动顶帖不新增用户消息，仅落一条 AI 回复 → +1
   const result = await runCompletion(db, user, conv, modelInfo, messages,
-    Object.assign({}, opts, { speakerRoleId: sp.id }), quotaCheck);
+    Object.assign({}, opts, { speakerRoleId: sp.id, countDelta: 1 }), quotaCheck);
   return { result, speaker: sp };
 }
 
@@ -421,7 +426,10 @@ function saveAssistantMessage(db, conv, content, modelInfo, status, error, speak
   [conv.id, conv.current_branch_id || 0, content, totalTokens, inputTokens || 0, outputTokens || 0,
     modelInfo ? modelInfo.model_key : '', status, error, speakerRoleId || null, reasoningStr, genInfoStr]);
   const msg = queryOne(db, 'SELECT * FROM ai_messages WHERE id = last_insert_rowid()');
-  db.run('UPDATE ai_conversations SET message_count = message_count + 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conv.id]);
+  // 按本次请求实际插入条数计数：默认 +2（用户+AI 各一条，兼容单聊发送路径）；
+  // 重生成/群聊顶帖/群聊非首位说话人等不新增用户消息的路径由调用方传 countDelta=1
+  const countDelta = typeof ex.countDelta === 'number' ? ex.countDelta : 2;
+  db.run('UPDATE ai_conversations SET message_count = message_count + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [countDelta, conv.id]);
   saveDatabase();
   return msg.id;
 }
@@ -465,8 +473,9 @@ async function regenerateMessageInner(db, user, conv, targetMsgId, opts = {}) {
     speakerRoleId: target.speaker_role_id || undefined
   });
 
+  // 重生成不新增用户消息，仅追加一条 AI 回复 → +1
   return runCompletion(db, user, conv, modelInfo, messages,
-    Object.assign({}, opts, { speakerRoleId: target.speaker_role_id || undefined }), quotaCheck);
+    Object.assign({}, opts, { speakerRoleId: target.speaker_role_id || undefined, countDelta: 1 }), quotaCheck);
 }
 
 /**

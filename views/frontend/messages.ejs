@@ -11,38 +11,38 @@
   <% if (messages.length > 0) { %>
     <div class="message-list">
       <% messages.forEach(function(msg) { %>
-        <div class="message-item <%= msg.is_read ? 'message-read' : 'message-unread' %>" id="msg-<%= msg.id %>" style="background: #fff; border: 1px solid #ddd; border-left: 4px solid <%= msg.is_read ? '#ddd' : '#007bff' %>; border-radius: 8px; padding: 15px 20px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s;">
+        <div class="message-item <%= msg.is_read ? 'message-read' : 'message-unread' %>" id="msg-<%= msg.id %>" style="background: var(--bg-card); border: 1px solid var(--border-color); border-left: 4px solid <%= msg.is_read ? 'var(--border-color)' : 'var(--primary-dark)' %>; border-radius: 8px; padding: 15px 20px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s;">
           <div style="display: flex; justify-content: space-between; align-items: center;" onclick="toggleMessage(<%= msg.id %>)">
             <div style="flex: 1; min-width: 0;">
               <div style="display: flex; align-items: center; gap: 8px;">
                 <% if (!msg.is_read) { %>
-                  <span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%; flex-shrink: 0;"></span>
+                  <span class="unread-dot" style="display: inline-block; width: 8px; height: 8px; background: var(--primary-dark); border-radius: 50%; flex-shrink: 0;"></span>
                 <% } %>
                 <strong style="font-size: 15px; word-break: break-word;"><%= msg.title %></strong>
               </div>
-              <div style="font-size: 13px; color: #999; margin-top: 4px;">
+              <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
                 来自：<%= msg.from_username || '系统' %> · <%= new Date(msg.created_at + 'Z').toLocaleString('zh-CN') %>
               </div>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;" onclick="event.stopPropagation();">
               <% if (!msg.is_read) { %>
-                <span class="badge badge-new" style="background: #007bff; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px;">新</span>
+                <span class="badge badge-new" style="background: var(--primary-dark); color: var(--text-inverse); padding: 2px 8px; border-radius: 10px; font-size: 12px;">新</span>
               <% } %>
               <form action="/messages/delete/<%= msg.id %>" method="POST" style="display: inline;" onsubmit="return confirm('确定要删除这条站内信吗？')">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <button type="submit" class="btn" style="padding: 4px 10px; font-size: 12px; background: #dc3545; color: #fff;">删除</button>
+                <button type="submit" class="btn" style="padding: 4px 10px; font-size: 12px; background: var(--danger-dark); color: var(--text-inverse);">删除</button>
               </form>
             </div>
           </div>
           <% var safeMsgContent = String(msg.content || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); %>
-          <div class="message-content" id="msg-content-<%= msg.id %>" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; line-height: 1.8; color: #555;">
+          <div class="message-content" id="msg-content-<%= msg.id %>" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); line-height: 1.8; color: var(--text-secondary);">
             <%- safeMsgContent.replace(/\n/g, '<br>') %>
           </div>
         </div>
       <% }); %>
     </div>
   <% } else { %>
-    <div class="empty-state" style="text-align: center; padding: 60px 20px; color: #999;">
+    <div class="empty-state" style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
       <p style="font-size: 48px; margin: 0;">📭</p>
       <p style="font-size: 16px; margin-top: 10px;">暂无站内信</p>
     </div>
@@ -94,10 +94,10 @@ function toggleMessage(id) {
         .then(function() {
           msgItem.classList.remove('message-unread');
           msgItem.classList.add('message-read');
-          msgItem.style.borderLeftColor = '#ddd';
+          msgItem.style.borderLeftColor = 'var(--border-color)';
           var badge = msgItem.querySelector('.badge-new');
           if (badge) badge.remove();
-          var dot = msgItem.querySelector('span[style*="background: #007bff"]');
+          var dot = msgItem.querySelector('.unread-dot');
           if (dot) dot.style.display = 'none';
           refreshUnreadCount();
         });

@@ -41,7 +41,9 @@
   /* 文字色 */
   --text-primary: var(--gray-800);
   --text-secondary: var(--gray-600);
-  --text-muted: var(--gray-400);
+  /* 对比度修复：原 gray-400(#c39fb4) 白底仅 2.2:1，低于 WCAG AA 4.5:1；
+     #8a6a7d 白底约 4.7:1，保持玫瑰灰调性 */
+  --text-muted: #8a6a7d;
 
   /* 边框色 */
   --border-color: var(--gray-200);
@@ -197,7 +199,8 @@
   /* 文字色 */
   --text-primary: #ebe5f1;
   --text-secondary: #c3b7d3;
-  --text-muted: #6a5a80;
+  /* 对比度修复：原 #6a5a80 深底约 3.0:1；gray-500(#9d8eb4) 约 6.2:1 */
+  --text-muted: var(--gray-500);
 
   /* 边框色 */
   --border-color: #2e2347;

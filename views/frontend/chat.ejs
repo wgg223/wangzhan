@@ -1,5 +1,7 @@
 <%# ===== 页面模板：frontend/chat.ejs =====%>
 <%# 说明：私信聊天页：消息气泡、发送（EJS 服务端模板，由 Express 渲染，变量与部分逻辑见对应路由） %>
+<%# 独立渲染页（layout=false）：自带 csrf-token meta，写请求通过 X-CSRF-Token 头携带令牌 %>
+<meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
 <div class="chat-container">
   <div class="chat-topbar">
     <a href="/chat" class="back-btn">← 返回</a>
@@ -262,6 +264,11 @@ var otherUser = {
   id: <%= otherUser.id %>,
   avatar: <%- jsJson(otherUser.avatar || '/assets/images/default-avatar.png') %>
 };
+// 本页独立渲染、不加载 utils.js，这里自带 CSRF 令牌读取（meta 由服务端注入）
+function getCsrfToken() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.getAttribute('content') : '';
+}
 
 document.addEventListener('DOMContentLoaded', function() {
   loadMessages();
@@ -277,7 +284,7 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       var res = await fetch('/api/messages/conversations/' + conversationId, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
         body: JSON.stringify({ content: content })
       });
       var data = await res.json();
@@ -312,7 +319,7 @@ async function loadMessages() {
         container.innerHTML = messages.map(function(msg) {
           var isSent = msg.sender_id === currentUserId;
           return '<div class="message-bubble ' + (isSent ? 'sent' : 'received') + '">' +
-            '<img src="' + (isSent ? currentUserAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="message-avatar">' +
+            '<img src="' + escapeHtml(isSent ? currentUserAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="message-avatar">' +
             '<div>' +
               '<div class="message-content">' + escapeHtml(msg.content) + '</div>' +
               '<div class="message-time">' + formatTime(msg.created_at) + '</div>' +
@@ -334,7 +341,7 @@ function appendMessage(msg) {
   
   var isSent = msg.sender_id === currentUserId;
   var html = '<div class="message-bubble ' + (isSent ? 'sent' : 'received') + '">' +
-    '<img src="' + (isSent ? currentUserAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="message-avatar">' +
+    '<img src="' + escapeHtml(isSent ? currentUserAvatar : (otherUser.avatar || '/assets/images/default-avatar.png')) + '" alt="" class="message-avatar">' +
     '<div>' +
       '<div class="message-content">' + escapeHtml(msg.content) + '</div>' +
       '<div class="message-time">' + formatTime(msg.created_at) + '</div>' +
@@ -351,7 +358,7 @@ function scrollToBottom() {
 
 async function markAsRead() {
   try {
-    await fetch('/api/messages/conversations/' + conversationId + '/read', { method: 'PATCH' });
+    await fetch('/api/messages/conversations/' + conversationId + '/read', { method: 'PATCH', headers: { 'X-CSRF-Token': getCsrfToken() } });
   } catch (err) {}
 }
 
@@ -373,9 +380,9 @@ function formatTime(timeStr) {
 }
 
 function escapeHtml(text) {
-  if (!text) return '';
-  var div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 </script>

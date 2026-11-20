@@ -287,7 +287,13 @@
           <ul class="dropdown-menu">
             <% if (typeof user !== 'undefined' && user) { %>
               <li><a href="/auth/change-password">🔑 修改密码</a></li>
-              <li><a href="/auth/logout">🚪 退出登录</a></li>
+              <li>
+                <%# 登出为 POST + CSRF（防跨站 GET 触发会话销毁），按钮样式沿用 .dropdown-menu a %>
+                <form method="POST" action="/auth/logout" style="margin:0;">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button type="submit" style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;color:var(--text-secondary);font-size:14px;background:none;border:none;border-radius:8px;cursor:pointer;font-family:inherit;text-align:left;">🚪 退出登录</button>
+                </form>
+              </li>
               <% if (user.role === 'admin' || user.role === 'super_admin' || user.role === 'editor') { %>
                 <li class="dropdown-divider"></li>
                 <li><a href="/admin">⚙️ 后台管理</a></li>

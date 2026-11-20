@@ -118,8 +118,9 @@
   --dur-3: 360ms;
   --dur-4: 560ms;
 
-  /* 字体：界面用 sans，名称/标题用 serif，代码/数字用 mono */
-  --font-sans: "Inter", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "OPPO Sans", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  /* 字体：界面用 sans，名称/标题用 serif，代码/数字用 mono
+     （sans 回退顺序与主站 variables.css 对齐，保证跨区字体观感一致） */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "HarmonyOS Sans SC", "MiSans", "OPPO Sans", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --font-serif: "Lora", "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, "Times New Roman", serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
 
@@ -343,11 +344,27 @@ a:hover { text-decoration: underline; }
 .ac-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg-primary); }
 
 .ac-topbar {
+  position: relative;
   height: 56px; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
   padding: 0 16px; border-bottom: 1px solid var(--glass-border);
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   backdrop-filter: blur(20px) saturate(160%);
+}
+/* 品牌桥接：顶栏上沿一条主站樱花粉×薰衣草紫渐变细线 */
+.ac-topbar::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, #ec4899, #8b5cf6); pointer-events: none;
+}
+/* 品牌桥接：返回主站入口（主站粉紫渐变胶囊，明暗模式通用） */
+.ac-tool.ac-home-link {
+  text-decoration: none; border: none; color: #fff;
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  box-shadow: 0 4px 12px -6px rgba(236, 72, 153, 0.5);
+}
+.ac-tool.ac-home-link:hover {
+  color: #fff; background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  opacity: 0.9; transform: translateY(-1px);
 }
 .ac-menu-btn { display: none; border: none; background: none; color: var(--text-primary); font-size: 19px; cursor: pointer; }
 .ac-conv-title {

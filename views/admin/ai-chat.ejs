@@ -536,8 +536,8 @@
     });
   });
 
-  // 内置服务商数据（与前端一致）
-  var adminProviders = <%- JSON.stringify(providers) %>;
+  // 内置服务商数据（与前端一致；jsJson 转义 < > 防 </script> 截断）
+  var adminProviders = <%- jsJson(providers) %>;
 
   // 选择内置服务商 → 自动带出端点/默认模型/获取密钥链接
   window.applyAdminProviderPreset = function () {

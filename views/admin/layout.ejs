@@ -210,7 +210,11 @@
       <div class="sidebar-footer">
         <p>当前用户：<%= user.username %></p>
         <a href="/admin/profile">账户设置</a>
-        <a href="/auth/logout">退出登录</a>
+        <%# 登出为 POST + CSRF（防跨站 GET 触发会话销毁），按钮样式沿用 .sidebar-footer a %>
+        <form method="POST" action="/auth/logout" style="margin:0;">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" style="display:flex;align-items:center;gap:var(--space-2);width:100%;background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.6);margin:var(--space-1) 0;font-size:var(--text-sm);padding:var(--space-1) var(--space-2);border-radius:var(--radius-xs);font-family:inherit;text-align:left;">退出登录</button>
+        </form>
         <a href="/" target="_blank">查看网站</a>
       </div>
     </aside>
