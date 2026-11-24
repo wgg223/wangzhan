@@ -276,7 +276,7 @@
             <p class="card-desc">填写你自己的生图服务商 API Key 后将优先使用（站长提供的全局 Key 自动兜底）。密钥加密存储，不会明文显示。</p>
             <div class="aiimg-keys">
               <% aiImageProviders.forEach(function(p) { %>
-                <% if (p.provider_key === 'pollinations') return; %>
+                <% if (!p.requires_key) return; %>
                 <div class="aiimg-key-item" data-key="<%= p.provider_key %>">
                   <div class="aiimg-key-info">
                     <strong><%= p.name %></strong>

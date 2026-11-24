@@ -11,6 +11,7 @@
   var canPickPrompt = !!page.canPickPrompt;
   var canShareLink = !!page.canShareLink;
   var canExport = !!page.canExport;
+  var canGenerateImage = !!page.canGenerateImage;
   var prompts = page.prompts || [];
 
   var state = {
@@ -194,7 +195,9 @@
         state.quota = d.quota || null;
         state.quotaUnlimited = !!d.quotaUnlimited;
         canExport = !!d.canExport;
+        canGenerateImage = !!d.canGenerateImage;
         applyExportVisibility();
+        applyImageGenVisibility();
         state.presets = d.presets || [];
         state.promptTemplates = d.promptTemplates || [];
         state.regexScripts = d.regexScripts || [];
@@ -2152,6 +2155,12 @@
   }
   applyExportVisibility();
 
+  // 场景生图是独立权限，未授权时隐藏入口（服务端接口仍会强制校验）。
+  function applyImageGenVisibility() {
+    if (els.acImageGenBtn) els.acImageGenBtn.style.display = canGenerateImage ? '' : 'none';
+  }
+  applyImageGenVisibility();
+
   // 导出当前会话角色为 JSON（兼容 SillyTavern V2 格式）
   function exportCurrentRole() {
     if (!canExport) { showToast('无导出权限，请先申请 AI聊天导出 权限', 'error'); return; }
@@ -3123,9 +3132,11 @@
   // ============ 场景图片生成 ============
 
   function generateSceneImage() {
+    if (!canGenerateImage) { showToast('无 AI 生图权限，请先申请 imagegen.use 权限', 'error'); return; }
     if (!state.currentConv) { showToast('请先创建会话', 'error'); return; }
     if (state.streaming) { showToast('请等待当前消息生成完成', 'error'); return; }
 
+    var conversationId = state.currentConv.id;
     showToast('正在根据对话场景生成图片描述…', 'info');
 
     // 添加一个占位消息
@@ -3141,11 +3152,11 @@
     scrollToBottom(true);
 
     api('/ai-chat/api/image/generate', {
-      conversation_id: state.currentConv.id
+      conversation_id: conversationId
     }, 120000).then(function (res) {
       if (res.success && res.data && res.data.taskId) {
         // 开始轮询任务状态
-        pollImageTask(res.data.taskId, placeholder, res.data.prompt);
+        pollImageTask(res.data.taskId, placeholder, res.data.prompt, conversationId);
       } else {
         // 移除占位消息
         var idx = state.messages.indexOf(placeholder);
@@ -3163,14 +3174,14 @@
   }
 
   // 轮询图片生成任务状态
-  function pollImageTask(taskId, placeholder, prompt) {
+  function pollImageTask(taskId, placeholder, prompt, conversationId) {
     var pollCount = 0;
-    var maxPolls = 60; // 最多轮询 60 次（约 2 分钟）
+    var maxPolls = 360; // ComfyUI 工作流可能需要约 10 分钟，最多轮询约 12 分钟
     var pollInterval = 2000; // 每 2 秒轮询一次
 
     function poll() {
       pollCount++;
-      fetch('/ai-image/api/status?task=' + encodeURIComponent(taskId), {
+      fetch('/ai-chat/api/image/status?task=' + encodeURIComponent(taskId), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
       })
         .then(function (r) { return r.json(); })
@@ -3199,10 +3210,11 @@
             updateImagePlaceholder(placeholder, imageUrl, prompt);
             showToast('场景图片已生成', 'success');
             // 持久化图片消息到会话
-            if (imageUrl && state.currentConv) {
+            if (imageUrl && conversationId) {
               var oldId = placeholder.id;
               api('/ai-chat/api/image/save', {
-                conversation_id: state.currentConv.id,
+                conversation_id: conversationId,
+                task_id: taskId,
                 image_url: imageUrl,
                 prompt: prompt || ''
               }, 15000).then(function (saveRes) {
@@ -3214,7 +3226,7 @@
               }).catch(function () { /* 保存失败不影响展示 */ });
             }
           } else if (task.status === 'failed' || task.status === 'cancelled') {
-            updateImagePlaceholder(placeholder, null, task.error || '图片生成失败');
+            updateImagePlaceholder(placeholder, null, task.message || (task.result && task.result.error) || '图片生成失败');
           }
         })
         .catch(function (err) {

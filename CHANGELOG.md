@@ -2,6 +2,29 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.25.0 (2026-11-25)
+
+**新增：AI 生图节点画布 + 4K/100MB 参考图 + ComfyUI/MomoAPI/Seedance 多服务商治理 ｜ 修复：MomoAPI 模型无渠道与图生图 Invalid IP**
+
+- **AI 生图节点画布**（新增 `public/js/ai-image-canvas.js`）：Text / 参考图 / Image 三种节点、输出→输入锚点连线、画布平移缩放、小地图、框选与多选、整组拖动、对齐/等距/网格整理、8px 网格吸附与节点参考线、撤销重做、复制粘贴、方向键微调、节点锁定、项目 JSON 导入导出、整块画布 PNG 导出、自动布局、快捷键帮助与自动保存状态
+- **4K 尺寸与向下兼容**（新增 `server/services/image-gen/sizes.js`）：新增 4K（3840×2160 / 2160×3840 / 2880×2880）与 2K 档位，原有全部尺寸保留；按服务商上限请求前降级，运行时遇到尺寸/显存错误按 `4K → 2K → 1K` 自动重试；OpenAI 离散尺寸映射；ComfyUI 尺寸上限由 2048 提升到 4096；生成结果记录并展示实际尺寸
+- **参考图上限 5MB → 100MB**：服务端 multer、简洁表单、画布上传与页面提示同步；大图预览改用 Blob URL，避免 100MB 图片转 base64；画布超过 20MB 的参考图不常驻 JS 内存，生成时按需从 IndexedDB 读取并处理写入时序
+- **ComfyUI 原生工作流**：支持后台粘贴 API 工作流 JSON、自动识别/手动配置节点映射（positive/negative/size/seed/image/model）、连接与配置验证、内置默认工作流兜底
+- **MomoAPI**：认证模型列表为准同步模型；Imagen/模型通道不可用时自动换模型并记忆可用替身；`Invalid IP address: undefined` 图生图错误识别与模型回退；multipart 显式 Content-Length，兼容对 chunked 解析不稳定的网关
+- **Seedance**：新增文生图/图生图适配器，支持 1k/2k/4k 分辨率档位与参考图上传
+- **模型与默认服务商治理**：后台可指定默认生图服务商；保存 Key/获取模型后按服务商能力同步白名单与默认模型；新增连接验证；免 Key 服务商（ComfyUI/Pollinations）不再出现在用户 Key 配置中
+- **AI 聊天场景生图**：独立 `imagegen.use` 权限与额度校验；新增任务状态/取消接口；保存图片消息时校验图片属于当前用户的成功任务；轮询上限放宽到约 12 分钟以适配 ComfyUI 工作流
+- **安全与稳定性**：服务商返回图片 URL 统一走 `safeFetchBuffer`（SSRF/私网 IP/重定向/体积/取消信号）；AI 聊天内联 JSON 改用 `jsJson`；用户与管理员 Key 保存、模型同步、默认服务商切换均补服务端校验
+- **验证**：`node --check` 全部通过；ESLint 0 error；本地 Mock 覆盖模型无渠道、Invalid IP、Imagen、鉴权、模型列表失败、multipart Content-Length、4K/2K/旧尺寸降级；无头浏览器验证画布多选、组拖动、对齐、框选、自动布局全部 PASS；EJS 模板渲染通过
+
+## v8.24.1 (2026-11-20)
+
+**安全审查修复 + Bug 修复 + 美观优化**
+
+- 安全：头像上传 MIME 映射扩展名 + 魔数校验；OAuth/API 头像路径注入防护（`sanitize-avatar`）；`safe-fetch` SSRF 防护（私网 IP 拦截 + DNS 重绑定防护 + 重定向/体积上限）；TOTP 重放保护；补齐 community/content/private-message/spreadsheet/image-share 的 CSRF 双提交校验，登出改 POST；`escapeHtml` 统一为转义引号的正则版；模型列表拉取加体积/重定向上限；API 5xx 生产环境不再泄露内部错误详情
+- Bug：sql.js 分支 `run()` 返回 `lastInsertRowid`/`changes`、语句泄漏修复；RAG 开关读取错误表修复；群聊/再生消息计数修正；AI 聊天流式生成中禁止切换/删除会话等竞态防护；角色卡导入上限对齐 200
+- 美观：AI 聊天/角色卡广场品牌桥接（粉紫渐变 + 返回主站入口 + 字体栈对齐）；站内信/欢迎/隐私弹窗、站内信列表、错误页、图片分享提示页硬编码色令牌化；`--text-muted` 对比度达 WCAG AA；主导航补角色卡广场入口（含 i18n）；7 个页面补齐 `variables.css` 修复主题层令牌失效
+
 ## v8.24.0 (2026-11-12)
 
 **新增：世界书自动识别（自动补二级触发词 + 自动常驻）+ 命中诊断 ｜ 修复：前台 CSRF 令牌为空导致写操作 403**

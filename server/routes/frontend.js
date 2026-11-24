@@ -1018,6 +1018,7 @@ router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (re
 
   // 导出为独立高危权限，普通用户默认无导出权限
   const canExport = user.role === 'super_admin' || hasPermKey(userPerms, 'aichat.export');
+  const canGenerateImage = user.role === 'super_admin' || hasPermKey(userPerms, 'imagegen.use');
 
   // 外观偏好：读取落库设置首屏即应用（与 /characters 一致，保证跨设备同步）
   const uiRow = queryOne(db, 'SELECT ai_ui_settings FROM users WHERE id = ?', [user.id]);
@@ -1031,6 +1032,7 @@ router.get('/ai-chat', isAuthenticated, hasFrontendPermission('aichat.use'), (re
     canPickPrompt,
     canShareLink,
     canExport,
+    canGenerateImage,
     prompts,
     uiSettings
   });
@@ -1043,6 +1045,7 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
   const settings = getSettings(db);
   // 导出角色卡为独立高危权限；导入他人分享的卡永远不可导出（防内容外溢）
   const canExportCards = user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'aichat.export');
+  const canGenerateImage = user.role === 'super_admin' || hasPermKey(res.locals.userPermissions || [], 'imagegen.use');
   const conversations = queryAll(db, `SELECT id, title, model, role_id, system_prompt, message_count,
       memory_enabled, memory_mode, rag_enabled, current_branch_id, updated_at,
       gen_temperature, gen_top_p, gen_top_k, gen_frequency_penalty, gen_presence_penalty, gen_max_tokens,
@@ -1100,6 +1103,7 @@ router.get('/ai-chat/api/bootstrap', isAuthenticated, hasFrontendPermission('aic
       defaultModelIsOwn: aiChatService.isOwnModel(db, user.id, ''),
       helpSeen,
       canExport: canExportCards,
+      canGenerateImage,
       uiSettings
     }
   });
@@ -2093,11 +2097,18 @@ ${historyText}
 });
 
 // 根据对话上下文生成图片
-router.post('/ai-chat/api/image/generate', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, async (req, res) => {
+router.post('/ai-chat/api/image/generate', isAuthenticated, hasFrontendPermission('aichat.use'), hasFrontendPermission('imagegen.use'), csrfCheck, aiChatOpLimiter, async (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
+
+  // 在调用 LLM 前检查生图额度；任务启动时还会复查并预留，防止并发穿透。
+  const { checkImageTaskQuota } = require('../services/image-gen');
+  const quota = checkImageTaskQuota(db, { userId: user.id, n: 1 });
+  if (!quota.ok) {
+    return res.status(429).json({ error: `今日生成次数已达上限（${quota.limit} 次），明天再来吧` });
+  }
 
   // 获取最近的消息作为上下文
   const messages = queryAll(db, 'SELECT role, content FROM ai_messages WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT 10', [conv.id]);
@@ -2132,11 +2143,13 @@ ${contextSummary}
 
   // 使用 AI 生图系统生成图片（支持多服务商、异步任务）
   try {
-    const { startImageTask } = require('../services/image-gen');
+    const { startImageTask, getDefaultImageProviderKey } = require('../services/image-gen');
 
-    // 选择默认服务商（优先 pollinations 免 Key，否则用第一个启用的）
-    const imgProviders = queryAll(db, 'SELECT provider_key FROM ai_image_providers WHERE enabled = 1 ORDER BY sort_order ASC LIMIT 1');
-    const providerKey = imgProviders.length ? imgProviders[0].provider_key : 'pollinations';
+    // 默认使用后台指定的 ComfyUI；不可用时由生成服务按现有顺序自动兜底。
+    const providerKey = getDefaultImageProviderKey(db);
+    if (!providerKey) {
+      return res.status(503).json({ error: '暂无已启用的生图服务商，请联系管理员配置' });
+    }
 
     const taskId = startImageTask(db, {
       userId: user.id,
@@ -2157,19 +2170,52 @@ ${contextSummary}
       }
     });
   } catch (err) {
-    res.status(500).json({ error: '图片生成任务启动失败：' + (err.message || '') });
+    const status = err && err.status === 429 ? 429 : 500;
+    res.status(status).json({ error: '图片生成任务启动失败：' + (err.message || '') });
   }
 });
 
+// 聊天场景生图任务状态：必须同时拥有 AI 聊天与 AI 生图权限
+router.get('/ai-chat/api/image/status', isAuthenticated, hasFrontendPermission('aichat.use'), hasFrontendPermission('imagegen.use'), (req, res) => {
+  const { getImageTask } = require('../services/image-gen');
+  const task = getImageTask(String(req.query.task || ''));
+  if (!task || task.userId !== req.session.user.id) {
+    return res.status(404).json({ success: false, error: '任务不存在或已过期' });
+  }
+  res.json({
+    success: true,
+    data: {
+      status: task.status,
+      message: task.message || '',
+      elapsedMs: Date.now() - task.createdAt,
+      result: task.result || null
+    }
+  });
+});
+
+// 取消聊天场景生图任务
+router.post('/ai-chat/api/image/cancel', isAuthenticated, hasFrontendPermission('aichat.use'), hasFrontendPermission('imagegen.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+  const { cancelImageTask } = require('../services/image-gen');
+  const result = cancelImageTask(String(req.body.task || ''), req.session.user.id);
+  if (!result.ok) return res.status(400).json({ success: false, error: result.error });
+  res.json(result);
+});
+
 // 保存场景图片为会话消息（前端轮询到生成结果后调用，持久化图片消息）
-router.post('/ai-chat/api/image/save', isAuthenticated, hasFrontendPermission('aichat.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
+router.post('/ai-chat/api/image/save', isAuthenticated, hasFrontendPermission('aichat.use'), hasFrontendPermission('imagegen.use'), csrfCheck, aiChatOpLimiter, (req, res) => {
   const db = req.db;
   const user = req.session.user;
   const conv = aiChatService.getOwnConversation(db, user, parseInt(req.body.conversation_id, 10));
   if (!conv) return res.status(404).json({ error: '会话不存在' });
   const imageUrl = String(req.body.image_url || '').trim();
   const prompt = String(req.body.prompt || '').trim();
+  const taskId = String(req.body.task_id || '').trim();
   if (!imageUrl) return res.status(400).json({ error: '缺少图片地址' });
+  const { getImageTask } = require('../services/image-gen');
+  const task = getImageTask(taskId);
+  const generated = task && task.userId === user.id && task.status === 'success' && task.result &&
+    Array.isArray(task.result.images) && task.result.images.some(img => img && (img.url === imageUrl || img.path === imageUrl));
+  if (!generated) return res.status(400).json({ error: '图片不属于当前用户的成功生成任务' });
   db.run(`INSERT INTO ai_messages (conversation_id, branch_id, role, content, tokens, model, status, is_image, image_url)
     VALUES (?, ?, 'assistant', ?, 0, '', 'done', 1, ?)`,
   [conv.id, conv.current_branch_id || 0, prompt || '场景图片', imageUrl]);

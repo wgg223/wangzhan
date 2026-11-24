@@ -86,6 +86,14 @@
       <input type="number" id="aiimgDailyLimit" min="1" max="500" value="<%= dailyLimit %>" style="width:140px;padding:7px 9px;border:1px solid var(--border-color);border-radius:6px;">
     </div>
     <div class="form-group">
+      <label>默认生图服务商（独立生图页与 AI 聊天场景生图优先使用）</label>
+      <select id="aiimgDefaultProvider" style="width:220px;padding:7px 9px;border:1px solid var(--border-color);border-radius:6px;">
+        <% providers.filter(function(p){ return p.enabled; }).forEach(function(p) { %>
+          <option value="<%= p.provider_key %>" <%= defaultProvider === p.provider_key ? 'selected' : '' %>><%= p.name %></option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="form-group">
       <label>自动换服务商重试（失败后按顺序尝试其他已启用服务商）</label>
       <label class="aiimg-toggle"><input type="checkbox" id="aiimgFallback" <%= fallbackEnabled ? 'checked' : '' %>> 启用</label>
     </div>
@@ -117,10 +125,12 @@
           <label>显示名称</label>
           <input type="text" class="aiimg-f-name" value="<%= p.name %>">
         </div>
+        <% if (p.provider_key !== 'comfyui') { %>
         <div class="form-group">
           <label>API Key <%= p.has_key ? '（已配置，留空不修改）' : '（未配置）' %></label>
           <input type="password" class="aiimg-f-key" placeholder="<%= p.has_key ? '•••••••• 已加密存储，留空不修改' : '请输入 API Key' %>" autocomplete="off">
         </div>
+        <% } %>
         <div class="form-group">
           <label>API Base URL</label>
           <input type="text" class="aiimg-f-base" value="<%= p.api_base %>" placeholder="https://...">
@@ -133,6 +143,18 @@
           <label>官方 API Key 获取链接（前台展示"获取"跳转）</label>
           <input type="text" class="aiimg-f-keyurl" value="<%= p.api_key_url %>" placeholder="https://...">
         </div>
+        <% if (p.provider_key === 'comfyui') { %>
+        <div class="form-group">
+          <label>ComfyUI API 工作流（留空使用内置 SD1.5 文生图 / 图生图工作流）</label>
+          <textarea class="aiimg-f-workflow" rows="8" spellcheck="false" placeholder='{"3":{"class_type":"KSampler","inputs":{...}}}'><%= comfyuiWorkflow %></textarea>
+          <div class="aiimg-fetch-hint">在 ComfyUI 界面选择「File → Export (API)」，粘贴导出的 JSON；不能直接粘贴界面保存的 UI 工作流。</div>
+        </div>
+        <div class="form-group">
+          <label>节点映射 JSON（可选，留空自动识别）</label>
+          <textarea class="aiimg-f-nodemap" rows="3" spellcheck="false" placeholder='{"positive":"6","negative":"7","size":"5","seed":"3","image":"10","model":"4"}'><%= comfyuiNodeMap %></textarea>
+          <div class="aiimg-fetch-hint">positive/negative 为文本编码节点，size 为宽高节点，seed 为采样器，image 为 LoadImage，model 为模型加载节点。自定义图生图工作流需包含 LoadImage → VAEEncode。</div>
+        </div>
+        <% } %>
         <div class="form-group">
           <label>默认模型</label>
           <input type="text" class="aiimg-f-model" value="<%= p.default_model %>" placeholder="可选">
@@ -153,6 +175,9 @@
         <div class="aiimg-provider-foot">
           <button type="button" class="btn btn-small btn-primary aiimg-provider-save">💾 保存</button>
           <button type="button" class="btn btn-small aiimg-provider-fetch">🔄 获取模型</button>
+          <% if (p.supports_verify) { %>
+          <button type="button" class="btn btn-small aiimg-provider-verify">✓ 验证连接与配置</button>
+          <% } %>
         </div>
         <div class="aiimg-fetch-hint aiimg-fetch-msg"></div>
       </div>
@@ -229,30 +254,40 @@ document.addEventListener('DOMContentLoaded', function() {
       var msg = card.querySelector('.aiimg-fetch-msg');
       btn.disabled = true;
       btn.textContent = '保存中...';
+      var payload = {
+        id: key, provider_key: key,
+        name: card.querySelector('.aiimg-f-name').value,
+        api_key: (card.querySelector('.aiimg-f-key') || {}).value || '',
+        api_base: card.querySelector('.aiimg-f-base').value,
+        api_path: card.querySelector('.aiimg-f-path').value,
+        api_key_url: card.querySelector('.aiimg-f-keyurl').value,
+        default_model: card.querySelector('.aiimg-f-model').value,
+        models: JSON.stringify(parseModels(card.querySelector('.aiimg-f-models').value)),
+        supports_negative: card.querySelector('.aiimg-f-neg').checked ? '1' : '0',
+        supports_n: card.querySelector('.aiimg-f-n').checked ? '1' : '0',
+        supports_img2img: card.querySelector('.aiimg-f-img2img').checked ? '1' : '0',
+        enabled: card.querySelector('.aiimg-f-enabled').checked ? '1' : '0',
+        sort_order: card.querySelector('.aiimg-f-sort').value
+      };
+      if (key === 'comfyui') {
+        payload.workflow = card.querySelector('.aiimg-f-workflow').value;
+        payload.node_map = card.querySelector('.aiimg-f-nodemap').value;
+      }
       csrfFetch('/admin/ai-image/providers/save', {
         method: 'POST',
-        body: JSON.stringify({
-          id: key, provider_key: key,
-          name: card.querySelector('.aiimg-f-name').value,
-          api_key: card.querySelector('.aiimg-f-key').value,
-          api_base: card.querySelector('.aiimg-f-base').value,
-          api_path: card.querySelector('.aiimg-f-path').value,
-          api_key_url: card.querySelector('.aiimg-f-keyurl').value,
-          default_model: card.querySelector('.aiimg-f-model').value,
-          models: JSON.stringify(parseModels(card.querySelector('.aiimg-f-models').value)),
-          supports_negative: card.querySelector('.aiimg-f-neg').checked ? '1' : '0',
-          supports_n: card.querySelector('.aiimg-f-n').checked ? '1' : '0',
-          supports_img2img: card.querySelector('.aiimg-f-img2img').checked ? '1' : '0',
-          enabled: card.querySelector('.aiimg-f-enabled').checked ? '1' : '0',
-          sort_order: card.querySelector('.aiimg-f-sort').value
-        })
+        body: JSON.stringify(payload)
       }, 60000).then(function(json) {
         btn.disabled = false;
         btn.textContent = '💾 保存';
         if (json.success) {
-          showToast(json.message + (json.modelsFetched ? '，已自动获取模型列表' : ''), 'success');
+          showToast(json.message + (json.modelsFetched ? '，已同步当前 Key 的可用模型' : ''), 'success');
           msg.textContent = json.fetchError ? '模型自动获取失败：' + json.fetchError : '';
-          card.querySelector('.aiimg-f-key').value = '';
+          if (json.modelsFetched && Array.isArray(json.models)) {
+            card.querySelector('.aiimg-f-models').value = json.models.join('\n');
+            card.querySelector('.aiimg-f-model').value = json.default_model || json.models[0] || '';
+          }
+          var keyInput = card.querySelector('.aiimg-f-key');
+          if (keyInput) keyInput.value = '';
         } else {
           showToast(json.error || '保存失败', 'error');
         }
@@ -279,7 +314,10 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.disabled = false;
         if (json.success) {
           card.querySelector('.aiimg-f-models').value = (json.models || []).join('\n');
-          if (!card.querySelector('.aiimg-f-model').value && json.models.length) {
+          var currentDefault = card.querySelector('.aiimg-f-model').value;
+          if (json.default_model && (key === 'momoapi' || (json.models || []).indexOf(currentDefault) === -1)) {
+            card.querySelector('.aiimg-f-model').value = json.default_model;
+          } else if (!currentDefault && json.models.length) {
             card.querySelector('.aiimg-f-model').value = json.models[0];
           }
           msg.textContent = '已获取 ' + json.models.length + ' 个模型（记得点击保存）';
@@ -295,6 +333,34 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  // ============ ComfyUI 连接与工作流验证 ============
+  document.querySelectorAll('.aiimg-provider-verify').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var card = btn.closest('.aiimg-provider-card');
+      var msg = card.querySelector('.aiimg-fetch-msg');
+      btn.disabled = true;
+      msg.textContent = '验证中...';
+      csrfFetch('/admin/ai-image/providers/verify', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider_key: card.getAttribute('data-key'),
+          api_base: card.querySelector('.aiimg-f-base').value,
+          api_key: (card.querySelector('.aiimg-f-key') || {}).value || '',
+          workflow: card.querySelector('.aiimg-f-workflow') ? card.querySelector('.aiimg-f-workflow').value : '',
+          node_map: card.querySelector('.aiimg-f-nodemap') ? card.querySelector('.aiimg-f-nodemap').value : ''
+        })
+      }, 30000).then(function(json) {
+        btn.disabled = false;
+        msg.textContent = json.success ? json.message : (json.error || '验证失败');
+        showToast(msg.textContent, json.success ? 'success' : 'error');
+      }).catch(function() {
+        btn.disabled = false;
+        msg.textContent = '验证请求失败';
+        showToast('验证请求失败', 'error');
+      });
+    });
+  });
+
   // ============ 全局设置 ============
   document.getElementById('aiimgSettingsSave').addEventListener('click', function() {
     csrfFetch('/admin/ai-image/settings/save', {
@@ -302,6 +368,7 @@ document.addEventListener('DOMContentLoaded', function() {
       body: JSON.stringify({
         ai_image_daily_limit: document.getElementById('aiimgDailyLimit').value,
         ai_image_fallback: document.getElementById('aiimgFallback').checked ? '1' : '0',
+        ai_image_default_provider: document.getElementById('aiimgDefaultProvider').value,
         prompt_enhance_api_base: document.getElementById('aiimgEnhBase').value,
         prompt_enhance_model: document.getElementById('aiimgEnhModel').value,
         prompt_enhance_api_key: document.getElementById('aiimgEnhKey').value,

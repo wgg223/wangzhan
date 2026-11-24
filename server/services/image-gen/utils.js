@@ -6,6 +6,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { safeFetchBuffer } = require('../../utils/safe-fetch');
 
 // 生成图存储根目录（web 可访问）
 const UPLOAD_ROOT = path.join(__dirname, '../../../public/uploads/ai-images');
@@ -88,6 +89,29 @@ async function downloadImage(url, headers = {}) {
     headers: { Accept: 'image/*', ...headers }
   });
   return Buffer.from(resp.data);
+}
+
+/**
+ * 安全下载服务商返回的图片 URL。
+ * 与可直接配置内网端点的 generate 请求不同，结果 URL 必须阻止 SSRF 和危险重定向。
+ * @param {string} url
+ * @param {Object} [options]
+ * @returns {Promise<Buffer>}
+ */
+async function downloadImageSafely(url, options = {}) {
+  const result = await safeFetchBuffer(url, {
+    maxBytes: MAX_IMAGE_SIZE,
+    maxRedirects: 3,
+    timeoutMs: 60000,
+    headers: { Accept: 'image/*', ...(options.headers || {}) },
+    signal: options.signal
+  });
+  if (result.status < 200 || result.status >= 300) {
+    const err = new Error(`结果图片下载失败（HTTP ${result.status}）`);
+    err.code = 'FETCH_FAILED';
+    throw err;
+  }
+  return result.buffer;
 }
 
 /**
@@ -180,6 +204,7 @@ module.exports = {
   saveImageBuffer,
   saveReferenceImage,
   downloadImage,
+  downloadImageSafely,
   resolveImageItem,
   parseSize,
   normalizeError,

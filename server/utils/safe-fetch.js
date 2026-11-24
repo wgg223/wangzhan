@@ -58,51 +58,76 @@ function safeLookup(hostname, options, callback) {
  * @param {string} url 目标 URL
  * @param {object} opts { maxBytes=2MB, maxRedirects=3, timeoutMs=15000 }
  */
+function abortError() {
+  return Object.assign(new Error('请求已取消'), { code: 'ABORT_ERR' });
+}
+
 async function safeFetchBuffer(url, opts = {}) {
   const maxBytes = opts.maxBytes || 2 * 1024 * 1024;
   const maxRedirects = opts.maxRedirects == null ? 3 : opts.maxRedirects;
   const timeoutMs = opts.timeoutMs || 15000;
+  const signal = opts.signal;
   let current = String(url);
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (signal && signal.aborted) throw abortError();
     let parsed;
     try { parsed = new URL(current); } catch (e) { throw new Error('URL 格式不正确'); }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error('仅支持 http/https 协议');
     }
+    if (parsed.username || parsed.password) throw new Error('URL 不允许包含账号密码');
     const client = parsed.protocol === 'https:' ? https : http;
+    let request;
+    const onAbort = () => {
+      if (request) request.destroy(abortError());
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
-    const result = await new Promise((resolve, reject) => {
-      const req = client.get(parsed, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        timeout: timeoutMs,
-        lookup: safeLookup
-      }, (resp) => {
-        if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
-          resp.resume(); // 丢弃重定向响应体
-          let next;
-          try { next = new URL(resp.headers.location, parsed).toString(); }
-          catch (e) { reject(new Error('重定向地址无效')); return; }
-          resolve({ redirect: next });
-          return;
-        }
-        const chunks = [];
-        let total = 0;
-        resp.on('data', (chunk) => {
-          total += chunk.length;
-          if (total > maxBytes) {
-            req.destroy();
-            reject(new Error('响应内容过大'));
+    let result;
+    try {
+      result = await new Promise((resolve, reject) => {
+        request = client.get(parsed, {
+          headers: { 'User-Agent': 'Mozilla/5.0', ...(opts.headers || {}) },
+          timeout: timeoutMs,
+          lookup: safeLookup
+        }, (resp) => {
+          if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+            resp.resume(); // 丢弃重定向响应体
+            let next;
+            try {
+              next = new URL(resp.headers.location, parsed).toString();
+            } catch (e) {
+              reject(new Error('重定向地址无效'));
+              return;
+            }
+            resolve({ redirect: next });
             return;
           }
-          chunks.push(chunk);
+          const chunks = [];
+          let total = 0;
+          resp.on('data', (chunk) => {
+            total += chunk.length;
+            if (total > maxBytes) {
+              request.destroy();
+              reject(new Error('响应内容过大'));
+              return;
+            }
+            chunks.push(chunk);
+          });
+          resp.on('end', () => resolve({
+            buffer: Buffer.concat(chunks),
+            contentType: resp.headers['content-type'] || '',
+            status: resp.statusCode || 0
+          }));
+          resp.on('error', reject);
         });
-        resp.on('end', () => resolve({ buffer: Buffer.concat(chunks), contentType: resp.headers['content-type'] || '' }));
-        resp.on('error', reject);
+        request.on('error', reject);
+        request.on('timeout', () => { request.destroy(); reject(new Error('请求超时')); });
       });
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('请求超时')); });
-    });
+    } finally {
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
 
     if (result.redirect) { current = result.redirect; continue; }
     return result;

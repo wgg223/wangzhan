@@ -19,8 +19,9 @@ const { queryCache } = require('../config/cache');
 const { logActivity } = require('../config/activity');
 const { getSettings, getImageConfigs } = require('../utils/settings');
 const { createRateLimiter } = require('../middlewares/rate-limiter');
-const { countDailyUsage, getUserProviderKeys, saveUserProviderKey, deleteUserProviderKey, verifyProviderKey, startImageTask, getImageTask, cancelImageTask } = require('../services/image-gen');
-const { saveReferenceImage, normalizeError } = require('../services/image-gen/utils');
+const { countDailyUsage, checkImageTaskQuota, getUserProviderKeys, getProviderConfig, saveUserProviderKey, deleteUserProviderKey, verifyProviderKey, syncProviderModels, startImageTask, getImageTask, cancelImageTask, getDefaultImageProviderKey, KEYLESS_IMAGE_PROVIDERS } = require('../services/image-gen');
+const { saveReferenceImage, normalizeError, MAX_IMAGE_SIZE } = require('../services/image-gen/utils');
+const { SIZE_GROUPS, SIZE_PRESETS } = require('../services/image-gen/sizes');
 const { enhancePrompt } = require('../services/prompt-enhance');
 const { validateMagicBytes } = require('../utils/file-validator');
 
@@ -37,10 +38,10 @@ function cachedQuery(cacheKey, db, sql, params = []) {
 
 // ============ AI 图片生成 ============
 
-// 参考图上传（内存存储，5MB，仅图片格式；落盘前再做魔数校验）
+// 参考图上传（内存存储，最高 100MB，仅图片格式；落盘前再做魔数校验）
 const refUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: MAX_IMAGE_SIZE },
   fileFilter: (req, file, cb) => {
     if (['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.mimetype)) {
       return cb(null, true);
@@ -70,12 +71,17 @@ router.get('/ai-image', isAuthenticated, hasFrontendPermission('imagegen.use'), 
   const allProviderRows = queryAll(db, `SELECT provider_key, name, enabled, default_model, models, api_key_url, supports_negative, supports_n, supports_img2img
     FROM ai_image_providers ORDER BY sort_order ASC, id ASC`);
   const providers = allProviderRows.filter(p => p.enabled || userKeySet.has(p.provider_key));
+  const defaultProvider = getDefaultImageProviderKey(db);
+  if (defaultProvider) {
+    providers.sort((a, b) => Number(b.provider_key === defaultProvider) - Number(a.provider_key === defaultProvider));
+  }
   providers.forEach(p => {
     try { p.models = JSON.parse(p.models || '[]'); } catch (e) { p.models = []; }
-    p.requires_key = p.provider_key !== 'pollinations';
+    p.requires_key = !KEYLESS_IMAGE_PROVIDERS.has(p.provider_key);
   });
   const allProviders = allProviderRows.map(p => ({
-    provider_key: p.provider_key, name: p.name, api_key_url: p.api_key_url || ''
+    provider_key: p.provider_key, name: p.name, api_key_url: p.api_key_url || '',
+    requires_key: !KEYLESS_IMAGE_PROVIDERS.has(p.provider_key)
   }));
 
   const dailyLimit = parseInt(settings.ai_image_daily_limit, 10) || 20;
@@ -109,7 +115,9 @@ router.get('/ai-image', isAuthenticated, hasFrontendPermission('imagegen.use'), 
     canShare,
     canShareLink,
     userKeys,
-    prompts
+    prompts,
+    sizeGroups: SIZE_GROUPS,
+    sizePresets: SIZE_PRESETS
   });
 });
 
@@ -125,6 +133,7 @@ router.post('/ai-image/api/keys/save', isAuthenticated, hasFrontendPermission('i
     if (!providerKey) return res.status(400).json({ error: '服务商不能为空' });
     const provider = queryOne(db, 'SELECT provider_key FROM ai_image_providers WHERE provider_key = ?', [providerKey]);
     if (!provider) return res.status(404).json({ error: '服务商不存在' });
+    if (KEYLESS_IMAGE_PROVIDERS.has(providerKey)) return res.status(400).json({ error: '该服务商无需 API Key' });
     if (!apiKey) return res.status(400).json({ error: 'API Key 不能为空' });
     if (apiKey.length > 300) return res.status(400).json({ error: 'API Key 长度超出限制' });
     if (apiKey.indexOf('ENC:') === 0) return res.status(400).json({ error: 'API Key 格式不正确' });
@@ -146,26 +155,24 @@ router.post('/ai-image/api/keys/save', isAuthenticated, hasFrontendPermission('i
       setTimeout(() => resolve({ ok: true, verified: false, error: '验证超时（服务商响应慢），Key 已保存' }), 25000);
     });
     Promise.race([verifyPromise, verifyTimeout]).then(verifyResult => {
+      let syncedModels = [];
+      let syncedDefaultModel = '';
       if (verifyResult.verified && verifyResult.models && verifyResult.models.length) {
-        // 将 API 获取到的模型合并进服务商全局模型列表（去重），保证模型下拉可选到
+        // 以当前 Key 实际可获取的模型同步；MomoAPI 不混入公开价格目录中的失效模型。
         const row = queryOne(db, 'SELECT models, default_model FROM ai_image_providers WHERE provider_key = ?', [providerKey]);
         if (row) {
           let current = [];
           try { current = JSON.parse(row.models || '[]'); } catch (e) { current = []; }
-          const merged = current.slice();
-          verifyResult.models.forEach(m => {
-            if (merged.indexOf(m) === -1) merged.push(m);
-          });
-          let updated = false;
-          if (merged.length !== current.length) {
-            db.run('UPDATE ai_image_providers SET models = ? WHERE provider_key = ?', [JSON.stringify(merged), providerKey]);
-            updated = true;
+          const synced = syncProviderModels(providerKey, current, verifyResult.models, row.default_model || '');
+          syncedModels = synced.models;
+          syncedDefaultModel = synced.defaultModel;
+          const modelsChanged = JSON.stringify(current) !== JSON.stringify(syncedModels);
+          const defaultChanged = (row.default_model || '') !== syncedDefaultModel;
+          if (modelsChanged || defaultChanged) {
+            db.run('UPDATE ai_image_providers SET models = ?, default_model = ? WHERE provider_key = ?',
+              [JSON.stringify(syncedModels), syncedDefaultModel, providerKey]);
+            saveDatabase();
           }
-          if (!row.default_model && merged.length) {
-            db.run('UPDATE ai_image_providers SET default_model = ? WHERE provider_key = ?', [merged[0], providerKey]);
-            updated = true;
-          }
-          if (updated) saveDatabase();
         }
       }
       if (!res.headersSent) {
@@ -174,7 +181,8 @@ router.post('/ai-image/api/keys/save', isAuthenticated, hasFrontendPermission('i
             success: true,
             message: 'API Key 已保存并验证通过',
             verified: true,
-            models: verifyResult.models || [],
+            models: syncedModels,
+            default_model: syncedDefaultModel,
             verifyError: ''
           });
         } else {
@@ -235,7 +243,7 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
   refUpload.single('reference_image')(req, res, async (uploadErr) => {
     if (uploadErr) {
       const msg = uploadErr.code === 'LIMIT_FILE_SIZE'
-        ? '参考图不能超过 5MB'
+        ? `参考图不能超过 ${MAX_IMAGE_SIZE / 1024 / 1024}MB`
         : (uploadErr.message || '参考图上传失败');
       return res.status(400).json({ error: msg });
     }
@@ -246,6 +254,7 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
     const negativePrompt = (req.body.negative_prompt || '').trim();
     const size = (req.body.size || '1024x1024').trim();
     const providerKey = (req.body.provider || '').trim();
+    const model = typeof req.body.model === 'string' ? req.body.model.trim().slice(0, 300) : '';
     const mode = (req.body.mode || 't2i').trim();
     const rawN = parseInt(req.body.n, 10) || 1;
     const rawSeed = req.body.seed === '' || req.body.seed === undefined ? 0 : parseInt(req.body.seed, 10);
@@ -267,6 +276,12 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
     if (!provider.enabled && userKeyList.indexOf(providerKey) === -1) {
       return res.status(400).json({ error: '所选服务商未启用，请选择其他服务商' });
     }
+    const providerConfig = getProviderConfig(db, providerKey, user.id);
+    if (!KEYLESS_IMAGE_PROVIDERS.has(providerKey) && (!providerConfig || !providerConfig.api_key)) {
+      return res.status(400).json({
+        error: `所选服务商「${provider.name || providerKey}」未配置 API Key：请填写「我的 API Key」，或由管理员配置全局 Key`
+      });
+    }
     const n = provider.supports_n ? Math.min(Math.max(rawN, 1), 4) : 1;
 
     // 图生图模式校验：服务商需支持且必须上传参考图
@@ -279,13 +294,14 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
       }
     }
 
-    // 每日限额（管理员不限；成功+失败均计次）
-    if (!isAdminRole(user)) {
-      const settings = getSettings(db);
-      const dailyLimit = parseInt(settings.ai_image_daily_limit, 10) || 20;
-      if (countDailyUsage(db, user.id) >= dailyLimit) {
-        return res.status(429).json({ error: `今日生成次数已达上限（${dailyLimit} 次），明天再来吧` });
-      }
+    // 每日限额（管理员不限；成功+失败均计次）。这里做提前提示，startImageTask 还会原子复查并预留额度。
+    const quota = checkImageTaskQuota(db, {
+      userId: user.id,
+      n,
+      referenceImagePath: mode === 'i2i'
+    });
+    if (!quota.ok) {
+      return res.status(429).json({ error: `今日生成次数已达上限（${quota.limit} 次），明天再来吧` });
     }
 
     // 参考图（图生图）
@@ -304,6 +320,7 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
       const taskId = startImageTask(db, {
         userId: user.id,
         providerKey,
+        model,
         prompt,
         negativePrompt,
         size,
@@ -315,7 +332,8 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
       });
       return res.json({ success: true, taskId });
     } catch (err) {
-      return res.status(500).json({ error: '生成服务异常：' + (err.message || '未知错误') });
+      const status = err && err.status === 429 ? 429 : 500;
+      return res.status(status).json({ error: '生成服务异常：' + (err.message || '未知错误') });
     }
   });
 });

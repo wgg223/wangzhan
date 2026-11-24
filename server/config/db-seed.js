@@ -409,6 +409,8 @@ function insertDefaultDataIfNeeded(db) {
   // 默认全部启用：前台直接可选任一服务商，用户自填 Key 即可使用（无 Key 自动兜底到免费/已配置服务商）
   // 数组结构：[provider_key, name, api_base, api_path, default_model, models, supports_negative, supports_n, supports_img2img, enabled, sort_order, api_key_url]
   const defaultAiImageProviders = [
+    ['comfyui', 'ComfyUI 本地工作流', 'http://127.0.0.1:8188', '', '',
+      JSON.stringify([]), 1, 1, 1, 1, 0, ''],
     ['openai', 'OpenAI DALL·E 3', 'https://api.openai.com/v1', '', 'dall-e-3',
       JSON.stringify(['dall-e-3']), 0, 1, 0, 1, 1, 'https://platform.openai.com/api-keys'],
     ['stability', 'Stability AI', 'https://api.stability.ai/v2beta', '', 'sd3.5-large',
@@ -438,7 +440,12 @@ function insertDefaultDataIfNeeded(db) {
     ['fal', 'fal.ai', 'https://queue.fal.run', 'fal-ai/flux/dev', '',
       JSON.stringify(['fal-ai/flux/dev', 'fal-ai/flux/schnell']), 0, 1, 1, 1, 14, 'https://fal.ai/dashboard/keys'],
     ['aihubmix', 'AIHubMix', 'https://aihubmix.com/v1', '', 'gpt-image-1',
-      JSON.stringify(['gpt-image-1', 'dall-e-3', 'qwen-image', 'glm-image', 'doubao-seedream-4-0', 'flux-2-flex', 'wan2.7-image']), 0, 1, 1, 1, 15, 'https://aihubmix.com/']
+      JSON.stringify(['gpt-image-1', 'dall-e-3', 'qwen-image', 'glm-image', 'doubao-seedream-4-0', 'flux-2-flex', 'wan2.7-image']), 0, 1, 1, 1, 15, 'https://aihubmix.com/'],
+    // MomoAPI 的公开价格目录与当前 Key 的生图路由可能不一致；初始不猜模型，保存 Key 后从认证列表同步。
+    ['momoapi', 'MomoAPI', 'https://api.momoapi.icu', '', '',
+      JSON.stringify([]), 0, 1, 1, 1, 16, 'https://api.momoapi.icu/console'],
+    ['seedance', 'Seedance', 'https://api.seedance.nz', '', 'seedream-v5-pro-t2i',
+      JSON.stringify(['seedream-v5-pro-t2i', 'seedream-v5-pro-i2i']), 0, 0, 1, 1, 17, 'https://api.seedance.nz/docs/']
   ];
 
   defaultAiImageProviders.forEach(([key, name, base, path, model, models, neg, n, img2img, enabled, sort, keyUrl]) => {
@@ -833,9 +840,12 @@ PHILOSOPHY（价值讨论）：成熟、不给简单答案、承认矛盾。
     console.log('[db-seed] AI 生图服务商已默认全部启用');
   }
 
-  // 默认 AI 生图设置：每日限额 + 自动换服务商容灾
+  // 默认 AI 生图设置：每日限额 + 自动换服务商容灾 + ComfyUI 原生工作流
   db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_image_daily_limit', '20')");
   db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_image_fallback', '1')");
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_image_default_provider', 'comfyui')");
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_image_comfyui_workflow', '')");
+  db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('ai_image_comfyui_node_map', '')");
 
   // 提示词优化 LLM 默认配置：留空 Key 使用免费接口（Pollinations text，需 referer），配置 Key 走自建 OpenAI 兼容接口
   db.run("INSERT OR IGNORE INTO settings (setting_key, setting_value) VALUES ('prompt_enhance_api_base', 'https://text.pollinations.ai/openai')");

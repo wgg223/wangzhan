@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.24.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.25.0 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -307,6 +307,28 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.25.0 (2026-11-25)
+
+**新增：AI 生图节点画布 + 4K/100MB 参考图 + ComfyUI/MomoAPI/Seedance 多服务商治理 ｜ 修复：MomoAPI 模型无渠道与图生图 Invalid IP**
+
+- **AI 生图节点画布**（新增 `public/js/ai-image-canvas.js`）：Text / 参考图 / Image 节点、锚点连线、平移缩放、小地图、框选多选、整组拖动、对齐/等距/网格整理、网格吸附与对齐参考线、撤销重做、复制粘贴、方向键微调、节点锁定、项目 JSON 导入导出、整块画布 PNG 导出、自动布局、快捷键帮助、自动保存状态
+- **4K 尺寸与向下兼容**（新增 `server/services/image-gen/sizes.js`）：新增 4K（3840×2160 / 2160×3840 / 2880×2880）与 2K 档位，旧尺寸全部保留；请求前按服务商上限降级，运行时遇到尺寸/显存错误按 `4K → 2K → 1K` 重试；OpenAI 离散尺寸映射；ComfyUI 尺寸上限 2048→4096；结果记录实际生成尺寸并提示降级
+- **参考图 5MB → 100MB**：multer、简洁表单、画布上传与页面提示同步；大图预览改用 Blob URL，避免 100MB 图片转 base64；画布超过 20MB 的参考图不常驻 JS 内存，生成时从 IndexedDB 按需读取
+- **ComfyUI 原生工作流**：后台支持粘贴 API 工作流 JSON、自动/手动节点映射（positive/negative/size/seed/image/model）、连接配置验证、内置默认工作流兜底
+- **MomoAPI / Seedance**：MomoAPI 以认证模型列表同步白名单，模型无渠道或 `Invalid IP address` 图生图错误自动换模型；multipart 显式 Content-Length；Seedance 支持文生图/图生图与 1k/2k/4k
+- **模型与默认服务商治理**：后台可指定默认生图服务商；保存 Key/获取模型后按服务商能力同步模型与默认模型；新增连接验证；免 Key 服务商不再出现在用户 Key 配置中
+- **AI 聊天场景生图**：独立 `imagegen.use` 权限与额度校验；新增任务状态/取消接口；保存图片消息校验任务归属；轮询上限约 12 分钟以适配 ComfyUI
+- **安全与稳定性**：服务商结果图片统一走 `safeFetchBuffer`（SSRF/私网 IP/重定向/体积/取消）；AI 聊天内联 JSON 使用 `jsJson`；Key 保存、模型同步、默认服务商切换补服务端校验
+- **验证**：`node --check` 全部通过；ESLint 0 error；Mock 覆盖模型无渠道/Invalid IP/Imagen/鉴权/模型列表失败/multipart Content-Length/4K 降级；无头浏览器画布交互（多选、组拖动、对齐、框选、自动布局）全部 PASS；EJS 模板渲染通过
+
+### v8.24.1 (2026-11-20)
+
+**安全审查修复 + Bug 修复 + 美观优化**
+
+- 安全：头像上传 MIME/魔数校验、OAuth 头像路径注入防护、`safe-fetch` SSRF 防护、TOTP 重放保护、community/content/private-message/spreadsheet/image-share CSRF 双提交校验、登出改 POST、API 5xx 生产环境隐藏内部错误
+- Bug：sql.js `run()` 返回值/语句泄漏、RAG 开关表错误、群聊/再生计数、AI 聊天流式竞态、角色卡导入上限 200
+- 美观：AI 聊天/角色卡广场品牌桥接与暗色令牌、`--text-muted` 对比度、主导航角色卡广场入口、7 个页面主题令牌修复
 
 ### v8.24.0 (2026-11-12)
 

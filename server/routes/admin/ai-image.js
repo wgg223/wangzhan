@@ -18,7 +18,7 @@ const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { encrypt } = require('../../config/crypto-secure');
 const { getSettings, upsertSettings } = require('../../utils/settings');
-const { fetchProviderModels } = require('../../services/image-gen');
+const { fetchProviderModels, getProviderConfig, providers, getDefaultImageProviderKey, syncProviderModels } = require('../../services/image-gen');
 const { UPLOAD_ROOT } = require('../../services/image-gen/utils');
 
 // ============ AI 生图管理（服务商/密钥/限额/记录） ============
@@ -65,6 +65,7 @@ router.get('/ai-image', isAuthenticated, hasPermission('imagegen.manage'), (req,
   providers.forEach(p => {
     try { p.models = JSON.parse(p.models || '[]'); } catch (e) { p.models = []; }
     p.has_key = Boolean(p.api_key_enc && p.api_key_enc.indexOf('ENC:') === 0);
+    p.supports_verify = Boolean(providers[p.provider_key] && typeof providers[p.provider_key].verify === 'function');
   });
 
   const recentRows = queryAll(db, `
@@ -79,6 +80,9 @@ router.get('/ai-image', isAuthenticated, hasPermission('imagegen.manage'), (req,
     providers,
     dailyLimit: parseInt(settings.ai_image_daily_limit, 10) || 20,
     fallbackEnabled: settings.ai_image_fallback !== '0',
+    defaultProvider: getDefaultImageProviderKey(db),
+    comfyuiWorkflow: settings.ai_image_comfyui_workflow || '',
+    comfyuiNodeMap: settings.ai_image_comfyui_node_map || '',
     enhanceBase: settings.prompt_enhance_api_base || 'https://text.pollinations.ai/openai',
     enhanceModel: settings.prompt_enhance_model || 'openai',
     enhanceReferer: settings.prompt_enhance_referer || '',
@@ -110,6 +114,17 @@ router.post('/ai-image/providers/save', isAuthenticated, hasPermission('imagegen
   const supportsN = first(req.body.supports_n) === '1' || first(req.body.supports_n) === 'on' ? 1 : 0;
   const supportsImg2img = first(req.body.supports_img2img) === '1' || first(req.body.supports_img2img) === 'on' ? 1 : 0;
   const sortOrder = toInt(first(req.body.sort_order), existing.sort_order || 0);
+  const workflow = providerKey === 'comfyui' ? String(first(req.body.workflow) || '') : '';
+  const nodeMap = providerKey === 'comfyui' ? String(first(req.body.node_map) || '') : '';
+
+  if (providerKey === 'comfyui') {
+    try {
+      providers.comfyui.normalizeBaseUrl(apiBase);
+      providers.comfyui.validateWorkflow(workflow, nodeMap);
+    } catch (err) {
+      return res.status(400).json({ error: err.message || 'ComfyUI 配置无效' });
+    }
+  }
 
   // 密钥：填了才更新（加密存储），留空不修改；永不回显明文
   let apiKeyEnc = existing.api_key_enc || '';
@@ -126,6 +141,12 @@ router.post('/ai-image/providers/save', isAuthenticated, hasPermission('imagegen
   [name, enabled, apiKeyEnc, apiBase, apiPath, apiKeyUrl, defaultModel,
     JSON.stringify(models), supportsNegative, supportsN, supportsImg2img, sortOrder, existing.id]);
   saveDatabase();
+  if (providerKey === 'comfyui') {
+    upsertSettings(db, {
+      ai_image_comfyui_workflow: workflow,
+      ai_image_comfyui_node_map: nodeMap
+    });
+  }
 
   logActivity(db, {
     user_id: req.session.user.id,
@@ -141,15 +162,20 @@ router.post('/ai-image/providers/save', isAuthenticated, hasPermission('imagegen
   // 填写了新 Key 且服务商支持模型列表接口 → 自动刷新模型
   let modelsFetched = false;
   let fetchError = '';
-  if (apiKey && apiKey.indexOf('ENC:') !== 0) {
+  let syncedModels = [];
+  let syncedDefaultModel = defaultModel;
+  if ((apiKey && apiKey.indexOf('ENC:') !== 0) || providerKey === 'comfyui') {
     try {
       const result = await fetchProviderModels(db, providerKey);
       if (result.ok) {
-        db.run('UPDATE ai_image_providers SET models = ? WHERE id = ?', [JSON.stringify(result.models), existing.id]);
-        const row = queryOne(db, 'SELECT default_model FROM ai_image_providers WHERE id = ?', [existing.id]);
-        if (row && (!row.default_model || result.models.indexOf(row.default_model) === -1)) {
-          db.run('UPDATE ai_image_providers SET default_model = ? WHERE id = ?', [result.models[0], existing.id]);
-        }
+        const row = queryOne(db, 'SELECT models, default_model FROM ai_image_providers WHERE id = ?', [existing.id]);
+        let currentModels = [];
+        try { currentModels = JSON.parse(row.models || '[]'); } catch (e) { currentModels = []; }
+        const synced = syncProviderModels(providerKey, currentModels, result.models, row.default_model || '');
+        syncedModels = synced.models;
+        syncedDefaultModel = synced.defaultModel;
+        db.run('UPDATE ai_image_providers SET models = ?, default_model = ? WHERE id = ?',
+          [JSON.stringify(syncedModels), syncedDefaultModel, existing.id]);
         saveDatabase();
         modelsFetched = true;
       } else {
@@ -164,6 +190,8 @@ router.post('/ai-image/providers/save', isAuthenticated, hasPermission('imagegen
     success: true,
     message: '服务商配置已保存',
     modelsFetched,
+    models: syncedModels,
+    default_model: syncedDefaultModel,
     fetchError: modelsFetched ? '' : fetchError
   });
 });
@@ -174,9 +202,41 @@ router.post('/ai-image/providers/fetch-models', isAuthenticated, hasPermission('
   const providerKey = (first(req.body.provider_key) || '').trim();
   const result = await fetchProviderModels(db, providerKey);
   if (result.ok) {
-    return res.json({ success: true, models: result.models });
+    const row = queryOne(db, 'SELECT models, default_model FROM ai_image_providers WHERE provider_key = ?', [providerKey]);
+    let currentModels = [];
+    try { currentModels = JSON.parse(row.models || '[]'); } catch (e) { currentModels = []; }
+    const synced = syncProviderModels(providerKey, currentModels, result.models, row.default_model || '');
+    return res.json({ success: true, models: synced.models, default_model: synced.defaultModel });
   }
   res.status(400).json({ success: false, error: result.error || '获取失败' });
+});
+
+// 验证服务商连接与配置（使用表单中的未保存值，便于先测试再保存）
+router.post('/ai-image/providers/verify', isAuthenticated, hasPermission('imagegen.manage'), async (req, res) => {
+  const providerKey = String(first(req.body.provider_key) || '');
+  const cfg = getProviderConfig(req.db, providerKey);
+  if (!cfg || !providers[providerKey] || typeof providers[providerKey].verify !== 'function') {
+    return res.status(400).json({ success: false, error: '该服务商不支持连接验证' });
+  }
+  cfg.baseUrl = String(first(req.body.api_base) || cfg.api_base || cfg.baseUrl || '');
+  cfg.apiKey = cfg.api_key || '';
+  const unsavedKey = String(first(req.body.api_key) || '');
+  if (unsavedKey && unsavedKey.indexOf('ENC:') !== 0) cfg.apiKey = unsavedKey;
+  cfg.workflow = String(first(req.body.workflow) || '');
+  cfg.nodeMap = String(first(req.body.node_map) || '');
+  try {
+    if (providerKey === 'comfyui') {
+      providers.comfyui.normalizeBaseUrl(cfg.baseUrl);
+      providers.comfyui.validateWorkflow(cfg.workflow, cfg.nodeMap);
+    }
+    const valid = await providers[providerKey].verify(cfg);
+    if (!valid) {
+      return res.status(400).json({ success: false, error: '连接验证未通过，请检查 API Key、服务地址和上传权限' });
+    }
+    return res.json({ success: true, message: '连接验证成功' });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message || '连接验证失败' });
+  }
 });
 
 // ============ 设置（每日限额 / 自动换服务商 / 提示词优化 LLM） ============
@@ -185,6 +245,10 @@ router.post('/ai-image/settings/save', isAuthenticated, hasPermission('imagegen.
   const db = req.db;
   const dailyLimit = Math.min(Math.max(toInt(first(req.body.ai_image_daily_limit), 20), 1), 500);
   const fallbackEnabled = first(req.body.ai_image_fallback) === '1' || first(req.body.ai_image_fallback) === 'on' ? '1' : '0';
+  const requestedDefault = (first(req.body.ai_image_default_provider) || '').trim();
+  const defaultProvider = requestedDefault && queryOne(req.db,
+    'SELECT provider_key FROM ai_image_providers WHERE provider_key = ? AND enabled = 1', [requestedDefault])
+    ? requestedDefault : getDefaultImageProviderKey(req.db);
   const enhanceBase = (first(req.body.prompt_enhance_api_base) || '').trim();
   const enhanceModel = (first(req.body.prompt_enhance_model) || '').trim();
   const enhanceReferer = (first(req.body.prompt_enhance_referer) || '').trim();
@@ -193,6 +257,7 @@ router.post('/ai-image/settings/save', isAuthenticated, hasPermission('imagegen.
   const settingsMap = {
     ai_image_daily_limit: String(dailyLimit),
     ai_image_fallback: fallbackEnabled,
+    ai_image_default_provider: defaultProvider || 'comfyui',
     prompt_enhance_api_base: enhanceBase,
     prompt_enhance_model: enhanceModel,
     prompt_enhance_referer: enhanceReferer

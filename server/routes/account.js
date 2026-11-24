@@ -109,9 +109,11 @@ router.get('/account', isAuthenticated, (req, res) => {
   });
 
   // AI 生图服务商与用户自填 Key 状态
-  const { getUserProviderKeys } = require('../services/image-gen');
+  const { getUserProviderKeys, KEYLESS_IMAGE_PROVIDERS } = require('../services/image-gen');
   const aiImageProviders = queryAll(db,
-    'SELECT provider_key, name FROM ai_image_providers ORDER BY sort_order ASC, id ASC');
+    'SELECT provider_key, name FROM ai_image_providers ORDER BY sort_order ASC, id ASC')
+    .filter(p => !KEYLESS_IMAGE_PROVIDERS.has(p.provider_key))
+    .map(p => ({ ...p, requires_key: true }));
   const aiUserKeys = getUserProviderKeys(db, userId);
 
   // 生成/复用 CSRF 令牌（供解绑等 JSON POST 使用），layout 的 meta 标签自动读取

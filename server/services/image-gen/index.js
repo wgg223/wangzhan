@@ -6,13 +6,16 @@ const { queryOne, queryAll, saveDatabase } = require('../../config/database');
 const { decrypt } = require('../../config/crypto-secure');
 const { getSettings } = require('../../utils/settings');
 const { saveImageBuffer, normalizeError } = require('./utils');
+const { resolveSizeForProvider, sizeFallbacks, isSizeFallbackError } = require('./sizes');
 const crypto = require('crypto');
 
 // 加载全部适配器
 const providers = {};
+const KEYLESS_IMAGE_PROVIDERS = new Set(['pollinations', 'comfyui']);
 [
-  'openai', 'stability', 'siliconflow', 'zhipu', 'dashscope', 'baidu', 'pollinations',
-  'runninghub', 'hunyuan', 'stepfun', 'minimax', 'replicate', 'doubao', 'fal', 'aihubmix'
+  'comfyui', 'openai', 'stability', 'siliconflow', 'zhipu', 'dashscope', 'baidu', 'pollinations',
+  'runninghub', 'hunyuan', 'stepfun', 'minimax', 'replicate', 'doubao', 'fal', 'aihubmix',
+  'momoapi', 'seedance'
 ].forEach(name => {
   providers[name] = require(`./providers/${name}`);
 });
@@ -37,6 +40,85 @@ function pruneTasks() {
   }
 }
 
+function normalizeImageCount(value) {
+  return Math.min(Math.max(parseInt(value, 10) || 1, 1), 4);
+}
+
+/**
+ * 解析本次实际使用的模型：客户端只能选择后台白名单中的模型。
+ * 未命中时使用当前服务商默认模型，避免把任意字符串传给 adapter 或拼进 URL。
+ */
+function resolveProviderModel(cfg, requestedValue) {
+  const requested = typeof requestedValue === 'string' ? requestedValue.trim().slice(0, 300) : '';
+  const allowedModels = Array.isArray(cfg.models) ? cfg.models : [];
+  if (requested && allowedModels.includes(requested)) return requested;
+  if (!allowedModels.length && requested && requested === cfg.default_model) return requested;
+  return cfg.default_model && (!allowedModels.length || allowedModels.includes(cfg.default_model))
+    ? cfg.default_model
+    : (allowedModels[0] || '');
+}
+
+/**
+ * 同步服务商模型列表和默认模型。
+ * MomoAPI 等标记 authoritativeModels 的服务商以当前 Key 的认证结果为准，避免混入公开目录中的失效模型。
+ */
+function syncProviderModels(providerKey, currentModels, fetchedModels, currentDefaultModel) {
+  const adapter = providers[providerKey] || {};
+  const fetched = Array.isArray(fetchedModels) ? fetchedModels.slice() : [];
+  let models;
+  if (adapter.authoritativeModels) {
+    models = fetched;
+  } else {
+    models = Array.isArray(currentModels) ? currentModels.slice() : [];
+    fetched.forEach((model) => {
+      if (models.indexOf(model) === -1) models.push(model);
+    });
+  }
+  const defaultModel = typeof adapter.selectDefaultModel === 'function'
+    ? adapter.selectDefaultModel(models, currentDefaultModel || '')
+    : ((currentDefaultModel && models.includes(currentDefaultModel)) ? currentDefaultModel : (models[0] || ''));
+  return { models, defaultModel };
+}
+
+/**
+ * 查询额度状态：已落库记录 + 正在执行任务的预留额度。
+ * 失败重试也会写记录，因此按最坏情况预留，避免并发请求穿透每日限额。
+ */
+function checkImageQuota(db, userId, count) {
+  const user = queryOne(db, 'SELECT role FROM users WHERE id = ?', [userId]);
+  if (user && (user.role === 'super_admin' || user.role === 'admin')) {
+    return { ok: true, unlimited: true, used: countDailyUsage(db, userId), limit: null };
+  }
+  const settings = getSettings(db);
+  const limit = parseInt(settings.ai_image_daily_limit, 10) || 20;
+  let pending = 0;
+  for (const task of taskRegistry.values()) {
+    if (task.userId === userId && !task.finishedAt) pending += task.quotaUnits || 0;
+  }
+  const used = countDailyUsage(db, userId) + pending;
+  return { ok: used + count <= limit, unlimited: false, used, limit };
+}
+
+function getQuotaReservationUnits(db, params) {
+  const n = normalizeImageCount(params.n);
+  if (getSettings(db).ai_image_fallback === '0') return n;
+  const baseQuota = checkImageQuota(db, params.userId, n);
+  const userKeys = new Set(getUserProviderKeys(db, params.userId));
+  const usableCount = queryAll(db,
+    'SELECT provider_key, enabled, supports_img2img, api_key_enc FROM ai_image_providers ORDER BY sort_order ASC, id ASC')
+    .filter(p => (p.enabled || userKeys.has(p.provider_key)) &&
+      (!params.referenceImagePath || p.supports_img2img) &&
+      providers[p.provider_key] &&
+      (KEYLESS_IMAGE_PROVIDERS.has(p.provider_key) || p.api_key_enc || userKeys.has(p.provider_key))).length;
+  // 剩余额度不足时只允许首轮尝试，不能因最坏情况预留而把正常用户挡在限额外。
+  const retryUnits = baseQuota.unlimited ? 2 : Math.max(0, (baseQuota.limit || 0) - baseQuota.used - n);
+  return n + Math.min(retryUnits, Math.max(usableCount - 1, 0), 2);
+}
+
+function checkImageTaskQuota(db, params) {
+  return checkImageQuota(db, params.userId, getQuotaReservationUnits(db, params));
+}
+
 /**
  * 启动异步生成任务
  * @param {Object} db
@@ -48,6 +130,13 @@ function startImageTask(db, params) {
   if (activeTaskCount >= MAX_CONCURRENT_TASKS) {
     throw new Error('生成服务繁忙，请稍后重试');
   }
+  const quotaUnits = getQuotaReservationUnits(db, params);
+  const quota = checkImageQuota(db, params.userId, quotaUnits);
+  if (!quota.ok) {
+    throw Object.assign(new Error(`今日生成次数已达上限（${quota.limit} 次），明天再来吧`), {
+      code: 'QUOTA_EXCEEDED', status: 429
+    });
+  }
   activeTaskCount++;
 
   const task = {
@@ -58,6 +147,7 @@ function startImageTask(db, params) {
     message: '任务已提交，等待服务商响应...',
     createdAt: Date.now(),
     finishedAt: null,
+    quotaUnits,
     result: null,
     cancel: null
   };
@@ -96,7 +186,7 @@ function cancelImageTask(taskId, userId) {
 async function executeImageTask(task, db, params) {
   // 当前尝试信息：供取消时读取服务商任务 ID 以调用其取消接口
   const controller = new AbortController();
-  const taskRef = { cancelled: false, current: null, signal: controller.signal };
+  const taskRef = { cancelled: false, current: null, signal: controller.signal, quotaUnits: task.quotaUnits };
   task.cancel = async () => {
     task.status = 'cancelled';
     task.message = '正在取消任务...';
@@ -157,6 +247,11 @@ function getProviderConfig(db, providerKey, userId) {
       keySource = 'user';
     }
   }
+  const settings = getSettings(db);
+  const comfyuiConfig = providerKey === 'comfyui' ? {
+    workflow: settings.ai_image_comfyui_workflow || '',
+    nodeMap: settings.ai_image_comfyui_node_map || ''
+  } : {};
   return {
     provider_key: row.provider_key,
     name: row.name,
@@ -169,7 +264,8 @@ function getProviderConfig(db, providerKey, userId) {
     supports_negative: Boolean(row.supports_negative),
     supports_n: Boolean(row.supports_n),
     supports_img2img: Boolean(row.supports_img2img),
-    enabled: Boolean(row.enabled)
+    enabled: Boolean(row.enabled),
+    ...comfyuiConfig
   };
 }
 
@@ -244,9 +340,16 @@ function getUserProviderKeys(db, userId) {
  * @returns {number}
  */
 function countDailyUsage(db, userId) {
+  // created_at 使用 SQLite CURRENT_TIMESTAMP（UTC）。先按服务器本地时区取自然日边界，
+  // 再转成 UTC 字符串比较，避免本地 00:00–08:00 漏记，也避免额度提前在 UTC 日切重置。
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  const toSqlUtc = date => date.toISOString().slice(0, 19).replace('T', ' ');
   const rows = queryAll(db,
-    "SELECT COUNT(*) AS cnt FROM ai_image_records WHERE user_id = ? AND date(created_at) = date('now', 'localtime')",
-    [userId]);
+    'SELECT COUNT(*) AS cnt FROM ai_image_records WHERE user_id = ? AND created_at >= ? AND created_at < ?',
+    [userId, toSqlUtc(start), toSqlUtc(end)]);
   return (rows && rows[0] && rows[0].cnt) || 0;
 }
 
@@ -301,8 +404,10 @@ async function generateImage(db, params, taskRef) {
 
   // 可用服务商：站长已启用 或 用户已自填 Key（用户用自己的 Key 不受启用开关限制）
   const userKeySet = new Set(getUserProviderKeys(db, params.userId));
-  const all = queryAll(db, 'SELECT provider_key, enabled FROM ai_image_providers ORDER BY sort_order ASC, id ASC');
-  const usableKeys = all.filter(p => p.enabled || userKeySet.has(p.provider_key)).map(p => p.provider_key);
+  const all = queryAll(db,
+    'SELECT provider_key, enabled, supports_img2img FROM ai_image_providers ORDER BY sort_order ASC, id ASC');
+  const usableKeys = all.filter(p => (p.enabled || userKeySet.has(p.provider_key)) &&
+    (!params.referenceImagePath || p.supports_img2img)).map(p => p.provider_key);
   const chosen = params.providerKey;
   const candidates = [chosen, ...usableKeys.filter(k => k !== chosen)];
 
@@ -310,10 +415,28 @@ async function generateImage(db, params, taskRef) {
   if (!adapter || !usableKeys.includes(chosen)) {
     return { ok: false, error: '所选服务商不可用（未启用且未配置我的 Key）', providerKey: chosen };
   }
+  // 首选服务商必须实际可用。缺少 Key 属于配置问题，不能静默改用 ComfyUI，
+  // 否则用户会误以为选择了其他厂商，实际却请求了本地服务。
+  const chosenCfg = getProviderConfig(db, chosen, params.userId);
+  if (!chosenCfg) {
+    return { ok: false, error: '所选服务商配置不存在，请刷新页面后重试', providerKey: chosen };
+  }
+  if (!KEYLESS_IMAGE_PROVIDERS.has(chosen) && !chosenCfg.api_key) {
+    return {
+      ok: false,
+      error: `所选服务商「${chosenCfg.name || chosen}」未配置 API Key：请填写「我的 API Key」，或由管理员配置全局 Key`,
+      providerKey: chosen,
+      provider: chosenCfg.name || chosen,
+      elapsedMs: Date.now(),
+      attempts: []
+    };
+  }
 
   let lastError = null;
   let tried = 0;
-  const maxAttempts = fallbackEnabled ? Math.min(usableKeys.length, 3) : 1;
+  const requestedCount = normalizeImageCount(params.n);
+  const reservedRetries = taskRef ? Math.max(0, (taskRef.quotaUnits || requestedCount) - requestedCount) : 2;
+  const maxAttempts = fallbackEnabled ? Math.min(usableKeys.length, 3, 1 + reservedRetries) : 1;
   const attempts = []; // 记录每次尝试：服务商 / 模型 / 错误 / 耗时
   const startTime = Date.now();
 
@@ -324,75 +447,131 @@ async function generateImage(db, params, taskRef) {
     if (!adapterImpl) continue;
     const cfg = getProviderConfig(db, providerKey, params.userId);
     if (!cfg) continue;
-    // 免 Key 服务商（pollinations）无需 Key，其余必须有
-    if (providerKey !== 'pollinations' && !cfg.api_key) continue;
+    // 免 Key 服务商（Pollinations / ComfyUI）无需 Key，其余必须有
+    if (!KEYLESS_IMAGE_PROVIDERS.has(providerKey) && !cfg.api_key) continue;
     // 图生图：服务商必须支持且已提供参考图
     const useRef = Boolean(params.referenceImagePath && cfg.supports_img2img);
 
     tried++;
     const attemptStart = Date.now();
+    let attemptModel = cfg.default_model || '';
+    const sizeInfo = resolveSizeForProvider(providerKey, params.size);
+    const sizePlan = sizeFallbacks(sizeInfo.size);
+    let attemptSize = sizePlan[0];
     try {
-      // taskInfo 由适配器填充（服务商任务 ID），供取消时调用其取消接口
-      const taskInfo = {};
-      const req = {
-        prompt: params.prompt,
-        negativePrompt: params.negativePrompt || '',
-        size: params.size || '1024x1024',
-        n: params.n || 1,
-        seed: params.seed || undefined,
-        referenceImage: params.referenceImagePath || null,
-        cancelRef: taskRef || null,
-        taskInfo
+      // 客户端只能选择后台模型白名单中的模型；切换服务商或参数被篡改时回退到该服务商默认模型。
+      // 不能把任意字符串直接交给 adapter（部分服务商会把它拼进请求路径）。
+      const model = resolveProviderModel(cfg, params.model);
+      attemptModel = model;
+      const adapterCfg = {
+        apiKey: cfg.api_key,
+        baseUrl: cfg.api_base,
+        model,
+        models: cfg.models,
+        apiPath: cfg.api_path,
+        workflow: cfg.workflow,
+        nodeMap: cfg.nodeMap
       };
-      if (taskRef) taskRef.current = { providerKey, cfg, taskInfo };
-      const model = cfg.default_model;
-      const adapterCfg = { apiKey: cfg.api_key, baseUrl: cfg.api_base, model, apiPath: cfg.api_path };
-      const result = useRef && adapterImpl.generateWithReference
-        ? await adapterImpl.generateWithReference(adapterCfg, req, params.referenceImagePath)
-        : await adapterImpl.generate(adapterCfg, req);
+      let result = null;
+      // 4K/大尺寸请求被服务商以尺寸或显存错误拒绝时，自动降一档重试；普通报错不降尺寸。
+      for (let sizeIndex = 0; sizeIndex < sizePlan.length; sizeIndex++) {
+        attemptSize = sizePlan[sizeIndex];
+        // taskInfo 由适配器填充（服务商任务 ID），供取消时调用其取消接口；每次重试都重新创建。
+        const taskInfo = {};
+        const req = {
+          prompt: params.prompt,
+          negativePrompt: params.negativePrompt || '',
+          size: attemptSize,
+          n: params.n || 1,
+          seed: params.seed || undefined,
+          referenceImage: params.referenceImagePath || null,
+          cancelRef: taskRef || null,
+          taskInfo,
+          style: params.style || ''
+        };
+        if (taskRef) taskRef.current = { providerKey, cfg, taskInfo };
+        try {
+          result = useRef && adapterImpl.generateWithReference
+            ? await adapterImpl.generateWithReference(adapterCfg, req, params.referenceImagePath)
+            : await adapterImpl.generate(adapterCfg, req);
+          break;
+        } catch (sizeErr) {
+          if (sizeIndex < sizePlan.length - 1 && isSizeFallbackError(sizeErr)) continue;
+          throw sizeErr;
+        }
+      }
+      // 适配器可能因模型能力不匹配自动切换模型，记录和响应必须使用最终实际模型。
+      const actualModel = typeof result.model === 'string' && result.model ? result.model : model;
+      const resultSize = typeof result.size === 'string' && /^\d{1,5}[x*]\d{1,5}$/i.test(result.size)
+        ? result.size.replace(/\*/g, 'x')
+        : attemptSize;
+      const requestedSize = (params.size || '1024x1024').replace(/\*/g, 'x');
+      const sizeAdjusted = resultSize !== requestedSize;
 
       const images = [];
-      for (const img of result.images) {
-        const webPath = saveImageBuffer(img.buffer);
-        images.push({ path: webPath, url: webPath });
+      const maxImages = normalizeImageCount(params.n);
+      for (const img of result.images.slice(0, maxImages)) {
+        if (img && img.buffer) {
+          const webPath = saveImageBuffer(img.buffer);
+          images.push({ path: webPath, url: webPath });
+        }
       }
       if (!images.length) {
         throw Object.assign(new Error('未生成任何图片'), { code: 'EMPTY_RESPONSE' });
       }
-      persistImages(db, { ...params, provider: providerKey, model }, images);
+      persistImages(db, { ...params, size: resultSize, provider: providerKey, model: actualModel }, images);
       return {
         ok: true,
         images,
         providerKey,
+        provider: cfg.name || providerKey,
         fallbackUsed: providerKey !== chosen,
         error: null,
+        prompt: params.prompt,
+        model: actualModel,
+        modelRecovered: Boolean(result.modelRecovered),
+        size: resultSize,
+        requestedSize: requestedSize,
+        sizeAdjusted: sizeAdjusted,
+        sizeFallback: attemptSize !== sizeInfo.size,
         elapsedMs: Date.now() - startTime,
         attempts
       };
     } catch (err) {
       if (taskRef && taskRef.cancelled) {
         // 取消优先：记录为已取消，不再尝试其他服务商
-        persistFailure(db, { ...params, provider: providerKey, model: cfg.default_model }, providerKey, '任务已取消');
+        persistFailure(db, { ...params, size: attemptSize, provider: providerKey, model: attemptModel }, providerKey, '任务已取消');
         break;
       }
       lastError = normalizeError(err);
       attempts.push({
         provider: providerKey,
-        model: cfg.default_model || '',
+        model: attemptModel,
+        size: attemptSize,
         error: lastError,
         elapsedMs: Date.now() - attemptStart
       });
-      persistFailure(db, { ...params, provider: providerKey, model: cfg.default_model }, providerKey, lastError);
+      persistFailure(db, { ...params, size: attemptSize, provider: providerKey, model: attemptModel }, providerKey, lastError);
       if (tried >= maxAttempts) break;
     }
   }
 
   if (tried === 0) {
-    // 所有候选均因无 Key 被跳过（服务商已启用但站长未配全局 Key、用户也未填自己的 Key）
-    return { ok: false, error: '所选服务商未配置 API Key：请点击「添加我的 API Key」填写，或由管理员在后台配置全局 Key', providerKey: chosen, elapsedMs: Date.now() - startTime, attempts };
+    // 首选已通过配置检查；其余候选均因缺少适配器或 Key 被跳过。
+    return { ok: false, error: '没有可用的生图服务商，请检查服务商配置', providerKey: chosen, provider: chosenCfg.name || chosen, elapsedMs: Date.now() - startTime, attempts };
   }
 
-  return { ok: false, error: lastError || '生成失败', providerKey: chosen, elapsedMs: Date.now() - startTime, attempts };
+  // 兜底失败时保留首选服务商的原始错误，避免最后一项 ComfyUI 的 ECONNREFUSED
+  // 覆盖用户真正选择的厂商错误。每次尝试仍可通过 attempts 查看。
+  const primaryAttempt = attempts.find(attempt => attempt.provider === chosen);
+  return {
+    ok: false,
+    error: (primaryAttempt && primaryAttempt.error) || lastError || '生成失败',
+    providerKey: chosen,
+    provider: chosenCfg.name || chosen,
+    elapsedMs: Date.now() - startTime,
+    attempts
+  };
 }
 
 /**
@@ -410,7 +589,7 @@ async function fetchProviderModels(db, providerKey) {
   if (!adapterImpl.fetchModels) {
     return { ok: false, error: '该服务商不支持自动获取模型，请手动填写' };
   }
-  if (!cfg.api_key) {
+  if (!KEYLESS_IMAGE_PROVIDERS.has(providerKey) && !cfg.api_key) {
     return { ok: false, error: '请先配置 API Key 再获取模型' };
   }
   try {
@@ -418,7 +597,9 @@ async function fetchProviderModels(db, providerKey) {
       apiKey: cfg.api_key,
       baseUrl: cfg.api_base,
       model: cfg.default_model,
-      apiPath: cfg.api_path
+      apiPath: cfg.api_path,
+      workflow: cfg.workflow,
+      nodeMap: cfg.nodeMap
     });
     if (!models || !models.length) {
       return { ok: false, error: '未获取到图片模型，请手动填写（服务商可能无公开模型列表）' };
@@ -431,8 +612,8 @@ async function fetchProviderModels(db, providerKey) {
 
 /**
  * 验证用户填写的 API Key 是否有效（保存后自动调用）
- * 策略：优先调 fetchModels（能返回模型列表 = Key 有效）；其次调 adapter.verify（部分平台有轻量验证接口）；
- * 都不支持则返回 verified:false（已保存但无法自动验证）
+ * 策略：优先调用 adapter.verify（必须包含鉴权检查）；通过后再尝试拉取模型列表。
+ * 对没有 verify 的适配器，才用 fetchModels 的认证结果判断；都不支持则返回 verified:false。
  * @param {Object} db
  * @param {string} providerKey
  * @param {string} apiKey - 用户新填写的明文 Key
@@ -451,16 +632,24 @@ async function verifyProviderKey(db, providerKey, apiKey) {
     apiPath: row.api_path || ''
   };
   try {
+    if (typeof adapterImpl.verify === 'function') {
+      const valid = await adapterImpl.verify(cfg);
+      if (valid) {
+        let models = [];
+        if (typeof adapterImpl.fetchModels === 'function') {
+          try {
+            const fetched = await adapterImpl.fetchModels(cfg);
+            if (Array.isArray(fetched)) models = fetched;
+          } catch (e) { /* Key 已验证，模型拉取失败不否定验证结果 */ }
+        }
+        return { ok: true, verified: true, models };
+      }
+      return { ok: true, verified: false, error: 'API Key 验证未通过，Key 已保存，请检查后重试' };
+    }
     if (typeof adapterImpl.fetchModels === 'function') {
       const models = await adapterImpl.fetchModels(cfg);
       if (models !== null) {
         return { ok: true, verified: true, models: Array.isArray(models) ? models : [] };
-      }
-    }
-    if (typeof adapterImpl.verify === 'function') {
-      const valid = await adapterImpl.verify(cfg);
-      if (valid) {
-        return { ok: true, verified: true, models: [] };
       }
     }
     return { ok: true, verified: false, error: '未能自动验证（Key 可能无效或该平台不支持自动验证），Key 已保存' };
@@ -469,14 +658,35 @@ async function verifyProviderKey(db, providerKey, apiKey) {
   }
 }
 
+/**
+ * 获取默认生图服务商：优先使用后台指定项；未指定时优先 ComfyUI。
+ * 仅返回已启用且存在的服务商，调用方仍需按用户自己的 Key 做可用性过滤。
+ */
+function getDefaultImageProviderKey(db) {
+  const settings = getSettings(db);
+  const preferred = settings.ai_image_default_provider || 'comfyui';
+  const row = queryOne(db,
+    'SELECT provider_key FROM ai_image_providers WHERE provider_key = ? AND enabled = 1', [preferred]);
+  if (row) return row.provider_key;
+  const fallback = queryOne(db,
+    'SELECT provider_key FROM ai_image_providers WHERE enabled = 1 ORDER BY sort_order ASC, id ASC LIMIT 1');
+  return fallback ? fallback.provider_key : null;
+}
+
 module.exports = {
   providers,
+  KEYLESS_IMAGE_PROVIDERS,
   getProviderConfig,
   getUserProviderKey,
   saveUserProviderKey,
   deleteUserProviderKey,
   getUserProviderKeys,
+  getDefaultImageProviderKey,
   countDailyUsage,
+  resolveProviderModel,
+  syncProviderModels,
+  checkImageQuota,
+  checkImageTaskQuota,
   generateImage,
   fetchProviderModels,
   verifyProviderKey,

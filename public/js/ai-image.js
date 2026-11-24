@@ -9,7 +9,6 @@
   var data = JSON.parse(dataEl.textContent);
   var providers = data.providers || [];
   var prompts = data.prompts || [];
-  var stylePresets = data.stylePresets || {};
   var canPickPrompt = !!data.canPickPrompt;
   var canShare = !!data.canShare;
   var canShareLink = !!data.canShareLink;
@@ -20,6 +19,7 @@
   var pollTimer = null;     // 状态轮询定时器
   var waitShown = false;    // 60 秒继续等待弹窗是否已弹出
   var taskStart = 0;        // 任务开始时间戳
+  var refPreviewObjectUrl = ''; // 参考图预览 Blob URL（大图不转 base64）
 
   // ============ 平铺 API Key 行（保存/清除，模板内 onclick 调用） ============
   // 定义在 IIFE 最前：即使下方 providers 为空提前返回，模板 onclick 仍可用
@@ -46,19 +46,21 @@
         document.getElementById('keyLineClear-' + providerKey).style.display = '';
         if (json.verified) {
           var modelCount = (json.models && json.models.length) || 0;
-          showToast(json.message + (modelCount ? '，自动获取 ' + modelCount + ' 个模型，已合并到模型列表' : ''), 'success');
-          // 把 API 获取的模型合并进页面数据，刷新模型下拉
+          showToast(json.message + (modelCount ? '，自动获取 ' + modelCount + ' 个模型，已同步到模型列表' : ''), 'success');
+          // 使用服务端同步后的完整列表和默认模型，避免前端补回已失效的旧模型。
           if (modelCount) {
             providers.forEach(function(p) {
               if (p.provider_key === providerKey) {
-                (json.models || []).forEach(function(m) {
-                  if (p.models.indexOf(m) === -1) p.models.push(m);
-                });
-                if (!p.default_model && json.models.length) p.default_model = json.models[0];
+                p.models = (json.models || []).slice();
+                p.default_model = json.default_model || json.models[0] || '';
               }
             });
             if (typeof renderModels === 'function' && els.provider && els.provider.value === providerKey) {
               renderModels();
+            }
+            var canvasRoot = document.getElementById('aiimgCanvasRoot');
+            if (canvasRoot && canvasRoot.__aiImageCanvas && typeof canvasRoot.__aiImageCanvas.syncProviders === 'function') {
+              canvasRoot.__aiImageCanvas.syncProviders(providerKey, json.models || [], json.default_model || '');
             }
           }
         } else {
@@ -140,12 +142,168 @@
     shareUrl: document.getElementById('aiimgShareUrl'),
     shareCopy: document.getElementById('aiimgShareCopy'),
     lightbox: document.getElementById('aiimgLightbox'),
+    lightboxStage: document.getElementById('aiimgLightboxStage'),
     lightboxImg: document.getElementById('aiimgLightboxImg'),
     lightboxPrompt: document.getElementById('aiimgLightboxPrompt'),
     lightboxMeta: document.getElementById('aiimgLightboxMeta'),
     lightboxActions: document.getElementById('aiimgLightboxActions'),
     lightboxClose: document.getElementById('aiimgLightboxClose')
   };
+
+  // ============ 创作画布共用生成/预览 API ============
+  // 画布与简洁表单共用同一套后端任务、额度、历史和灯箱，避免两套生成逻辑漂移。
+  function canvasGenerate(params) {
+    params = params || {};
+    var startedAt = Date.now();
+    var taskId = null;
+    var pollTimer = null;
+    var settled = false;
+    var cancelling = false;
+    var cancelPromise = null;
+    var resolvePromise;
+    var rejectPromise;
+    var promise = new Promise(function(resolve, reject) {
+      resolvePromise = resolve;
+      rejectPromise = reject;
+    });
+
+    function fail(error) {
+      if (settled) return;
+      settled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+      rejectPromise(error instanceof Error ? error : new Error(error || '生成失败'));
+    }
+
+    function schedulePoll(delay) {
+      if (!settled && !cancelling && !pollTimer) {
+        pollTimer = setTimeout(function() {
+          pollTimer = null;
+          poll();
+        }, delay);
+      }
+    }
+
+    function poll() {
+      if (!taskId || settled || cancelling) return;
+      csrfFetch('/ai-image/api/status?task=' + encodeURIComponent(taskId), { method: 'GET' }, 15000).then(function(json) {
+        if (settled || cancelling) return;
+        if (!json.success) {
+          fail(json.error || '状态查询失败');
+          return;
+        }
+        var state = json.data || {};
+        if (state.status === 'success') {
+          settled = true;
+          if (pollTimer) clearTimeout(pollTimer);
+          refreshQuota(params.n || 1);
+          loadHistory(1);
+          resolvePromise(state.result || { images: [] });
+          return;
+        }
+        if (state.status === 'cancelled') {
+          fail('任务已取消');
+          return;
+        }
+        if (state.status === 'failed') {
+          fail((state.result && state.result.error) || state.message || '生成失败');
+          return;
+        }
+        if (Date.now() - startedAt > 12 * 60 * 1000) {
+          fail('生成等待超时，请到历史记录查看结果');
+          return;
+        }
+        schedulePoll(2500);
+      }).catch(function() {
+        schedulePoll(3000);
+      });
+    }
+
+    var fd = new FormData();
+    fd.append('provider', params.provider || '');
+    fd.append('model', params.model || '');
+    fd.append('mode', params.referenceFile ? 'i2i' : 't2i');
+    fd.append('prompt', String(params.prompt || '').trim());
+    fd.append('size', params.size || '1024x1024');
+    fd.append('n', params.n || 1);
+    fd.append('seed', params.seed || '');
+    fd.append('style', params.style || '');
+    fd.append('negative_prompt', params.negativePrompt || '');
+    if (params.referenceFile) fd.append('reference_image', params.referenceFile);
+
+    fetch('/ai-image/api/generate', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': getCsrfToken() },
+      body: fd
+    }).then(function(resp) {
+      return resp.json().catch(function() { return { error: '服务返回异常（HTTP ' + resp.status + '）' }; });
+    }).then(function(json) {
+      if (!json.success || !json.taskId) {
+        fail(json.error || '生成失败');
+        return;
+      }
+      taskId = json.taskId;
+      promise.taskId = taskId;
+      poll();
+    }).catch(function() {
+      fail('网络错误，请检查连接后重试');
+    });
+
+    // 只有服务端确认取消后才结束本地任务；失败时继续轮询，避免后台仍在运行却误报已取消。
+    promise.cancel = function() {
+      if (settled) return Promise.resolve(true);
+      if (!taskId) return Promise.resolve(false);
+      if (cancelPromise) return cancelPromise;
+      cancelling = true;
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+      cancelPromise = csrfFetch('/ai-image/api/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ task: taskId })
+      }, 15000).then(function(json) {
+        if (settled) return true;
+        if (!json.success) {
+          cancelling = false;
+          schedulePoll(1000);
+          return false;
+        }
+        fail('任务已取消');
+        return true;
+      }).catch(function() {
+        if (!settled) {
+          cancelling = false;
+          schedulePoll(1000);
+        }
+        return false;
+      });
+      return cancelPromise;
+    };
+    return promise;
+  }
+
+  function setAIImageMode(mode) {
+    var root = document.getElementById('aiimgCanvasRoot');
+    var simple = document.getElementById('aiimgSimpleWorkspace');
+    var canvasMode = mode !== 'simple';
+    if (root) root.style.display = canvasMode ? 'block' : 'none';
+    if (simple) simple.style.display = canvasMode ? 'none' : '';
+    document.body.classList.toggle('aiimg-canvas-active', canvasMode);
+    try { localStorage.setItem('ai-image-view-mode', canvasMode ? 'canvas' : 'simple'); } catch (e) { /* 无存储权限时仍可切换 */ }
+    window.dispatchEvent(new CustomEvent('ai-image-mode-change', { detail: { mode: canvasMode ? 'canvas' : 'simple' } }));
+    if (!canvasMode) window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  window.aiImageGenerate = canvasGenerate;
+  window.aiImageOpenLightbox = openLightbox;
+  window.aiImageSetMode = setAIImageMode;
+
+  // ============ 画布 / 简洁模式 ============
+  var canvasToggle = document.getElementById('aiimgCanvasToggle');
+  if (canvasToggle) {
+    canvasToggle.addEventListener('click', function() { setAIImageMode('canvas'); });
+  }
+  var savedViewMode = 'canvas';
+  try { savedViewMode = localStorage.getItem('ai-image-view-mode') || 'canvas'; } catch (e) { /* 默认画布 */ }
+  setAIImageMode(savedViewMode === 'simple' ? 'simple' : 'canvas');
 
   if (!providers.length) {
     if (els.generate) {
@@ -165,7 +323,8 @@
 
   function renderModels() {
     var p = getProvider(els.provider.value);
-    var models = (p.models && p.models.length) ? p.models : (p.default_model ? [p.default_model] : []);
+    var models = (p.models && p.models.length) ? p.models.slice() : (p.default_model ? [p.default_model] : []);
+    var selectedModel = p.default_model && models.indexOf(p.default_model) !== -1 ? p.default_model : (models[0] || '');
     els.model.innerHTML = '';
     models.forEach(function(m) {
       var opt = document.createElement('option');
@@ -173,14 +332,8 @@
       opt.textContent = m;
       els.model.appendChild(opt);
     });
-    // 默认模型不在列表时补一个选项
-    if (p.default_model && models.indexOf(p.default_model) === -1) {
-      var opt = document.createElement('option');
-      opt.value = p.default_model;
-      opt.textContent = p.default_model;
-      els.model.appendChild(opt);
-      els.model.value = p.default_model;
-    }
+    // 模型列表是白名单；默认模型失效时选择列表首项，不再把旧默认模型补回。
+    els.model.value = selectedModel;
     els.negWrap.style.display = p.supports_negative ? '' : 'none';
     els.nWrap.style.display = p.supports_n ? '' : 'none';
     els.ref.value = '';
@@ -195,7 +348,7 @@
     if (mode === 'i2i') {
       els.refWrap.style.display = '';
       if (!p.supports_img2img) {
-        els.refHint.textContent = '⚠️ 当前服务商不支持图生图，请切换服务商（Stability / 硅基流动 / 通义万相 / Replicate / 豆包 / fal / AIHubMix）或回到文生图模式';
+        els.refHint.textContent = '⚠️ 当前服务商不支持图生图，请切换 ComfyUI 或其他支持图生图的服务商，或回到文生图模式';
         els.refHint.style.color = '#f59e0b';
       } else {
         els.refHint.textContent = '';
@@ -227,15 +380,10 @@
   bindCount(els.negPrompt, els.negCount);
 
   // ============ 风格预设 ============
+  // 风格后缀统一由服务端 adapter 追加，前端只记录风格，避免重复拼接。
   if (els.style) {
     els.style.addEventListener('change', function() {
-      var suffix = stylePresets[els.style.value];
-      if (!suffix) return;
-      var cur = els.prompt.value.trim();
-      if (cur && cur.indexOf(suffix) === -1) {
-        els.prompt.value = cur + ', ' + suffix;
-        els.promptCount.textContent = els.prompt.value.length;
-      }
+      if (els.style.value) showToast('已选择风格，生成时将自动应用', 'info');
     });
   }
 
@@ -245,14 +393,20 @@
     if (els.refPreview) els.refPreview.style.display = 'none';
     if (els.refPreviewImg) els.refPreviewImg.src = '';
     if (els.refPreviewName) els.refPreviewName.textContent = '';
+    if (refPreviewObjectUrl) {
+      try { URL.revokeObjectURL(refPreviewObjectUrl); } catch (e) {
+        // 浏览器可能已自动回收。
+      }
+      refPreviewObjectUrl = '';
+    }
   }
 
   if (els.ref) {
     els.ref.addEventListener('change', function() {
       var file = els.ref.files && els.ref.files[0];
       if (!file) { clearRefPreview(); return; }
-      if (file.size > 5 * 1024 * 1024) {
-        showToast('参考图不能超过 5MB', 'error');
+      if (file.size > 100 * 1024 * 1024) {
+        showToast('参考图不能超过 100MB', 'error');
         clearRefPreview();
         return;
       }
@@ -261,13 +415,27 @@
         clearRefPreview();
         return;
       }
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        if (els.refPreviewImg) els.refPreviewImg.src = e.target.result;
-        if (els.refPreviewName) els.refPreviewName.textContent = file.name + '（' + Math.round(file.size / 1024) + ' KB）';
-        if (els.refPreview) els.refPreview.style.display = 'flex';
-      };
-      reader.readAsDataURL(file);
+      var previewUrl = '';
+      try { previewUrl = URL.createObjectURL(file); } catch (e) {
+        previewUrl = '';
+      }
+      if (!previewUrl) {
+        showToast('当前浏览器无法预览该参考图', 'error');
+        clearRefPreview();
+        return;
+      }
+      if (refPreviewObjectUrl) {
+        try { URL.revokeObjectURL(refPreviewObjectUrl); } catch (e) {
+          // 浏览器可能已自动回收。
+        }
+      }
+      refPreviewObjectUrl = previewUrl;
+      if (els.refPreviewImg) els.refPreviewImg.src = previewUrl;
+      var sizeText = file.size >= 1024 * 1024
+        ? (file.size / 1024 / 1024).toFixed(1) + ' MB'
+        : Math.round(file.size / 1024) + ' KB';
+      if (els.refPreviewName) els.refPreviewName.textContent = file.name + '（' + sizeText + '）';
+      if (els.refPreview) els.refPreview.style.display = 'flex';
     });
   }
   if (els.refRemove) {
@@ -388,7 +556,7 @@
       return resp.json().catch(function() { return { error: '服务返回异常（HTTP ' + resp.status + '）' }; });
     }).then(function(json) {
       if (json.success && json.taskId) {
-        refreshQuota();
+        refreshQuota(els.n.value || 1);
         pollTask(json.taskId);
       } else {
         setGenerating(false);
@@ -448,9 +616,19 @@
     if (ok && result) {
       stopProgress(true);
       renderResults(result);
+      var hints = [];
       if (result.fallbackUsed) {
-        els.generateHint.style.display = '';
-        els.generateHint.textContent = 'ℹ️ 首选服务商不可用，已自动切换到其他服务商生成（用时 ' + fmtElapsed(result.elapsedMs) + '）';
+        hints.push('首选服务商不可用，已自动切换到 ' + (result.provider || '其他服务商') + ' 生成（用时 ' + fmtElapsed(result.elapsedMs) + '）');
+      }
+      if (result.modelRecovered) {
+        hints.push('原模型当前不可用，已自动切换为 ' + (result.model || '可用模型') + ' 生成');
+      }
+      if (result.sizeAdjusted) {
+        hints.push('原尺寸 ' + (result.requestedSize || '') + ' 不受当前服务商支持，已按 ' + (result.size || '可用尺寸') + ' 生成');
+      }
+      if (els.generateHint) {
+        els.generateHint.style.display = hints.length ? '' : 'none';
+        els.generateHint.textContent = hints.length ? 'ℹ️ ' + hints.join('；') : '';
       }
       loadHistory(1);
     } else {
@@ -638,6 +816,69 @@
   }
 
   // ============ 大图查看灯箱 ============
+  var lbScale = 1;
+  var lbX = 0;
+  var lbY = 0;
+  var lbDragging = false;
+  var lbDragStart = null;
+  var lbMoved = false;
+  var lbSuppressClick = false;
+
+  function applyLightboxTransform() {
+    if (!els.lightboxImg) return;
+    els.lightboxImg.style.transform = 'translate(' + lbX + 'px,' + lbY + 'px) scale(' + lbScale + ')';
+    var label = document.getElementById('aiimgLbZoom');
+    if (label) label.textContent = Math.round(lbScale * 100) + '%';
+  }
+
+  function resetLightboxTransform() {
+    lbScale = 1;
+    lbX = 0;
+    lbY = 0;
+    applyLightboxTransform();
+  }
+
+  function zoomLightbox(factor, clientX, clientY) {
+    if (!els.lightboxStage) return;
+    var rect = els.lightboxStage.getBoundingClientRect();
+    var cx = typeof clientX === 'number' ? clientX - rect.left - rect.width / 2 : 0;
+    var cy = typeof clientY === 'number' ? clientY - rect.top - rect.height / 2 : 0;
+    var next = Math.min(6, Math.max(0.5, lbScale * factor));
+    if (Math.abs(next - lbScale) < 0.001) return;
+    var ratio = next / lbScale;
+    lbX = cx - (cx - lbX) * ratio;
+    lbY = cy - (cy - lbY) * ratio;
+    lbScale = next;
+    applyLightboxTransform();
+  }
+
+  function copyLightboxPrompt(text) {
+    if (!text) return;
+    if (typeof window.copyToClipboard === 'function') {
+      window.copyToClipboard(text, '提示词已复制');
+      return;
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () {
+        if (typeof showToast === 'function') showToast('提示词已复制', 'success');
+      }, function () {
+        if (typeof showToast === 'function') showToast('复制失败，请手动选择文本', 'error');
+      });
+      return;
+    }
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); } catch (e) {
+      // 忽略复制失败。
+    }
+    area.remove();
+    if (typeof showToast === 'function') showToast('提示词已复制', 'success');
+  }
+
   function openLightbox(imgUrl, info) {
     if (!els.lightbox || !imgUrl) return;
     info = info || {};
@@ -649,16 +890,35 @@
     if (info.size) metaParts.push(info.size);
     if (info.time) metaParts.push(info.time);
     els.lightboxMeta.textContent = metaParts.join(' · ');
-    // 操作按钮
-    var actionsHtml = '<a class="aiimg-btn aiimg-btn-sm" href="' + escapeHtml(imgUrl) + '" download target="_blank" rel="noopener">⬇️ 下载原图</a>';
+    resetLightboxTransform();
+    lbDragging = false;
+    lbDragStart = null;
+    lbMoved = false;
+    lbSuppressClick = false;
+    if (els.lightboxStage) els.lightboxStage.classList.remove('dragging');
+    var actionsHtml =
+      '<button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgLbZoomOut">－ 缩小</button>' +
+      '<span class="aiimg-btn aiimg-btn-sm aiimg-lightbox-zoom" id="aiimgLbZoom">100%</span>' +
+      '<button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgLbZoomIn">＋ 放大</button>' +
+      '<button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgLbZoomReset">↺ 复位</button>' +
+      '<a class="aiimg-btn aiimg-btn-sm" href="' + escapeHtml(imgUrl) + '" download target="_blank" rel="noopener">⬇️ 下载原图</a>';
+    if (info.prompt) actionsHtml += '<button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgLbCopyPrompt">📋 复制提示词</button>';
     if (canShare) actionsHtml += '<button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgLbShare">📤 分享</button>';
     if (canShareLink) actionsHtml += '<button type="button" class="aiimg-btn aiimg-btn-sm" id="aiimgLbShareLink">🔗 分享链接</button>';
     els.lightboxActions.innerHTML = actionsHtml;
+    var lbZoomOut = document.getElementById('aiimgLbZoomOut');
+    if (lbZoomOut) lbZoomOut.addEventListener('click', function () { zoomLightbox(1 / 1.25); });
+    var lbZoomIn = document.getElementById('aiimgLbZoomIn');
+    if (lbZoomIn) lbZoomIn.addEventListener('click', function () { zoomLightbox(1.25); });
+    var lbZoomReset = document.getElementById('aiimgLbZoomReset');
+    if (lbZoomReset) lbZoomReset.addEventListener('click', resetLightboxTransform);
+    var lbCopyPrompt = document.getElementById('aiimgLbCopyPrompt');
+    if (lbCopyPrompt) lbCopyPrompt.addEventListener('click', function () { copyLightboxPrompt(info.prompt); });
     // 绑定分享按钮
     var lbShare = document.getElementById('aiimgLbShare');
-    if (lbShare) lbShare.addEventListener('click', function() { shareImage(imgUrl); });
+    if (lbShare) lbShare.addEventListener('click', function () { shareImage(imgUrl); });
     var lbShareLink = document.getElementById('aiimgLbShareLink');
-    if (lbShareLink) lbShareLink.addEventListener('click', function() { shareLinkByImage(imgUrl); });
+    if (lbShareLink) lbShareLink.addEventListener('click', function () { shareLinkByImage(imgUrl); });
     els.lightbox.style.display = 'flex';
     document.body.style.overflow = 'hidden';
   }
@@ -667,6 +927,11 @@
     if (!els.lightbox) return;
     els.lightbox.style.display = 'none';
     els.lightboxImg.src = '';
+    els.lightboxImg.style.transform = '';
+    resetLightboxTransform();
+    if (els.lightboxStage) els.lightboxStage.classList.remove('dragging');
+    lbDragging = false;
+    lbDragStart = null;
     document.body.style.overflow = '';
   }
 
@@ -675,15 +940,77 @@
     els.lightboxClose.addEventListener('click', closeLightbox);
   }
   if (els.lightbox) {
-    els.lightbox.addEventListener('click', function(e) {
-      if (e.target === els.lightbox || e.target === els.lightboxImg) {
+    els.lightbox.addEventListener('click', function (e) {
+      if (lbSuppressClick) {
+        lbSuppressClick = false;
+        return;
+      }
+      if (e.target === els.lightbox) {
         closeLightbox();
+        return;
+      }
+      if (e.target === els.lightboxImg) {
+        if (lbScale > 1.001) resetLightboxTransform();
+        else zoomLightbox(2, e.clientX, e.clientY);
       }
     });
   }
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && els.lightbox && els.lightbox.style.display === 'flex') {
+  if (els.lightboxStage) {
+    els.lightboxStage.addEventListener('wheel', function (event) {
+      if (els.lightbox.style.display !== 'flex') return;
+      event.preventDefault();
+      zoomLightbox(event.deltaY < 0 ? 1.15 : 1 / 1.15, event.clientX, event.clientY);
+    }, { passive: false });
+    els.lightboxStage.addEventListener('pointerdown', function (event) {
+      if (event.button !== 0 || event.target.closest('button,a')) return;
+      lbSuppressClick = false;
+      lbDragging = true;
+      lbMoved = false;
+      lbDragStart = { x: event.clientX, y: event.clientY, startX: lbX, startY: lbY };
+      els.lightboxStage.classList.add('dragging');
+      try { els.lightboxStage.setPointerCapture(event.pointerId); } catch (e) {
+        // 指针捕获不可用时仍可用 document 级移动。
+      }
+    });
+    els.lightboxStage.addEventListener('pointermove', function (event) {
+      if (!lbDragging || !lbDragStart) return;
+      var dx = event.clientX - lbDragStart.x;
+      var dy = event.clientY - lbDragStart.y;
+      if (!lbMoved && Math.abs(dx) + Math.abs(dy) < 3) return;
+      lbMoved = true;
+      lbX = lbDragStart.startX + dx;
+      lbY = lbDragStart.startY + dy;
+      applyLightboxTransform();
+    });
+    var endLightboxDrag = function () {
+      if (!lbDragging) return;
+      lbDragging = false;
+      lbDragStart = null;
+      lbSuppressClick = lbMoved;
+      els.lightboxStage.classList.remove('dragging');
+    };
+    els.lightboxStage.addEventListener('pointerup', endLightboxDrag);
+    els.lightboxStage.addEventListener('pointercancel', endLightboxDrag);
+    els.lightboxStage.addEventListener('dblclick', function (event) {
+      event.preventDefault();
+      resetLightboxTransform();
+    });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (!els.lightbox || els.lightbox.style.display !== 'flex') return;
+    if (e.key === 'Escape') {
       closeLightbox();
+      return;
+    }
+    if (e.key === '+' || e.key === '=') {
+      e.preventDefault();
+      zoomLightbox(1.2);
+    } else if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      zoomLightbox(1 / 1.2);
+    } else if (e.key === '0') {
+      e.preventDefault();
+      resetLightboxTransform();
     }
   });
 
@@ -826,10 +1153,10 @@
     });
   }
 
-  function refreshQuota() {
+  function refreshQuota(units) {
     if (els.quota) {
       var remain = parseInt(els.quota.textContent, 10);
-      els.quota.textContent = Math.max(0, remain - 1);
+      els.quota.textContent = Math.max(0, remain - (parseInt(units, 10) || 1));
     }
   }
 
