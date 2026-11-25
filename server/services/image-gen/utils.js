@@ -36,6 +36,23 @@ function sniffImageType(buffer) {
   if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) {
     return { mime: 'image/gif', ext: '.gif' };
   }
+  // BMP（BM）
+  if (buffer[0] === 0x42 && buffer[1] === 0x4D) {
+    return { mime: 'image/bmp', ext: '.bmp' };
+  }
+  // TIFF（II*\0 小端 / MM\0* 大端）
+  if ((buffer[0] === 0x49 && buffer[1] === 0x49 && buffer[2] === 0x2A && buffer[3] === 0x00) ||
+      (buffer[0] === 0x4D && buffer[1] === 0x4D && buffer[2] === 0x00 && buffer[3] === 0x2A)) {
+    return { mime: 'image/tiff', ext: '.tiff' };
+  }
+  // AVIF / HEIC：ISO BMFF，第 4-7 字节为 'ftyp'，品牌在第 8-11 字节
+  if (buffer.length >= 12 && buffer.slice(4, 8).toString('ascii') === 'ftyp') {
+    const brand = buffer.slice(8, 12).toString('ascii').toLowerCase();
+    if (brand === 'avif' || brand === 'avis') return { mime: 'image/avif', ext: '.avif' };
+    if (brand === 'heic' || brand === 'heix' || brand === 'hevc' || brand === 'mif1') {
+      return { mime: 'image/heic', ext: '.heic' };
+    }
+  }
   return null;
 }
 

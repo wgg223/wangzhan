@@ -1102,6 +1102,50 @@ function createTables(db) {
   )`);
   db.run('CREATE INDEX IF NOT EXISTS idx_aiimg_user_keys_user ON ai_image_user_keys(user_id)');
 
+  // ============ AI 创作画布（独立通道，与基础生图页分离） ============
+  // 画布项目：state_json 保存节点/连线/视口；version 用于协作乐观锁
+  db.run(`CREATE TABLE IF NOT EXISTS ai_canvas_projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '未命名画布',
+    state_json TEXT DEFAULT '{}',
+    thumbnail TEXT DEFAULT '',
+    node_count INTEGER DEFAULT 0,
+    version INTEGER DEFAULT 1,
+    share_token TEXT DEFAULT '',
+    updated_by TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_canvas_projects_user ON ai_canvas_projects(user_id, updated_at DESC)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_canvas_projects_token ON ai_canvas_projects(share_token)');
+
+  // 画布协作者：owner 之外的编辑者/只读成员
+  db.run(`CREATE TABLE IF NOT EXISTS ai_canvas_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    role TEXT DEFAULT 'editor',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (project_id, user_id),
+    FOREIGN KEY (project_id) REFERENCES ai_canvas_projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.run('CREATE INDEX IF NOT EXISTS idx_canvas_members_user ON ai_canvas_members(user_id)');
+
+  // 画布在线状态（光标/选中），协作时轮询展示
+  db.run(`CREATE TABLE IF NOT EXISTS ai_canvas_presence (
+    project_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    name TEXT DEFAULT '',
+    cursor_x REAL DEFAULT 0,
+    cursor_y REAL DEFAULT 0,
+    selected TEXT DEFAULT '[]',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, user_id)
+  )`);
+
   // ============ 在线表格模块表（Univer 重构版） ============
   // 表格元数据表
   // doc_* 为新版 Univer 文档列；luckysheet_* 为旧版遗留列（仅作历史数据导入源，新数据不写入）

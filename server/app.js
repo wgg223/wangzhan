@@ -322,6 +322,8 @@ app.use((req, res, next) => {
     res.locals.layout = false;                  // AI 聊天页独立（不依赖主站布局）
   } else if (req.path === '/characters') {
     res.locals.layout = false;                  // 角色卡广场独立页面（游客可只读浏览）
+  } else if (req.path.startsWith('/ai-canvas')) {
+    res.locals.layout = false;                  // 创作画布独立通道（独立页面）
   } else {
     res.locals.layout = 'frontend/layout';      // 默认前台布局
   }
@@ -373,6 +375,7 @@ const spreadsheetRoutes = require('./routes/spreadsheet');
 const musicRoutes = require('./routes/music');
 const apiRoutes = require('./routes/api/index');
 const charactersRoutes = require('./routes/characters');
+const aiCanvasRoutes = require('./routes/ai-canvas');
 const { apiAccessLogger } = require('./middlewares/api-access-logger');
 
 app.use('/setup', setupRoutes);                                            // 安装向导
@@ -387,6 +390,7 @@ app.use('/api/v1', globalLimiter, apiLimiter, apiAccessLogger, apiRoutes); // AP
 app.use(maintenanceMiddleware);
 
 app.use('/image-share', globalLimiter, imageShareRoutes); // 图片分享站
+app.use('/ai-canvas', globalLimiter, aiCanvasRoutes);   // AI 创作画布（独立通道：页面 + 生成 + 项目 + 协作）
 app.use('/share', globalLimiter, shareRoutes);          // 分享页面
 app.use('/', globalLimiter, spreadsheetRoutes);       // 在线表格
 app.use('/api/music', globalLimiter, musicRoutes); // 音乐播放歌单接口

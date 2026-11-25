@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 创作画布 - <%= settings.site_name || '我的网站' %></title>
+  <meta name="csrf-token" content="<%= csrfToken %>">
+  <meta name="theme-color" content="#0c0d12">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0c0d12; color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .cv-bar { position: fixed; inset: 0 0 auto 0; height: 48px; z-index: 30;
+      display: flex; align-items: center; gap: 8px; padding: 0 12px;
+      background: #11131a; border-bottom: 1px solid #232734; }
+    .cv-bar a, .cv-bar button { display: inline-flex; align-items: center; gap: 4px; height: 30px;
+      padding: 0 10px; border: 1px solid #2c3140; border-radius: 7px; background: #191c26;
+      color: #d5d9e2; font-size: 12px; cursor: pointer; text-decoration: none; }
+    .cv-bar a:hover, .cv-bar button:hover { background: #232838; }
+    .cv-title { font-size: 13px; font-weight: 600; color: #e5e7eb; margin-right: 4px; }
+    .cv-bar select { height: 30px; max-width: 220px; padding: 0 8px; border: 1px solid #2c3140;
+      border-radius: 7px; background: #191c26; color: #d5d9e2; font-size: 12px; }
+    .cv-share { margin-left: auto; font-size: 11px; color: #7c8497; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; max-width: 42vw; }
+    .cv-hint { font-size: 11px; color: #6b7280; }
+    /* 引擎 .aic 自带 height:100%，这里用 id 覆盖成 auto，否则会从 top:48 再撑满一屏、底部工具条被挤出可视区 */
+    #aiimgCanvasRoot { position: fixed; left: 0; right: 0; top: 48px; bottom: 0; height: auto; min-height: 0;
+      z-index: 10; background: #0c0d12; }
+    @media (max-width: 720px) {
+      .cv-title { display: none; }
+      .cv-share { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="cv-bar">
+  <a href="/ai-image" title="返回基础生图页">← 基础生图</a>
+  <span class="cv-title">AI 创作画布</span>
+  <select id="canvasProjectSelect" aria-label="切换画布项目">
+    <% if (!canvasData.projects || !canvasData.projects.length) { %>
+    <option value="">暂无画布</option>
+    <% } %>
+    <% (canvasData.projects || []).forEach(function (project) { %>
+    <option value="<%= project.id %>" <%= activeProject && activeProject.id === project.id ? 'selected' : '' %>>
+      <%= project.name %><%= project.memberCount > 1 ? '（' + project.memberCount + ' 人）' : '' %>
+    </option>
+    <% }) %>
+  </select>
+  <button type="button" id="canvasNewProject">新建画布</button>
+  <button type="button" id="canvasKeys">API 密钥</button>
+  <button type="button" id="canvasHistory">生成历史</button>
+  <button type="button" id="canvasShare">分享</button>
+  <button type="button" id="canvasMembers">协作成员</button>
+  <span class="cv-share" id="canvasShareInfo">
+    <%= activeProject ? ('当前：' + activeProject.name + (activeProject.role === 'viewer' ? '（只读）' : '')) : '尚未选择画布' %>
+  </span>
+</div>
+
+<div id="aiimgCanvasRoot" aria-label="AI 创作画布"></div>
+
+<script type="application/json" id="ai-canvas-data"><%- jsJson(canvasData) %></script>
+<script>
+  window.__AI_CANVAS_PROJECT__ = <%- jsJson(activeProject) %>;
+  window.__AI_CANVAS_INITIAL_STATE__ = <%- jsJson(activeProject ? activeProject.state : null) %>;
+  window.AI_CANVAS_CONFIG = {
+    dataElementId: 'ai-canvas-data',
+    standalone: true,
+    customSize: true,
+    projectName: <%- jsJson(activeProject ? activeProject.name : '未命名画布') %>,
+    projectVersion: <%- (activeProject && activeProject.version) || 0 %>,
+    server: {
+      apiBase: '/ai-canvas/api',
+      projectId: <%- (activeProject && activeProject.id) || 0 %>,
+      canEdit: <%- activeProject ? (activeProject.role !== 'viewer') : true %>,
+      csrfToken: <%- jsJson(csrfToken) %>
+    },
+    onOpenCollab: function () {
+      window.dispatchEvent(new CustomEvent('canvas-open-collab'));
+    }
+  };
+</script>
+<script defer src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-image-canvas.js') : '/js/ai-image-canvas.js' %>"></script>
+<script defer src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-canvas-boot.js') : '/js/ai-canvas-boot.js' %>"></script>
+</body>
+</html>

@@ -9,6 +9,7 @@
  */
 const axios = require('axios');
 const { downloadImage, sleep } = require('../utils');
+const { resolveApiPath, pickPromptNode } = require('../runninghub-workflow');
 
 const MAX_POLLS = 200; // 200 * 3s = 600s
 
@@ -120,12 +121,17 @@ module.exports = {
   key: 'runninghub',
 
   async generate(cfg, req) {
-    const { apiKey, baseUrl, apiPath } = cfg;
-    if (!apiPath) {
+    const { apiKey, baseUrl } = cfg;
+    if (!cfg.apiPath) {
       const err = new Error('RunningHub 未配置提交任务 endpoint（api_path），请在后台填写');
       err.code = 'BAD_CONFIG';
       throw err;
     }
+
+    // 自动获取工作流（对齐 TTAI 插件）：api_path 里是 appId 时先反查 workflowId，
+    // 再拉工作流 JSON 自动识别 prompt 节点，免去手填 nodeId:fieldName。
+    const resolved = await resolveApiPath({ baseUrl, apiKey, apiPath: cfg.apiPath });
+    const apiPath = resolved.apiPath;
 
     // 判断是否为工作流 API（/run/workflow/{id}）
     const isWorkflow = apiPath && apiPath.includes('/workflow/');
@@ -136,9 +142,9 @@ module.exports = {
       // 工作流 API：必须使用 nodeInfoList 格式传递参数
       // model 字段用于配置 prompt 对应的节点映射，格式为 "nodeId:fieldName"，例如 "6:text"
       // nodeId 和 fieldName 需从 RunningHub 后台工作流导出的 JSON 中查看
-      const promptNode = parseNodeField(cfg.model);
+      const promptNode = parseNodeField(cfg.model) || pickPromptNode(resolved.graph);
       if (!promptNode) {
-        const err = new Error('RunningHub 工作流 API 需在「模型」字段配置 prompt 节点映射（格式：nodeId:fieldName，例如 6:text），请在后台服务商配置中填写');
+        const err = new Error('RunningHub 工作流未能自动识别 prompt 节点：请在「模型」字段填 nodeId:fieldName（例如 6:text），或确认该 workflowId 能通过 getJsonApiFormat 拉取到工作流 JSON');
         err.code = 'BAD_CONFIG';
         throw err;
       }

@@ -19,7 +19,7 @@ const { queryCache } = require('../config/cache');
 const { logActivity } = require('../config/activity');
 const { getSettings, getImageConfigs } = require('../utils/settings');
 const { createRateLimiter } = require('../middlewares/rate-limiter');
-const { countDailyUsage, checkImageTaskQuota, getUserProviderKeys, getProviderConfig, saveUserProviderKey, deleteUserProviderKey, verifyProviderKey, syncProviderModels, startImageTask, getImageTask, cancelImageTask, getDefaultImageProviderKey, KEYLESS_IMAGE_PROVIDERS } = require('../services/image-gen');
+const { countDailyUsage, checkImageTaskQuota, getUserProviderKeys, getProviderConfig, saveUserProviderKey, deleteUserProviderKey, verifyProviderKey, syncProviderModels, startImageTask, getImageTask, cancelImageTask, getDefaultImageProviderKey, isKeylessProvider, fetchProviderBalance } = require('../services/image-gen');
 const { saveReferenceImage, normalizeError, MAX_IMAGE_SIZE } = require('../services/image-gen/utils');
 const { SIZE_GROUPS, SIZE_PRESETS } = require('../services/image-gen/sizes');
 const { enhancePrompt } = require('../services/prompt-enhance');
@@ -77,11 +77,11 @@ router.get('/ai-image', isAuthenticated, hasFrontendPermission('imagegen.use'), 
   }
   providers.forEach(p => {
     try { p.models = JSON.parse(p.models || '[]'); } catch (e) { p.models = []; }
-    p.requires_key = !KEYLESS_IMAGE_PROVIDERS.has(p.provider_key);
+    p.requires_key = !isKeylessProvider(p.provider_key);
   });
   const allProviders = allProviderRows.map(p => ({
     provider_key: p.provider_key, name: p.name, api_key_url: p.api_key_url || '',
-    requires_key: !KEYLESS_IMAGE_PROVIDERS.has(p.provider_key)
+    requires_key: !isKeylessProvider(p.provider_key)
   }));
 
   const dailyLimit = parseInt(settings.ai_image_daily_limit, 10) || 20;
@@ -133,7 +133,7 @@ router.post('/ai-image/api/keys/save', isAuthenticated, hasFrontendPermission('i
     if (!providerKey) return res.status(400).json({ error: '服务商不能为空' });
     const provider = queryOne(db, 'SELECT provider_key FROM ai_image_providers WHERE provider_key = ?', [providerKey]);
     if (!provider) return res.status(404).json({ error: '服务商不存在' });
-    if (KEYLESS_IMAGE_PROVIDERS.has(providerKey)) return res.status(400).json({ error: '该服务商无需 API Key' });
+    if (isKeylessProvider(providerKey)) return res.status(400).json({ error: '该服务商无需 API Key' });
     if (!apiKey) return res.status(400).json({ error: 'API Key 不能为空' });
     if (apiKey.length > 300) return res.status(400).json({ error: 'API Key 长度超出限制' });
     if (apiKey.indexOf('ENC:') === 0) return res.status(400).json({ error: 'API Key 格式不正确' });
@@ -150,11 +150,14 @@ router.post('/ai-image/api/keys/save', isAuthenticated, hasFrontendPermission('i
     });
 
     // 自动验证 Key 有效性并尝试获取模型（异步；整体 25s 兜底，避免服务商网络慢导致请求挂起）
+    // 余额与验证并行查询：余额是附加信息，查不到只影响提示，不影响保存结果。
+    const balancePromise = fetchProviderBalance(db, providerKey, userId, 6000)
+      .catch(() => ({ ok: false, error: '余额查询失败' }));
     const verifyPromise = verifyProviderKey(db, providerKey, apiKey);
     const verifyTimeout = new Promise(resolve => {
       setTimeout(() => resolve({ ok: true, verified: false, error: '验证超时（服务商响应慢），Key 已保存' }), 25000);
     });
-    Promise.race([verifyPromise, verifyTimeout]).then(verifyResult => {
+    Promise.race([verifyPromise, verifyTimeout]).then(async verifyResult => {
       let syncedModels = [];
       let syncedDefaultModel = '';
       if (verifyResult.verified && verifyResult.models && verifyResult.models.length) {
@@ -175,6 +178,12 @@ router.post('/ai-image/api/keys/save', isAuthenticated, hasFrontendPermission('i
           }
         }
       }
+      // 余额是附加信息：查不到不影响 Key 保存，仅在页面上显示为“暂无余额信息”。
+      let balance = null;
+      let balanceError = '';
+      const balanceResult = await balancePromise;
+      if (balanceResult.ok) balance = balanceResult.balance;
+      else balanceError = balanceResult.error || '';
       if (!res.headersSent) {
         if (verifyResult.verified) {
           res.json({
@@ -183,7 +192,9 @@ router.post('/ai-image/api/keys/save', isAuthenticated, hasFrontendPermission('i
             verified: true,
             models: syncedModels,
             default_model: syncedDefaultModel,
-            verifyError: ''
+            verifyError: '',
+            balance,
+            balanceError
           });
         } else {
           res.json({
@@ -191,7 +202,9 @@ router.post('/ai-image/api/keys/save', isAuthenticated, hasFrontendPermission('i
             message: 'API Key 已保存',
             verified: false,
             models: [],
-            verifyError: verifyResult.error || '该平台暂不支持自动验证'
+            verifyError: verifyResult.error || '该平台暂不支持自动验证',
+            balance,
+            balanceError
           });
         }
       }
@@ -277,7 +290,7 @@ router.post('/ai-image/api/generate', isAuthenticated, hasFrontendPermission('im
       return res.status(400).json({ error: '所选服务商未启用，请选择其他服务商' });
     }
     const providerConfig = getProviderConfig(db, providerKey, user.id);
-    if (!KEYLESS_IMAGE_PROVIDERS.has(providerKey) && (!providerConfig || !providerConfig.api_key)) {
+    if (!isKeylessProvider(providerKey) && (!providerConfig || !providerConfig.api_key)) {
       return res.status(400).json({
         error: `所选服务商「${provider.name || providerKey}」未配置 API Key：请填写「我的 API Key」，或由管理员配置全局 Key`
       });

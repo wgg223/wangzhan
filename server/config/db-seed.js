@@ -444,8 +444,15 @@ function insertDefaultDataIfNeeded(db) {
     // MomoAPI 的公开价格目录与当前 Key 的生图路由可能不一致；初始不猜模型，保存 Key 后从认证列表同步。
     ['momoapi', 'MomoAPI', 'https://api.momoapi.icu', '', '',
       JSON.stringify([]), 0, 1, 1, 1, 16, 'https://api.momoapi.icu/console'],
-    ['seedance', 'Seedance', 'https://api.seedance.nz', '', 'seedream-v5-pro-t2i',
-      JSON.stringify(['seedream-v5-pro-t2i', 'seedream-v5-pro-i2i']), 0, 0, 1, 1, 17, 'https://api.seedance.nz/docs/']
+    ['seedance', 'Seedance', 'https://api.seedance.nz', '', 'seedream-v5.5__2k',
+      JSON.stringify(['seedream-v5.5__2k', 'seedream-v5.5__1.5k', 'seedream-v5.5__1k']), 0, 0, 1, 1, 17, 'https://api.seedance.nz/docs/'],
+    // 以下平台默认不启用：适配器已随代码交付，管理员填好 Key 再启用即可（模型留空，保存 Key 后自动同步）
+    ['grsai', 'GrsAI 中转站', 'https://grsaiapi.com/v1', '', 'gpt-image-1',
+      JSON.stringify([]), 0, 1, 1, 0, 18, 'https://grsaiapi.com/'],
+    ['t8star', '贞贞 / T8Star', 'https://ai.t8star.cn/v1', '', 'gpt-image-1',
+      JSON.stringify([]), 0, 1, 1, 0, 19, ''],
+    ['wavespeed', 'WaveSpeed AI', 'https://api.wavespeed.ai', 'wavespeed-ai/flux-dev', '',
+      JSON.stringify([]), 1, 1, 0, 0, 20, 'https://wavespeed.ai/accesskey']
   ];
 
   defaultAiImageProviders.forEach(([key, name, base, path, model, models, neg, n, img2img, enabled, sort, keyUrl]) => {
@@ -462,6 +469,11 @@ function insertDefaultDataIfNeeded(db) {
   db.run(`UPDATE ai_image_providers SET supports_img2img = 1, default_model = 'gpt-image-1', models = ?
     WHERE provider_key = 'aihubmix' AND default_model = 'dall-e-3'`,
     [JSON.stringify(['gpt-image-1', 'dall-e-3', 'qwen-image', 'glm-image', 'doubao-seedream-4-0', 'flux-2-flex', 'wan2.7-image'])]);
+
+  // Seedance 协议升级：仅替换旧官方 v5-pro 默认配置，管理员自定义模型保持不变。
+  db.run(`UPDATE ai_image_providers SET default_model = 'seedream-v5.5__2k', models = ?
+  WHERE provider_key = 'seedance' AND default_model IN ('seedream-v5-pro-t2i', 'seedream-v5-pro-i2i')`,
+  [JSON.stringify(['seedream-v5.5__2k', 'seedream-v5.5__1.5k', 'seedream-v5.5__1k'])]);
 
   // 默认 AI 聊天官方角色（按名称去重；user_id 为 NULL = 官方角色，仅后台可管理）
   // 结构：[name, category, sort, system_prompt, greeting, description, personality]

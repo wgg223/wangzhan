@@ -9,6 +9,8 @@ const { resolveImageItem } = require('../utils');
 
 module.exports = {
   key: 'doubao',
+  // 火山方舟 seedream 系列支持 image 传数组做多参考图
+  supportsMultipleReferences: true,
 
   async generate(cfg, req) {
     const { apiKey, baseUrl, model } = cfg;
@@ -40,11 +42,14 @@ module.exports = {
 
   async generateWithReference(cfg, req, refPath) {
     const { apiKey, baseUrl, model } = cfg;
-    const imageB64 = fs.readFileSync(refPath).toString('base64');
+    const paths = (Array.isArray(req.referenceImages) && req.referenceImages.length
+      ? req.referenceImages
+      : [refPath]).slice(0, 4);
+    const imagePayload = paths.map(item => fs.readFileSync(item).toString('base64'));
     const body = {
       model: model || 'doubao-seedream-3-0-t2i-250528',
       prompt: req.prompt,
-      image: imageB64
+      image: imagePayload.length === 1 ? imagePayload[0] : imagePayload
     };
     if (req.negativePrompt) body.negative_prompt = req.negativePrompt;
 

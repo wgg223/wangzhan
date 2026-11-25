@@ -81,5 +81,27 @@ module.exports = {
     } catch (err) {
       return null;
     }
+  },
+
+  /**
+   * 余额查询：GET {base}/user/info → data.totalBalance / data.balance（元）
+   * @param {Object} cfg
+   * @returns {Promise<null|{amount: number, currency: string, label: string}>}
+   */
+  async fetchBalance(cfg) {
+    const { apiKey, baseUrl } = cfg || {};
+    if (!apiKey || !baseUrl) return null;
+    try {
+      const resp = await axios.get(`${String(baseUrl).replace(/\/+$/, '')}/user/info`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        timeout: 15000
+      });
+      const data = (resp.data && (resp.data.data || resp.data)) || {};
+      const value = Number(data.totalBalance !== undefined ? data.totalBalance : data.balance);
+      if (!Number.isFinite(value)) return null;
+      return { amount: value, currency: 'CNY', label: `¥${value.toFixed(2)}` };
+    } catch (err) {
+      return null;
+    }
   }
 };

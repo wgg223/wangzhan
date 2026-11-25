@@ -41,12 +41,18 @@
       if (json.success) {
         input.value = '';
         var status = document.getElementById('keyLineStatus-' + providerKey);
-        status.textContent = '✓ 已配置';
+        var statusText = '✓ 已配置';
+        if (json.balance && json.balance.label) statusText += ' · 余额 ' + json.balance.label;
+        status.textContent = statusText;
+        status.title = json.balance && json.balance.label
+          ? '账户余额：' + json.balance.label
+          : (json.balanceError || '');
         status.style.color = '#10b981';
         document.getElementById('keyLineClear-' + providerKey).style.display = '';
+        var balanceSuffix = json.balance && json.balance.label ? '，余额 ' + json.balance.label : '';
         if (json.verified) {
           var modelCount = (json.models && json.models.length) || 0;
-          showToast(json.message + (modelCount ? '，自动获取 ' + modelCount + ' 个模型，已同步到模型列表' : ''), 'success');
+          showToast(json.message + (modelCount ? '，自动获取 ' + modelCount + ' 个模型，已同步到模型列表' : '') + balanceSuffix, 'success');
           // 使用服务端同步后的完整列表和默认模型，避免前端补回已失效的旧模型。
           if (modelCount) {
             providers.forEach(function(p) {
@@ -64,7 +70,7 @@
             }
           }
         } else {
-          showToast(json.message + '；' + (json.verifyError || '该平台暂不支持自动验证'), 'warning');
+          showToast(json.message + '；' + (json.verifyError || '该平台暂不支持自动验证') + balanceSuffix, 'warning');
         }
       } else {
         showToast(json.error || '保存失败', 'error');
@@ -296,14 +302,15 @@
   window.aiImageOpenLightbox = openLightbox;
   window.aiImageSetMode = setAIImageMode;
 
-  // ============ 画布 / 简洁模式 ============
+  // ============ 画布 / 简洁模式（画布已拆到 /ai-canvas，基础页固定简洁模式） ============
   var canvasToggle = document.getElementById('aiimgCanvasToggle');
   if (canvasToggle) {
     canvasToggle.addEventListener('click', function() { setAIImageMode('canvas'); });
   }
-  var savedViewMode = 'canvas';
-  try { savedViewMode = localStorage.getItem('ai-image-view-mode') || 'canvas'; } catch (e) { /* 默认画布 */ }
-  setAIImageMode(savedViewMode === 'simple' ? 'simple' : 'canvas');
+  var savedViewMode = 'simple';
+  try { savedViewMode = localStorage.getItem('ai-image-view-mode') || 'simple'; } catch (e) { /* 默认简洁 */ }
+  var hasCanvasRoot = Boolean(document.getElementById('aiimgCanvasRoot'));
+  setAIImageMode(!hasCanvasRoot || savedViewMode === 'simple' ? 'simple' : 'canvas');
 
   if (!providers.length) {
     if (els.generate) {
@@ -324,7 +331,11 @@
   function renderModels() {
     var p = getProvider(els.provider.value);
     var models = (p.models && p.models.length) ? p.models.slice() : (p.default_model ? [p.default_model] : []);
-    var selectedModel = p.default_model && models.indexOf(p.default_model) !== -1 ? p.default_model : (models[0] || '');
+    // 用户已经手动选过的模型要保留，只有失效时才回退到默认模型/首项
+    var current = els.model.value;
+    var selectedModel = (current && models.indexOf(current) !== -1)
+      ? current
+      : (p.default_model && models.indexOf(p.default_model) !== -1 ? p.default_model : (models[0] || ''));
     els.model.innerHTML = '';
     models.forEach(function(m) {
       var opt = document.createElement('option');

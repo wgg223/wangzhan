@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.25.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.31.6 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -15,7 +15,8 @@
 - 个人中心（第三方账号绑定：GitHub/微信/QQ/微博/Google）、站内信、实时私信
 - 社区动态（关注/粉丝/动态流/内容聚合浏览）
 - AI 提示词库（板块/分类/提示词三级结构、思维导图、搜索高亮、一键复制、评论）
-- AI 生图（15 家服务商统一适配、图生图、风格预设、提示词优化、异步生成与任务取消、历史记录、一键分享）
+- AI 生图（20 家服务商统一适配 + 可自定义平台实例、图生图、风格预设、提示词优化、异步生成与任务取消、历史记录、一键分享）
+- AI 创作画布（独立通道 `/ai-canvas`：节点画布、自定义分辨率、多参考图、服务端项目与协作、只读分享链接）
 - AI 聊天（多模型切换、**填写 API Key 自动获取模型列表**、角色扮演、**角色卡（完整兼容 SillyTavern / RP-Hub 的 Character Card V1/V2/V3：description/personality/scenario/first_mes/mes_example/alternate_greetings/post_history_instructions/creator_notes 全字段，导入时自动抽取并部署内嵌世界书 `character_book`，创建同名去重）**、知识库 RAG（会话级开关）、长对话记忆与自动摘要、流式输出、会话编辑与重新生成、对话分支、**世界书（常驻注入/多关键词触发/近条扫描/默认模板一键导入；角色卡内嵌世界书随卡保存，用卡新建会话时弹窗预览、默认全选、可取消勾选后注入）**、**外观自定义（主题色/强调色/字体/字号/行高/气泡样式/头像形状/密度/背景/宽屏/动效，仅作用于 AI 聊天页与角色卡广场，登录账户云端持久化、游客本地记忆）**、个人配额）
 - **角色卡广场**（`/characters` 独立页面）：游客可只读浏览全部公开卡与官方卡的列表/详情，登录后一键导入到自己名下使用；用户可分享自建卡到广场（生成 `share_token` 与深链 `?card=token`）、随时下架；**从广场导入他人分享的卡仅限站内自用，不可再次分享、不可导出（防内容外溢）**；内置约 100 张官方种子卡（联网抓取并人工筛选，全部 SFW，标注来源 URL / 作者 / 版权许可，首次安装幂等播种）
 - 内容分享链接（图片 / AI 生图 / AI 聊天会话一键生成，无需登录即可查看；「我的分享」分页管理，支持停用 / 启用 / 取消，取消后链接立即失效）
@@ -64,7 +65,7 @@
 - **前端**：原生 JavaScript、CSS（变量系统 + 暗色模式）、Quill 富文本编辑器、PWA
 - **进程管理**：PM2（生产模式）
 - **安全**：bcryptjs、AES-256-GCM 加密、SVG 验证码、TOTP 双因素认证、CSRF 双提交 Cookie、密码强度策略、操作审计
-- **AI 能力**：AI 生图（15 家服务商）、AI 聊天（OpenAI 兼容多模型 + RAG 知识库）、AI 提示词优化
+- **AI 能力**：AI 生图（20 家服务商 + 自定义平台实例）、AI 聊天（OpenAI 兼容多模型 + RAG 知识库）、AI 提示词优化
 - **客户端 API**：`/api/v1` JSON 接口层（Token 鉴权 + 细粒度权限，与网页端共用数据库）
 
 ## 项目结构
@@ -119,7 +120,7 @@ wangzhan-注释版/
 │   │   ├── prompt-enhance.js        # 提示词优化（LLM + 本地规则兜底）
 │   │   ├── two-factor-auth.js       # TOTP 双因素认证
 │   │   ├── ai-chat/                 # AI 聊天（provider/记忆/RAG/配额/上下文）
-│   │   └── image-gen/               # AI 生图（15 家服务商适配器）
+│   │   └── image-gen/               # AI 生图（20 家服务商适配器 + 平台实例模板）
 │   └── utils/                       # 工具函数（CSV/文件/日志/设置等）
 │       ├── office-doc-store.js      # 大文档文件存储（>10MB 落文件系统，原子写入）
 │       └── spreadsheet-doc-store.js # Office 文档共享存储（内存缓存/协同广播/版本快照/多类型模板）
@@ -192,7 +193,8 @@ npm run health           # 健康检查
 | 管理后台 | `http://localhost:3000/admin` |
 | 图片分享 | `http://localhost:3000/image-share` |
 | AI 提示词 | `http://localhost:3000/ai-prompts` |
-| AI 生图 | `http://localhost:3000/ai-image` |
+| AI 生图（基础表单） | `http://localhost:3000/ai-image` |
+| AI 创作画布（独立通道） | `http://localhost:3000/ai-canvas` |
 | AI 聊天 | `http://localhost:3000/ai-chat` |
 | 在线表格 | `http://localhost:3000/spreadsheet` |
 | 安装向导 | `http://localhost:3000/setup` |
@@ -307,6 +309,16 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.31.6 (2026-11-25)
+
+**AI 生图多服务商与创作画布集中发布 ｜ 修复：Seedance 2K 固定比例尺寸协议**
+
+- **AI 创作画布**：独立 `/ai-canvas` 通道，支持节点画布、多参考图、自定义分辨率、服务端项目与协作、只读分享链接
+- **服务商扩展**：20 家生图服务商统一适配，支持自定义平台实例、模型同步、余额查询、多节点与用户自填 Key
+- **MomoAPI / Seedance**：按实际网关协议处理异步任务、模型白名单、参考图上传和尺寸参数；已提交任务不因失败重复提交
+- **Seedance 2K 修复**：`resolution` 与 `width/height` 改为互斥，固定比例只传精确宽高；真实 2K 文生图返回 2048×1152 PNG，任务成功且未再出现 `Invalid IP address: undefined`
+- **验证**：Seedance 136 项、MomoAPI 61 项、HTTP 集成 8 项、安全下载 10 项回归通过，并完成一次真实 Seedance 生成验证
 
 ### v8.25.0 (2026-11-25)
 

@@ -6,19 +6,64 @@ const { queryOne, queryAll, saveDatabase } = require('../../config/database');
 const { decrypt } = require('../../config/crypto-secure');
 const { getSettings } = require('../../utils/settings');
 const { saveImageBuffer, normalizeError } = require('./utils');
-const { resolveSizeForProvider, sizeFallbacks, isSizeFallbackError } = require('./sizes');
+const { resolveSizeForProvider, sizeFallbacks, isSizeFallbackError, qualityKeyword, aspectRatioOf } = require('./sizes');
+const { getTemplate, getTemplateForProvider, listTemplates } = require('./templates');
 const crypto = require('crypto');
 
-// 加载全部适配器
-const providers = {};
+// 加载全部适配器（协议实现）；具体平台实例是数据库里的 provider 行，由 resolveAdapterKey 映射过来。
+const adapterModules = {};
 const KEYLESS_IMAGE_PROVIDERS = new Set(['pollinations', 'comfyui']);
 [
-  'comfyui', 'openai', 'stability', 'siliconflow', 'zhipu', 'dashscope', 'baidu', 'pollinations',
-  'runninghub', 'hunyuan', 'stepfun', 'minimax', 'replicate', 'doubao', 'fal', 'aihubmix',
-  'momoapi', 'seedance'
+  'comfyui', 'openai', 'openai_compat', 'stability', 'siliconflow', 'zhipu', 'dashscope', 'baidu',
+  'pollinations', 'runninghub', 'hunyuan', 'stepfun', 'minimax', 'replicate', 'doubao', 'fal',
+  'aihubmix', 'momoapi', 'seedance', 'wavespeed'
 ].forEach(name => {
-  providers[name] = require(`./providers/${name}`);
+  adapterModules[name] = require(`./providers/${name}`);
 });
+
+/**
+ * 解析平台实例 key 对应的适配器名。
+ * 规则（按优先级）：
+ *   1. 精确命中适配器（内置平台，如 seedance / runninghub）
+ *   2. `模板key__后缀` 形式 → 模板声明的 adapter（多账号 / 国际节点）
+ *   3. `custom__xxx` → 通用 OpenAI 兼容适配器（任意域名）
+ * @param {string} providerKey
+ * @returns {string|null}
+ */
+function resolveAdapterKey(providerKey) {
+  const key = String(providerKey || '').trim();
+  if (!key) return null;
+  if (adapterModules[key]) return key;
+  const template = getTemplateForProvider(key);
+  if (template && adapterModules[template.adapter]) return template.adapter;
+  if (/^custom([_-]|$)/i.test(key)) return 'openai_compat';
+  return null;
+}
+
+// 适配器表：用 Proxy 让 `providers[任意实例key]` 自动解析到协议适配器，
+// 这样路由层、管理页无需感知「平台实例」这一层。
+const providers = new Proxy(adapterModules, {
+  get(target, prop) {
+    if (typeof prop !== 'string') return target[prop];
+    if (target[prop]) return target[prop];
+    const adapterKey = resolveAdapterKey(prop);
+    return adapterKey ? target[adapterKey] : undefined;
+  },
+  has(target, prop) {
+    if (typeof prop !== 'string') return prop in target;
+    return Boolean(target[prop] || resolveAdapterKey(prop));
+  }
+});
+
+/**
+ * 判断服务商是否免 Key（pollinations / comfyui 及其实例）。
+ * @param {string} providerKey
+ * @returns {boolean}
+ */
+function isKeylessProvider(providerKey) {
+  const key = String(providerKey || '').trim();
+  return KEYLESS_IMAGE_PROVIDERS.has(key) || KEYLESS_IMAGE_PROVIDERS.has(key.split('__')[0]);
+}
 
 // ============ 异步生成任务注册表（进程内存，单实例） ============
 // 生成请求立即返回 taskId，后台执行，前端轮询状态；支持取消（尽力调用服务商取消接口）
@@ -52,7 +97,13 @@ function resolveProviderModel(cfg, requestedValue) {
   const requested = typeof requestedValue === 'string' ? requestedValue.trim().slice(0, 300) : '';
   const allowedModels = Array.isArray(cfg.models) ? cfg.models : [];
   if (requested && allowedModels.includes(requested)) return requested;
-  if (!allowedModels.length && requested && requested === cfg.default_model) return requested;
+  // 用户显式选了模型就尊重选择：列表可能过期或只同步到部分模型，
+  // 静默回退到默认模型会出现「换了模型还是用 gpt」的错觉。
+  if (requested && requested !== cfg.default_model) {
+    console.warn(`[image-gen] 模型「${requested}」不在 ${cfg.provider_key || cfg.key || '服务商'} 的模型列表里，仍按用户选择提交`);
+    return requested;
+  }
+  if (!allowedModels.length && requested) return requested;
   return cfg.default_model && (!allowedModels.length || allowedModels.includes(cfg.default_model))
     ? cfg.default_model
     : (allowedModels[0] || '');
@@ -101,15 +152,17 @@ function checkImageQuota(db, userId, count) {
 
 function getQuotaReservationUnits(db, params) {
   const n = normalizeImageCount(params.n);
+  const hasReference = Boolean(params.referenceImagePath ||
+    (Array.isArray(params.referenceImagePaths) && params.referenceImagePaths.length));
   if (getSettings(db).ai_image_fallback === '0') return n;
   const baseQuota = checkImageQuota(db, params.userId, n);
   const userKeys = new Set(getUserProviderKeys(db, params.userId));
   const usableCount = queryAll(db,
     'SELECT provider_key, enabled, supports_img2img, api_key_enc FROM ai_image_providers ORDER BY sort_order ASC, id ASC')
     .filter(p => (p.enabled || userKeys.has(p.provider_key)) &&
-      (!params.referenceImagePath || p.supports_img2img) &&
+      (!hasReference || p.supports_img2img) &&
       providers[p.provider_key] &&
-      (KEYLESS_IMAGE_PROVIDERS.has(p.provider_key) || p.api_key_enc || userKeys.has(p.provider_key))).length;
+      (isKeylessProvider(p.provider_key) || p.api_key_enc || userKeys.has(p.provider_key))).length;
   // 剩余额度不足时只允许首轮尝试，不能因最坏情况预留而把正常用户挡在限额外。
   const retryUnits = baseQuota.unlimited ? 2 : Math.max(0, (baseQuota.limit || 0) - baseQuota.used - n);
   return n + Math.min(retryUnits, Math.max(usableCount - 1, 0), 2);
@@ -394,7 +447,7 @@ function persistFailure(db, params, provider, error) {
  * @param {Object} db
  * @param {Object} params
  *   { userId, providerKey, prompt, negativePrompt, size, n, seed, style,
- *     referenceImagePath (绝对路径|null), referenceImageWebPath }
+ *     referenceImagePath (绝对路径|null), referenceImagePaths (多参考图，最多 4 张), referenceImageWebPath }
  * @param {Object} [taskRef] 任务引用：{ cancelled, current }，供异步任务取消
  * @returns {Promise<{ok: true, images: Array<{path, url}>} | {ok: false, error, providerKey}>}
  */
@@ -402,12 +455,19 @@ async function generateImage(db, params, taskRef) {
   const settings = getSettings(db);
   const fallbackEnabled = settings.ai_image_fallback !== '0';
 
+  // 参考图：画布通道支持多张（最多 4 张），基础页只有一张；统一归一化成数组。
+  const referencePaths = (Array.isArray(params.referenceImagePaths) && params.referenceImagePaths.length
+    ? params.referenceImagePaths
+    : (params.referenceImagePath ? [params.referenceImagePath] : []))
+    .filter(item => typeof item === 'string' && item)
+    .slice(0, 4);
+
   // 可用服务商：站长已启用 或 用户已自填 Key（用户用自己的 Key 不受启用开关限制）
   const userKeySet = new Set(getUserProviderKeys(db, params.userId));
   const all = queryAll(db,
     'SELECT provider_key, enabled, supports_img2img FROM ai_image_providers ORDER BY sort_order ASC, id ASC');
   const usableKeys = all.filter(p => (p.enabled || userKeySet.has(p.provider_key)) &&
-    (!params.referenceImagePath || p.supports_img2img)).map(p => p.provider_key);
+    (!referencePaths.length || p.supports_img2img)).map(p => p.provider_key);
   const chosen = params.providerKey;
   const candidates = [chosen, ...usableKeys.filter(k => k !== chosen)];
 
@@ -421,7 +481,7 @@ async function generateImage(db, params, taskRef) {
   if (!chosenCfg) {
     return { ok: false, error: '所选服务商配置不存在，请刷新页面后重试', providerKey: chosen };
   }
-  if (!KEYLESS_IMAGE_PROVIDERS.has(chosen) && !chosenCfg.api_key) {
+  if (!isKeylessProvider(chosen) && !chosenCfg.api_key) {
     return {
       ok: false,
       error: `所选服务商「${chosenCfg.name || chosen}」未配置 API Key：请填写「我的 API Key」，或由管理员配置全局 Key`,
@@ -448,14 +508,14 @@ async function generateImage(db, params, taskRef) {
     const cfg = getProviderConfig(db, providerKey, params.userId);
     if (!cfg) continue;
     // 免 Key 服务商（Pollinations / ComfyUI）无需 Key，其余必须有
-    if (!KEYLESS_IMAGE_PROVIDERS.has(providerKey) && !cfg.api_key) continue;
+    if (!isKeylessProvider(providerKey) && !cfg.api_key) continue;
     // 图生图：服务商必须支持且已提供参考图
-    const useRef = Boolean(params.referenceImagePath && cfg.supports_img2img);
+    const useRef = Boolean(referencePaths.length && cfg.supports_img2img);
 
     tried++;
     const attemptStart = Date.now();
     let attemptModel = cfg.default_model || '';
-    const sizeInfo = resolveSizeForProvider(providerKey, params.size);
+    const sizeInfo = resolveSizeForProvider(providerKey, params.size, params.model || cfg.default_model);
     const sizePlan = sizeFallbacks(sizeInfo.size);
     let attemptSize = sizePlan[0];
     try {
@@ -470,7 +530,11 @@ async function generateImage(db, params, taskRef) {
         models: cfg.models,
         apiPath: cfg.api_path,
         workflow: cfg.workflow,
-        nodeMap: cfg.nodeMap
+        nodeMap: cfg.nodeMap,
+        // 通用适配器需要知道平台声明的能力，避免把负数/多图参数发给不支持的站点。
+        supportsNegative: cfg.supports_negative,
+        supportsN: cfg.supports_n,
+        supportsImg2img: cfg.supports_img2img
       };
       let result = null;
       // 4K/大尺寸请求被服务商以尺寸或显存错误拒绝时，自动降一档重试；普通报错不降尺寸。
@@ -484,22 +548,31 @@ async function generateImage(db, params, taskRef) {
           size: attemptSize,
           n: params.n || 1,
           seed: params.seed || undefined,
-          referenceImage: params.referenceImagePath || null,
+          referenceImage: referencePaths[0] || null,
+          referenceImages: useRef ? referencePaths : [],
           cancelRef: taskRef || null,
           taskInfo,
-          style: params.style || ''
+          style: params.style || '',
+          // 各平台协议差异：WaveSpeed/MiniMax/Seedream 用「画质关键词 + 比例」而不是像素
+          quality: qualityKeyword(attemptSize),
+          aspectRatio: aspectRatioOf(attemptSize)
         };
         if (taskRef) taskRef.current = { providerKey, cfg, taskInfo };
         try {
           result = useRef && adapterImpl.generateWithReference
-            ? await adapterImpl.generateWithReference(adapterCfg, req, params.referenceImagePath)
+            ? await adapterImpl.generateWithReference(adapterCfg, req, referencePaths[0])
             : await adapterImpl.generate(adapterCfg, req);
           break;
         } catch (sizeErr) {
-          if (sizeIndex < sizePlan.length - 1 && isSizeFallbackError(sizeErr)) continue;
+          if (!sizeErr.fromPoll && sizeIndex < sizePlan.length - 1 && isSizeFallbackError(sizeErr)) continue;
           throw sizeErr;
         }
       }
+      // 多参考图只对声明支持的适配器生效；其余平台用第一张并在结果里标注，避免误以为全部生效。
+      const referencesUsed = useRef
+        ? (adapterImpl.supportsMultipleReferences ? referencePaths.length : (referencePaths.length ? 1 : 0))
+        : 0;
+      const referenceLimited = useRef && referencePaths.length > referencesUsed;
       // 适配器可能因模型能力不匹配自动切换模型，记录和响应必须使用最终实际模型。
       const actualModel = typeof result.model === 'string' && result.model ? result.model : model;
       const resultSize = typeof result.size === 'string' && /^\d{1,5}[x*]\d{1,5}$/i.test(result.size)
@@ -534,6 +607,8 @@ async function generateImage(db, params, taskRef) {
         requestedSize: requestedSize,
         sizeAdjusted: sizeAdjusted,
         sizeFallback: attemptSize !== sizeInfo.size,
+        referencesUsed,
+        referenceLimited,
         elapsedMs: Date.now() - startTime,
         attempts
       };
@@ -589,7 +664,7 @@ async function fetchProviderModels(db, providerKey) {
   if (!adapterImpl.fetchModels) {
     return { ok: false, error: '该服务商不支持自动获取模型，请手动填写' };
   }
-  if (!KEYLESS_IMAGE_PROVIDERS.has(providerKey) && !cfg.api_key) {
+  if (!isKeylessProvider(providerKey) && !cfg.api_key) {
     return { ok: false, error: '请先配置 API Key 再获取模型' };
   }
   try {
@@ -605,6 +680,44 @@ async function fetchProviderModels(db, providerKey) {
       return { ok: false, error: '未获取到图片模型，请手动填写（服务商可能无公开模型列表）' };
     }
     return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: normalizeError(err) };
+  }
+}
+
+/**
+ * 查询服务商余额（可选能力）：适配器实现 fetchBalance 才可用。
+ * 余额查询失败绝不抛出——它是附信息，不能影响保存 Key、验证连接和生图。
+ * @param {Object} db
+ * @param {string} providerKey
+ * @param {number} [userId] 传了就用该用户自填 Key
+ * @param {number} [timeoutMs] 兜底超时
+ * @returns {Promise<{ok: boolean, balance?: Object|null, error?: string}>}
+ */
+async function fetchProviderBalance(db, providerKey, userId, timeoutMs) {
+  const adapter = providers[providerKey];
+  const cfg = getProviderConfig(db, providerKey, userId);
+  if (!adapter || !cfg) return { ok: false, error: '平台不存在' };
+  if (typeof adapter.fetchBalance !== 'function') {
+    return { ok: false, error: '该平台没有可用的余额查询接口' };
+  }
+  if (!isKeylessProvider(providerKey) && !cfg.api_key) {
+    return { ok: false, error: '请先配置 API Key 再查询余额' };
+  }
+  const call = adapter.fetchBalance({
+    apiKey: cfg.api_key,
+    baseUrl: cfg.api_base,
+    model: cfg.default_model,
+    apiPath: cfg.api_path
+  });
+  const limit = Math.max(parseInt(timeoutMs, 10) || 10000, 1000);
+  const timeout = new Promise(resolve => {
+    setTimeout(() => resolve({ __timeout: true }), limit);
+  });
+  try {
+    const balance = await Promise.race([call, timeout]);
+    if (balance && balance.__timeout) return { ok: false, error: '余额查询超时，请稍后重试' };
+    return { ok: true, balance: balance || null };
   } catch (err) {
     return { ok: false, error: normalizeError(err) };
   }
@@ -676,6 +789,10 @@ function getDefaultImageProviderKey(db) {
 module.exports = {
   providers,
   KEYLESS_IMAGE_PROVIDERS,
+  isKeylessProvider,
+  resolveAdapterKey,
+  listTemplates,
+  getTemplate,
   getProviderConfig,
   getUserProviderKey,
   saveUserProviderKey,
@@ -689,6 +806,7 @@ module.exports = {
   checkImageTaskQuota,
   generateImage,
   fetchProviderModels,
+  fetchProviderBalance,
   verifyProviderKey,
   startImageTask,
   getImageTask,

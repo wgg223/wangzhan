@@ -2,6 +2,275 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.31.6 (2026-11-25)
+
+**修复：Seedance 2K 固定比例尺寸协议，真实生成验证通过**
+
+- 根因：请求同时发送 `metadata.resolution` 与 `width/height`；Seedance 会优先使用 `resolution` 并忽略宽高，既无法保证固定比例，也可能触发上游网关异常
+- 修复：固定比例仅发送精确宽高，`auto` 比例才发送画质档位；2K 图生图 `auto` 保持模型自适应；所有请求携带明确 `User-Agent`
+- 防重复计费：已提交任务的失败保留 task_id 与原始 `fail_reason`，不再按尺寸错误自动重提；`Invalid IP address: undefined` 增加上游网关排查提示
+- 验证：Seedance 模拟回归 136 项、MomoAPI 61 项、HTTP 集成 8 项、安全下载 10 项全部通过；真实 Seedance 任务 `task_5jAgP4Ca6R63d8bM6yOdv5nDyNdeoV1W` 返回 SUCCESS，实际 PNG 为 2048×1152，最终实扣 ¥0.1157
+
+## v8.31.5 (2026-11-25)
+
+**回退 gpt-image 模型名改写：直接使用 Key 的 /v1/models 原始模型名**
+
+- 现象：把 `gpt-image-2` 改写成 `gpt-image-2-ratio_4k` 后，网关报 `only imagen models are supported`（模型不存在，回落到同步端点只列 imagen）
+- 根因：Momo 网关只认 Key 的 `/v1/models` 里返回的 id，`-2k/-4k/ratio_*` 只是插件目录里的选择值，不是 API 模型名；擅自改名会被判不支持
+- 修复：`resolveApiModel` 改为原样返回用户选择的模型名，画质完全由 `size` + `quality` 控制（与插件实际 apiModel 行为一致）
+- 验证：模型映射 6/6 PASS——gpt-image-2 的 1K/2K/4K、图生图、banana、seedream 均保持原始模型名；Seedream JSON 7/7、Momo 协议 5/5 回归通过；ESLint 0 error
+
+## v8.31.4 (2026-11-25)
+
+**Momo「扣款但没图」：任务创建后不再重复提交同步接口，失败信息带 task_id**
+
+- 现象：Momo 控制台出现扣款记录，但站点没拿到图
+- 根因：异步任务提交后如果轮询返回失败/空结果，旧逻辑会**再发一次同步请求**——同一张图可能被提交两次（多扣一次），而且已经创建成功的异步任务被直接丢弃
+- 修复：对齐插件行为——**任务一旦创建（拿到 task_id）就只轮询、不再回退同步**；只有提交阶段失败（404/405/不支持/未返回任务）才回退同步
+- 失败信息现在带 `task_id`（如 `MomoAPI 异步任务失败：empty task data（task_id: task_xxx）`），生成记录里可直接拿去和 Momo 控制台/客服核对退款
+- 验证：mock 网关 5/5 PASS——异步任务失败时错误含 task_id、**不再触发第二次同步提交**、4K 模型映射保持；模型映射 7/7 回归通过；ESLint 0 error
+
+## v8.31.3 (2026-11-25)
+
+**Momo 失败信息保留两段原因（异步退款 / 同步拒绝），便于区分网关限制与代码问题**
+
+- 现象：`seedream-5.5 2048x1152` 报 `Invalid IP address: undefined`，而同时段 gpt 记录报 `only imagen models are supported`——两者其实分别是「异步任务空结果退款后回退同步」与「同步端点模型白名单限制」
+- 修复：`submitWithAsyncFallback` 在同步接口也失败时，把异步阶段的失败原因拼进最终错误（`（异步阶段：…）`），生成记录里能同时看到两段
+- 说明：Momo 侧当前对非 imagen 模型的限制/异步通道故障，属于服务商状态，客户端无法绕过；换 Key/分组或改用其他服务商即可
+- 验证：Momo 协议 8/8 回归通过；`node --check` 通过；ESLint 0 error
+
+## v8.31.2 (2026-11-25)
+
+**修复 Momo gpt-image 全部失败：按插件目录的「画质即模型」规则映射 model id**
+
+- 根因：Momo 的 gpt-image-2 按画质拆成**不同模型**（插件静态目录）：
+  `gpt-image-2-ratio_1k` / `gpt-image-2-ratio_2k` / `gpt-image-2-ratio_4k`。
+  我们一直发基础名 `gpt-image-2` + 4K 尺寸，上游拿不到可用通道 → 异步任务空结果、Momo 自动退款（`empty task data`）
+- 修复：Momo 适配器新增 `resolveApiModel()`，按请求尺寸（长边 1K/2K/4K）自动换 model id：
+  - `gpt-image-2` → 1K 保持基础名（已验证可用），2K/4K 换 `gpt-image-2-ratio_2k` / `gpt-image-2-ratio_4k`（已是 ratio 后缀的按尺寸重算）
+  - `[官流]gpt-image-2`、`gpt-image-2.5/2.6-*` 保持原 model
+  - gemini / nano-banana 的 `-2k/-4k` 选择值会还原成基名（插件 apiModel 规则）
+  - seedream 保持原 model，继续走 generations JSON
+- 验证：mock 网关 6/6 PASS——4K gpt-image-2 → `gpt-image-2-ratio_4k`（t2i 与 i2i 都是）、2K → `ratio_2k`、banana 4K → 基名、banana 后缀选择值 → 基名、seedream 不变；Seedream 7/7 回归通过；ESLint 0 error
+
+## v8.31.1 (2026-11-25)
+
+**修复 Momo Seedream「异步任务 empty task data 退款」：按插件改用 generations JSON + image dataURL**
+
+- 现象：Momo 控制台 `seedream-5.5` 异步任务提交 3 秒后即「异步任务退款」，失败原因 `empty task data`，站点拿不到图
+- 根因：Seedream 在 Momo 上不是 multipart `/v1/images/edits`，而是 **`/v1/images/generations`（JSON）**，参考图以 **dataURL 字符串**放在 `image` 字段（插件 `buildMomoSeedreamRequest` 同款）。适配器之前对所有模型都用 edits multipart，Seedream 的上游解析不到图，任务结果为空
+- 修复：Momo 适配器新增 Seedream 专用请求体
+  `{ model, prompt, n:1, response_format:'url', output_format:'png', background:'auto', size, image: dataURL|dataURL[] }`
+  走 `/v1/images/generations?async=true`，失败/空结果仍自动回退同步接口；gpt-image 系列保持 multipart edits
+- 验证：mock 网关 7/7 PASS——Seedream 图生图走 generations JSON、模型名保留、`response_format=url`、`output_format=png`、`image` 为 dataURL、无 multipart 字段、任务轮询出图；模型切换 4/4、Momo 协议 8/8 回归通过；ESLint 0 error
+
+## v8.31.0 (2026-11-25)
+
+**后台 AI 生图服务商支持批量启用/停用**
+
+- 服务商网格上方新增批量操作条：**全选 / 已选 N 个 / 批量启用 / 批量停用**；每张站点卡片头部新增勾选框（全选支持半选态）
+- 后端新增 `POST /admin/ai-image/providers/batch-enabled`：接收 `provider_keys[]` + `enabled`，一次更新多个站点，返回更新数量并写操作日志（批量启用/停用站点）
+- 批量执行后即时同步各卡片的「启用」勾选与顶部「已启用」统计，无需整页刷新；未勾选时给出提示
+- 验证：隔离实例 8/8 PASS——批量条与勾选框渲染、CSRF 校验通过、批量停用 2 个站点、批量启用 2 个站点、空选择 400；`node --check` 通过；ESLint 0 error
+
+## v8.30.4 (2026-11-25)
+
+**修复后台「AI 聊天管理」把整段 JS 当文本显示（脚本被注释里的 </scr+ipt> 截断）**
+
+- 根因：`views/admin/ai-chat.ejs` 内联 script 的注释里写了字面量 `</script>`，HTML 解析器不理会 JS 注释，到此就结束脚本，后面的 `截断） var adminProviders = [...]` 全部作为页面文本输出
+- 修复：改写注释措辞，不再出现脚本闭合标签；并全量扫描 `views/**/*.ejs` 确认没有同类问题（其余都是正常的 `<script src=...></script>`）
+- 验证：隔离实例渲染 `/admin/ai-chat`，`var adminProviders = [...]` 回到脚本内、页面无原始 JS 文本泄漏
+
+## v8.30.3 (2026-11-25)
+
+**修复「改过默认模型又被改回 gpt-image-2」：同步模型时保留后台设置的默认模型**
+
+- 根因：Momo 适配器的 `selectDefaultModel` 在每次「保存 Key / 验证连接 / 同步模型」时都会重新挑默认模型，且**优先 Imagen、其次 gpt-image-2**，完全忽略后台已配置的 `default_model` → 用户改成 seedream 后一保存就被改回 gpt-image-2，画布/基础页自然又用 gpt
+- 修复：
+  1. `selectDefaultModel` 改为**优先保留 currentModel**（只要它仍在模型列表里），Imagen/gpt 排序只作为没有配置时的兜底
+  2. 基础生图页 `renderModels` 保留用户当前已选模型（仍在校验列表内时不再重置为默认模型）
+  3. 画布 `renderModels` 原本已保留上一次选择，行为一致
+- 验证：`selectDefaultModel([seedream-5.5, gpt-image-2], 'seedream-5.5') → seedream-5.5`；`'gpt-image-2' → gpt-image-2`；空/失效值才回退 gpt-image-2；ESLint 0 error
+
+## v8.30.2 (2026-11-25)
+
+**Momo 异步任务被退款（任务失败/空结果）时自动改走同步接口**
+
+- 现象：Momo 控制台出现「消费 → 同秒退款 / 异步任务退款」的记录，异步任务在服务端直接失败，客户端拿不到图
+- 处理：`submitWithAsyncFallback` 不再只在 404/405/empty task data 时回退——异步任务返回 `PROVIDER_FAILED / EMPTY_RESPONSE / BAD_RESPONSE`（含退款场景）也会**改发同步接口再试一次**；同步仍失败才向上抛错，并继续走「4K→2K→1K」尺寸降级
+- 验证：mock 网关 5/5 + 模型切换 4/4 全部通过；ESLint 0 error
+
+## v8.30.1 (2026-11-25)
+
+**修复「切换模型后仍然用 gpt-image-2」：去掉跨请求的模型偏好记忆，尊重显式选择**
+
+- 根因：
+  1. Momo 适配器有跨请求的「模型偏好记忆」——某次 seedream 失败自动换到 gpt-image-2 后，会把 gpt 记住 10 分钟，之后即使再选 seedream 也继续打 gpt
+  2. `resolveProviderModel` 对不在模型列表里的显式选择会静默回退到 `default_model`（gpt-image-2）
+- 修复：
+  1. 删除模型偏好记忆（`preferredModel / rememberPreferredModel / modelPreferences`），**每次请求都以用户选中的模型为第一次尝试**；换模型只发生在「本次请求内部」的重试
+  2. `resolveProviderModel` 改为尊重用户显式选择的模型：不在列表里也不再静默替换，只打一条警告并照常提交（列表过期/自定义模型场景）
+- 验证：mock 网关 4/4 PASS——首次 seedream 503 会自动换 gpt 成功；**第二次请求 seedream 时确实重新打 seedream**；Momo 协议 8/8 保持；ESLint 0 error
+
+## v8.30.0 (2026-11-25)
+
+**RunningHub 工作流自动获取并复用（对齐 TTAI 插件）**
+
+- 新增 `server/services/image-gen/runninghub-workflow.js`，把插件里两个「自动获取」逻辑搬过来：
+  1. **appId → workflowId**：只填应用 ID 时，依次尝试 `GET /api/webapp/apiCallDemo?apiKey&webappId|webAppId|appId` 与 `POST /api/webapp/apiCallDemo`，递归扫描响应任意层级里的 `workflowId/workflowids`（6 位以上数字，兼容 JSON 塞在字符串字段里的情况）
+  2. **workflowId → 工作流 JSON**：`POST /api/openapi/getJsonApiFormat`（兼容 `/openapi/getJsonApiFormat` 与 `workflow_id` 参数写法）拉取 API 格式图结构
+  3. **自动识别 prompt 节点**：优先 `CLIPTextEncode/TextEncode/Prompt` 且 `inputs.text` 的节点，其次任意带 `inputs.text/prompt` 的节点
+- `runninghub` 适配器集成：`api_path` 可写 `/run/workflow/<appId>`（自动反查真实 workflowId）；`模型` 字段可留空由工作流 JSON 自动识别，仍支持手填 `6:text` 覆盖；解析结果缓存 10 分钟
+- **验证**：mock RunningHub 4/4 PASS——appId 反查成功并提交到 workflowId、拉取 getJsonApiFormat、自动识别 node 6/text 且 nodeInfoList 带 prompt、提交体正确
+- 说明：插件本地 ComfyUI 工作流存于 localStorage `nb_comfyui_workflow`（映射文件路径），本机未配置；本站 ComfyUI 适配器读取工作流文件，如需从插件目录批量导入，可再补一个扫描脚本
+
+## v8.29.2 (2026-11-25)
+
+**修复 Momo 异步任务返回 empty task data 时直接失败：轮询路径 + 同步回退**
+
+- 现象：Momo 控制台显示 `gpt-image-2` 异步任务已计费后退款，失败原因 `empty task data`（任务 ID `task_4Z1YkY...`），站点侧拿不到图
+- 反混淆核对：插件轮询的是 `GET /v1/images/{generations|edits}/{taskId}`（不是 `/v1/images/tasks/{id}`），且 `isMomoAsyncUnsupportedError` 明确把 **empty task data / 404 / 405** 视为「异步不可用」，随即回退**同步接口**重发
+- 修复：
+  1. 轮询路径改为优先 `/v1/images/{generations|edits}/{id}`，`/v1/images/tasks` 仅作最后候选
+  2. 异步提交与轮询统一走 `submitWithAsyncFallback()`：遇到 empty task data / 404 / 405 / 无图完成，自动改发同步接口（`/v1/images/generations`、`/v1/images/edits`）再解析
+  3. 图生图 multipart 去掉 `n` 字段（与插件字段完全一致：model/prompt/size/quality/image）
+- 验证：mock 网关 5/5 PASS——异步文生图轮询 `/v1/images/generations/{id}` 出图、异步图生图返回 empty task data 后自动回退 `edits` 同步并出图、quality 透传、4K 尺寸保持
+
+## v8.29.1 (2026-11-25)
+
+**按插件协议对齐其余模型 API：WaveSpeed 改用画质关键词 + 比例，画质/比例全平台透传**
+
+- **WaveSpeed**：按插件 `buildOfficialCloudImageRequest` 重写请求体——`{ prompt, resolution:'1k|1.5k|2k', aspect_ratio, output_format:'png', background:'auto', images:[dataURL] }`，不再发像素 `size`；参考图以 data URL 数组传入（插件同款）；服务商上限从 4K 收紧到 2K（官方只有 1K/1.5K/2K 三档）
+- **统一画质/比例**：`sizes.js` 新增 `qualityKeyword()` 与 `aspectRatioOf()`，生图主流程把 `quality`/`aspectRatio` 透传给所有适配器（WaveSpeed/MiniMax/Seedream/Momo 都能按各自协议取用）
+- **已核对无需改动的平台**（与插件行为一致）：Seedance/新贞贞（metadata：resolution + width/height）、豆包（OpenAI 兼容 size）、MiniMax（aspect_ratio + response_format）、硅基流动/智谱/通义/文心/混元/阶跃/AIHubMix/GrsAI/T8Star（标准 OpenAI 兼容）、RunningHub（workflowId 工作流已实现）
+- **未实现的平台**（插件有、本站没有对应入口）：即梦 Jimeng（依赖启动器桥）、柏拉图 Plato、BizyAir、Midjourney 任务流
+- **验证**：WaveSpeed mock 5/5 PASS——请求体含 `resolution=2k`、`aspect_ratio=16:9`、无像素 size、images 为 data URL；Momo 协议 8/8 PASS 保持；`node --check` 通过；ESLint 0 error
+
+## v8.29.0 (2026-11-25)
+
+**按 TTAI 插件反混淆结果重写 MomoAPI 调用协议：异步任务 + 质量档位 + 逐模型分辨率表**
+
+- **反混淆**：用 webcrack 还原插件 26MB 主包（→3.4MB 可读），拿到 Momo 的真实协议
+  - 站点获取：`MOMO_BASE_URL_MAP = { main: api.momoapi.icu, backup1: api1.momoapi.icu, backup2: api2.momoapi.icu }`，按主站→备用1→备用2 自动探测
+  - 调用方式：文生图 `POST /v1/images/generations?async=true`（JSON），图生图 `POST /v1/images/edits?async=true`（multipart），字段 `model / prompt / n / size / quality`（部分模型加 `background`）
+  - 工作流（异步队列）：提交拿 `task_id` → 轮询 `GET /v1/images/tasks/{id}`，网关不支持 async 时回退同步接口
+  - 分辨率：`getGptImage2OfficialRatioSize` 的 13 种比例 × 1K/2K/4K 表（16:9 4K=3840×2160、1:1 4K=2880×2880、4:3 4K=3264×2448…）；seedream 仅 1K/1.5K/2K；wavespeed 1K/1.5K/2K
+- **我方修复**：Momo 适配器改为 `?async=true` + `/v1/images/tasks/{id}` 轮询（原来只轮询 generations/edits，且不带 async，正是「调用成功但拿不到图」的原因）；请求补 `quality=auto`；失败自动回退同步
+- **分辨率表**：`sizes.js` 增加 Momo gpt-image-2 的比例×画质表（4K 恢复可用，不再被压到 1536）；seedream 在 Momo 上限 2K；OpenAI/兼容站的 gpt-image 仍限制 1024/1536
+- **验证**：mock 网关 8/8 PASS——异步文生图轮询出图、异步图生图轮询出图、async 不支持时回退同步、请求带 quality、gpt-image 4K 横/竖不降级、4:3 4K 按插件表映射 3264×2448、dall-e 仍限制 1792×1024
+
+## v8.28.3 (2026-11-25)
+
+**修复 MomoAPI「API 调用成功但没有图」：异步图片任务轮询 + 响应结构兼容**
+
+- 诊断：Momo 控制台日志显示 seedream-5.5 走的是**异步接口**（提交即计费成功），而适配器只处理同步图片返回，拿不到图就报「未返回图片数据」；gpt-image-2 也有部分返回结构与旧解析不匹配
+- 新增异步任务支持：提交后若返回体无图片且有 `task_id`/`id`，自动轮询 `GET /v1/images/generations/{id}`（不可用则回退 `/v1/images/edits/{id}` 并记住可用路径），3 秒一次、最长约 8 分钟，支持取消；识别 SUBMITTED/IN_PROGRESS/SUCCESS/FAILED 等状态
+- 响应解析兼容多种结构：`data[]`、`data.data[]`、`images[]`、`output[]`、`result[]`、单对象 `url/b64_json`；仍解析不到时错误信息带上响应形状（`keys=… data=… itemKeys=…`），下次失败可直接在生成记录里看到返回结构
+- 验证：本地 mock 网关 4/4 PASS——同步模型直接出图、异步模型轮询 2 次后出图、异步图生图走 `/v1/images/edits/{id}` 出图、缺 task id 时错误信息包含响应形状；`node --check` 通过；ESLint 0 error
+
+## v8.28.2 (2026-11-25)
+
+**修复 MomoAPI 4K 图生图仍失败：把 Invalid IP 纳入尺寸降级并跳过无意义的换模型重试**
+
+- 诊断：换用 `[yu]gemini-nano-banana-2.1` 后 4K 仍报 Invalid IP，说明不是 gpt-image 独有，而是 Momo 的 4K 图生图通道本身会以该错误拒绝；此前该错误走的是「换模型重试」，换几个模型都还是 4K，必然连续失败
+- 修复：Momo 适配器遇到 Invalid IP 时给错误打 `sizeFallback` 标记并**直接上抛**，由 `generateImage` 的既有降级阶梯自动重试 **4K → 2K → 1K**；`isSizeFallbackError` 识别该标记
+- 效果：4K 请求不再直接失败，会自动用 2048×1152（或 1024×576）出图，并在完成提示里注明「已按模型/服务商能力生成 …」
+- 验证：mock 网关（>2048 返回 Invalid IP，≤2048 正常）5/5 PASS——4K 被拒且错误带标记、`isSizeFallbackError=true`、2K 正常出图、降级阶梯为 `3840x2160 → 2048x1152 → 1024x576`
+- 说明：Momo 若要真 4K，建议改用其 `seedream-5.5`（支持 4K）或火山豆包 seedream 4.0
+
+## v8.28.1 (2026-11-25)
+
+**修复 MomoAPI gpt-image 系列 4K 图生图失败：模型级尺寸上限**
+
+- 诊断：同一 Key + 同一上传路径下，1024×1024 图生图成功、3840×2160 连续失败并返回误导性的「Invalid IP address: undefined」——说明不是上传/网络问题，而是 gpt-image 系列模型不接受 4K 尺寸，网关把上游的尺寸错误包装成了 IP 错误
+- 新增**模型级尺寸上限**（`sizes.js` 的 `MODEL_LIMITS`）：命中模型规则时优先于服务商上限
+  - `gpt-image-*` → 仅 1024×1024 / 1536×1024 / 1024×1536（按横竖方向就近映射）
+  - `dall-e-*` → 1024×1024 / 1792×1024 / 1024×1792
+  - `imagen*` → 最长边 2048
+  - `seedream` 等不受影响，4K 照常
+- 预设映射改为「同方向 + 比例最接近」的通用算法（原来写死 1792/1024 候选，换成新预设表后会误退成方形）
+- 生成结果提示改为「已按模型/服务商能力生成 1536×1024」，让降级不再静默；MomoAPI 的 Invalid IP 文案补充尺寸/模型提示
+- 验证：`resolveSizeForProvider` 断言——momoapi+gpt-image-2+3840×2160 → **1536×1024**（adjusted）、2160×3840 → 1024×1536、momoapi+seedream-5.5+3840×2160 → 3840×2160、imagen → 2048×1152、dall-e-3 → 1792×1024/1024×1792；`node --check` 通过；ESLint 0 error
+
+## v8.28.0 (2026-11-25)
+
+**画布新增「生成历史」面板：历史结果可一键插回画布**
+
+- 画布顶部条新增「生成历史」按钮，弹窗分页展示（9 条/页）当前账号的生成记录：缩略图、提示词、服务商 · 模型 · 尺寸、成功/失败状态；点击缩略图可看大图
+- 每条记录支持 **插入画布**：由画布引擎新增的 `addImageNode()` 在视口中心插入 Image 节点，并带上 prompt / provider / model / size 元数据，可直接作为下一轮参考图或右键「按此参数重新生成」
+- 支持 **复制提示词**（navigator.clipboard，降级 execCommand）与分页（上一页 / 下一页 / 共 N 条）
+- 数据复用 `/ai-canvas/api/history`，与基础生图页共用 `ai_image_records` 表，无需新表；失败记录显示「生成失败」且插入按钮禁用
+- 验证：隔离实例 `/ai-canvas/api/history` 返回 19 条真实记录、字段齐全；页面渲染出「生成历史」按钮；`node --check` 通过；ESLint 0 error；EJS 编译渲染通过
+
+## v8.27.3 (2026-11-25)
+
+**修复 MomoAPI 图生图失败：Invalid IP address: undefined（chunked multipart 被网关拒绝）**
+
+- 根因：图生图用 `form-data` + 文件流上传，axios 会发 `Transfer-Encoding: chunked`；手工加的 `content-length` 与 chunked 同时出现时，New API 网关解析失败并返回“Invalid IP address: undefined”
+- 修复：改为**先读入 Buffer、自建 multipart**（与 TTAI 插件固定长度上传的做法一致），显式设置 `Content-Length`，并用 `transformRequest: (d) => d` 禁止 axios 二次转换，彻底不再走 chunked
+- 顺带：参考图 MIME 以魔数为准（PNG/JPG/WebP/GIF/BMP/AVIF/TIFF），参考图空/超限给出明确错误；Invalid IP 的错误文案改为可操作提示（模型通道不支持图生图时换 imagen / gpt-image-2）
+- 验证：本地 mock New API 网关（对 chunked 请求返回同样的 Invalid IP 错误）8/8 PASS——不再出现 chunked、Content-Length 与 body 长度一致、multipart 含 model/prompt/image 字段且 MIME 正确、返回图片解析成功
+- 说明：模型轮询与 `Invalid IP` 的模型回退逻辑保持不变；若换固定长度上传后仍报该错误，说明该模型渠道未开放图生图，需换模型
+
+## v8.27.2 (2026-11-25)
+
+**生图尺寸改为「比例 + 画质」模型（对齐 TTAI 插件的 pkRatio / pkQuality）**
+
+- 尺寸不再只是一串固定像素：新增比例（自适应 / 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9）与画质档位（1K=1024 / 2K=2048 / 4K=3840 长边），由比例×画质推导具体像素，短边自动取 16 的倍数
+- 画布底栏改为「比例 + 画质」两个下拉，画质选「自定义宽 × 高」时出现 64–4096 的宽高输入；旧像素下拉保留为隐藏兼容值，历史节点/偏好仍能恢复
+- 基础生图页尺寸下拉升级为 1K/2K/4K/兼容 四组，选项带比例与像素（如「16:9 · 1024 × 576（1K 横屏）」），原有全部尺寸继续可用
+- 服务端 `/ai-canvas/api/generate` 与 `/ai-image/api/generate` 支持 `ratio`/`quality` 参数，优先级：自定义宽高 > 比例×画质 > 直接 size；最终仍按服务商上限降级并回报 `effectiveSize` / `sizeAdjusted`
+- 服务商尺寸上限继续生效：同一 16:9 4K 请求，Pollinations 会降为 2048×1152，Momo/Seedance 保持 3840×2160
+- 验证：隔离实例实测 16:9 1K → 1024×576、16:9 4K → 请求 3840×2160 / 实际 2048×1152（sizeAdjusted=true）、21:9 2K → 2048×880；bootstrap 下发 11 种比例、3 档画质、完整矩阵；两个页面均渲染新选项；`node --check` 通过；ESLint 0 error
+
+## v8.27.1 (2026-11-25)
+
+**画布内新增「API 密钥 / 余额」面板**
+
+- 画布顶部条新增「API 密钥」按钮，弹窗按服务商列出：Key 配置状态（我的 Key / 后台全局 Key / 未配置）、保存、查余额、清除
+- 保存 Key 走 `/ai-canvas/api/keys/save`：自动验证 Key、同步模型列表（并调用画布 `syncProviders` 即时生效）、顺带回显余额；查不到余额只提示，不影响保存
+- 新增 `/ai-canvas/api/keys/balance`：用当前用户 Key（缺省回退后台全局 Key）查询余额，按适配器能力返回；未配置 Key / 服务商未开放计费接口时给出明确文案
+- `/ai-canvas/api/bootstrap` 的 provider 增加 `has_user_key` / `has_global_key` / `supports_balance` / `supports_models`（只暴露布尔值与来源，**绝不回显 Key 明文**）
+- 验证：隔离实例实测——无 Key 查询余额返回「请先配置 API Key」、空 Key 保存 400、伪 Key 保存成功且余额接口返回网关鉴权文案、查询/清除接口正常；`node --check` 通过；ESLint 0 error
+
+## v8.27.0 (2026-11-25)
+
+**画布独立通道：/ai-canvas 页面与 API 从基础生图页拆分 ｜ 服务端项目 + 协作 + 自定义分辨率 + 多参考图 + 更多格式**
+
+- **独立通道**：新增 `server/routes/ai-canvas.js` 与 `views/frontend/ai-canvas.ejs`，页面 `/ai-canvas`、接口 `/ai-canvas/api/*` 自成一套；基础页 `/ai-image` 移除内嵌画布，改为「进入创作画布 →」入口，两套生成逻辑不再互相牵连
+- **能力对齐**：画布 API 覆盖基础页全部能力——生成 / 状态轮询 / 取消 / 历史 / 我的 API Key（含验证、模型同步、余额）/ 提示词优化；服务商、模型、尺寸、数量、种子、风格、负向提示词完全一致
+- **服务端项目**：新增 `ai_canvas_projects`（state/thumbnail/version/updated_by）、`ai_canvas_members`、`ai_canvas_presence` 三张表；画布改动 1.2s 防抖保存到服务端，带乐观锁（版本不一致返回 409 + 最新状态），页面重开/换设备不丢
+- **协作**：创建者可邀请成员（可编辑 / 只读），可开启只读分享链接（`/ai-canvas?share=TOKEN` 自动加入）；2.5s 轮询版本同步他人改动，实时显示他人光标与在线状态
+- **自定义分辨率**：尺寸下拉新增「自定义宽 × 高」，64–4096、自动取 8 的倍数，最终按服务商上限降级并回报实际尺寸
+- **多参考图**：单次最多 4 张参考图；Seedance（images 数组）与豆包（image 数组）声明支持多图，其余服务商只取第一张并在结果里用 `referenceLimited` 提示，避免误以为全部生效
+- **更多文件格式**：上传支持 JPG/PNG/WebP/GIF/BMP/AVIF；GIF/BMP/AVIF 在前端转 PNG 后再上传/生成；服务端魔数校验补 TIFF/HEIC/AVIF 识别；参考图上传接口 `/ai-canvas/api/uploads` 供协作项目共享素材
+- **验证**：隔离副本 + 伪造管理员会话实测——页面 200 且注入 `AI_CANVAS_CONFIG`、项目创建/读取/保存/409 冲突/版本、在线状态读写、上传接口、自定义 1280×720 生成任务真实出图（Pollinations）、多参考图与非图生图服务商校验、非法尺寸拒绝；`node --check` 11 文件通过；ESLint 0 error；两个 EJS 模板编译渲染通过
+- **修复画布显示异常**：① `/ai-canvas` 被主站布局包裹（顶部出现站点导航）→ 渲染时显式 `layout:false` + 布局中间件改用 `startsWith('/ai-canvas')` 双保险；② 引擎 `.aic` 自带 `height:100%` 叠加在 `top:48px` 上，画布整体多出 48px、底部工具条被挤出可视区 → 页面用 id 覆盖为 `height:auto/min-height:0` 并锁定 body 不滚动；③ `.aic-btn{display:inline-flex}` 覆盖了 `hidden` 属性，导致「简洁表单」等本应隐藏的按钮仍显示 → 注入 `.aic [hidden]{display:none!important}`
+
+## v8.26.1 (2026-11-25)
+
+**优化：MomoAPI 节点余额（New API 计费接口）+ 保存 Key 即显示余额 ｜ 前台/后台余额联动**
+
+- **momo 余额按真实计费协议查询**（`providers/momoapi.js`）：`GET /v1/dashboard/billing/subscription`（hard_limit_usd）+`GET /v1/dashboard/billing/usage`（total_usage 单位“分”），剩余 = 总额度 − 已用；结果 60 秒缓存，401/403 明确报鉴权失败，计费接口缺失时回退 OpenAI 兼容探测，都没有则返回 null 且不影响生图
+- **统一余额入口**（`services/image-gen/index.js`）：新增 `fetchProviderBalance(db, providerKey, userId, timeoutMs)`，支持用户自填 Key / 全局 Key、带超时、永不抛错，并对外导出
+- **后台**：保存新 Key 时与模型同步**并行**查询余额，卡片提示「余额：$x / $y」；「💰 查余额」按钮改用统一封装；余额写入 `settings`（`ai_image_balance_<provider>`），页面重开直接显示「上次余额：…（时间）」，不必每次请求网关
+- **前台**：用户保存自己的 Key 后，Key 状态行显示「✓ 已配置 · 余额 $x / $y」，悬停显示失败原因；余额失败不影响 Key 保存结果
+- **模板**：MomoAPI 模板补充「保存即查余额」「国内/国际节点用不同域名建实例（momoapi__intl）」说明
+- **验证**：本地 mock New API 网关单测 9/9 PASS（总额度+已用、缓存命中、仅 subscription、计费接口全缺失、无 Key）；`node --check` 6 个文件通过；ESLint 0 error；后台 EJS 渲染通过
+
+## v8.26.0 (2026-11-25)
+
+**新增：AI 生图「平台实例」体系（任意 OpenAI 兼容站点 / 多账号 / 国际节点 / 余额查询） ｜ 修复：后台「验证连接」按钮因变量遮蔽永不显示**
+
+- **平台实例**（新增 `server/services/image-gen/templates.js`）：适配器表改为按 key 动态解析——内置平台（`seedance`）、模板实例（`seedance__hk`）、任意站点（`custom__my`）统一走 `resolveAdapterKey`；数据库里的 provider 行就是可增删的平台实例，前台服务商下拉自动出现，新增平台不再需要改代码
+- **后台「＋ 新增平台」**：新增 `POST /admin/ai-image/providers/create|delete`，选协议模板 → 填名称/域名/Key → 生成 `模板__后缀` 记录；内置平台不可删除（只能停用），删除实例会清理用户自填 Key 并在必要时重置默认服务商
+- **通用 OpenAI 兼容适配器**（新增 `providers/openai_compat.js`）：`/images/generations` + `/images/edits`（手写 multipart，不新增 form-data 依赖）、`/models` 拉模型与验 Key、b64/url 双解析、可选 `/dashboard/billing/*` 余额探测；负向提示词/多图/图生图能力由后台开关透传，避免把不支持的参数发给站点
+- **新增平台**：GrsAI、贞贞/T8Star（OpenAI 兼容模板）、WaveSpeed AI（`/api/v3` 异步提交 + 轮询，标注需联调）；新装/升级后默认不启用，填 Key 再启用
+- **余额查询**：适配器可选实现 `fetchBalance`，后台卡片出现「💰 查余额」（OpenAI 兼容站点、硅基流动 `/user/info`、MomoAPI 探测）；查不到给出明确提示，不影响生图
+- **多节点**：`sizes.js` 与免 Key 判断改为按 `模板__后缀` 前缀解析，`seedance__hk`、`minimax__intl` 等实例自动继承协议默认上限
+- **修复**：`server/routes/admin/ai-image.js` 页面数据数组与导入的适配器表同名遮蔽，`providers[key]` 恒为 undefined，导致「✓ 验证连接与配置」按钮从不渲染；改用 `providerRows`，并补 `is_instance / adapter_key / supports_balance`
+- **验证**：`node --check` 覆盖 9 个改动文件；ESLint 0 error；`require` 冒烟验证 `seedance__hk→seedance`、`custom__mine→openai_compat`、`grsai→openai_compat`、未知前缀→null；后台 EJS 模板编译渲染通过
+
 ## v8.25.0 (2026-11-25)
 
 **新增：AI 生图节点画布 + 4K/100MB 参考图 + ComfyUI/MomoAPI/Seedance 多服务商治理 ｜ 修复：MomoAPI 模型无渠道与图生图 Invalid IP**

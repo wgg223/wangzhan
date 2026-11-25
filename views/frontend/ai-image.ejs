@@ -1,13 +1,12 @@
 <%# ===== 页面模板：frontend/ai-image.ejs =====%>
 <%# 说明：AI图片生成页：文生图表单、历史记录（EJS 服务端模板，由 Express 渲染，变量与部分逻辑见对应路由） %>
-<%# AI 图片生成页：默认节点创作画布，保留简洁表单模式 %>
-<div id="aiimgCanvasRoot" aria-label="AI 创作画布"></div>
+<%# AI 图片生成页：基础表单通道（创作画布已拆到独立页面 /ai-canvas） %>
 <div class="aiimg-page" id="aiimgSimpleWorkspace">
   <div class="aiimg-header">
     <h1 class="aiimg-title">🎨 AI 图片生成</h1>
-    <p class="aiimg-subtitle">默认使用 ComfyUI 原生工作流，并支持 MomoAPI、Seedance 等生图服务；可在节点画布中编排参考图与提示词</p>
+    <p class="aiimg-subtitle">默认使用 ComfyUI 原生工作流，并支持 MomoAPI、Seedance 等生图服务；需要编排参考图与提示词请进入「创作画布」</p>
     <div class="actions" style="margin-bottom:12px;">
-      <button type="button" class="btn btn-small btn-primary" id="aiimgCanvasToggle">进入创作画布</button>
+      <a class="btn btn-small btn-primary" href="/ai-canvas">进入创作画布 →</a>
     </div>
     <% if (unlimited) { %>
       <span class="aiimg-badge aiimg-badge-admin">管理员 · 不限次数</span>
@@ -257,8 +256,6 @@
 
 <style>
   .aiimg-page { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
-  body.aiimg-canvas-active { overflow: hidden; }
-  #aiimgCanvasRoot { position: fixed; inset: 0; z-index: 1800; background: #0c0d12; }
   .aiimg-header { margin-bottom: 20px; }
   .aiimg-title { font-size: var(--text-3xl); color: var(--text-primary); margin: 0 0 6px; }
   .aiimg-subtitle { color: var(--text-secondary); font-size: var(--text-base); margin: 0 0 10px; }
@@ -417,4 +414,3 @@
   }
 }) %></script>
 <script defer src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-image.js') : '/js/ai-image.js' %>"></script>
-<script defer src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/ai-image-canvas.js') : '/js/ai-image-canvas.js' %>"></script>
