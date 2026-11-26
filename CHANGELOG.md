@@ -2,6 +2,16 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.32.1 (2026-11-26)
+
+**修复：Node 24 安全下载 DNS 回调签名错误导致生图结果下载失败（`Invalid IP address: undefined`）**
+
+- 根因：`server/utils/safe-fetch.js` 的自定义 `lookup` 始终按旧签名回调单地址；Node 20.13+/24 的 `autoSelectFamily` 会传 `all: true`，期望回调 `[{ address, family }]`，地址字符串被当成数组解析后抛出 `ERR_INVALID_IP_ADDRESS: Invalid IP address: undefined`
+- 影响：豆包、MomoAPI、Seedance 等返回结果 URL 的生图任务在生成成功后下载结果时失败；带代理的本地环境因跳过自定义 lookup 而不易复现
+- 修复：`safeLookup` 同时兼容 `all: true` 与单地址回调；过滤内网/保留地址后保留公网地址族；IP 直写字面量增加请求前拦截，避免 Node 跳过 lookup 绕过 SSRF 校验
+- 验证：关闭环境代理后复现原异常；修复后公网抓取、`downloadImageSafely` 与 `resolveImageItem(url)` 正常，`127.0.0.1`、`[::1]`、`localhost` 均被拦截；ESLint 0 error
+
+
 ## v8.32.0 (2026-11-26)
 
 **文章支持导入更多文件格式，并可复用已有在线文档内容 ｜ 修复：20 家生图服务商接口路径与协议问题**

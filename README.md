@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.32.0 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.32.1 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -309,6 +309,15 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.32.1 (2026-11-26)
+
+**修复：Node 24 安全下载 DNS 回调签名错误导致生图结果下载失败（`Invalid IP address: undefined`）**
+
+- **根因**：`safeFetchBuffer` 的自定义 `lookup` 始终按旧签名返回单个地址；Node 20.13+/24 的 `autoSelectFamily` 会传 `all: true` 并期望 `[{ address, family }]`，地址字符串被当作数组解析后抛出 `ERR_INVALID_IP_ADDRESS: Invalid IP address: undefined`
+- **影响**：豆包、MomoAPI、Seedance 等返回结果 URL 的生图任务在生成成功后下载结果时失败；带代理的本地环境会跳过自定义 lookup，因此此前难以复现
+- **修复**：`safeLookup` 同时兼容 `all: true` 与单地址回调；过滤内网/保留地址后保留公网地址族；IP 直写字面量增加请求前拦截，避免 Node 跳过 lookup 绕过 SSRF 校验
+- **验证**：关闭环境代理后复现原异常；修复后公网抓取、`downloadImageSafely` 与 `resolveImageItem(url)` 正常，`127.0.0.1`、`[::1]`、`localhost` 均被拦截；ESLint 0 error
 
 ### v8.32.0 (2026-11-26)
 

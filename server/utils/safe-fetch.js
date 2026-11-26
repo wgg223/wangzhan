@@ -11,6 +11,7 @@
 const dns = require('dns');
 const http = require('http');
 const https = require('https');
+const net = require('net');
 
 // IPv4 私网/保留段判定
 function isPrivateIPv4(ip) {
@@ -42,14 +43,23 @@ function isPrivateIP(ip) {
   return isPrivateIPv4(lower);
 }
 
-// 自定义 lookup：http.request 建连时调用，校验后只返回公网地址
+// 自定义 lookup：http.request 建连时调用，校验后只返回公网地址。
+// Node 20.13+/24 的 autoSelectFamily 会传 options.all=true，并期望回调
+// (null, [{ address, family }])；旧签名 (null, address, family) 会被当成
+// 地址数组解析，抛 ERR_INVALID_IP_ADDRESS: Invalid IP address: undefined。
 function safeLookup(hostname, options, callback) {
-  dns.lookup(hostname, { all: true }, (err, addresses) => {
+  const opts = options && typeof options === 'object' ? options : { family: Number(options) || 0 };
+  const all = Boolean(opts.all);
+  const lookupOpts = { all: true };
+  if (opts.family === 4 || opts.family === 6) lookupOpts.family = opts.family;
+  if (opts.hints) lookupOpts.hints = opts.hints;
+  dns.lookup(hostname, lookupOpts, (err, addresses) => {
     if (err) return callback(err);
-    const list = Array.isArray(addresses) ? addresses : [addresses];
-    const pub = list.find(a => !isPrivateIP(a.address));
-    if (!pub) return callback(new Error('禁止访问内网或保留地址'));
-    callback(null, pub.address, pub.family);
+    const list = (Array.isArray(addresses) ? addresses : [addresses])
+      .filter(item => item && item.address && !isPrivateIP(item.address));
+    if (!list.length) return callback(new Error('禁止访问内网或保留地址'));
+    if (all) return callback(null, list);
+    callback(null, list[0].address, list[0].family);
   });
 }
 
@@ -77,6 +87,11 @@ async function safeFetchBuffer(url, opts = {}) {
       throw new Error('仅支持 http/https 协议');
     }
     if (parsed.username || parsed.password) throw new Error('URL 不允许包含账号密码');
+    // 主机直接写 IP 时 Node 会跳过 lookup，自定义 safeLookup 不会执行，必须在请求前拦截。
+    const literalHost = parsed.hostname.replace(/^\[|\]$/g, '');
+    if (net.isIP(literalHost) && isPrivateIP(literalHost)) {
+      throw new Error('禁止访问内网或保留地址');
+    }
     const client = parsed.protocol === 'https:' ? https : http;
     let request;
     const onAbort = () => {
