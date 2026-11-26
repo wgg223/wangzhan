@@ -37,6 +37,11 @@
           <% var safeMsgContent = String(msg.content || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); %>
           <div class="message-content" id="msg-content-<%= msg.id %>" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); line-height: 1.8; color: var(--text-secondary);">
             <%- safeMsgContent.replace(/\n/g, '<br>') %>
+            <% if (msg.link) { %>
+              <div style="margin-top: 12px;">
+                <a href="<%= msg.link %>" class="btn" style="display:inline-block;background:var(--primary-dark);color:var(--text-inverse);text-decoration:none;padding:8px 18px;border-radius:6px;">前往相关页面</a>
+              </div>
+            <% } %>
           </div>
         </div>
       <% }); %>

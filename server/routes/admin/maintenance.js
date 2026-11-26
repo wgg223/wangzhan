@@ -25,6 +25,7 @@ const { settingsCache, queryCache, pageCache } = require('../../config/cache');
 const { sendMail } = require('../../config/mailer');
 const { formatBytes } = require('../../utils/format');
 const { getDirSize, copyDir } = require('../../utils/fs-helpers');
+const { broadcastToAllUsers } = require('../../services/notify');
 
 const projectRoot = require('../../config/app-root').projectRoot;
 const backupDir = path.join(projectRoot, 'backups');
@@ -251,29 +252,36 @@ router.post('/maintenance/update', isAuthenticated, isSuperAdmin, (req, res) => 
   try {
     const db = req.db;
     const { enabled, title, message } = req.body;
+    const isEnabled = enabled === true || enabled === 'true' || enabled === '1';
+    const maintenanceTitle = title || '系统维护中';
+    const maintenanceMessage = message || '系统正在进行维护升级，请稍后再试。';
+
+    // 记录变更前状态，用于「开启维护」时向全部用户广播
+    const previousMode = queryOne(db, "SELECT setting_value FROM settings WHERE setting_key = 'maintenance_mode'");
+    const wasEnabled = Boolean(previousMode && previousMode.setting_value === 'true');
 
     // Update or insert maintenance_mode setting
     const existingMode = queryOne(db, "SELECT id FROM settings WHERE setting_key = 'maintenance_mode'");
     if (existingMode) {
-      db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_mode'", [enabled ? 'true' : 'false']);
+      db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_mode'", [isEnabled ? 'true' : 'false']);
     } else {
-      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_mode', enabled ? 'true' : 'false']);
+      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_mode', isEnabled ? 'true' : 'false']);
     }
 
     // Update or insert maintenance_title
     const existingTitle = queryOne(db, "SELECT id FROM settings WHERE setting_key = 'maintenance_title'");
     if (existingTitle) {
-      db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_title'", [title || '系统维护中']);
+      db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_title'", [maintenanceTitle]);
     } else {
-      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_title', title || '系统维护中']);
+      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_title', maintenanceTitle]);
     }
 
     // Update or insert maintenance_message
     const existingMessage = queryOne(db, "SELECT id FROM settings WHERE setting_key = 'maintenance_message'");
     if (existingMessage) {
-      db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_message'", [message || '系统正在进行维护升级，请稍后再试。']);
+      db.run("UPDATE settings SET setting_value = ? WHERE setting_key = 'maintenance_message'", [maintenanceMessage]);
     } else {
-      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_message', message || '系统正在进行维护升级，请稍后再试。']);
+      db.run("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)", ['maintenance_message', maintenanceMessage]);
     }
 
     saveDatabase();
@@ -281,15 +289,29 @@ router.post('/maintenance/update', isAuthenticated, isSuperAdmin, (req, res) => 
     // Clear settings cache
     settingsCache.delete('settings');
 
+    // 开启维护（从未开启 → 开启）：向全部活跃用户发送站内通知
+    if (isEnabled && !wasEnabled) {
+      try {
+        broadcastToAllUsers(db, {
+          type: 'maintenance',
+          title: '系统维护通知：' + maintenanceTitle,
+          content: maintenanceMessage,
+          targetType: 'maintenance'
+        });
+      } catch (notifyErr) {
+        console.error('[maintenance] broadcast notification error:', notifyErr.message);
+      }
+    }
+
     // Log activity
     try {
       logActivity(db, {
         user_id: req.session.user.id,
         username: req.session.user.username,
-        action: enabled ? 'enable_maintenance' : 'disable_maintenance',
+        action: isEnabled ? 'enable_maintenance' : 'disable_maintenance',
         target_type: 'system',
         target_title: '维护模式',
-        detail: `用户 ${req.session.user.username} ${enabled ? '开启' : '关闭'}了维护模式`,
+        detail: `用户 ${req.session.user.username} ${isEnabled ? '开启' : '关闭'}了维护模式`,
         ip: req.ip
       });
     } catch (logErr) {
@@ -298,11 +320,11 @@ router.post('/maintenance/update', isAuthenticated, isSuperAdmin, (req, res) => 
 
     res.json({
       success: true,
-      message: enabled ? '维护模式已开启' : '维护模式已关闭',
+      message: isEnabled ? '维护模式已开启' : '维护模式已关闭',
       status: {
-        enabled,
-        title: title || '系统维护中',
-        message: message || '系统正在进行维护升级，请稍后再试。'
+        enabled: isEnabled,
+        title: maintenanceTitle,
+        message: maintenanceMessage
       }
     });
   } catch (err) {

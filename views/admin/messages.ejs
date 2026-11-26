@@ -37,7 +37,12 @@
             <tr>
               <td><input type="checkbox" name="ids" value="<%= msg.id %>" class="msg-checkbox"></td>
               <td><%= msg.id %></td>
-              <td><strong><%= msg.title %></strong></td>
+              <td>
+                <strong><%= msg.title %></strong>
+                <% if (msg.link) { %>
+                  <br><small style="color:var(--text-muted);word-break:break-all;">跳转：<%= msg.link %></small>
+                <% } %>
+              </td>
               <td><%= msg.from_username || '系统' %></td>
               <td><%= msg.to_username || '用户已删除' %></td>
               <td><%= msg.is_popup ? '✅' : '—' %></td>

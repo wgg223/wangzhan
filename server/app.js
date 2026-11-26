@@ -328,6 +328,20 @@ app.use((req, res, next) => {
     res.locals.layout = 'frontend/layout';      // 默认前台布局
   }
 
+  // 未绑定邮箱一次性提醒：登录成功时写入 session.promptBindEmail，
+  // 仅在下一次能渲染提示的 HTML 页面导航时消费（独立页面 / API 请求不消耗，留到下一页）
+  res.locals.showBindEmailPrompt = false;
+  if (req.session && req.session.user && req.session.promptBindEmail) {
+    const acceptsHtml = String(req.headers.accept || '').includes('text/html');
+    const isPageGet = req.method === 'GET' && acceptsHtml && !req.path.startsWith('/api/');
+    const layoutSupportsPrompt = res.locals.layout === 'frontend/layout' || res.locals.layout === 'admin/layout';
+    if (isPageGet && layoutSupportsPrompt) {
+      // /account 本身就是绑定邮箱页面，不再弹窗但仍清除标记
+      res.locals.showBindEmailPrompt = !req.path.startsWith('/account');
+      req.session.promptBindEmail = false;
+    }
+  }
+
   next();
 });
 
@@ -576,6 +590,37 @@ async function start() {
         // 通知 PM2 应用已就绪（配合 ecosystem.config.js 中的 wait_ready: true）
         if (process.send) {
           process.send('ready');
+        }
+
+        // 服务重启告警：仅生产/PM2 环境触发，通知全部管理员（站内 + 邮箱）
+        if (process.env.NODE_ENV === 'production' || process.env.pm_id || process.env.PM2_HOME) {
+          setTimeout(() => {
+            try {
+              const { notifyAdmins } = require('./services/notify');
+              const db = getDb();
+              if (!db) return;
+              const startedAt = new Date().toLocaleString('zh-CN', { hour12: false });
+              const instance = process.env.NODE_APP_INSTANCE || '0';
+              notifyAdmins(db, {
+                type: 'server_alert',
+                title: '服务已重启',
+                content: '站点服务已于 ' + startedAt + ' 启动（端口 ' + PORT + '，PID ' + process.pid +
+                  '，环境 ' + (process.env.NODE_ENV || 'development') + '）。',
+                targetType: 'server_alert',
+                emailDetails: [
+                  { label: '启动时间', value: startedAt },
+                  { label: '监听端口', value: String(PORT) },
+                  { label: '进程 PID', value: String(process.pid) },
+                  { label: 'PM2 实例', value: String(instance) },
+                  { label: '运行环境', value: process.env.NODE_ENV || 'development' }
+                ],
+                emailActionPath: '/admin/activity-logs',
+                emailActionText: '进入后台'
+              });
+            } catch (err) {
+              console.error('[app] 重启通知失败:', err.message);
+            }
+          }, 3000);
         }
       });
 

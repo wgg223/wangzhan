@@ -13,6 +13,39 @@ const crypto = require('crypto');
 
 const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
+// ==================== 安全事件告警 ====================
+
+/**
+ * 上报安全事件给全部管理员（同一类事件 10 分钟内只告警一次，避免被刷屏）
+ * @param {object} req 请求对象
+ * @param {string} throttleKey 节流键
+ * @param {string} title 告警标题
+ * @param {string} detail 告警正文
+ * @param {string} reason 简短原因（写入邮件明细）
+ */
+function reportSecurityEvent(req, throttleKey, title, detail, reason) {
+  if (!req || !req.db) return;
+  try {
+    const { alertAdminsOnce } = require('../services/notify');
+    alertAdminsOnce(req.db, throttleKey, 10 * 60 * 1000, {
+      title,
+      content: detail,
+      targetType: 'security_alert',
+      emailDetails: [
+        { label: '原因', value: reason || '' },
+        { label: '来源 IP', value: req.ip || '未知' },
+        { label: '请求路径', value: String(req.originalUrl || req.path || '/').split('?')[0] },
+        { label: '请求方法', value: req.method || '' },
+        { label: 'User-Agent', value: req.headers && req.headers['user-agent'] ? req.headers['user-agent'] : '' }
+      ],
+      emailActionPath: '/admin/activity-logs',
+      emailActionText: '查看安全日志'
+    });
+  } catch (err) {
+    // 告警失败不影响安全拦截本身
+  }
+}
+
 // ==================== 双提交 Cookie 模式 ====================
 
 /**
@@ -66,6 +99,14 @@ function doubleSubmitCookie(req, res, next) {
   }
 
   if (!tokenValid) {
+    reportSecurityEvent(
+      req,
+      'security:csrf',
+      '安全告警：CSRF 校验失败',
+      'IP ' + (req.ip || '未知') + ' 提交的请求未通过 CSRF 校验，已拦截。路径：' +
+        String(req.originalUrl || req.path || '/').split('?')[0],
+      'CSRF token 缺失或不匹配'
+    );
     // 对于 API/JSON 请求返回 JSON 错误
     const isJsonRequest = (req.headers['content-type'] || '').includes('application/json');
     if (isJsonRequest || req.xhr) {
@@ -136,6 +177,14 @@ function validateOrigin(req, res, next) {
     }
     // 对于表单提交，要求有 Referer
     if (req.method === 'POST' && req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
+      reportSecurityEvent(
+        req,
+        'security:origin',
+        '安全告警：请求缺少来源',
+        'IP ' + (req.ip || '未知') + ' 的表单请求既无 Origin 也无 Referer，已拦截。路径：' +
+          String(req.originalUrl || req.path || '/').split('?')[0],
+        '缺少 Origin / Referer'
+      );
       return res.status(403).json({
         error: '请求来源验证失败',
         code: 'ORIGIN_CHECK_FAILED'
@@ -150,6 +199,14 @@ function validateOrigin(req, res, next) {
   try {
     sourceHost = new URL(source).hostname;
   } catch (e) {
+    reportSecurityEvent(
+      req,
+      'security:origin',
+      '安全告警：请求来源格式异常',
+      'IP ' + (req.ip || '未知') + ' 的请求来源无法解析，已拦截。路径：' +
+        String(req.originalUrl || req.path || '/').split('?')[0],
+      'Origin / Referer 格式无效'
+    );
     return res.status(403).json({
       error: '请求来源格式无效',
       code: 'INVALID_ORIGIN'
@@ -180,6 +237,15 @@ function validateOrigin(req, res, next) {
       path: req.path,
       method: req.method
     });
+    reportSecurityEvent(
+      req,
+      'security:origin',
+      '安全告警：请求来源不匹配',
+      'IP ' + (req.ip || '未知') + ' 的请求来源 ' + sourceHost + ' 不在允许列表（' +
+        allowedHosts.join(', ') + '）中，已拦截。路径：' +
+        String(req.originalUrl || req.path || '/').split('?')[0],
+      'Origin / Referer 域名不匹配'
+    );
 
     // 对于 JSON 请求返回 JSON 错误
     const acceptHeader = req.headers.accept || '';

@@ -21,6 +21,7 @@ const fs = require('fs');
 const { queryOne, queryAll, getDb, saveDatabase } = require('../../config/database');
 const { apiAuth } = require('../../middlewares/api-auth');
 const { publicDir } = require('../../config/app-root');
+const { notifyAdmins } = require('../../services/notify');
 
 const router = express.Router();
 
@@ -279,6 +280,32 @@ router.post('/images/:id/comments', apiAuth, (req, res) => {
     [imageId, req.apiUser.id, content, isAdmin ? 'approved' : 'pending']
   );
   saveDatabase();
+
+  // 待审核评论：通知管理员（站内 + 绑定邮箱，邮件 5 分钟内合并一次）
+  if (!isAdmin) {
+    try {
+      const imageMeta = queryOne(db, 'SELECT title FROM images WHERE id = ?', [imageId]);
+      const imageTitle = (imageMeta && imageMeta.title) || ('#' + imageId);
+      notifyAdmins(db, {
+        type: 'admin_task',
+        title: '新图片评论待审核',
+        content: '用户「' + req.apiUser.username + '」评论了图片《' + imageTitle + '》，等待审核。',
+        targetType: 'admin_image_comments',
+        emailOnceKey: 'pending_image_comment',
+        emailOnceWindowMs: 5 * 60 * 1000,
+        emailDetails: [
+          { label: '图片', value: imageTitle },
+          { label: '评论用户', value: req.apiUser.username },
+          { label: '评论内容', value: content.slice(0, 200) }
+        ],
+        emailActionPath: '/admin/image-share',
+        emailActionText: '前往审核'
+      });
+    } catch (notifyErr) {
+      console.error('[api/images] 待审评论通知失败:', notifyErr.message);
+    }
+  }
+
   res.json({ success: true, message: isAdmin ? '评论已发表' : '评论已提交，等待审核' });
 });
 
@@ -315,6 +342,30 @@ router.post('/images', apiAuth, imageUpload.array('files', 10), (req, res) => {
       [t, description, url, cateId, user.id, status]);
   }
   saveDatabase();
+
+  // 待审核图片：通知管理员（站内 + 绑定邮箱，邮件 5 分钟内合并一次）
+  if (status === 0) {
+    try {
+      notifyAdmins(db, {
+        type: 'admin_task',
+        title: '有新图片待审核',
+        content: '用户「' + user.username + '」通过 App 上传了 ' + req.files.length + ' 张图片（' + title + '），等待审核。',
+        targetType: 'admin_images',
+        emailOnceKey: 'pending_image_upload',
+        emailOnceWindowMs: 5 * 60 * 1000,
+        emailDetails: [
+          { label: '上传用户', value: user.username },
+          { label: '图片标题', value: title },
+          { label: '图片数量', value: String(req.files.length) }
+        ],
+        emailActionPath: '/admin/image-share',
+        emailActionText: '前往审核'
+      });
+    } catch (notifyErr) {
+      console.error('[api/images] 待审图片通知失败:', notifyErr.message);
+    }
+  }
+
   res.json({ success: true, message: status === 1 ? '上传成功' : '上传成功，等待审核' });
 });
 

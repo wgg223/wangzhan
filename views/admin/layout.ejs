@@ -219,6 +219,29 @@
       </div>
     </aside>
     <main class="admin-main">
+      <div class="admin-topbar">
+        <% if (typeof showBindEmailPrompt !== 'undefined' && showBindEmailPrompt) { %>
+          <a href="/account#bind-email" class="admin-bind-email-banner">📧 您尚未绑定邮箱，绑定后可接收审批待办与系统告警邮件 →</a>
+        <% } %>
+        <div class="admin-notify" id="admin-notify">
+          <button type="button" class="admin-notify-btn" id="admin-notify-btn" aria-label="通知中心" title="通知中心">
+            <span aria-hidden="true">🔔</span>
+            <span class="admin-notify-badge" id="admin-notify-badge" hidden>0</span>
+          </button>
+          <div class="admin-notify-panel" id="admin-notify-panel" hidden>
+            <div class="admin-notify-head">
+              <strong>通知中心</strong>
+              <button type="button" class="admin-notify-readall" id="admin-notify-readall">全部标为已读</button>
+            </div>
+            <div class="admin-notify-list" id="admin-notify-list">
+              <div class="admin-notify-empty">加载中…</div>
+            </div>
+            <div class="admin-notify-foot">
+              <a href="/messages">全部通知与站内信 →</a>
+            </div>
+          </div>
+        </div>
+      </div>
       <%- body %>
     </main>
   </div>
@@ -234,5 +257,146 @@
   </script>
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/utils.js') : '/js/utils.js' %>"></script>
   <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/js/admin.js') : '/js/admin.js' %>"></script>
+  <script>
+  // ============ 后台通知中心（铃铛） ============
+  (function() {
+    var notifyRoot = document.getElementById('admin-notify');
+    if (!notifyRoot) return;
+    var btn = document.getElementById('admin-notify-btn');
+    var badge = document.getElementById('admin-notify-badge');
+    var panel = document.getElementById('admin-notify-panel');
+    var list = document.getElementById('admin-notify-list');
+    var readAllBtn = document.getElementById('admin-notify-readall');
+
+    // SQLite CURRENT_TIMESTAMP 为 UTC，补 Z 后再本地化；列表内展示相对时间
+    function formatTime(value) {
+      if (!value) return '';
+      var str = String(value);
+      if (!/[zZ]$|[+\-]\d{2}:\d{2}$/.test(str)) str = str.replace(' ', 'T') + 'Z';
+      var date = new Date(str);
+      if (isNaN(date.getTime())) return '';
+      var diff = Date.now() - date.getTime();
+      if (diff < 60000) return '刚刚';
+      if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前';
+      if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前';
+      return date.toLocaleString('zh-CN', { hour12: false });
+    }
+
+    function updateBadge(count) {
+      var value = Number(count) || 0;
+      if (value > 0) {
+        badge.textContent = value > 99 ? '99+' : String(value);
+        badge.hidden = false;
+      } else {
+        badge.hidden = true;
+      }
+    }
+
+    function refreshBadge() {
+      fetch('/api/notifications/unread-count', { headers: { Accept: 'application/json' } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data && data.success && data.data) updateBadge(data.data.count);
+        })
+        .catch(function() {});
+    }
+
+    function markRead(id) {
+      fetch('/api/notifications/' + encodeURIComponent(id) + '/read', { method: 'PATCH', headers: { Accept: 'application/json' } })
+        .then(function() { refreshBadge(); })
+        .catch(function() {});
+    }
+
+    function renderList(items) {
+      list.innerHTML = '';
+      if (!items || items.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'admin-notify-empty';
+        empty.textContent = '暂无通知';
+        list.appendChild(empty);
+        return;
+      }
+      items.forEach(function(n) {
+        var item = document.createElement('div');
+        item.className = 'admin-notify-item' + (n.is_read ? '' : ' is-unread');
+
+        var title = document.createElement('div');
+        title.className = 'admin-notify-item-title';
+        title.textContent = n.title || '通知';
+
+        var content = document.createElement('div');
+        content.className = 'admin-notify-item-content';
+        content.textContent = n.content || '';
+
+        var time = document.createElement('div');
+        time.className = 'admin-notify-item-time';
+        time.textContent = formatTime(n.created_at);
+
+        item.appendChild(title);
+        item.appendChild(content);
+        item.appendChild(time);
+
+        if (n.link) {
+          item.classList.add('is-link');
+          item.addEventListener('click', function() {
+            if (!n.is_read) markRead(n.id);
+            window.location.href = n.link;
+          });
+        } else {
+          item.addEventListener('click', function() {
+            if (!n.is_read) {
+              markRead(n.id);
+              n.is_read = 1;
+              item.classList.remove('is-unread');
+            }
+          });
+        }
+        list.appendChild(item);
+      });
+    }
+
+    function loadNotifications() {
+      fetch('/api/notifications?limit=10', { headers: { Accept: 'application/json' } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (!data || !data.success || !data.data) return;
+          renderList(data.data.notifications || []);
+          updateBadge(data.data.unread_count);
+        })
+        .catch(function() {
+          list.innerHTML = '<div class="admin-notify-empty">通知加载失败</div>';
+        });
+    }
+
+    btn.addEventListener('click', function(event) {
+      event.stopPropagation();
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) loadNotifications();
+    });
+
+    readAllBtn.addEventListener('click', function(event) {
+      event.stopPropagation();
+      fetch('/api/notifications/read-all', { method: 'PATCH', headers: { Accept: 'application/json' } })
+        .then(function() {
+          updateBadge(0);
+          loadNotifications();
+        })
+        .catch(function() {});
+    });
+
+    document.addEventListener('click', function(event) {
+      if (!panel.hidden && !notifyRoot.contains(event.target)) panel.hidden = true;
+    });
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') panel.hidden = true;
+    });
+
+    refreshBadge();
+    // 每 60 秒刷新未读数（页面不可见时跳过，节省请求）
+    setInterval(function() {
+      if (document.visibilityState === 'visible') refreshBadge();
+    }, 60000);
+  })();
+  </script>
 </body>
 </html>

@@ -172,6 +172,17 @@ function checkMessagePopup() {
           document.getElementById('popup-title').textContent = data.message.title;
           // 使用 escapeHtml 转义内容，防止 XSS 攻击
           document.getElementById('popup-content').innerHTML = escapeHtml(data.message.content).replace(/\n/g, '<br>');
+          // 站内信带跳转链接时显示「前往相关页面」按钮
+          var actionLink = document.getElementById('popup-action-link');
+          if (actionLink) {
+            if (data.message.link) {
+              actionLink.setAttribute('href', data.message.link);
+              actionLink.style.display = '';
+            } else {
+              actionLink.style.display = 'none';
+              actionLink.removeAttribute('href');
+            }
+          }
           popup.style.display = 'block';
         }
       }

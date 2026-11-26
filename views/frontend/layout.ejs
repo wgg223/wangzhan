@@ -197,8 +197,31 @@
         <button type="button" onclick="closeMessagePopup()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
       </div>
       <div style="padding:24px;max-height:350px;overflow-y:auto;" id="popup-content"></div>
-      <div style="padding:16px 24px;border-top:1px solid var(--border-color);text-align:right;">
+      <div style="padding:16px 24px;border-top:1px solid var(--border-color);text-align:right;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
+        <a href="#" id="popup-action-link" class="btn" style="display:none;background:var(--primary-dark);color:var(--text-inverse);text-decoration:none;padding:8px 20px;border-radius:5px;">前往相关页面</a>
         <a href="/messages" class="btn" style="background:var(--primary-dark);color:var(--text-inverse);text-decoration:none;padding:8px 20px;border-radius:5px;" data-i18n="popup.viewAllMessages">查看所有站内信</a>
+      </div>
+    </div>
+  </div>
+  <% } %>
+
+  <% if (typeof showBindEmailPrompt !== 'undefined' && showBindEmailPrompt) { %>
+  <div id="bind-email-prompt" style="position:fixed;z-index:99998;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+    <div role="dialog" aria-modal="true" aria-labelledby="bind-email-title" style="position:relative;background:var(--bg-card);margin:12% auto;padding:0;width:460px;max-width:90%;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,0.3);overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#8b5cf6 0%,#ec4899 100%);color:#fff;padding:16px 22px;">
+        <h3 id="bind-email-title" style="margin:0;font-size:17px;">绑定邮箱提醒</h3>
+      </div>
+      <div style="padding:22px;color:var(--text-secondary);line-height:1.8;font-size:14px;">
+        <p style="margin:0 0 10px;">您的账号尚未绑定邮箱。绑定后可以：</p>
+        <ul style="margin:0 0 14px;padding-left:20px;">
+          <li>接收权限审批、管理员待办与系统告警邮件</li>
+          <li>在忘记密码时安全找回账号</li>
+        </ul>
+        <p style="margin:0;font-size:13px;color:var(--text-muted);">本提示每次登录仅显示一次，也可稍后在「账户设置」中绑定。</p>
+      </div>
+      <div style="padding:14px 22px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:10px;">
+        <button type="button" onclick="document.getElementById('bind-email-prompt').style.display='none'" style="background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-secondary);padding:8px 18px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;">暂不绑定</button>
+        <a href="/account#bind-email" style="display:inline-block;background:var(--primary-dark);color:var(--text-inverse);text-decoration:none;padding:8px 20px;border-radius:6px;font-size:14px;">立即绑定邮箱</a>
       </div>
     </div>
   </div>
@@ -325,7 +348,7 @@
         if (tt === 'comment' && tid) return '/articles/' + tid;
         if (tt === 'user' && tid) return '/user/' + tid;
         if (tt === 'conversation' && tid) return '/chat/' + tid;
-        if (tt === 'image' && tid) return '/image-share/image/' + tid;
+        if (tt === 'image' && tid) return '/image-share/image?id=' + encodeURIComponent(tid);
         if (tt === 'community_post' && tid) return '/community/post/' + tid;
         if (tt === 'permission') return '/permissions/apply';
         if (tt === 'account') return '/auth/frontend/change-password';

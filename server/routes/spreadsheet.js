@@ -68,6 +68,7 @@ const { doubleSubmitCookie } = require('../middlewares/security');
 const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { logActivity } = require('../config/activity');
 const { createNotification } = require('./community');
+const { sendEmailsToUsers } = require('../services/notify');
 const { resolveModel, callChatCompletion } = require('../services/ai-chat/provider');
 const { createEmptyUniverDoc } = require('../utils/spreadsheet-migrate');
 const { exportUniverDoc } = require('../utils/spreadsheet-univer-io');
@@ -1309,6 +1310,25 @@ router.post('/api/spreadsheet/:id(\\d+)/permission/apply', isAuthenticated, hasF
       fromUserId: userId, targetType: 'spreadsheet', targetId: String(sheetId)
     });
   });
+
+  // 邮件通知：仅发给有绑定邮箱的管理员/创建者，未绑定的自动跳过
+  if (admins.length > 0) {
+    sendEmailsToUsers(db, admins.map(admin => admin.id), {
+      subject: '在线Office权限申请待审批',
+      title: '在线Office权限申请',
+      content: `${req.session.user.username} 申请${docTypeName(req.spreadsheet.doc_type)}「${req.spreadsheet.name}」的${PERM_NAMES[perm_type]}权限`,
+      details: [
+        { label: '申请人', value: req.session.user.username },
+        { label: '文档类型', value: docTypeName(req.spreadsheet.doc_type) },
+        { label: '文档名称', value: req.spreadsheet.name },
+        { label: '申请权限', value: PERM_NAMES[perm_type] },
+        { label: '申请理由', value: reason ? String(reason).slice(0, 200) : '未填写' }
+      ],
+      actionPath: '/office/' + sheetId,
+      actionText: '前往处理'
+    }).catch(err => console.error('[spreadsheet] 权限申请邮件通知失败:', err.message));
+  }
+
   res.json({ success: true, message: '申请已提交，等待审批' });
 });
 

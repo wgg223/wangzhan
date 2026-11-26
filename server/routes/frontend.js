@@ -16,6 +16,7 @@ const { queryAll, queryOne, saveDatabase } = require('../config/database');
 const { isAuthenticated, canEditArticle, hasFrontendPermission, isAdminRole, hasPermKey } = require('../middlewares/auth');
 const { settingsCache, queryCache } = require('../config/cache');
 const { createNotification } = require('./community');
+const { notifyAdmins } = require('../services/notify');
 const { logActivity } = require('../config/activity');
 const { getSettings } = require('../utils/settings');
 const { renderError } = require('../utils/response');
@@ -163,6 +164,28 @@ router.post('/ai-prompts/api/comments/:promptId', isAuthenticated, hasFrontendPe
   db.run("INSERT INTO prompt_comments (prompt_id, user_id, content, status) VALUES (?, ?, ?, 'pending')",
     [promptId, req.session.user.id, content]);
   saveDatabase();
+
+  // 管理员待办通知：提示词评论待审核
+  try {
+    notifyAdmins(db, {
+      type: 'admin_task',
+      title: '新提示词评论待审核',
+      content: '用户「' + req.session.user.username + '」评论了提示词《' + prompt.title + '》，等待审核。',
+      targetType: 'admin_prompts',
+      emailOnceKey: 'pending_prompt_comment',
+      emailOnceWindowMs: 5 * 60 * 1000,
+      emailDetails: [
+        { label: '提示词', value: prompt.title },
+        { label: '评论用户', value: req.session.user.username },
+        { label: '评论内容', value: content }
+      ],
+      emailActionPath: '/admin/prompts',
+      emailActionText: '前往审核'
+    });
+  } catch (notifyErr) {
+    console.error('[prompts] 待审评论通知失败:', notifyErr.message);
+  }
+
   logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'prompt_comment', target_id: promptId, target_title: prompt.title, detail: '评论提示词：' + prompt.title, ip: req.ip });
 
   res.json({ success: true, message: '评论已提交，等待管理员审核' });
@@ -479,6 +502,30 @@ router.post('/articles/:id/comment', doubleSubmitCookie, (req, res) => {
     }
     db.run("INSERT INTO comments (article_id, visitor_name, visitor_email, content, status, parent_id) VALUES (?, ?, ?, ?, 'pending', ?)",
       [articleId, visitor_name, visitor_email, content.trim(), parent_id || 0]);
+
+    // 管理员待办通知：新访客评论待审核（站内每条都通知；邮件 5 分钟内合并一次，防垃圾评论轰炸邮箱）
+    try {
+      const articleMeta = queryOne(db, 'SELECT title FROM articles WHERE id = ?', [articleId]);
+      notifyAdmins(db, {
+        type: 'admin_task',
+        title: '新评论待审核',
+        content: '访客「' + visitor_name + '」在《' + ((articleMeta && articleMeta.title) || '文章') +
+          '》发表评论，等待管理员审核。',
+        targetType: 'admin_comments',
+        emailOnceKey: 'pending_article_comment',
+        emailOnceWindowMs: 5 * 60 * 1000,
+        emailDetails: [
+          { label: '文章', value: (articleMeta && articleMeta.title) || ('#' + articleId) },
+          { label: '访客昵称', value: visitor_name },
+          { label: '访客邮箱', value: visitor_email },
+          { label: '评论内容', value: content.trim() }
+        ],
+        emailActionPath: '/admin/comments',
+        emailActionText: '前往审核'
+      });
+    } catch (notifyErr) {
+      console.error('[comments] 待审评论通知失败:', notifyErr.message);
+    }
   }
 
   saveDatabase();
@@ -625,9 +672,10 @@ router.get('/messages', isAuthenticated, (req, res) => {
 
   const messages = queryAll(db, `
     SELECT m.id, m.from_user_id, m.to_user_id, m.title, m.content, m.is_read, m.is_popup, m.created_at,
-      COALESCE(u.username, m.from_username) as from_username
+      COALESCE(u.username, m.from_username) as from_username, l.url as link
     FROM internal_messages m
     LEFT JOIN users u ON m.from_user_id = u.id
+    LEFT JOIN internal_message_links l ON l.message_id = m.id
     WHERE m.to_user_id = ?
     ORDER BY m.is_read ASC, m.created_at DESC
   `, [userId]);
@@ -651,13 +699,16 @@ router.get('/messages/unread-count', isAuthenticated, (req, res) => {
 router.get('/messages/check-popup', isAuthenticated, (req, res) => {
   const db = req.db;
   const msg = queryOne(db,
-    'SELECT * FROM internal_messages WHERE to_user_id = ? AND is_read = 0 AND is_popup = 1 ORDER BY created_at DESC LIMIT 1',
+    `SELECT m.*, l.url as link FROM internal_messages m
+     LEFT JOIN internal_message_links l ON l.message_id = m.id
+     WHERE m.to_user_id = ? AND m.is_read = 0 AND m.is_popup = 1
+     ORDER BY m.created_at DESC LIMIT 1`,
     [req.session.user.id]
   );
   if (msg) {
     db.run('UPDATE internal_messages SET is_read = 1 WHERE id = ?', [msg.id]);
     saveDatabase();
-    res.json({ hasPopup: true, message: { id: msg.id, title: msg.title, content: msg.content } });
+    res.json({ hasPopup: true, message: { id: msg.id, title: msg.title, content: msg.content, link: msg.link || '' } });
   } else {
     res.json({ hasPopup: false });
   }
@@ -681,9 +732,14 @@ router.post('/messages/mark-all-read', isAuthenticated, (req, res) => {
 
 router.post('/messages/delete/:id', isAuthenticated, (req, res) => {
   const db = req.db;
-  db.run('DELETE FROM internal_messages WHERE id = ? AND to_user_id = ?',
+  // 先校验归属，防止越权删除他人的跳转链接
+  const msg = queryOne(db, 'SELECT id FROM internal_messages WHERE id = ? AND to_user_id = ?',
     [req.params.id, req.session.user.id]);
-  saveDatabase();
+  if (msg) {
+    db.run('DELETE FROM internal_message_links WHERE message_id = ?', [msg.id]);
+    db.run('DELETE FROM internal_messages WHERE id = ?', [msg.id]);
+    saveDatabase();
+  }
   res.redirect('/messages');
 });
 

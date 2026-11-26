@@ -11,6 +11,7 @@
  */
 
 const { queryOne, queryAll } = require('../config/db-helpers');
+const { sendEmailsToUsers } = require('../services/notify');
 
 // 高危权限兜底清单（兼容旧库：permissions 表缺少 high_risk 标记或尚未被 seed 覆盖时仍生效）
 const HIGH_RISK_PERMS = [
@@ -239,6 +240,23 @@ function notifyStageApprover(db, createNotification, app, applicantName, permNam
       fromUserId: fromUserId, targetType: 'permission_application', targetId: String(app.id)
     });
   });
+
+  // 邮件提醒：仅发送给绑定邮箱的审批人（未绑定/未配 SMTP 自动跳过）
+  try {
+    sendEmailsToUsers(db, targets, {
+      subject: '【权限审批】有新的权限申请待处理',
+      title: title,
+      content: content,
+      details: [
+        { label: '申请人', value: applicantName },
+        { label: '申请权限', value: permName || app.perm_key },
+        { label: '审批阶段', value: stageLabel },
+        { label: '申请编号', value: String(app.id) }
+      ],
+      actionPath: '/admin/my-approvals?id=' + encodeURIComponent(String(app.id)),
+      actionText: '前往审批'
+    }).catch(() => {});
+  } catch (e) { /* 邮件失败不影响站内通知 */ }
 }
 
 /**
@@ -254,6 +272,23 @@ function notifyApplicant(db, createNotification, app, applicantId, permName, app
     userId: applicantId, type: 'permission', title: title, content: content,
     fromUserId: fromUserId, targetType: 'permission_application', targetId: String(app.id)
   });
+
+  // 邮件通知申请人审批结果（未绑定邮箱/未配 SMTP 自动跳过）
+  try {
+    sendEmailsToUsers(db, [applicantId], {
+      subject: approved ? '【权限审批】您的权限申请已通过' : '【权限审批】您的权限申请被拒绝',
+      title: title,
+      content: content,
+      details: [
+        { label: '申请权限', value: permText },
+        { label: '审批结果', value: approved ? '已通过并生效' : '已拒绝' },
+        { label: '处理说明', value: reason || '' },
+        { label: '申请编号', value: String(app.id) }
+      ],
+      actionPath: '/permissions/apply',
+      actionText: '查看我的申请'
+    }).catch(() => {});
+  } catch (e) { /* 邮件失败不影响站内通知 */ }
 }
 
 /**

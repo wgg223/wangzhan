@@ -21,6 +21,7 @@ const { validateMagicBytes } = require('../utils/file-validator');
 const { getImageConfigs, saveImageShareConfigs } = require('../utils/settings');
 const { addImageLog } = require('../utils/image-utils');
 const { isAdminRole, hasPermKey, validatePassword } = require('../middlewares/auth');
+const { notifyAdmins } = require('../services/notify');
 
 // 图片分享站所有页面自带完整 HTML（views/image-share/header.ejs），统一独立渲染，不套主站布局。
 // express-ejs-layouts 只认 render 选项里的 layout:false（res.locals.layout=false 会被 || 跳过），故在此注入。
@@ -68,6 +69,31 @@ function imageFileFilter(req, file, cb) {
     return cb(new Error('只支持 JPG、PNG、GIF、WebP 格式的图片'));
   }
   cb(null, true);
+}
+
+// 待审核图片：通知管理员（站内 + 绑定邮箱；邮件 5 分钟内合并一次，避免批量上传刷屏）
+function notifyPendingImages(db, user, title, count) {
+  try {
+    const safeTitle = String(title || '').slice(0, 80) || '未命名图片';
+    const total = Math.max(1, Number(count) || 1);
+    notifyAdmins(db, {
+      type: 'admin_task',
+      title: total > 1 ? '有 ' + total + ' 张图片待审核' : '有新图片待审核',
+      content: '用户「' + user.username + '」上传了' + (total > 1 ? total + ' 张图片（如《' + safeTitle + '》）' : '图片《' + safeTitle + '》') + '，等待审核。',
+      targetType: 'admin_images',
+      emailOnceKey: 'pending_image_upload',
+      emailOnceWindowMs: 5 * 60 * 1000,
+      emailDetails: [
+        { label: '上传用户', value: user.username },
+        { label: '图片标题', value: safeTitle },
+        { label: '图片数量', value: String(total) }
+      ],
+      emailActionPath: '/admin/image-share',
+      emailActionText: '前往审核'
+    });
+  } catch (err) {
+    console.error('[image-share] 待审图片通知失败:', err.message);
+  }
 }
 
 // 单文件上传配置
@@ -505,6 +531,8 @@ router.post('/user/upload', isAuthenticated, (req, res) => {
       [title, description, url, cateId, user.id, status]);
     saveDatabase();
 
+    if (status === 0) notifyPendingImages(db, user, title, 1);
+
     const message = status === 1 ? '上传成功' : '上传成功，等待管理员审核';
     res.render('image-share/message', {
       user, config,
@@ -656,6 +684,10 @@ router.post('/user/upload-batch', isAuthenticated, (req, res) => {
     }
 
     saveDatabase();
+
+    if (status === 0 && uploadedImages.length > 0) {
+      notifyPendingImages(db, user, title, uploadedImages.length);
+    }
 
     let message = '';
     if (uploadedImages.length > 0) {
@@ -831,6 +863,29 @@ router.post('/comment/add', isAuthenticated, doubleSubmitCookie, (req, res) => {
   db.run("INSERT INTO image_comments (image_id, user_id, content, status) VALUES (?, ?, ?, 'pending')",
     [parseInt(image_id), user.id, content.trim()]);
   saveDatabase();
+
+  // 管理员待办通知：图片评论待审核
+  try {
+    const imageMeta = queryOne(db, 'SELECT title FROM images WHERE id = ?', [parseInt(image_id)]);
+    notifyAdmins(db, {
+      type: 'admin_task',
+      title: '新图片评论待审核',
+      content: '用户「' + user.username + '」评论了图片《' + ((imageMeta && imageMeta.title) || ('#' + image_id)) +
+        '》，等待审核。',
+      targetType: 'admin_image_comments',
+      emailOnceKey: 'pending_image_comment',
+      emailOnceWindowMs: 5 * 60 * 1000,
+      emailDetails: [
+        { label: '图片', value: (imageMeta && imageMeta.title) || ('#' + image_id) },
+        { label: '评论用户', value: user.username },
+        { label: '评论内容', value: content.trim() }
+      ],
+      emailActionPath: '/admin/image-share',
+      emailActionText: '前往审核'
+    });
+  } catch (notifyErr) {
+    console.error('[image-share] 待审评论通知失败:', notifyErr.message);
+  }
 
   res.render('image-share/message', {
     user, config,

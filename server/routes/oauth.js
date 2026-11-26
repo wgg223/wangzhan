@@ -563,6 +563,8 @@ function establishSession(req, res, user, redirectBase) {
       role: user.role,
       avatar: user.avatar || '/assets/images/default-avatar.png'
     };
+    // 未绑定邮箱：本次登录后的首个页面导航提示绑定（由 app.js 消费一次）
+    req.session.promptBindEmail = !user.email;
     req.session.save(() => res.redirect(redirectBase));
   });
 }

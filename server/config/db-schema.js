@@ -412,6 +412,15 @@ function createTables(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
+  // ============ 站内信跳转链接表 ============
+  // 因禁止 ALTER TABLE，站内信的跳转目标独立成表（1 条站内信最多 1 个链接）
+  db.run(`CREATE TABLE IF NOT EXISTS internal_message_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL UNIQUE,
+    url TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
   // ============ 用户关注表 ============
   db.run(`CREATE TABLE IF NOT EXISTS user_follows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

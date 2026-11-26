@@ -215,48 +215,9 @@ router.get('/api/user/:id/followers', (req, res) => {
 
 // ==================== 通知中心 ====================
 
-/**
- * 创建通知（内部函数）
- */
-function createNotification(db, { userId, type, title, content, fromUserId, targetType, targetId }) {
-  try {
-    db.run(
-      `INSERT INTO notifications (user_id, type, title, content, from_user_id, target_type, target_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId, type, title, content || '', fromUserId || null, targetType || '', targetId || '']
-    );
-    return true;
-  } catch (err) {
-    console.error('[通知] 创建通知失败:', err.message);
-    return false;
-  }
-}
-
-/**
- * 生成通知跳转链接（点击通知自动跳转对应页面）
- * 规则：按 target_type 映射目标页面；permission 类通知按接收者角色分流
- *      （审批通知→我的审批页 / 结果通知→申请记录页）
- * @param {object} n 通知行（含 target_type / target_id）
- * @param {object} user 当前用户（含 role）
- * @returns {string|null} 
- */
-function getNotifLink(n, user) {
-  const tt = n.target_type || '';
-  const tid = n.target_id || '';
-  if (tt === 'article' && tid) return '/articles/' + tid;
-  if (tt === 'comment' && tid) return '/articles/' + tid;
-  if (tt === 'user' && tid) return '/user/' + tid;
-  if (tt === 'conversation' && tid) return '/chat/' + tid;
-  if (tt === 'image' && tid) return '/image-share/image/' + tid;
-  if (tt === 'community_post' && tid) return '/community/post/' + tid;
-  if (tt === 'permission') {
-    return (user && (user.role === 'admin' || user.role === 'super_admin'))
-      ? '/admin/my-approvals?id=' + tid
-      : '/permissions/apply';
-  }
-  if (tt === 'account') return '/auth/frontend/change-password';
-  return null;
-}
+// 通知创建与跳转链接统一由 services/notify.js 提供，
+// 这里保留同名导出，兼容既有调用方（permission-flow / admin/permissions 等）。
+const { createNotification, getNotifLink } = require('../services/notify');
 
 /**
  * 获取用户通知列表
@@ -457,6 +418,9 @@ router.post('/api/like/:targetType/:targetId', isAuthenticated, (req, res) => {
       // 触发通知 - 通知被点赞内容的作者
       let contentOwnerId = null;
       let contentTitle = '';
+      // 兜底跳转目标：评论点赞没有文章 ID，查到所属文章后改为跳转文章页
+      let notifTargetType = targetType;
+      let notifTargetId = String(targetId);
       if (targetType === 'article') {
         const article = queryOne(db, 'SELECT author_id, title FROM articles WHERE id = ?', [targetId]);
         if (article) {
@@ -464,8 +428,14 @@ router.post('/api/like/:targetType/:targetId', isAuthenticated, (req, res) => {
           contentTitle = article.title;
         }
       } else if (targetType === 'comment') {
-        const comment = queryOne(db, 'SELECT user_id FROM comments WHERE id = ?', [targetId]);
-        if (comment) contentOwnerId = comment.user_id;
+        const comment = queryOne(db, 'SELECT user_id, article_id FROM comments WHERE id = ?', [targetId]);
+        if (comment) {
+          contentOwnerId = comment.user_id;
+          if (comment.article_id) {
+            notifTargetType = 'article';
+            notifTargetId = String(comment.article_id);
+          }
+        }
       } else if (targetType === 'image') {
         const image = queryOne(db, 'SELECT user_id, title FROM images WHERE id = ?', [targetId]);
         if (image) {
@@ -488,8 +458,8 @@ router.post('/api/like/:targetType/:targetId', isAuthenticated, (req, res) => {
           title: '收到新点赞',
           content: `用户 ${req.session.user.username} 点赞了你的${typeNames[targetType] || '内容'}${contentTitle ? '《' + contentTitle + '》' : ''}`,
           fromUserId: userId,
-          targetType: targetType,
-          targetId: String(targetId)
+          targetType: notifTargetType,
+          targetId: notifTargetId
         });
       }
 

@@ -107,6 +107,7 @@
               <i class="fas fa-eye"></i>
             </button>
           </div>
+          <div class="field-hint caps-hint" id="capsHint" style="display:none;">大写锁定已开启</div>
           <div class="field-error" id="err-password"></div>
         </div>
         
@@ -160,6 +161,7 @@
         <button type="submit" class="auth-btn auth-btn-primary" id="loginSubmitBtn">
           <i class="fas fa-sign-in-alt"></i> <span data-i18n="auth.loginBtn">登录</span>
         </button>
+        <p class="auth-security-note"><i class="fas fa-shield-alt"></i> 登录信息经加密传输，请勿在公共设备上勾选「记住登录」</p>
       </form>
 
       <!-- 第三方登录 -->
@@ -759,6 +761,59 @@
       }
     })();
 
+    // 协议记忆：勾选过一次后，后续登录自动勾选用户协议与隐私政策
+    var AGREEMENT_STORAGE_KEY = 'auth_agreement_accepted_v1';
+
+    function saveAgreementPreference() {
+      var loginTerms = document.getElementById('loginAgreeTerms');
+      var loginPrivacy = document.getElementById('loginAgreePrivacy');
+      var accepted = !!(loginTerms && loginTerms.checked && loginPrivacy && loginPrivacy.checked);
+      try {
+        if (accepted) {
+          localStorage.setItem(AGREEMENT_STORAGE_KEY, '1');
+        } else {
+          localStorage.removeItem(AGREEMENT_STORAGE_KEY);
+        }
+      } catch (e) {}
+    }
+
+    function applyAgreementPreference() {
+      var accepted = false;
+      try {
+        accepted = localStorage.getItem(AGREEMENT_STORAGE_KEY) === '1';
+      } catch (e) {}
+      if (!accepted) return;
+      ['loginAgreeTerms', 'loginAgreePrivacy', 'oauthAgreeTerms', 'oauthAgreePrivacy'].forEach(function(id) {
+        var checkbox = document.getElementById(id);
+        if (checkbox) checkbox.checked = true;
+      });
+    }
+
+    applyAgreementPreference();
+    ['loginAgreeTerms', 'loginAgreePrivacy'].forEach(function(id) {
+      var checkbox = document.getElementById(id);
+      if (checkbox) checkbox.addEventListener('change', saveAgreementPreference);
+    });
+
+    // 大写锁定提示
+    (function() {
+      var passwordField = document.getElementById('password');
+      var capsHint = document.getElementById('capsHint');
+      if (!passwordField || !capsHint) return;
+      function updateCapsHint(event) {
+        if (!event.getModifierState) {
+          capsHint.style.display = 'none';
+          return;
+        }
+        capsHint.style.display = event.getModifierState('CapsLock') ? 'block' : 'none';
+      }
+      passwordField.addEventListener('keydown', updateCapsHint);
+      passwordField.addEventListener('keyup', updateCapsHint);
+      passwordField.addEventListener('blur', function() {
+        capsHint.style.display = 'none';
+      });
+    })();
+
     // ============ AJAX 登录 ============
     function showAuthError(message) {
       var alert = document.getElementById('authErrorAlert');
@@ -841,12 +896,16 @@
         } else {
           clearUsername();
         }
+        // 提交时记住协议勾选状态（下次登录自动勾选）
+        if (typeof saveAgreementPreference === 'function') saveAgreementPreference();
 
         e.preventDefault();
         var btn = document.getElementById('loginSubmitBtn');
         if (btn) {
           btn.disabled = true;
           btn.classList.add('is-loading');
+          var btnLabel = btn.querySelector('span');
+          if (btnLabel) btnLabel.textContent = '登录中…';
         }
 
         fetch(loginForm.action, {
@@ -882,6 +941,8 @@
           if (btn) {
             btn.disabled = false;
             btn.classList.remove('is-loading');
+            var btnLabel = btn.querySelector('span');
+            if (btnLabel) btnLabel.textContent = '登录';
           }
         });
       });
@@ -977,6 +1038,8 @@
         var checkbox = document.getElementById(checkboxId);
         if (checkbox) checkbox.checked = true;
       }
+      // 弹窗内同意后同步协议记忆
+      if (typeof saveAgreementPreference === 'function') saveAgreementPreference();
       closeAuthModal(type);
     }
 

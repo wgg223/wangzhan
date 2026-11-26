@@ -762,6 +762,9 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
       avatar: user.avatar || '/assets/images/default-avatar.png'
     };
 
+    // 未绑定邮箱：本次登录后的首个页面导航提示绑定（由 app.js 消费一次）
+    req.session.promptBindEmail = !user.email;
+
     // 记住登录：勾选后会话保持 30 天（不勾保持默认 24 小时）
     if (remember === '1' || remember === 'on') {
       req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
@@ -1118,6 +1121,28 @@ router.post('/:source/register', registerLimiter, (req, res) => {
       }
     }
     saveDatabase();
+
+    // 通知全部管理员：有新注册待审核（站内通知；未配置 SMTP 时邮件自动跳过）
+    try {
+      const { notifyAdmins } = require('../services/notify');
+      notifyAdmins(db, {
+        type: 'admin_task',
+        title: '新用户注册待审核',
+        content: '用户「' + username + '」提交注册（邮箱：' + email + '），当前注册需管理员审核后才能登录。',
+        targetType: 'admin_users',
+        targetId: 'pending',
+        emailDetails: [
+          { label: '用户名', value: username },
+          { label: '邮箱', value: email },
+          { label: '注册来源', value: source },
+          { label: '状态', value: '待审核' }
+        ],
+        emailActionPath: '/admin/users?status=pending',
+        emailActionText: '前往审核'
+      });
+    } catch (notifyErr) {
+      console.error('[auth] 注册待审通知失败:', notifyErr.message);
+    }
 
     // 清除OAuth暂存
     delete req.session.oauthPending;
@@ -2263,6 +2288,24 @@ function loginAnomalyDetection(req, res, next) {
         ip: ip
       });
     } catch (e) { /* ignore */ }
+
+    // 通知全部管理员（同一 IP 10 分钟内只告警一次，避免爆破流量刷屏）
+    try {
+      const { alertAdminsOnce } = require('../services/notify');
+      alertAdminsOnce(db, 'security:login:' + ip, 10 * 60 * 1000, {
+        title: '安全告警：登录异常',
+        content: '检测到异常登录尝试：' + anomalies.join('；') + '。系统已记录并可能增加验证码/延迟。',
+        targetType: 'security_alert',
+        emailDetails: [
+          { label: '来源 IP', value: ip || '未知' },
+          { label: '目标用户名', value: username || '未知' },
+          { label: '异常详情', value: anomalies.join('；') },
+          { label: 'User-Agent', value: req.headers && req.headers['user-agent'] ? req.headers['user-agent'] : '' }
+        ],
+        emailActionPath: '/admin/activity-logs',
+        emailActionText: '查看安全日志'
+      });
+    } catch (e) { /* 告警失败不影响登录流程 */ }
 
     // 如果失败次数过多，添加额外延迟
     if (recentFails >= 20) {

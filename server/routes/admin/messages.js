@@ -17,15 +17,29 @@ const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
 const { sanitize } = require('../../utils/html-sanitizer');
 
+/**
+ * 规范化站内信跳转链接：仅允许站内绝对路径（以单个 / 开头）
+ * 拒绝 // 开头（协议相对）、反斜杠、控制字符与超长输入
+ * @returns {string} 合法路径或空字符串
+ */
+function normalizeMessageLink(raw) {
+  const link = String(raw || '').trim().slice(0, 500);
+  if (!link) return '';
+  if (link.charAt(0) !== '/' || link.startsWith('//')) return '';
+  if (link.includes('\\') || /[\r\n\t]/.test(link)) return '';
+  return link;
+}
+
 // ============ 站内信管理 ============
 
 // 站内信列表（关联收件人用户名）
 router.get('/messages', isAuthenticated, hasPermission('messages.manage'), (req, res) => {
   const db = req.db;
   const messages = queryAll(db, `
-    SELECT m.*, u.username as to_username
+    SELECT m.*, u.username as to_username, l.url as link
     FROM internal_messages m
     LEFT JOIN users u ON m.to_user_id = u.id
+    LEFT JOIN internal_message_links l ON l.message_id = m.id
     ORDER BY m.created_at DESC
   `);
 
@@ -53,7 +67,7 @@ router.get('/messages/send', isAuthenticated, hasPermission('messages.manage'), 
 // 发送站内信（单发或群发）
 router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'), (req, res) => {
   const db = req.db;
-  const { to_user_id, title, content, is_popup, broadcast } = req.body;
+  const { to_user_id, title, content, is_popup, broadcast, link } = req.body;
 
   // 标题/内容必填校验（失败时回显已填内容）
   if (!title || !content) {
@@ -72,6 +86,7 @@ router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'),
   // 站内信按纯文本处理（前端按文本展示），剥离所有 HTML 防止存储型 XSS
   const safeTitle = String(title || '').slice(0, 200);
   const safeContent = sanitize(String(content || ''), { allowedTags: [], allowedAttributes: {} });
+  const safeLink = normalizeMessageLink(link);
 
   if (broadcast === '1') {
     // ===== 群发分支：需要额外权限（admin/super_admin 角色 或 messages.admin.broadcast 权限点） =====
@@ -86,6 +101,13 @@ router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'),
     const stmt = db.prepare('INSERT INTO internal_messages (from_user_id, from_username, to_user_id, title, content, is_popup) VALUES (?, ?, ?, ?, ?, ?)');
     allUsers.forEach(u => {
       stmt.run([req.session.user.id, req.session.user.username, u.id, safeTitle, safeContent, popup]);
+      // 群发时逐条写入跳转链接（message_id 唯一，重新查询最后插入 id 兼容两种数据库驱动）
+      if (safeLink) {
+        const row = queryOne(db, 'SELECT last_insert_rowid() AS id');
+        if (row && row.id) {
+          db.run('INSERT INTO internal_message_links (message_id, url) VALUES (?, ?)', [row.id, safeLink]);
+        }
+      }
     });
   } else {
     // ===== 单发分支：必须指定收件人 =====
@@ -99,8 +121,13 @@ router.post('/messages/send', isAuthenticated, hasPermission('messages.manage'),
         error: '请选择接收用户'
       });
     }
-    db.run('INSERT INTO internal_messages (from_user_id, from_username, to_user_id, title, content, is_popup) VALUES (?, ?, ?, ?, ?, ?)',
+    const result = db.run('INSERT INTO internal_messages (from_user_id, from_username, to_user_id, title, content, is_popup) VALUES (?, ?, ?, ?, ?, ?)',
       [req.session.user.id, req.session.user.username, to_user_id, safeTitle, safeContent, popup]);
+    // 单发时写入跳转链接（若有）
+    const newMessageId = result && result.lastInsertRowid;
+    if (safeLink && newMessageId) {
+      db.run('INSERT INTO internal_message_links (message_id, url) VALUES (?, ?)', [newMessageId, safeLink]);
+    }
   }
 
   saveDatabase();
@@ -121,6 +148,7 @@ router.post('/messages/delete/:id', isAuthenticated, hasPermission('messages.man
   const db = req.db;
   const msgId = req.params.id;
   const msg = queryOne(db, 'SELECT title FROM internal_messages WHERE id = ?', [msgId]);
+  db.run('DELETE FROM internal_message_links WHERE message_id = ?', [msgId]);
   db.run('DELETE FROM internal_messages WHERE id = ?', [msgId]);
   saveDatabase();
   logActivity(db, {
@@ -144,6 +172,7 @@ router.post('/messages/broadcast-delete', isAuthenticated, hasPermission('messag
   if (ids) {
     const idList = Array.isArray(ids) ? ids : [ids];
     idList.forEach(id => {
+      db.run('DELETE FROM internal_message_links WHERE message_id = ?', [id]);
       db.run('DELETE FROM internal_messages WHERE id = ?', [id]);
       deletedCount++;
     });

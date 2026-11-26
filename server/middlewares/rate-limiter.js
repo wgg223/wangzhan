@@ -13,6 +13,39 @@
 const MAX_ENTRIES_PER_LIMITER = 50000;   // 每个限流器内存条数上限
 const CLEANUP_INTERVAL_MS = 60 * 1000;   // 清理间隔：1 分钟（原 5 分钟过长）
 const CLEANUP_BATCH_SIZE = 3000;         // 单次清理最多删除条数（避免阻塞事件循环）
+const { alertAdminsOnce } = require('../services/notify');
+
+/**
+ * 构造限流告警回调：触发 429 时通知全部管理员（同一类限流 10 分钟内只告警一次）
+ * @param {string} label 限流器名称（全站/登录/API）
+ */
+function createLimitReporter(label) {
+  return function (req, info) {
+    if (!req || !req.db) return;
+    try {
+      const requestPath = String(req.originalUrl || req.path || '/').split('?')[0];
+      const windowMinutes = Math.max(1, Math.round((info.windowMs || 60000) / 60000));
+      alertAdminsOnce(req.db, 'rate-limit:' + label, 10 * 60 * 1000, {
+        title: '限流告警：' + label + '触发',
+        content: 'IP ' + (req.ip || '未知') + ' 在 ' + windowMinutes + ' 分钟内请求达到 ' +
+          info.count + ' 次（上限 ' + info.max + ' 次），已触发限流拦截。路径：' + requestPath,
+        targetType: 'server_alert',
+        emailDetails: [
+          { label: '限流器', value: label },
+          { label: '触发 IP', value: req.ip || '未知' },
+          { label: '请求路径', value: requestPath },
+          { label: '请求方法', value: req.method || '' },
+          { label: '窗口计数', value: info.count + ' / ' + info.max },
+          { label: 'User-Agent', value: req.headers && req.headers['user-agent'] ? req.headers['user-agent'] : '' }
+        ],
+        emailActionPath: '/admin/activity-logs',
+        emailActionText: '查看安全日志'
+      });
+    } catch (err) {
+      // 告警失败不影响限流响应
+    }
+  };
+}
 
 /**
  * 创建限流中间件
@@ -32,7 +65,8 @@ function createRateLimiter(options) {
     keyGenerator = (req) => req.ip,
     message = '请求过于频繁，请稍后再试',
     skipFailedRequests = false,
-    skipSuccessfulRequests = false
+    skipSuccessfulRequests = false,
+    onExceeded = null
   } = options;
 
   // 每个限流器独立 Map，分散内存压力
@@ -89,6 +123,13 @@ function createRateLimiter(options) {
 
     // 超过上限：直接返回 429 并终止请求链
     if (entry.count > max) {
+      if (typeof onExceeded === 'function') {
+        try {
+          onExceeded(req, { key, count: entry.count, max, windowMs, message });
+        } catch (err) {
+          // 告警回调异常不能影响 429 响应
+        }
+      }
       return res.status(429).json({ error: message });
     }
 
@@ -123,7 +164,8 @@ function createRateLimiter(options) {
 const globalLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 600,
-  message: '请求过于频繁，请稍后再试'
+  message: '请求过于频繁，请稍后再试',
+  onExceeded: createLimitReporter('全站')
 });
 
 // 登录限流：每分钟最多 20 次尝试
@@ -132,14 +174,16 @@ const loginLimiter = createRateLimiter({
   max: 20,
   // 安全加固：key 仅用 IP，不含用户名（防止逐用户名轮换爆破）
   keyGenerator: (req) => 'login:' + req.ip,
-  message: '登录尝试次数过多，请稍后再试'
+  message: '登录尝试次数过多，请稍后再试',
+  onExceeded: createLimitReporter('登录')
 });
 
 // API 限流：API 路由专用，每分钟最多 1000 次
 const apiLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 1000,
-  message: 'API请求过于频繁，请稍后再试'
+  message: 'API请求过于频繁，请稍后再试',
+  onExceeded: createLimitReporter('API')
 });
 
 module.exports = {
