@@ -140,6 +140,9 @@ const MODEL_LIMITS = [
   { test: /gpt[-_. ]?image/i, providers: ['openai', 'openai_compat', 'aihubmix'], presets: ['1024x1024', '1536x1024', '1024x1536'] },
   { test: /dall[-_. ]?e/i, presets: ['1024x1024', '1792x1024', '1024x1792'] },
   { test: /imagen/i, maxSide: 2048, maxPixels: 2048 * 2048 },
+  // 豆包 Seedream 5.0 / 5.5 自定义像素模式：总像素 921600–4624220，宽高比 1/16–16。
+  // 1024x576 / 576x1024 等旧 1K 档位低于官方下限，需要提升到最近的合法尺寸。
+  { test: /doubao-seedream-5/i, providers: ['doubao'], maxSide: 4096, maxPixels: 4624220, minPixels: 921600 },
   // Momo 的 seedream-v5.5 只有 1K/1.5K/2K（插件表），不发 4K
   { test: /seedream/i, providers: ['momoapi'], maxSide: 2048, maxPixels: 2048 * 2048 }
 ];
@@ -206,7 +209,8 @@ function providerLimit(providerKey, model) {
       return {
         presets: matched.presets,
         maxSide: matched.maxSide || (PROVIDER_LIMITS[key] || PROVIDER_LIMITS[baseKey] || DEFAULT_LIMIT).maxSide,
-        maxPixels: matched.maxPixels || (PROVIDER_LIMITS[key] || PROVIDER_LIMITS[baseKey] || DEFAULT_LIMIT).maxPixels
+        maxPixels: matched.maxPixels || (PROVIDER_LIMITS[key] || PROVIDER_LIMITS[baseKey] || DEFAULT_LIMIT).maxPixels,
+        minPixels: matched.minPixels || 0
       };
     }
   }
@@ -229,18 +233,35 @@ function sizeValue(width, height) {
   return `${width}x${height}`;
 }
 
-function fitToLimit(width, height, maxSide, maxPixels) {
-  let scale = 1;
-  const longSide = Math.max(width, height);
-  if (longSide > maxSide) scale = Math.min(scale, maxSide / longSide);
+function fitToLimit(width, height, maxSide, maxPixels, minPixels = 0) {
   const pixels = width * height;
+  const longSide = Math.max(width, height);
+  let scale = Math.min(1, maxSide / longSide);
   if (pixels * scale * scale > maxPixels) {
     scale = Math.min(scale, Math.sqrt(maxPixels / pixels));
   }
-  if (scale >= 1) return { width, height };
+  if (minPixels && pixels < minPixels) {
+    scale = Math.max(scale, Math.sqrt(minPixels / pixels));
+  }
+  // 放大补足最低像素时也不能突破单边上限。
+  scale = Math.min(scale, maxSide / longSide);
+  if (scale >= 1 && pixels <= maxPixels && pixels >= minPixels) return { width, height };
+
   // 统一向下取到 16 的倍数：既满足 OpenAI 自定义尺寸要求，也兼容 ComfyUI 的 8 倍数校验。
-  const nextWidth = Math.max(64, Math.floor((width * scale) / 16) * 16);
-  const nextHeight = Math.max(64, Math.floor((height * scale) / 16) * 16);
+  let nextWidth = Math.max(64, Math.floor((width * scale) / 16) * 16);
+  let nextHeight = Math.max(64, Math.floor((height * scale) / 16) * 16);
+  // 两边分别取整可能让总像素略微超限，按长边继续微调到合法范围。
+  while (nextWidth * nextHeight > maxPixels && (nextWidth > 64 || nextHeight > 64)) {
+    if (nextWidth >= nextHeight && nextWidth > 64) nextWidth -= 16;
+    else if (nextHeight > 64) nextHeight -= 16;
+  }
+  // 旧 1K 尺寸（如 1024x576）低于豆包 5.0 的 921600 像素下限，按同方向补足。
+  for (let sizeGuard = 0; sizeGuard < 512; sizeGuard += 1) {
+    if (!minPixels || nextWidth * nextHeight >= minPixels) break;
+    if (nextWidth <= nextHeight && nextWidth + 16 <= maxSide) nextWidth += 16;
+    else if (nextHeight + 16 <= maxSide) nextHeight += 16;
+    else break;
+  }
   return { width: nextWidth, height: nextHeight };
 }
 
@@ -301,7 +322,9 @@ function resolveSizeForProvider(providerKey, requested, model) {
     return buildResult(chosen, clean, parsed, chosen !== normalized);
   }
 
-  const fitted = fitToLimit(parsed.width, parsed.height, limit.maxSide, limit.maxPixels);
+  const fitted = fitToLimit(
+    parsed.width, parsed.height, limit.maxSide, limit.maxPixels, limit.minPixels
+  );
   const size = sizeValue(fitted.width, fitted.height);
   return buildResult(size, clean, parsed, size !== normalized);
 }

@@ -3,7 +3,7 @@
  * OpenAI 兼容：POST {base}/paas/v4/images/generations（url 30 天有效，立即下载）
  */
 const axios = require('axios');
-const { resolveImageItem } = require('../utils');
+const { resolveImageItem, apiUrl } = require('../utils');
 
 module.exports = {
   key: 'zhipu',
@@ -16,11 +16,15 @@ module.exports = {
       size: req.size || '1024x1024',
       quality: 'standard'
     };
-    const resp = await axios.post(`${baseUrl}/paas/v4/images/generations`, body, {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 120000,
-      signal: req.cancelRef && req.cancelRef.signal
-    });
+    const resp = await axios.post(
+      apiUrl(baseUrl, '/paas/v4/images/generations', ['/paas/v4/images/edits']),
+      body,
+      {
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 120000,
+        signal: req.cancelRef && req.cancelRef.signal
+      }
+    );
     const images = [];
     for (const item of (resp.data && resp.data.data) || []) {
       images.push({ buffer: await resolveImageItem(item), mime: 'image/png' });
@@ -36,7 +40,7 @@ module.exports = {
   async fetchModels(cfg) {
     const { apiKey, baseUrl } = cfg;
     try {
-      const resp = await axios.get(`${baseUrl}/paas/v4/models`, {
+      const resp = await axios.get(apiUrl(baseUrl, '/paas/v4/models', ['/paas/v4/images/generations']), {
         headers: { Authorization: `Bearer ${apiKey}` },
         timeout: 15000
       });

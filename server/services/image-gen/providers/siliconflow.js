@@ -6,7 +6,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
-const { resolveImageItem } = require('../utils');
+const { resolveImageItem, apiUrl } = require('../utils');
 
 module.exports = {
   key: 'siliconflow',
@@ -22,7 +22,7 @@ module.exports = {
     if (req.negativePrompt) body.negative_prompt = req.negativePrompt;
     if (req.seed) body.seed = req.seed;
 
-    const resp = await axios.post(`${baseUrl}/images/generations`, body, {
+    const resp = await axios.post(apiUrl(baseUrl, '/images/generations', ['/images/edits']), body, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       timeout: 120000,
       signal: req.cancelRef && req.cancelRef.signal
@@ -49,7 +49,7 @@ module.exports = {
     form.append('image_size', req.size || '1024x1024');
     if (req.seed) form.append('seed', String(req.seed));
 
-    const resp = await axios.post(`${baseUrl}/images/edits`, form, {
+    const resp = await axios.post(apiUrl(baseUrl, '/images/edits', ['/images/generations']), form, {
       headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
       timeout: 120000,
       signal: req.cancelRef && req.cancelRef.signal
@@ -70,7 +70,7 @@ module.exports = {
   async fetchModels(cfg) {
     const { apiKey, baseUrl } = cfg;
     try {
-      const resp = await axios.get(`${baseUrl}/models`, {
+      const resp = await axios.get(apiUrl(baseUrl, '/models', ['/images/generations', '/images/edits']), {
         headers: { Authorization: `Bearer ${apiKey}` },
         timeout: 15000
       });
@@ -92,7 +92,9 @@ module.exports = {
     const { apiKey, baseUrl } = cfg || {};
     if (!apiKey || !baseUrl) return null;
     try {
-      const resp = await axios.get(`${String(baseUrl).replace(/\/+$/, '')}/user/info`, {
+      const resp = await axios.get(apiUrl(baseUrl, '/user/info', [
+        '/images/generations', '/images/edits'
+      ]), {
         headers: { Authorization: `Bearer ${apiKey}` },
         timeout: 15000
       });

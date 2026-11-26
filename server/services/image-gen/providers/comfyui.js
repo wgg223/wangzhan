@@ -8,7 +8,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { parseSize, sleep, sniffImageType } = require('../utils');
+const { parseSize, sleep, sniffImageType, normalizeApiBase } = require('../utils');
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_CHECKPOINT = 'v1-5-pruned-emaonly.safetensors';
@@ -39,17 +39,9 @@ function codedError(message, code) {
 }
 
 function normalizeBaseUrl(value) {
-  const raw = String(value || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
-  let url;
-  try {
-    url = new URL(raw);
-  } catch (e) {
-    throw codedError('ComfyUI 地址格式不正确，请填写完整的 http(s) 地址', 'BAD_CONFIG');
-  }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-    throw codedError('ComfyUI 地址仅支持 http(s)，且不能包含账号密码', 'BAD_CONFIG');
-  }
-  return raw;
+  return normalizeApiBase(value || DEFAULT_BASE_URL, [
+    '/upload/image', '/history', '/view', '/prompt', '/object_info', '/system_stats', '/queue'
+  ]);
 }
 
 function requestConfig(cfg, req, extra = {}) {

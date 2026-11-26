@@ -24,6 +24,8 @@ const { doubleSubmitCookie } = require('../middlewares/security');
 const { marked } = require('marked');
 const sanitizeHtml = require('sanitize-html');
 const { createRateLimiter } = require('../middlewares/rate-limiter');
+const multer = require('multer');
+const { fileToArticle, univerDocumentToHtml, MAX_IMPORT_BYTES } = require('../utils/article-import');
 
 // Markdown 渲染：marked 输出后过白名单净化，防存储型 XSS
 function renderMarkdown(md) {
@@ -245,6 +247,63 @@ router.post('/articles/save', isAuthenticated, (req, res) => {
   }
 
   res.redirect('/articles');
+});
+
+// ==== 文章导入：本地文件 / 在线文档 ====
+// 支持 md/txt/html/docx/xlsx/xls/csv/json，服务端转成净化后的文章 HTML
+const articleImportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_IMPORT_BYTES, files: 1 }
+});
+
+router.post('/articles/import/file', isAuthenticated, (req, res) => {
+  articleImportUpload.single('file')(req, res, async (err) => {
+    if (err) {
+      const message = err && err.code === 'LIMIT_FILE_SIZE' ? '文件超过 20MB 限制' : '文件上传失败，请重试';
+      return res.status(400).json({ error: message });
+    }
+    if (!req.file) return res.status(400).json({ error: '请选择要导入的文件' });
+    try {
+      const result = await fileToArticle({ buffer: req.file.buffer, filename: req.file.originalname });
+      res.json({ ok: true, title: result.title, html: result.html, format: result.format });
+    } catch (e) {
+      res.status(400).json({ error: e.message || '文件解析失败' });
+    }
+  });
+});
+
+router.get('/articles/import/documents', isAuthenticated, (req, res) => {
+  const db = req.db;
+  const documents = queryAll(db,
+    "SELECT id, name, updated_at FROM spreadsheets WHERE created_by = ? AND doc_type = 'document' ORDER BY updated_at DESC LIMIT 100",
+    [req.session.user.id]) || [];
+  res.json({ ok: true, documents });
+});
+
+router.post('/articles/import/document', isAuthenticated, (req, res) => {
+  const db = req.db;
+  const id = Number(req.body && req.body.id);
+  if (!id) return res.status(400).json({ error: '缺少文档 ID' });
+  const row = queryOne(db, 'SELECT id, name, created_by, doc_type FROM spreadsheets WHERE id = ?', [id]);
+  if (!row) return res.status(404).json({ error: '文档不存在' });
+  if (row.doc_type !== 'document') return res.status(400).json({ error: '只能导入「文档」类型的在线文档' });
+  if (row.created_by !== req.session.user.id && !isAdminRole(req.session.user.role)) {
+    return res.status(403).json({ error: '无权访问该文档' });
+  }
+  let entry = null;
+  try {
+    const { loadDoc } = require('../utils/spreadsheet-doc-store');
+    entry = loadDoc(db, id);
+  } catch (e) {
+    console.error('[article-import] 读取在线文档失败:', e.message);
+  }
+  if (!entry || !entry.doc) return res.status(404).json({ error: '文档内容为空或读取失败' });
+  try {
+    const html = univerDocumentToHtml(entry.doc);
+    res.json({ ok: true, html, title: row.name || '' });
+  } catch (e) {
+    res.status(400).json({ error: e.message || '文档转换失败' });
+  }
 });
 
 // 编辑文章页面（前端）

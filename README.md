@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.31.6 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.32.0 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -309,6 +309,17 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.32.0 (2026-11-26)
+
+**新增：文章导入多格式文件与在线文档 ｜ 修复：20 家生图服务商接口路径与协议**
+
+- **文章导入**：编辑器新增「导入文件」（md/txt/html/docx/xlsx/xls/csv/json，最大 20MB）与「从在线文档导入」；服务端统一解析、白名单净化后追加正文，文件名自动填标题
+- **导入接口**：新增 `/articles/import/file`、`/articles/import/documents`、`/articles/import/document`，全部要求登录并校验在线文档归属
+- **生图地址拼接**：统一 Base URL 规范化，完整接口地址、尾斜杠和完整 `apiPath` 不再重复拼出错误路径
+- **生图协议**：OpenAI GPT Image / DALL·E 参数分流；通用兼容适配器图生图改用 `/images/edits`；通义万相图生图改为官方 `image2image` + `wanx2.1-imageedit`；RunningHub 修正辅助接口根路径与 `retainSeconds`
+- **失败安全**：异步任务失败保留 `task_id` 与请求 ID，轮询失败不再换模型重复提交；结果图安全下载且不携带 API Key
+- **验证**：文章导入离线转换 11/11、隔离实例端到端通过；生图 15 组无付费 mock 回归、全部语法检查、ESLint 与 diff 检查通过
 
 ### v8.31.6 (2026-11-25)
 

@@ -13,6 +13,61 @@ const UPLOAD_ROOT = path.join(__dirname, '../../../public/uploads/ai-images');
 const MAX_IMAGE_SIZE = 100 * 1024 * 1024; // 100MB（RunningHub 等超高清模型可生成 1 亿像素大图）
 
 /**
+ * 规范化服务商 Base URL，并去掉后台误填的完整接口后缀。
+ * 只处理明确端点，不猜测自定义反向代理路径。
+ * @param {string} value
+ * @param {string[]} [aliases]
+ * @returns {string}
+ */
+function normalizeApiBase(value, aliases = []) {
+  const raw = String(value || '').trim();
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (e) {
+    throw Object.assign(new Error('服务商地址格式不正确，请填写完整的 http(s) 地址'), { code: 'BAD_CONFIG' });
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw Object.assign(new Error('服务商地址仅支持无账号密码、无查询参数的 http(s) 地址'), { code: 'BAD_CONFIG' });
+  }
+  const suffixes = ['chat/completions', ...aliases]
+    .map(item => String(item || '').replace(/^\/+|\/+$/g, ''))
+    .filter(Boolean);
+  let pathname = url.pathname.replace(/\/+$/, '');
+  const matched = suffixes.find(suffix => pathname.endsWith(`/${suffix}`));
+  if (matched) pathname = pathname.slice(0, -(matched.length + 1));
+  return `${url.origin}${pathname}`;
+}
+
+/**
+ * 拼接服务商接口；Base URL 已填成完整接口时自动去掉重复后缀。
+ * @param {string} baseUrl
+ * @param {string} endpoint 相对路径或完整 http(s) URL
+ * @param {string[]} [aliases] Base URL 中可识别的其他同族端点
+ * @returns {string}
+ */
+function apiUrl(baseUrl, endpoint, aliases = []) {
+  const suffix = String(endpoint || '').trim();
+  if (/^https?:\/\//i.test(suffix)) return suffix.replace(/\/+$/, '');
+  const cleanPath = suffix.replace(/^\/+|\/+$/g, '');
+  if (!cleanPath) return normalizeApiBase(baseUrl, aliases);
+  return `${normalizeApiBase(baseUrl, [cleanPath, ...aliases])}/${cleanPath}`;
+}
+
+/** 读取本地参考图并转成服务商要求的 Data URL，避免裸 Base64 被拒绝。 */
+async function readImageDataUrl(filePath, maxBytes = MAX_IMAGE_SIZE) {
+  const buffer = await fs.promises.readFile(filePath);
+  if (!buffer.length || buffer.length > maxBytes) {
+    throw Object.assign(new Error('参考图为空或超过大小限制'), { code: 'INVALID_IMAGE' });
+  }
+  const type = sniffImageType(buffer);
+  if (!type) {
+    throw Object.assign(new Error('参考图不是有效的图片格式'), { code: 'INVALID_IMAGE' });
+  }
+  return `data:${type.mime};base64,${buffer.toString('base64')}`;
+}
+
+/**
  * 通过魔数嗅探图片类型
  * @param {Buffer} buffer
  * @returns {{mime: string, ext: string}|null}
@@ -146,7 +201,7 @@ async function resolveImageItem(item) {
     return Buffer.from(item.b64_json || item.b64_image, 'base64');
   }
   if (item.url) {
-    return downloadImage(item.url);
+    return downloadImageSafely(item.url);
   }
   const err = new Error('API 返回格式无法识别（缺少 url 或 b64_json）');
   err.code = 'BAD_RESPONSE';
@@ -164,6 +219,56 @@ function parseSize(size) {
   return { width: parseInt(m[1], 10), height: parseInt(m[2], 10) };
 }
 
+/** 提取服务商 JSON / 纯文本 / Buffer 错误体，避免把上游细节丢成 [object Object]。 */
+function providerErrorDetails(data) {
+  let body = data;
+  if (Buffer.isBuffer(body)) {
+    try { body = JSON.parse(body.toString('utf8')); } catch (e) { body = body.toString('utf8'); }
+  }
+  if (typeof body === 'string') {
+    const text = body.trim();
+    if (!text) return {};
+    try { body = JSON.parse(text); } catch (e) { return { message: text }; }
+  }
+  if (!body || typeof body !== 'object') return {};
+
+  const nested = body.error && typeof body.error === 'object' ? body.error : {};
+  const pick = (...values) => values.find(value => typeof value === 'string' && value.trim());
+  return {
+    code: pick(body.code, nested.code, body.type, nested.type),
+    message: pick(body.message, nested.message, body.detail, body.msg,
+      typeof body.error === 'string' ? body.error : '', nested.detail, nested.msg),
+    requestId: pick(body.request_id, body.requestId, nested.request_id, nested.requestId)
+  };
+}
+
+function readableProviderText(text) {
+  return String(text || '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
+}
+
+function actionableProviderError(status, details) {
+  const code = details.code || '';
+  if (code === 'ModelNotOpen') {
+    return '当前 API Key 所属账号尚未开通该豆包模型服务，请先在火山方舟控制台开通对应模型';
+  }
+  if (code === 'InvalidEndpointOrModel.ModelIDAccessDisabled') {
+    return '当前账号不允许直接通过 Model ID 调用，请在后台将模型改为有权限的推理接入点 ID（ep- 开头）';
+  }
+  if (code === 'InvalidEndpointOrModel.NotFound') {
+    return '豆包模型或推理接入点不存在，或当前 API Key 无权访问；请确认模型已开通，必要时改用推理接入点 ID（ep- 开头）';
+  }
+  if (code === 'PathNotFound' || code === 'InvalidAction') {
+    return '豆包 API 路径无效，请检查服务商地址是否为 https://ark.cn-beijing.volces.com/api/v3';
+  }
+  return '';
+}
+
 /**
  * 归一化 axios/生成错误为中文提示
  * @param {Error} err
@@ -177,16 +282,24 @@ function normalizeError(err) {
   if (err.code === 'BAD_RESPONSE') return err.message;
   if (err.response) {
     const status = err.response.status;
-    const data = err.response.data;
-    if (status === 401 || status === 403) return 'API Key 无效或未配置，请在后台检查服务商配置';
-    if (status === 429) return '触发服务商限流，请稍后再试';
+    const details = providerErrorDetails(err.response.data);
+    const upstream = readableProviderText(details.message);
+    const suffix = [
+      details.code ? `错误码：${details.code}` : '',
+      details.requestId ? `请求 ID：${details.requestId.slice(0, 120)}` : ''
+    ].filter(Boolean).join('，');
+    const withDetails = (message) => [message, upstream, suffix].filter(Boolean).join('；');
+
+    if (status === 401) return withDetails('API Key 无效或未配置，请在后台检查服务商配置');
+    if (status === 403) return withDetails('API Key 无权执行此操作，请检查账号权限和服务商配置');
+    if (status === 429) return withDetails('触发服务商限流，请稍后再试');
     if (status === 400 || status === 404 || status === 422) {
-      // 兼容各家 JSON/文本错误体（含嵌套 error.message，如豆包 InvalidEndpointOrModel.NotFound）
-      const msg = data && (data.message || (data.error && data.error.message) || data.error || data.detail || data.msg);
-      return msg ? `服务商拒绝请求：${String(msg).slice(0, 120)}` : `服务商返回错误（HTTP ${status}）`;
+      const actionable = actionableProviderError(status, details);
+      if (actionable) return withDetails(actionable);
+      return withDetails(upstream ? '服务商拒绝请求' : `服务商返回错误（HTTP ${status}）`);
     }
-    if (status === 402) return '服务商账户余额不足';
-    return `服务商返回错误（HTTP ${status}）`;
+    if (status === 402) return withDetails('服务商账户余额不足');
+    return withDetails(`服务商返回错误（HTTP ${status}）`);
   }
   if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') return '连接服务商超时，请稍后再试';
   if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN' ||
@@ -217,6 +330,9 @@ function sleep(ms) {
 module.exports = {
   UPLOAD_ROOT,
   MAX_IMAGE_SIZE,
+  normalizeApiBase,
+  apiUrl,
+  readImageDataUrl,
   sniffImageType,
   saveImageBuffer,
   saveReferenceImage,

@@ -4,7 +4,7 @@
  * 匿名限流 1 次/15s → 模块内节流 + 失败重试 1 次
  */
 const axios = require('axios');
-const { parseSize, sleep } = require('../utils');
+const { parseSize, sleep, apiUrl } = require('../utils');
 
 let lastRequestAt = 0;
 const MIN_INTERVAL = 15000;
@@ -24,7 +24,7 @@ module.exports = {
     const { baseUrl } = cfg;
     const { width, height } = parseSize(req.size);
     const model = cfg.model || 'flux';
-    const url = `${baseUrl}/prompt/${encodeURIComponent(req.prompt)}` +
+    const url = apiUrl(baseUrl, `/prompt/${encodeURIComponent(req.prompt)}`, ['/models']) +
       `?width=${width}&height=${height}&model=${encodeURIComponent(model)}` +
       `&nologo=true${req.seed ? '&seed=' + req.seed : ''}`;
 
@@ -56,7 +56,7 @@ module.exports = {
   async fetchModels(cfg) {
     const { baseUrl } = cfg;
     try {
-      const resp = await axios.get(`${baseUrl}/models`, { timeout: 15000 });
+      const resp = await axios.get(apiUrl(baseUrl, '/models', ['/prompt']), { timeout: 15000 });
       const data = resp.data;
       if (Array.isArray(data)) return data.map(String);
       if (data && Array.isArray(data.models)) return data.models.map(String);

@@ -7,7 +7,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
-const { resolveImageItem } = require('../utils');
+const { resolveImageItem, apiUrl } = require('../utils');
 
 function parseItems(data) {
   return (data && data.data) || [];
@@ -21,11 +21,11 @@ module.exports = {
     const body = {
       model: model || 'gpt-image-1',
       prompt: req.prompt,
-      n: req.n || 1,
+      n: cfg.supportsN === false ? 1 : (req.n || 1),
       size: req.size || '1024x1024',
-      response_format: 'url'
+      ...(!/gpt[-_. ]?image/i.test(String(model || '')) ? { response_format: 'url' } : {})
     };
-    const resp = await axios.post(`${baseUrl}/images/generations`, body, {
+    const resp = await axios.post(apiUrl(baseUrl, '/images/generations', ['/images/edits']), body, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       timeout: 120000,
       signal: req.cancelRef && req.cancelRef.signal
@@ -49,9 +49,9 @@ module.exports = {
     form.append('prompt', req.prompt);
     form.append('image', fs.createReadStream(refPath), { filename: 'ref.png' });
     form.append('size', req.size || '1024x1024');
-    if (req.n > 1) form.append('n', String(req.n));
+    if (cfg.supportsN !== false && req.n > 1) form.append('n', String(req.n));
 
-    const resp = await axios.post(`${baseUrl}/images/edits`, form, {
+    const resp = await axios.post(apiUrl(baseUrl, '/images/edits', ['/images/generations']), form, {
       headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
       timeout: 120000,
       signal: req.cancelRef && req.cancelRef.signal
@@ -71,7 +71,7 @@ module.exports = {
   async fetchModels(cfg) {
     const { apiKey, baseUrl } = cfg;
     try {
-      const resp = await axios.get(`${baseUrl}/models`, {
+      const resp = await axios.get(apiUrl(baseUrl, '/models', ['/images/generations', '/images/edits']), {
         headers: { Authorization: `Bearer ${apiKey}` },
         timeout: 15000
       });

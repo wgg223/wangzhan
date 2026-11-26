@@ -8,7 +8,7 @@
  * 调试：提交/轮询/解析失败均打印日志，方便对照 RunningHub 平台实际返回结构。
  */
 const axios = require('axios');
-const { downloadImage, sleep } = require('../utils');
+const { apiUrl, downloadImageSafely, sleep } = require('../utils');
 const { resolveApiPath, pickPromptNode } = require('../runninghub-workflow');
 
 const MAX_POLLS = 200; // 200 * 3s = 600s
@@ -156,8 +156,7 @@ module.exports = {
             fieldValue: req.prompt
           }
         ],
-        randomSeed: true,
-        retainSeconds: 0,
+        retainSeconds: 10,
         usePersonalQueue: false
       };
       // 负面提示词（如果配置了 negative 节点映射，格式为 cfg.negativeNode，暂通过 model 扩展支持）
@@ -174,7 +173,7 @@ module.exports = {
 
     console.log('[RunningHub] 提交任务 body:', JSON.stringify(submitBody));
 
-    const submitResp = await axios.post(`${baseUrl}/${apiPath}`, submitBody, {
+    const submitResp = await axios.post(apiUrl(baseUrl, apiPath, ['/query', '/run/workflow']), submitBody, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       timeout: 60000,
       maxContentLength: 100 * 1024 * 1024,
@@ -203,7 +202,7 @@ module.exports = {
 
       let queryResp;
       try {
-        queryResp = await axios.post(`${baseUrl}/query`, { taskId }, {
+        queryResp = await axios.post(apiUrl(baseUrl, '/query', ['/run/workflow']), { taskId }, {
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           timeout: 30000,
           maxContentLength: 100 * 1024 * 1024,
@@ -235,13 +234,20 @@ module.exports = {
           console.error('[RunningHub] 图片 URL 解析失败，完整响应如下：');
           console.error(JSON.stringify(data, null, 2).slice(0, 4000));
           const err = new Error('RunningHub 任务成功但未解析到图片地址（请查看服务器日志中 [RunningHub] 完整响应，对照 RunningHub 平台返回结构）');
+          err.fromPoll = true;
+          err.taskId = taskId;
           err.code = 'EMPTY_RESPONSE';
           throw err;
         }
 
         const images = [];
         for (const url of urls) {
-          images.push({ buffer: await downloadImage(url), mime: 'image/png' });
+          images.push({
+            buffer: await downloadImageSafely(url, {
+              signal: req.cancelRef && req.cancelRef.signal
+            }),
+            mime: 'image/png'
+          });
         }
         return { images };
       }
@@ -250,12 +256,16 @@ module.exports = {
       if (['FAILED', 'ERROR', 'FAIL', 'CANCELLED', 'CANCELED'].includes(status)) {
         const errMsg = data.message || data.error || data.msg || data.err || status;
         const err = new Error(`RunningHub 任务失败：${errMsg}`);
+        err.fromPoll = true;
+        err.taskId = taskId;
         err.code = 'PROVIDER_FAILED';
         throw err;
       }
     }
 
     const err = new Error('RunningHub 任务超时（轮询 200 次 / 600 秒）');
+    err.fromPoll = true;
+    err.taskId = taskId;
     err.code = 'TIMEOUT';
     throw err;
   },

@@ -6,7 +6,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
-const { parseSize } = require('../utils');
+const { parseSize, apiUrl } = require('../utils');
 
 // sd3.5 用 aspect_ratio，sd3/sdxl 用 width/height
 function isAspectRatioModel(model) {
@@ -33,13 +33,18 @@ module.exports = {
       form.append('height', String(height));
     }
 
-    const resp = await axios.post(`${baseUrl}/stable-image/generate/${modelName}`, form, {
-      headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
-      timeout: 120000,
-      maxContentLength: 20 * 1024 * 1024,
-      responseType: 'arraybuffer',
-      signal: req.cancelRef && req.cancelRef.signal
-    });
+    const resp = await axios.post(
+      apiUrl(baseUrl, `/stable-image/generate/${encodeURIComponent(modelName)}`,
+        ['/stable-image/generate']),
+      form,
+      {
+        headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
+        timeout: 120000,
+        maxContentLength: 20 * 1024 * 1024,
+        responseType: 'arraybuffer',
+        signal: req.cancelRef && req.cancelRef.signal
+      }
+    );
 
     if (resp.status !== 200 || !resp.data || !resp.data.length) {
       const err = new Error('Stability 未返回图片数据');
@@ -59,13 +64,18 @@ module.exports = {
     if (req.negativePrompt) form.append('negative_prompt', req.negativePrompt);
     if (req.seed) form.append('seed', String(req.seed));
 
-    const resp = await axios.post(`${baseUrl}/stable-image/edit/${modelName}`, form, {
-      headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
-      timeout: 120000,
-      maxContentLength: 20 * 1024 * 1024,
-      responseType: 'arraybuffer',
-      signal: req.cancelRef && req.cancelRef.signal
-    });
+    const resp = await axios.post(
+      apiUrl(baseUrl, `/stable-image/edit/${encodeURIComponent(modelName)}`,
+        ['/stable-image/edit']),
+      form,
+      {
+        headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
+        timeout: 120000,
+        maxContentLength: 20 * 1024 * 1024,
+        responseType: 'arraybuffer',
+        signal: req.cancelRef && req.cancelRef.signal
+      }
+    );
     return { images: [{ buffer: Buffer.from(resp.data), mime: resp.headers['content-type'] || 'image/png' }] };
   },
 
@@ -77,7 +87,7 @@ module.exports = {
   // 轻量验证：GET /v2beta/user/balance，200 即 Key 有效
   async verify(cfg) {
     try {
-      await axios.get(`${cfg.baseUrl}/user/balance`, {
+      await axios.get(apiUrl(cfg.baseUrl, '/user/balance', ['/stable-image/generate', '/stable-image/edit']), {
         headers: { Authorization: `Bearer ${cfg.apiKey}` },
         timeout: 30000
       });

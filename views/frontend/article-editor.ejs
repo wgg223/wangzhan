@@ -57,6 +57,14 @@
     
     <div class="form-group">
       <label for="content">文章内容</label>
+      <div class="article-import-bar" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px;padding:8px 10px;border:1px solid #e3e8ef;border-radius:8px;background:#f8fafc;">
+        <span style="font-size:12px;color:#64748b;">导入内容：</span>
+        <button type="button" class="btn btn-small" id="articleImportFileBtn">📄 导入文件</button>
+        <button type="button" class="btn btn-small" id="articleImportDocBtn">🗂️ 从在线文档导入</button>
+        <span id="articleImportStatus" style="font-size:12px;color:#64748b;"></span>
+        <span style="font-size:11px;color:#94a3b8;margin-left:auto;">支持 .md / .txt / .html / .docx / .xlsx / .xls / .csv / .json，最大 20MB</span>
+        <input type="file" id="articleImportFileInput" accept=".md,.markdown,.txt,.log,.html,.htm,.docx,.xlsx,.xls,.csv,.json" style="display:none;">
+      </div>
       <div id="editor-container"></div>
       <input type="hidden" id="content" name="content" value="<%= article ? article.content : '' %>">
     </div>
@@ -120,6 +128,18 @@
 
 <!-- 引入 Quill 编辑器 - 使用本地版本，备用 CDN -->
 <link href="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/quill/quill.snow.css') : '/vendor/quill/quill.snow.css' %>" rel="stylesheet">
+<!-- 在线文档导入 -->
+<div id="articleImportDocModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;align-items:center;justify-content:center;">
+  <div style="width:560px;max-width:92vw;max-height:80vh;background:#fff;border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e5e7eb;">
+      <strong style="font-size:15px;">从在线文档导入</strong>
+      <button type="button" id="articleImportDocClose" style="border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#64748b;">&times;</button>
+    </div>
+    <div id="articleImportDocList" style="padding:12px 16px;overflow:auto;font-size:13px;color:#334155;">加载中…</div>
+    <div style="padding:10px 16px;border-top:1px solid #e5e7eb;font-size:11px;color:#94a3b8;">只列出你创建的「文档」类型在线文档；导入内容会追加到文章末尾。</div>
+  </div>
+</div>
+
 <script src="<%= typeof cdn !== 'undefined' ? cdn.getUrl('/vendor/quill/quill.js') : '/vendor/quill/quill.js' %>"></script>
 
 <script>
@@ -755,6 +775,143 @@ function loadExistingAttachments(articleId) {
   var articleIdInput = form.querySelector('input[name="id"]');
   if (articleIdInput && articleIdInput.value) {
     loadExistingAttachments(articleIdInput.value);
+  }
+})();
+</script>
+
+<script>
+// ==== 文章导入（本地文件 / 在线文档）====
+(function () {
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
+  function setStatus(text, isError) {
+    var el = document.getElementById('articleImportStatus');
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = isError ? '#dc2626' : '#0f766e';
+  }
+  function appendHtml(html) {
+    if (!html) return;
+    if (window.quill && quill.clipboard && typeof quill.clipboard.dangerouslyPasteHTML === 'function') {
+      var index = Math.max(0, quill.getLength() - 1);
+      quill.clipboard.dangerouslyPasteHTML(index, html);
+      return;
+    }
+    var content = document.getElementById('content');
+    if (content) content.value = (content.value || '') + html;
+    var fallback = document.getElementById('content-fallback');
+    if (fallback) fallback.value = content ? content.value : html;
+  }
+  function fillTitleIfEmpty(title) {
+    var input = document.getElementById('title');
+    if (input && title && !input.value.trim()) input.value = title;
+  }
+
+  var fileBtn = document.getElementById('articleImportFileBtn');
+  var fileInput = document.getElementById('articleImportFileInput');
+  if (fileBtn && fileInput) {
+    fileBtn.addEventListener('click', function () { fileInput.click(); });
+    fileInput.addEventListener('change', function () {
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      importFile(file);
+      fileInput.value = '';
+    });
+  }
+
+  async function importFile(file) {
+    setStatus('正在解析 ' + file.name + ' …');
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('_csrf', csrfToken());
+    try {
+      var res = await fetch('/articles/import/file', {
+        method: 'POST',
+        body: fd,
+        headers: { 'X-CSRF-Token': csrfToken(), 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      var json = await res.json().catch(function () { return {}; });
+      if (!res.ok || !json.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      appendHtml(json.html);
+      fillTitleIfEmpty(json.title);
+      setStatus('已导入 ' + (json.format || '') + ' · ' + json.html.length + ' 字符');
+    } catch (err) {
+      setStatus('导入失败：' + err.message, true);
+    }
+  }
+
+  var docBtn = document.getElementById('articleImportDocBtn');
+  var modal = document.getElementById('articleImportDocModal');
+  var list = document.getElementById('articleImportDocList');
+  var closeBtn = document.getElementById('articleImportDocClose');
+  if (closeBtn) closeBtn.addEventListener('click', closeDocs);
+  if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeDocs(); });
+  if (docBtn) docBtn.addEventListener('click', openDocs);
+
+  function closeDocs() { if (modal) modal.style.display = 'none'; }
+
+  async function openDocs() {
+    if (!modal) return;
+    modal.style.display = 'flex';
+    list.textContent = '加载中…';
+    try {
+      var res = await fetch('/articles/import/documents', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }
+      });
+      var json = await res.json();
+      if (!json.ok) throw new Error(json.error || '加载失败');
+      if (!json.documents || !json.documents.length) {
+        list.innerHTML = '<p style="color:#64748b;">你还没有创建「文档」类型的在线文档，可先去 <a href="/office" target="_blank">在线文档</a> 新建。</p>';
+        return;
+      }
+      list.innerHTML = '';
+      json.documents.forEach(function (doc) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;';
+        var name = document.createElement('span');
+        name.textContent = doc.name || ('文档 #' + doc.id);
+        name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        var time = document.createElement('span');
+        time.textContent = String(doc.updated_at || '').slice(0, 16);
+        time.style.cssText = 'font-size:11px;color:#94a3b8;';
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-small';
+        btn.textContent = '导入';
+        btn.addEventListener('click', function () { importDoc(doc.id, doc.name); });
+        row.appendChild(name);
+        row.appendChild(time);
+        row.appendChild(btn);
+        list.appendChild(row);
+      });
+    } catch (err) {
+      list.textContent = '加载失败：' + err.message;
+    }
+  }
+
+  async function importDoc(id, name) {
+    setStatus('正在导入文档「' + name + '」…');
+    try {
+      var res = await fetch('/articles/import/document', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken(),
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ id: id })
+      });
+      var json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || ('HTTP ' + res.status));
+      appendHtml(json.html);
+      fillTitleIfEmpty(json.title);
+      closeDocs();
+      setStatus('已导入在线文档 · ' + json.html.length + ' 字符');
+    } catch (err) {
+      setStatus('导入失败：' + err.message, true);
+    }
   }
 })();
 </script>

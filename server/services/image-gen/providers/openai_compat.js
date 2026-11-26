@@ -14,7 +14,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE } = require('../utils');
+const { downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE, normalizeApiBase } = require('../utils');
 
 const MAX_COUNT = 4;
 
@@ -23,7 +23,7 @@ function codedError(message, code) {
 }
 
 function trimBase(baseUrl) {
-  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const base = normalizeApiBase(baseUrl, ['images/generations', 'images/edits']);
   if (!base) throw codedError('未配置站点 Base URL（例如 https://example.com/v1）', 'BAD_CONFIG');
   return base;
 }
@@ -32,7 +32,18 @@ function joinPath(baseUrl, apiPath, fallback) {
   const suffix = String(apiPath || fallback || '').trim();
   if (!suffix) return trimBase(baseUrl);
   if (/^https?:\/\//i.test(suffix)) return suffix.replace(/\/+$/, '');
-  return `${trimBase(baseUrl)}/${suffix.replace(/^\/+/, '')}`;
+  return `${trimBase(baseUrl)}/${suffix.replace(/^\/+|\/+$/g, '')}`;
+}
+
+/** 自定义生成端点可自动推导孪生编辑端点；无法推导时拒绝把编辑请求发到生成地址。 */
+function editUrl(cfg) {
+  const configured = String((cfg && cfg.apiPath) || '').trim();
+  if (!configured) return joinPath(cfg && cfg.baseUrl, '', '/images/edits');
+  if (/\/(?:images\/)?edits\/?$/i.test(configured)) return joinPath(cfg && cfg.baseUrl, configured, '');
+  if (/\/(?:images\/)?generations\/?$/i.test(configured)) {
+    return joinPath(cfg && cfg.baseUrl, configured.replace(/generations\/?$/i, 'edits'), '');
+  }
+  throw codedError('自定义 API Path 无法推导图生图端点，请清空 API Path 使用标准 /images/edits', 'BAD_CONFIG');
 }
 
 function getHeaders(cfg) {
@@ -118,9 +129,9 @@ module.exports = {
     const body = {
       model: (cfg && cfg.model) || (cfg && cfg.defaultModel) || '',
       prompt: req.prompt,
-      n: normalizeCount(req.n),
+      n: cfg && cfg.supportsN === false ? 1 : normalizeCount(req.n),
       size: req.size,
-      response_format: 'b64_json'
+      ...(!/gpt[-_. ]?image/i.test(String((cfg && cfg.model) || '')) ? { response_format: 'b64_json' } : {})
     };
     if (cfg && cfg.supportsNegative && req.negativePrompt) body.negative_prompt = req.negativePrompt;
     if (req.seed) body.seed = req.seed;
@@ -141,11 +152,11 @@ module.exports = {
       if (err.code) throw err;
       throw codedError('参考图读取失败', 'INVALID_IMAGE');
     }
-    const url = joinPath(cfg && cfg.baseUrl, cfg && cfg.apiPath, '/images/edits');
+    const url = editUrl(cfg);
     const form = buildMultipart({
       model: (cfg && cfg.model) || (cfg && cfg.defaultModel) || '',
       prompt: req.prompt,
-      n: normalizeCount(req.n),
+      n: cfg && cfg.supportsN === false ? 1 : normalizeCount(req.n),
       size: req.size,
       ...(cfg && cfg.supportsNegative && req.negativePrompt ? { negative_prompt: req.negativePrompt } : {})
     }, file);

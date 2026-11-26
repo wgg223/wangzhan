@@ -3,7 +3,7 @@
  * OpenAI 兼容：POST {base}/images/generations（api_base 默认 https://api.hunyuan.cloud.tencent.com/v1）
  */
 const axios = require('axios');
-const { resolveImageItem } = require('../utils');
+const { resolveImageItem, apiUrl } = require('../utils');
 
 module.exports = {
   key: 'hunyuan',
@@ -17,11 +17,15 @@ module.exports = {
       size: req.size || '1024x1024',
       response_format: 'url'
     };
-    const resp = await axios.post(`${baseUrl}/images/generations`, body, {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 120000,
-      signal: req.cancelRef && req.cancelRef.signal
-    });
+    const resp = await axios.post(
+      apiUrl(baseUrl, '/images/generations', ['/images/edits']),
+      body,
+      {
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 120000,
+        signal: req.cancelRef && req.cancelRef.signal
+      }
+    );
     const images = [];
     for (const item of (resp.data && resp.data.data) || []) {
       images.push({ buffer: await resolveImageItem(item), mime: 'image/png' });
@@ -37,7 +41,7 @@ module.exports = {
   async fetchModels(cfg) {
     const { apiKey, baseUrl } = cfg;
     try {
-      const resp = await axios.get(`${baseUrl}/models`, {
+      const resp = await axios.get(apiUrl(baseUrl, '/models', ['/images/generations', '/images/edits']), {
         headers: { Authorization: `Bearer ${apiKey}` },
         timeout: 15000
       });

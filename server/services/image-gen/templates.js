@@ -131,7 +131,7 @@ const TEMPLATES = [
     apiBase: 'https://ark.cn-beijing.volces.com/api/v3',
     apiPath: '',
     defaultModel: 'doubao-seedream-4-0-250828',
-    models: ['doubao-seedream-4-0-250828', 'doubao-seedream-4-5-251128', 'doubao-seedream-5-0-260128'],
+    models: ['doubao-seedream-5-5-261028', 'doubao-seedream-5-0-flash-260915', 'doubao-seedream-5-0-pro-260628', 'doubao-seedream-4-0-250828', 'doubao-seedream-4-5-251128', 'doubao-seedream-5-0-260128'],
     supportsNegative: 1,
     supportsN: 1,
     supportsImg2img: 1,

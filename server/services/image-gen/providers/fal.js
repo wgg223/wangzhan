@@ -4,16 +4,18 @@
  * ② GET {base}/{app_id}/requests/{request_id}/status → COMPLETED → GET {base}/{app_id}/requests/{request_id} → images[].url
  */
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const { downloadImage, sleep } = require('../utils');
+const { apiUrl, downloadImageSafely, readImageDataUrl, sleep } = require('../utils');
 
 const MAX_POLLS = 200; // 200 * 3s = 600s
 
-function toDataUri(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-  return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+function appUrl(baseUrl, apiPath, suffix = '') {
+  const configured = String(apiPath || '').trim();
+  const path = /^https?:\/\//i.test(configured)
+    ? configured.replace(/\/+$/, '')
+    : configured.split('/').map(encodeURIComponent).join('/');
+  return /^https?:\/\//i.test(path)
+    ? `${path}${suffix}`
+    : apiUrl(baseUrl, `${path}${suffix}`);
 }
 
 module.exports = {
@@ -34,7 +36,7 @@ module.exports = {
     };
     if (req.seed) body.seed = req.seed;
 
-    const submitResp = await axios.post(`${baseUrl}/${apiPath}`, body, {
+    const submitResp = await axios.post(appUrl(baseUrl, apiPath), body, {
       headers,
       timeout: 60000
     });
@@ -55,7 +57,7 @@ module.exports = {
       await sleep(3000);
       let statusResp;
       try {
-        statusResp = await axios.get(`${baseUrl}/${apiPath}/requests/${requestId}/status`, { headers, timeout: 30000 });
+        statusResp = await axios.get(appUrl(baseUrl, apiPath, `/requests/${encodeURIComponent(requestId)}/status`), { headers, timeout: 30000 });
       } catch (err) {
         continue;
       }
@@ -63,7 +65,7 @@ module.exports = {
       if (status === 'COMPLETED') {
         let resultResp;
         try {
-          resultResp = await axios.get(`${baseUrl}/${apiPath}/requests/${requestId}`, { headers, timeout: 30000 });
+          resultResp = await axios.get(appUrl(baseUrl, apiPath, `/requests/${encodeURIComponent(requestId)}`), { headers, timeout: 30000 });
         } catch (err) {
           const e = new Error('fal.ai 获取结果失败');
           e.code = 'FETCH_FAILED';
@@ -74,7 +76,7 @@ module.exports = {
         for (const item of items) {
           const url = item && (item.url || item.image_url);
           if (!url) continue;
-          images.push({ buffer: await downloadImage(url), mime: (item && item.content_type) || 'image/png' });
+          images.push({ buffer: await downloadImageSafely(url), mime: (item && item.content_type) || 'image/png' });
         }
         if (!images.length) {
           const err = new Error('fal.ai 任务成功但未解析到图片地址');
@@ -85,11 +87,15 @@ module.exports = {
       }
       if (status === 'FAILED' || status === 'CANCELLED' || status === 'ERROR') {
         const err = new Error(`fal.ai 任务失败：${(statusResp.data && statusResp.data.error) || status}`);
+        err.fromPoll = true;
+        err.taskId = requestId;
         err.code = 'PROVIDER_FAILED';
         throw err;
       }
     }
     const err = new Error('fal.ai 任务超时');
+    err.fromPoll = true;
+    err.taskId = requestId;
     err.code = 'TIMEOUT';
     throw err;
   },
@@ -104,11 +110,11 @@ module.exports = {
     const headers = { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' };
     const body = {
       prompt: req.prompt,
-      image_url: toDataUri(refPath)
+      image_url: await readImageDataUrl(refPath)
     };
     if (req.seed) body.seed = req.seed;
 
-    const submitResp = await axios.post(`${baseUrl}/${apiPath}`, body, { headers, timeout: 60000 });
+    const submitResp = await axios.post(appUrl(baseUrl, apiPath), body, { headers, timeout: 60000 });
     const requestId = submitResp.data && submitResp.data.request_id;
     if (!requestId) {
       const err = new Error('fal.ai 未返回 request_id');
@@ -125,7 +131,7 @@ module.exports = {
       await sleep(3000);
       let statusResp;
       try {
-        statusResp = await axios.get(`${baseUrl}/${apiPath}/requests/${requestId}/status`, { headers, timeout: 30000 });
+        statusResp = await axios.get(appUrl(baseUrl, apiPath, `/requests/${encodeURIComponent(requestId)}/status`), { headers, timeout: 30000 });
       } catch (err) {
         continue;
       }
@@ -133,7 +139,7 @@ module.exports = {
       if (status === 'COMPLETED') {
         let resultResp;
         try {
-          resultResp = await axios.get(`${baseUrl}/${apiPath}/requests/${requestId}`, { headers, timeout: 30000 });
+          resultResp = await axios.get(appUrl(baseUrl, apiPath, `/requests/${encodeURIComponent(requestId)}`), { headers, timeout: 30000 });
         } catch (err) {
           const e = new Error('fal.ai 获取结果失败');
           e.code = 'FETCH_FAILED';
@@ -144,7 +150,7 @@ module.exports = {
         for (const item of items) {
           const url = item && (item.url || item.image_url);
           if (!url) continue;
-          images.push({ buffer: await downloadImage(url), mime: (item && item.content_type) || 'image/png' });
+          images.push({ buffer: await downloadImageSafely(url), mime: (item && item.content_type) || 'image/png' });
         }
         if (!images.length) {
           const err = new Error('fal.ai 任务成功但未解析到图片地址');
@@ -155,11 +161,15 @@ module.exports = {
       }
       if (status === 'FAILED' || status === 'CANCELLED' || status === 'ERROR') {
         const err = new Error(`fal.ai 任务失败：${(statusResp.data && statusResp.data.error) || status}`);
+        err.fromPoll = true;
+        err.taskId = requestId;
         err.code = 'PROVIDER_FAILED';
         throw err;
       }
     }
     const err = new Error('fal.ai 任务超时');
+    err.fromPoll = true;
+    err.taskId = requestId;
     err.code = 'TIMEOUT';
     throw err;
   },
@@ -173,7 +183,7 @@ module.exports = {
   async cancel(cfg, taskInfo) {
     const { apiKey, baseUrl, apiPath } = cfg;
     if (!taskInfo || !taskInfo.requestId || !apiPath) return;
-    await axios.delete(`${baseUrl}/${apiPath}/requests/${taskInfo.requestId}`, {
+    await axios.delete(appUrl(baseUrl, apiPath, `/requests/${encodeURIComponent(taskInfo.requestId)}`), {
       headers: { Authorization: `Key ${apiKey}` },
       timeout: 15000
     });

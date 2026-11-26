@@ -2,6 +2,33 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.32.0 (2026-11-26)
+
+**文章支持导入更多文件格式，并可复用已有在线文档内容 ｜ 修复：20 家生图服务商接口路径与协议问题**
+
+- 编辑器新增「导入内容」工具条：
+  - **导入文件**：`.md / .markdown / .txt / .log / .html / .htm / .docx / .xlsx / .xls / .csv / .json`，最大 20MB；服务端解析后自动净化并追加到正文，文件名自动填标题
+  - **从在线文档导入**：弹窗列出当前用户创建的「文档」类型在线文档（`/office`），一键把正文转成文章 HTML（标题、段落、加粗、列表、表格、图片）
+- 新增工具 `server/utils/article-import.js`：
+  - Markdown 用 marked 渲染；纯文本自动识别 UTF-8/GBK 并按空行分段；HTML 白名单净化；DOCX 用 mammoth；表格用 xlsx（CSV 先按文本解码避免中文乱码）；JSON 格式化进代码块
+  - 在线文档走 `doc-renderer.buildDocumentIR` 转 IR 再拼 HTML，避免直接依赖 Univer 前端
+- 新增接口（均需登录）：
+  - `POST /articles/import/file`（multipart，字段 file）
+  - `GET /articles/import/documents`（本人文档列表）
+  - `POST /articles/import/document`（`{id}`；非本人需管理员）
+- 安全：导入内容统一过 `sanitize` 白名单；在线文档做归属校验；不支持格式给明确中文提示
+- 验证：离线转换 11/11 PASS；隔离实例端到端——页面渲染导入条、MD 导入、XLSX 导入（中文正常）、文档列表、在线文档导入（含表格）、未登录 302 全部通过；`node --check` 通过；ESLint 0 error
+
+**AI 生图：20 家服务商路径拼接与协议修复**
+
+- 统一 Base URL 规范化与端点拼接：完整接口地址、尾斜杠、完整 `apiPath` 不再重复拼出 `/images/generations/images/generations` 等错误路径
+- OpenAI：GPT Image 与 DALL·E 参数分流，GPT Image 不再发送 `response_format` 或 DALL·E 专属 `quality`；通用 OpenAI 兼容适配器的图生图改用 `/images/edits`
+- 通义万相：图生图改为官方 `image2image/image-synthesis`、`wanx2.1-imageedit`、Data URL 参考图与异步任务轮询
+- RunningHub：辅助接口修正到站点根路径，`retainSeconds` 修复为合法值 10，移除未定义的 `randomSeed`
+- 稳定性：异步适配器失败保留 `task_id` 与请求 ID，轮询失败禁止换模型重复提交；结果图统一安全下载且不携带 API Key
+- 验证：审查全部 20 个适配器，15 组无付费 mock 回归、`node --check`、ESLint 与 diff 检查通过
+
+
 ## v8.31.6 (2026-11-25)
 
 **修复：Seedance 2K 固定比例尺寸协议，真实生成验证通过**

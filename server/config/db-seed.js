@@ -408,6 +408,14 @@ function insertDefaultDataIfNeeded(db) {
   // 插入默认 AI 生图服务商（Key 留空由用户/后台填写；INSERT OR IGNORE 幂等）
   // 默认全部启用：前台直接可选任一服务商，用户自填 Key 即可使用（无 Key 自动兜底到免费/已配置服务商）
   // 数组结构：[provider_key, name, api_base, api_path, default_model, models, supports_negative, supports_n, supports_img2img, enabled, sort_order, api_key_url]
+  const DOUBAO_IMAGE_MODELS = [
+    'doubao-seedream-5-5-261028',
+    'doubao-seedream-5-0-flash-260915',
+    'doubao-seedream-5-0-pro-260628',
+    'doubao-seedream-4-0-250828',
+    'doubao-seedream-4-5-251128',
+    'doubao-seedream-5-0-260128'
+  ];
   const defaultAiImageProviders = [
     ['comfyui', 'ComfyUI 本地工作流', 'http://127.0.0.1:8188', '', '',
       JSON.stringify([]), 1, 1, 1, 1, 0, ''],
@@ -420,7 +428,7 @@ function insertDefaultDataIfNeeded(db) {
     ['zhipu', '智谱 CogView', 'https://open.bigmodel.cn/api', '', 'cogview-3-flash',
       JSON.stringify(['cogview-3-flash', 'cogview-4']), 0, 1, 0, 1, 4, 'https://open.bigmodel.cn/usercenter/apikeys'],
     ['dashscope', '通义万相', 'https://dashscope.aliyuncs.com/api/v1', '', 'wanx-v1',
-      JSON.stringify(['wanx-v1', 'wan2.1-t2i-turbo']), 1, 1, 1, 1, 5, 'https://bailian.console.aliyun.com/#/api-key'],
+      JSON.stringify(['wanx-v1', 'wan2.1-t2i-turbo', 'wanx2.1-imageedit']), 1, 1, 1, 1, 5, 'https://bailian.console.aliyun.com/#/api-key'],
     ['baidu', '文心一格', 'https://aip.baidubce.com', '', 'ernie-vilg-xl-2',
       JSON.stringify(['ernie-vilg-xl-2']), 1, 1, 0, 1, 6, 'https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application'],
     ['pollinations', 'Pollinations.ai', 'https://image.pollinations.ai', '', 'flux',
@@ -436,7 +444,7 @@ function insertDefaultDataIfNeeded(db) {
     ['replicate', 'Replicate', 'https://api.replicate.com/v1', 'black-forest-labs/flux-schnell', '',
       JSON.stringify(['black-forest-labs/flux-schnell', 'stability-ai/sdxl']), 1, 1, 1, 1, 12, 'https://replicate.com/account/api-tokens'],
     ['doubao', '火山引擎豆包', 'https://ark.cn-beijing.volces.com/api/v3', '', 'doubao-seedream-4-0-250828',
-      JSON.stringify(['doubao-seedream-4-0-250828', 'doubao-seedream-4-5-251128', 'doubao-seedream-5-0-260128']), 1, 1, 1, 1, 13, 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey'],
+      JSON.stringify(DOUBAO_IMAGE_MODELS), 1, 1, 1, 1, 13, 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey'],
     ['fal', 'fal.ai', 'https://queue.fal.run', 'fal-ai/flux/dev', '',
       JSON.stringify(['fal-ai/flux/dev', 'fal-ai/flux/schnell']), 0, 1, 1, 1, 14, 'https://fal.ai/dashboard/keys'],
     ['aihubmix', 'AIHubMix', 'https://aihubmix.com/v1', '', 'gpt-image-1',
@@ -841,7 +849,15 @@ PHILOSOPHY（价值讨论）：成熟、不给简单答案、承认矛盾。
   // 豆包默认模型迁移：旧版 seedream-3.0 多数账号未开通，改为 seedream-4.0（仅当仍是旧默认值时执行）
   db.run(`UPDATE ai_image_providers SET default_model = 'doubao-seedream-4-0-250828', models = ?
     WHERE provider_key = 'doubao' AND default_model = 'doubao-seedream-3-0-t2i-250528'`,
-    [JSON.stringify(['doubao-seedream-4-0-250828', 'doubao-seedream-4-5-251128', 'doubao-seedream-5-0-260128'])]);
+  [JSON.stringify(DOUBAO_IMAGE_MODELS)]);
+
+  // 仅给仍是内置旧模型清单的服务商补入 5.0 / 5.5，不覆盖管理员自定义模型或默认模型。
+  const legacyDoubaoModels = JSON.stringify([
+    'doubao-seedream-4-0-250828', 'doubao-seedream-4-5-251128', 'doubao-seedream-5-0-260128'
+  ]);
+  db.run(`UPDATE ai_image_providers SET models = ?
+    WHERE provider_key = 'doubao' AND models = ?`,
+  [JSON.stringify(DOUBAO_IMAGE_MODELS), legacyDoubaoModels]);
 
   // 一次性迁移：存量库默认全部启用（此前版本仅启用 pollinations）。
   // 用设置标记保证只执行一次，之后管理员在后台停用的服务商不会被重启覆盖。

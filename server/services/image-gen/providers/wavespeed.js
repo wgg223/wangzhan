@@ -9,19 +9,31 @@
  */
 const axios = require('axios');
 const fs = require('fs');
-const { downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE } = require('../utils');
+const { apiUrl, downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE } = require('../utils');
 
 const DEFAULT_BASE = 'https://api.wavespeed.ai';
 const POLL_INTERVAL = 3000;
 const MAX_POLLS = 200; // 约 10 分钟
 const PENDING = new Set(['created', 'pending', 'queued', 'processing', 'running']);
 
-function makeError(message, code) {
-  return Object.assign(new Error(message), { code });
+function makeError(message, code, taskId) {
+  return Object.assign(new Error(message), {
+    code,
+    ...(taskId ? { fromPoll: true, taskId } : {})
+  });
 }
 
 function baseUrl(cfg) {
   return String((cfg && cfg.baseUrl) || DEFAULT_BASE).replace(/\/+$/, '');
+}
+
+function submitUrl(cfg) {
+  const model = modelPath(cfg);
+  return /^https?:\/\//i.test(model)
+    ? model
+    : apiUrl(baseUrl(cfg), `/api/v3/${model.split('/').map(encodeURIComponent).join('/')}`, [
+      '/api/v3/predictions'
+    ]);
 }
 
 function headers(cfg) {
@@ -112,7 +124,7 @@ async function submit(cfg, req) {
     }
     body.images = images;
   }
-  const resp = await axios.post(`${baseUrl(cfg)}/api/v3/${modelPath(cfg)}`, body, {
+  const resp = await axios.post(submitUrl(cfg), body, {
     headers: { ...headers(cfg), 'Content-Type': 'application/json' },
     timeout: 60000,
     signal: signalOf(req)
@@ -125,7 +137,7 @@ async function submit(cfg, req) {
 }
 
 async function poll(cfg, req, taskId) {
-  const url = `${baseUrl(cfg)}/api/v3/predictions/${encodeURIComponent(taskId)}/result`;
+  const url = apiUrl(baseUrl(cfg), `/api/v3/predictions/${encodeURIComponent(taskId)}/result`);
   for (let i = 0; i < MAX_POLLS; i++) {
     throwIfCancelled(req);
     await waitForPoll(req);
@@ -136,9 +148,9 @@ async function poll(cfg, req, taskId) {
     } catch (err) {
       rethrowIfCancelled(req, err);
       const status = err.response && err.response.status;
-      if (status === 401 || status === 403) throw makeError('WaveSpeed API Key 无效或无权查询任务', 'AUTH_FAILED');
+      if (status === 401 || status === 403) throw makeError('WaveSpeed API Key 无效或无权查询任务', 'AUTH_FAILED', taskId);
       if (status === 400 || status === 404 || status === 422) {
-        throw makeError(`WaveSpeed 查询任务失败（HTTP ${status}）`, 'FETCH_FAILED');
+        throw makeError(`WaveSpeed 查询任务失败（HTTP ${status}）`, 'FETCH_FAILED', taskId);
       }
       continue;
     }
@@ -146,18 +158,18 @@ async function poll(cfg, req, taskId) {
     const status = String(task.status || '').toLowerCase();
     if (status === 'completed' || status === 'succeeded' || status === 'success') {
       const urls = resultUrls(task);
-      if (!urls.length) throw makeError('WaveSpeed 任务完成但没有返回图片地址', 'EMPTY_RESPONSE');
+      if (!urls.length) throw makeError('WaveSpeed 任务完成但没有返回图片地址', 'EMPTY_RESPONSE', taskId);
       return urls;
     }
     if (status === 'failed' || status === 'error' || status === 'cancelled') {
       const detail = typeof task.error === 'string' ? task.error : '';
-      throw makeError(`WaveSpeed 任务失败${detail ? `：${detail.slice(0, 200)}` : ''}`, 'PROVIDER_FAILED');
+      throw makeError(`WaveSpeed 任务失败${detail ? `：${detail.slice(0, 200)}` : ''}`, 'PROVIDER_FAILED', taskId);
     }
     if (status && !PENDING.has(status)) {
-      throw makeError(`WaveSpeed 返回了无法识别的任务状态：${status}`, 'BAD_RESPONSE');
+      throw makeError(`WaveSpeed 返回了无法识别的任务状态：${status}`, 'BAD_RESPONSE', taskId);
     }
   }
-  throw makeError('WaveSpeed 任务超时', 'TIMEOUT');
+  throw makeError('WaveSpeed 任务超时', 'TIMEOUT', taskId);
 }
 
 async function download(req, urls, maxImages) {

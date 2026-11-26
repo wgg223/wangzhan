@@ -8,6 +8,7 @@
  *    从图结构里自动定位 prompt 文本节点，免去手填 `nodeId:fieldName`
  */
 const axios = require('axios');
+const { normalizeApiBase } = require('./utils');
 
 const WORKFLOW_ID_RE = /^\d{6,}$/;
 const CACHE_TTL = 10 * 60 * 1000;
@@ -15,7 +16,12 @@ const idCache = new Map();
 const graphCache = new Map();
 
 function normalizeBase(baseUrl) {
-  return String(baseUrl || '').replace(/\/+$/, '');
+  return normalizeApiBase(baseUrl);
+}
+
+/** 辅助查询接口位于站点根路径，不在生成接口的 /openapi/v2 下。 */
+function siteOrigin(baseUrl) {
+  return new URL(normalizeBase(baseUrl)).origin;
 }
 
 function normalizeKey(baseUrl, value) {
@@ -104,7 +110,7 @@ async function resolveWorkflowId(baseUrl, apiKey, appId) {
     query.set('apiKey', apiKey);
     query.set(fields[i], app);
     try {
-      const resp = await axios.get(`${base}/api/webapp/apiCallDemo?${query.toString()}`, {
+      const resp = await axios.get(`${siteOrigin(base)}/api/webapp/apiCallDemo?${query.toString()}`, {
         headers: appDemoHeaders(apiKey),
         timeout: 20000
       });
@@ -121,7 +127,7 @@ async function resolveWorkflowId(baseUrl, apiKey, appId) {
     const body = { apiKey };
     body[fields[i]] = app;
     try {
-      const resp = await axios.post(`${base}/api/webapp/apiCallDemo`, body, {
+      const resp = await axios.post(`${siteOrigin(base)}/api/webapp/apiCallDemo`, body, {
         headers: appDemoHeaders(apiKey),
         timeout: 20000
       });
@@ -153,7 +159,7 @@ async function fetchWorkflowGraph(baseUrl, apiKey, workflowId) {
   for (let p = 0; p < paths.length; p++) {
     for (let b = 0; b < bodies.length; b++) {
       try {
-        const resp = await axios.post(`${base}${paths[p]}`, bodies[b], {
+        const resp = await axios.post(`${siteOrigin(base)}${paths[p]}`, bodies[b], {
           headers: appDemoHeaders(apiKey),
           timeout: 20000
         });

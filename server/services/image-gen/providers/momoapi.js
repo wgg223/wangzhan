@@ -11,7 +11,9 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { resolveImageItem, downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE } = require('../utils');
+const {
+  resolveImageItem, downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE, normalizeApiBase
+} = require('../utils');
 
 const DEFAULT_BASE_URL = 'https://api.momoapi.icu';
 const GENERATE_TIMEOUT = 120000;
@@ -56,20 +58,10 @@ function codedError(message, code) {
 }
 
 function normalizeBaseUrl(value) {
-  const raw = String(value || DEFAULT_BASE_URL).trim();
-  let url;
-  try {
-    url = new URL(raw);
-  } catch (e) {
-    throw codedError('MomoAPI 服务地址格式不正确，请填写完整的 http(s) 地址', 'BAD_CONFIG');
-  }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw codedError('MomoAPI 服务地址仅支持无账号密码、无查询参数的 http(s) 地址', 'BAD_CONFIG');
-  }
-  let pathname = url.pathname.replace(/\/+$/, '');
-  // 同时兼容后台填写站点根地址和 OpenAI 风格 /v1 地址，避免重复拼接。
-  if (/\/v1$/i.test(pathname)) pathname = pathname.slice(0, -3);
-  return `${url.origin}${pathname}`;
+  return normalizeApiBase(value || DEFAULT_BASE_URL, [
+    '/v1', '/v1/images/generations', '/v1/images/edits', '/v1/models',
+    '/v1/dashboard/billing/subscription', '/v1/dashboard/billing/usage'
+  ]);
 }
 
 function requireApiKey(cfg) {
@@ -345,6 +337,7 @@ async function pollImageTask(baseUrl, apiKey, taskId, cancelRef, endpointType) {
       });
     } catch (err) {
       const failure = providerError(err, 'MomoAPI 异步任务查询失败');
+      failure.fromPoll = true;
       failure.taskId = taskId;
       if (failure.code !== 'CANCELLED' && !failure.message.includes(taskId)) {
         failure.message += `（task_id: ${taskId}）`;
@@ -362,11 +355,13 @@ async function pollImageTask(baseUrl, apiKey, taskId, cancelRef, endpointType) {
     if (/^(?:SUCCESS|SUCCEEDED|COMPLETED|DONE)$/.test(taskStatus(data))) {
       const err = codedError(`MomoAPI 异步任务完成但没有图片（${describeShape(data)}）（task_id: ${taskId}）`, 'EMPTY_RESPONSE');
       err.fromPoll = true;
+      err.taskId = taskId;
       throw err;
     }
   }
   const timeoutErr = codedError(`MomoAPI 异步任务超时（task_id: ${taskId}）`, 'TIMEOUT');
   timeoutErr.fromPoll = true;
+  timeoutErr.taskId = taskId;
   throw timeoutErr;
 }
 

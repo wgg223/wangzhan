@@ -10,7 +10,9 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE } = require('../utils');
+const {
+  apiUrl, normalizeApiBase, downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE
+} = require('../utils');
 
 const DEFAULT_BASE_URL = 'https://api.seedance.nz';
 const DEFAULT_MODEL = 'seedream-v5.5__2k';
@@ -47,9 +49,9 @@ function responseDetail(data) {
 }
 
 function getBaseUrl(cfg) {
-  const base = String((cfg && cfg.baseUrl) || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(base)) throw makeError('Seedance Base URL 无效', 'BAD_CONFIG');
-  return base;
+  return normalizeApiBase((cfg && cfg.baseUrl) || DEFAULT_BASE_URL, [
+    '/v1/image/generations', '/v1/files/upload', '/api/usage/wallet'
+  ]);
 }
 
 function getHeaders(cfg) {
@@ -212,7 +214,7 @@ async function uploadImage(cfg, req, buffer, filename) {
   const signal = req && req.cancelRef && req.cancelRef.signal;
   let resp;
   try {
-    resp = await axios.post(`${getBaseUrl(cfg)}/v1/files/upload`, form.body, {
+    resp = await axios.post(apiUrl(getBaseUrl(cfg), '/v1/files/upload'), form.body, {
       headers: { ...getHeaders(cfg), 'Content-Type': form.contentType },
       timeout: 60000,
       maxBodyLength: MAX_REFERENCE_SIZE + 64 * 1024,
@@ -269,7 +271,7 @@ async function submitTask(cfg, req, body) {
   throwIfCancelled(req);
   let resp;
   try {
-    resp = await axios.post(`${getBaseUrl(cfg)}/v1/image/generations`, body, {
+    resp = await axios.post(apiUrl(getBaseUrl(cfg), '/v1/image/generations'), body, {
       headers: { ...getHeaders(cfg), 'Content-Type': 'application/json' },
       timeout: 60000,
       signal: req && req.cancelRef && req.cancelRef.signal
@@ -300,7 +302,7 @@ async function submitTask(cfg, req, body) {
 }
 
 async function pollTask(cfg, req, taskId) {
-  const url = `${getBaseUrl(cfg)}/v1/image/generations/${encodeURIComponent(taskId)}`;
+  const url = apiUrl(getBaseUrl(cfg), `/v1/image/generations/${encodeURIComponent(taskId)}`);
   for (let i = 0; i < MAX_POLLS; i++) {
     throwIfCancelled(req);
     await waitForPoll(req);
@@ -405,7 +407,7 @@ async function readWallet(cfg) {
   const headers = getHeaders(cfg);
   let resp;
   try {
-    resp = await axios.get(`${getBaseUrl(cfg)}/api/usage/wallet/`, { headers, timeout: 15000 });
+    resp = await axios.get(`${apiUrl(getBaseUrl(cfg), '/api/usage/wallet')}/`, { headers, timeout: 15000 });
   } catch (err) {
     const status = err.response && err.response.status;
     if (status === 401 || status === 403) throw makeError('Seedance API Key 无效或无权读取钱包', 'AUTH_FAILED');

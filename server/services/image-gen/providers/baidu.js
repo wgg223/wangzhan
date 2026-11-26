@@ -4,7 +4,7 @@
  * apiKey 格式：AK:SK；token 内存缓存，过期前 5 分钟自动刷新
  */
 const axios = require('axios');
-const { parseSize } = require('../utils');
+const { parseSize, apiUrl } = require('../utils');
 
 let cachedToken = null;
 let tokenExpireAt = 0;
@@ -64,7 +64,7 @@ module.exports = {
     if (req.negativePrompt) body.negative_prompt = req.negativePrompt;
 
     const resp = await axios.post(
-      `${baseUrl}/rpc/2.0/ai_custom/v1/wenxinworkshop/text2image/${model || 'ernie-vilg-xl-2'}`,
+      apiUrl(baseUrl, `/rpc/2.0/ai_custom/v1/wenxinworkshop/text2image/${encodeURIComponent(model || 'ernie-vilg-xl-2')}`),
       body,
       {
         params: { access_token: token },

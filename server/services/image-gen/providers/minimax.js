@@ -4,7 +4,7 @@
  * 尺寸用 aspect_ratio（1:1 / 16:9 / 9:16 / 3:4 / 4:3）
  */
 const axios = require('axios');
-const { resolveImageItem } = require('../utils');
+const { resolveImageItem, apiUrl } = require('../utils');
 
 function toAspectRatio(size) {
   const m = String(size || '').match(/^(\d{1,4})[x*](\d{1,4})$/);
@@ -30,7 +30,7 @@ module.exports = {
       aspect_ratio: toAspectRatio(req.size),
       response_format: 'url'
     };
-    const resp = await axios.post(`${baseUrl}/images/generations`, body, {
+    const resp = await axios.post(apiUrl(baseUrl, '/images/generations', ['/images/edits']), body, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       timeout: 120000,
       signal: req.cancelRef && req.cancelRef.signal
@@ -50,7 +50,7 @@ module.exports = {
   async fetchModels(cfg) {
     const { apiKey, baseUrl } = cfg;
     try {
-      const resp = await axios.get(`${baseUrl}/models`, {
+      const resp = await axios.get(apiUrl(baseUrl, '/models', ['/images/generations', '/images/edits']), {
         headers: { Authorization: `Bearer ${apiKey}` },
         timeout: 15000
       });

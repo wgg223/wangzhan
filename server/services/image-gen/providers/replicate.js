@@ -5,16 +5,18 @@
  * 图生图：input.image 传 data URI
  */
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const { downloadImage, sleep, parseSize } = require('../utils');
+const { apiUrl, downloadImageSafely, readImageDataUrl, sleep, parseSize } = require('../utils');
 
 const MAX_POLLS = 300; // 300 * 2s = 600s
 
-function toDataUri(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-  return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+function modelUrl(baseUrl, apiPath) {
+  const configured = String(apiPath || '').trim();
+  const modelPath = /^https?:\/\//i.test(configured)
+    ? configured.replace(/\/+$/, '')
+    : configured.split('/').map(encodeURIComponent).join('/');
+  return /^https?:\/\//i.test(modelPath)
+    ? `${modelPath}/predictions`
+    : apiUrl(baseUrl, `/models/${modelPath}/predictions`, ['/predictions']);
 }
 
 module.exports = {
@@ -32,7 +34,7 @@ module.exports = {
     if (req.negativePrompt) input.negative_prompt = req.negativePrompt;
     if (req.seed) input.seed = req.seed;
 
-    const createResp = await axios.post(`${baseUrl}/models/${apiPath}/predictions`, { input }, {
+    const createResp = await axios.post(modelUrl(baseUrl, apiPath), { input }, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       timeout: 60000
     });
@@ -53,7 +55,7 @@ module.exports = {
       await sleep(2000);
       let pollResp;
       try {
-        pollResp = await axios.get(`${baseUrl}/predictions/${predictionId}`, {
+        pollResp = await axios.get(apiUrl(baseUrl, `/predictions/${encodeURIComponent(predictionId)}`), {
           headers: { Authorization: `Bearer ${apiKey}` },
           timeout: 30000
         });
@@ -72,17 +74,21 @@ module.exports = {
         }
         const images = [];
         for (const url of urls) {
-          images.push({ buffer: await downloadImage(url), mime: 'image/png' });
+          images.push({ buffer: await downloadImageSafely(url), mime: 'image/png' });
         }
         return { images };
       }
       if (status === 'failed' || status === 'canceled') {
         const err = new Error(`Replicate 任务失败：${data.error || status}`);
+        err.fromPoll = true;
+        err.taskId = predictionId;
         err.code = 'PROVIDER_FAILED';
         throw err;
       }
     }
     const err = new Error('Replicate 任务超时');
+    err.fromPoll = true;
+    err.taskId = predictionId;
     err.code = 'TIMEOUT';
     throw err;
   },
@@ -94,11 +100,11 @@ module.exports = {
       err.code = 'BAD_CONFIG';
       throw err;
     }
-    const input = { prompt: req.prompt, image: toDataUri(refPath) };
+    const input = { prompt: req.prompt, image: await readImageDataUrl(refPath) };
     if (req.negativePrompt) input.negative_prompt = req.negativePrompt;
     if (req.seed) input.seed = req.seed;
 
-    const createResp = await axios.post(`${baseUrl}/models/${apiPath}/predictions`, { input }, {
+    const createResp = await axios.post(modelUrl(baseUrl, apiPath), { input }, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       timeout: 60000
     });
@@ -118,7 +124,7 @@ module.exports = {
       await sleep(2000);
       let pollResp;
       try {
-        pollResp = await axios.get(`${baseUrl}/predictions/${predictionId}`, {
+        pollResp = await axios.get(apiUrl(baseUrl, `/predictions/${encodeURIComponent(predictionId)}`), {
           headers: { Authorization: `Bearer ${apiKey}` },
           timeout: 30000
         });
@@ -137,17 +143,21 @@ module.exports = {
         }
         const images = [];
         for (const url of urls) {
-          images.push({ buffer: await downloadImage(url), mime: 'image/png' });
+          images.push({ buffer: await downloadImageSafely(url), mime: 'image/png' });
         }
         return { images };
       }
       if (status === 'failed' || status === 'canceled') {
         const err = new Error(`Replicate 任务失败：${data.error || status}`);
+        err.fromPoll = true;
+        err.taskId = predictionId;
         err.code = 'PROVIDER_FAILED';
         throw err;
       }
     }
     const err = new Error('Replicate 任务超时');
+    err.fromPoll = true;
+    err.taskId = predictionId;
     err.code = 'TIMEOUT';
     throw err;
   },
@@ -161,7 +171,7 @@ module.exports = {
   async cancel(cfg, taskInfo) {
     const { apiKey, baseUrl } = cfg;
     if (!taskInfo || !taskInfo.predictionId) return;
-    await axios.post(`${baseUrl}/predictions/${taskInfo.predictionId}/cancel`, null, {
+    await axios.post(apiUrl(baseUrl, `/predictions/${encodeURIComponent(taskInfo.predictionId)}/cancel`), null, {
       headers: { Authorization: `Bearer ${apiKey}` },
       timeout: 15000
     });
