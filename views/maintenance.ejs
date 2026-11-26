@@ -1,101 +1,1136 @@
 <%# ===== 页面模板：maintenance.ejs =====%>
-<%# 说明：服务器维护页：维护模式提示（EJS 服务端模板，由 Express 渲染，变量与部分逻辑见对应路由） %>
+<%# 说明：系统维护页（独立渲染，不套用前台 layout）。包含维护状态、交互维修工与工资互动、站点备案信息。 %>
+<%
+  var safeSettings = (typeof settings !== 'undefined' && settings) ? settings : {};
+  var siteName = safeSettings.site_name || '我的网站';
+  var siteLogo = safeSettings.logo || '';
+  var pageTitle = (typeof title !== 'undefined' && title) ? title : '系统维护中';
+  var pageMessage = (typeof message !== 'undefined' && message) ? message : '系统正在进行维护升级，请稍后再试。';
+  var icpNumber = safeSettings.icp_beian || safeSettings.icp_number || '';
+  var icpLink = safeSettings.icp_link || 'https://beian.miit.gov.cn/';
+  var currentUser = (typeof user !== 'undefined') ? user : null;
+  var isSuperAdmin = !!(currentUser && currentUser.role === 'super_admin');
+  var year = new Date().getFullYear();
+  var brandInitial = String(siteName).trim().charAt(0) || '维';
+%>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><%= title || '系统维护中' %></title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0a0613">
+  <title><%= pageTitle %> · <%= siteName %></title>
   <style>
+    :root {
+      --text: #f7f4ff;
+      --muted: #b9aecf;
+      --muted-2: #8d80a6;
+      --pink: #f472b6;
+      --violet: #a78bfa;
+      --amber: #fbbf24;
+      --panel: rgba(24, 17, 45, .74);
+      --panel-border: rgba(255, 255, 255, .09);
+      --radius: 28px;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { color-scheme: dark; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-      background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+      position: relative;
       min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 520px at 16% -8%, rgba(236, 72, 153, .24), transparent 62%),
+        radial-gradient(780px 560px at 94% 10%, rgba(139, 92, 246, .28), transparent 64%),
+        linear-gradient(160deg, #0a0613 0%, #120a22 46%, #09050f 100%);
+    }
+
+    a { color: inherit; }
+    button { font: inherit; }
+    img { display: block; max-width: 100%; }
+
+    .bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px);
+      background-size: 48px 48px;
+      -webkit-mask-image: radial-gradient(ellipse at 50% 42%, #000 12%, transparent 72%);
+      mask-image: radial-gradient(ellipse at 50% 42%, #000 12%, transparent 72%);
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(72px);
+      opacity: .34;
+      animation: orbDrift 14s ease-in-out infinite alternate;
+    }
+    .orb-1 {
+      width: 340px;
+      height: 340px;
+      top: -120px;
+      left: -80px;
+      background: #db2777;
+    }
+    .orb-2 {
+      width: 380px;
+      height: 380px;
+      top: 8%;
+      right: -140px;
+      background: #7c3aed;
+      animation-delay: -4s;
+    }
+    .orb-3 {
+      width: 300px;
+      height: 300px;
+      bottom: -160px;
+      left: 34%;
+      background: #0ea5e9;
+      opacity: .16;
+      animation-delay: -8s;
+    }
+
+    @keyframes orbDrift {
+      from { transform: translate3d(0, 0, 0) scale(1); }
+      to { transform: translate3d(24px, -18px, 0) scale(1.08); }
+    }
+
+    .topbar {
+      position: relative;
+      z-index: 2;
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 26px 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+      text-decoration: none;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+
+    .brand-logo,
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      flex: 0 0 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, .36);
+    }
+    .brand-logo { object-fit: cover; }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #f472b6, #8b5cf6);
+    }
+
+    .brand-name {
+      max-width: 46vw;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 15.5px;
+    }
+
+    .top-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      flex: 0 0 auto;
+      padding: 8px 14px;
+      border: 1px solid rgba(251, 191, 36, .22);
+      border-radius: 999px;
+      background: rgba(251, 191, 36, .08);
+      color: #fcd34d;
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #fbbf24;
+      box-shadow: 0 0 0 0 rgba(251, 191, 36, .5);
+      animation: statusPulse 2s ease-out infinite;
+    }
+
+    @keyframes statusPulse {
+      0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, .5); }
+      70% { box-shadow: 0 0 0 7px rgba(251, 191, 36, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+    }
+
+    main {
+      position: relative;
+      z-index: 1;
+      flex: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: clamp(18px, 3vw, 34px) 20px;
     }
-    .maintenance-card {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 24px;
-      padding: 60px 40px;
-      max-width: 500px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 20px 60px rgba(190, 24, 93, 0.35);
-      animation: fadeIn 0.5s ease;
+
+    .panel {
+      position: relative;
+      width: min(1060px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(320px, .92fr);
+      gap: clamp(28px, 5vw, 64px);
+      align-items: center;
+      padding: clamp(28px, 5vw, 58px);
+      overflow: hidden;
+      border: 1px solid var(--panel-border);
+      border-radius: var(--radius);
+      background: linear-gradient(145deg, rgba(37, 25, 66, .78), rgba(17, 11, 32, .84));
+      box-shadow: 0 40px 100px rgba(0, 0, 0, .58), inset 0 1px 0 rgba(255, 255, 255, .08);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
+
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: -160px;
+      left: -120px;
+      width: 420px;
+      height: 320px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(244, 114, 182, .16), transparent 68%);
+      pointer-events: none;
     }
-    .icon {
-      font-size: 80px;
-      margin-bottom: 24px;
-      animation: pulse 2s ease-in-out infinite;
+
+    .info {
+      position: relative;
+      min-width: 0;
     }
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-    }
-    h1 {
-      font-size: 28px;
-      color: #43303e;
-      margin-bottom: 16px;
-      font-weight: 700;
-    }
-    .message {
-      font-size: 16px;
-      color: #7c5e70;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-    .status-badge {
+
+    .pill {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 12px 24px;
-      background: #fef3c7;
-      border: 1px solid #fcd34d;
-      border-radius: 50px;
-      color: #92400e;
-      font-size: 14px;
-      font-weight: 500;
+      padding: 8px 12px;
+      border: 1px solid rgba(167, 139, 250, .25);
+      border-radius: 999px;
+      background: rgba(167, 139, 250, .1);
+      color: #e9d5ff;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: .16em;
     }
-    .status-dot {
-      width: 10px;
-      height: 10px;
-      background: #f59e0b;
+
+    .pill-dot {
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      animation: blink 1.5s ease-in-out infinite;
+      background: #c4b5fd;
+      box-shadow: 0 0 12px rgba(196, 181, 253, .9);
     }
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
+
+    h1 {
+      margin-top: 22px;
+      font-size: clamp(32px, 4.2vw, 46px);
+      line-height: 1.14;
+      letter-spacing: -.02em;
+      font-weight: 800;
+      color: #fff;
+      background: linear-gradient(120deg, #fff 18%, #fbcfe8 58%, #c4b5fd 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
-    .footer {
-      margin-top: 40px;
-      padding-top: 24px;
-      border-top: 1px solid #e2e8f0;
-      color: #94a3b8;
+
+    .message {
+      max-width: 52ch;
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.85;
+      white-space: pre-line;
+    }
+
+    .hint-box {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      max-width: 52ch;
+      margin-top: 26px;
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 255, 255, .07);
+      border-radius: 14px;
+      background: rgba(148, 163, 184, .06);
+      color: var(--muted-2);
       font-size: 13px;
+      line-height: 1.75;
+    }
+
+    .hint-box svg {
+      flex: 0 0 16px;
+      width: 16px;
+      height: 16px;
+      margin-top: 3px;
+      color: #c4b5fd;
+    }
+
+    .hint-box strong {
+      color: #e9d5ff;
+      font-weight: 650;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      margin-top: 30px;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      padding: 13px 22px;
+      border: 0;
+      border-radius: 14px;
+      color: #fff;
+      font-size: 14.5px;
+      font-weight: 650;
+      cursor: pointer;
+      background: linear-gradient(135deg, #ec4899, #8b5cf6);
+      box-shadow: 0 14px 30px rgba(139, 92, 246, .3);
+      transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+    }
+
+    .btn-primary svg { width: 16px; height: 16px; }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      filter: saturate(1.08);
+      box-shadow: 0 18px 38px rgba(139, 92, 246, .4);
+    }
+
+    .btn-primary:active { transform: translateY(0) scale(.98); }
+
+    .btn-primary:focus-visible,
+    .reset-btn:focus-visible {
+      outline: 2px solid #fbcfe8;
+      outline-offset: 3px;
+    }
+
+    .fine-print {
+      color: var(--muted-2);
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+
+    .mascot-zone {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      min-width: 0;
+      padding-left: clamp(0px, 2vw, 18px);
+      border-left: 1px solid rgba(255, 255, 255, .07);
+    }
+
+    .bubble-shell {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      width: 100%;
+      min-height: 74px;
+    }
+
+    .bubble {
+      position: relative;
+      width: 100%;
+      max-width: 300px;
+      min-height: 62px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 13px 17px;
+      border-radius: 16px 16px 16px 16px;
+      background: rgba(255, 255, 255, .97);
+      color: #2c2140;
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.65;
+      text-align: center;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, .28);
+    }
+
+    .bubble::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      bottom: -6px;
+      width: 14px;
+      height: 14px;
+      background: inherit;
+      border-radius: 0 0 4px 0;
+      transform: translateX(-50%) rotate(45deg);
+    }
+
+    .bubble.is-bump {
+      animation: bubbleBump .34s cubic-bezier(.22, 1, .36, 1);
+    }
+
+    @keyframes bubbleBump {
+      0% { opacity: .35; transform: translateY(5px) scale(.97); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .worker-wrap {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .worker-btn {
+      position: relative;
+      width: min(250px, 64vw);
+      aspect-ratio: 280 / 320;
+      padding: 0;
+      border: 0;
+      border-radius: 32px;
+      background: transparent;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      filter: drop-shadow(0 30px 34px rgba(0, 0, 0, .32));
+    }
+
+    .worker-btn::before {
+      content: '';
+      position: absolute;
+      inset: 7% 6% 9%;
+      z-index: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 44%, rgba(167, 139, 250, .34), rgba(236, 72, 153, .12) 45%, transparent 70%);
+      filter: blur(6px);
+    }
+
+    .worker-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(244, 114, 182, .7);
+    }
+
+    .worker-svg {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      transform-origin: 50% 92%;
+      animation: workerIdle 3.8s ease-in-out infinite;
+    }
+
+    .worker-btn:hover .worker-svg { filter: brightness(1.04); }
+
+    .worker-btn.is-hit .worker-svg {
+      animation: workerHit .42s cubic-bezier(.36, .07, .19, .97);
+    }
+
+    @keyframes workerIdle {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-7px); }
+    }
+
+    @keyframes workerHit {
+      0%, 100% { transform: translateX(0) rotate(0); }
+      20% { transform: translateX(-6px) rotate(-1.4deg); }
+      40% { transform: translateX(5px) rotate(1.1deg); }
+      60% { transform: translateX(-3px) rotate(-.7deg); }
+      80% { transform: translateX(2px) rotate(0); }
+    }
+
+    .eye {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: eyeBlink 4.8s ease-in-out infinite;
+    }
+
+    .worker-btn.is-hit .eye {
+      animation: none;
+      transform: scaleY(.38);
+    }
+
+    .worker-btn.is-broke .eye {
+      animation: none;
+      transform: scaleY(.72);
+    }
+
+    .worker-btn.is-hit .mouth-smile { opacity: 0; }
+    .worker-btn.is-hit .mouth-shock { opacity: 1; }
+
+    .worker-btn.is-broke .mouth-smile,
+    .worker-btn.is-broke .mouth-shock { opacity: 0; }
+    .worker-btn.is-broke .mouth-sad { opacity: 1; }
+
+    .worker-btn.is-broke .brow-left,
+    .worker-btn.is-broke .brow-right {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+    .worker-btn.is-broke .brow-left { transform: rotate(14deg) translateY(1px); }
+    .worker-btn.is-broke .brow-right { transform: rotate(-14deg) translateY(1px); }
+
+    @keyframes eyeBlink {
+      0%, 44%, 50%, 100% { transform: scaleY(1); }
+      47%, 48% { transform: scaleY(.12); }
+    }
+
+    .led { animation: ledBlink 2.4s ease-in-out infinite; }
+    .led-2 { animation-delay: .5s; }
+    .led-3 { animation-delay: 1s; }
+
+    @keyframes ledBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .25; }
+    }
+
+    .orbit-ring { animation: orbit 34s linear infinite; transform-origin: 140px 155px; }
+
+    @keyframes orbit {
+      to { transform: rotate(360deg); }
+    }
+
+    .float-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      overflow: visible;
+      pointer-events: none;
+    }
+
+    .deduction-float {
+      position: absolute;
+      left: 50%;
+      top: 42%;
+      transform: translate(-50%, -50%);
+      color: #fda4af;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: .02em;
+      white-space: nowrap;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, .6);
+      animation: floatUp 1s ease-out forwards;
+    }
+
+    @keyframes floatUp {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(.8); }
+      15% { opacity: 1; }
+      100% { opacity: 0; transform: translate(calc(-50% + var(--drift, 0px)), -165%) scale(1.08); }
+    }
+
+    .salary-card {
+      width: 100%;
+      max-width: 300px;
+      padding: 15px 17px;
+      border: 1px solid rgba(255, 255, 255, .09);
+      border-radius: 18px;
+      background: rgba(9, 6, 17, .55);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 14px 30px rgba(0, 0, 0, .24);
+      transition: border-color .3s ease, background .3s ease;
+    }
+
+    .salary-card.is-broke {
+      border-color: rgba(251, 113, 133, .3);
+      background: rgba(60, 12, 25, .38);
+    }
+
+    .salary-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .salary-label {
+      color: var(--muted-2);
+      font-size: 12px;
+      letter-spacing: .08em;
+    }
+
+    .salary-value {
+      color: #fef3c7;
+      font-size: 22px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      transition: color .25s ease;
+    }
+
+    .salary-value.is-drop { animation: valueDrop .42s ease; }
+
+    @keyframes valueDrop {
+      0% { transform: scale(1); }
+      35% { transform: scale(1.14); }
+      100% { transform: scale(1); }
+    }
+
+    .salary-bar {
+      height: 7px;
+      margin-top: 11px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .08);
+    }
+
+    .salary-bar-fill {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #34d399, #a3e635);
+      transition: width .38s cubic-bezier(.22, 1, .36, 1), background .38s ease;
+    }
+
+    .salary-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      color: var(--muted-2);
+      font-size: 11.5px;
+    }
+
+    .salary-meta strong {
+      color: #fda4af;
+      font-weight: 600;
+    }
+
+    .reset-btn {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      margin-top: 11px;
+      padding: 9px 12px;
+      border: 1px dashed rgba(255, 255, 255, .2);
+      border-radius: 11px;
+      background: rgba(255, 255, 255, .04);
+      color: #e9d5ff;
+      font-size: 12.5px;
+      cursor: pointer;
+      transition: background .2s ease, border-color .2s ease;
+    }
+
+    .reset-btn:hover {
+      border-color: rgba(244, 114, 182, .45);
+      background: rgba(244, 114, 182, .1);
+    }
+
+    .salary-card.is-broke .reset-btn { display: flex; }
+
+    .tap-tip {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted-2);
+      font-size: 12px;
+    }
+
+    .tap-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #f9a8d4;
+      box-shadow: 0 0 10px rgba(249, 168, 212, .8);
+      animation: tapPulse 2.2s ease-in-out infinite;
+    }
+
+    @keyframes tapPulse {
+      0%, 100% { transform: scale(1); opacity: .8; }
+      50% { transform: scale(1.5); opacity: 1; }
+    }
+
+    .page-footer {
+      position: relative;
+      z-index: 1;
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 8px 0 26px;
+      color: var(--muted-2);
+      font-size: 12.5px;
+      line-height: 1.8;
+    }
+
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px 20px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, .06);
+    }
+
+    .footer-copy {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 14px;
+      min-width: 0;
+    }
+
+    .footer-copy a,
+    .footer-links a {
+      color: var(--muted-2);
+      text-decoration: none;
+      transition: color .2s ease;
+    }
+
+    .footer-copy a:hover,
+    .footer-links a:hover { color: #fbcfe8; }
+
+    .footer-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 0 0 auto;
+    }
+
+    .footer-links .sep { opacity: .35; }
+
+    @media (max-width: 880px) {
+      .panel {
+        grid-template-columns: 1fr;
+        gap: 26px;
+        padding: 30px 22px 28px;
+      }
+
+      .info { text-align: center; }
+
+      .message,
+      .hint-box {
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .hint-box { text-align: left; }
+      .actions { justify-content: center; }
+
+      .mascot-zone {
+        padding-top: 26px;
+        padding-left: 0;
+        border-top: 1px solid rgba(255, 255, 255, .07);
+        border-left: 0;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .topbar { padding-top: 18px; }
+      main { padding: 14px; }
+      .panel { padding: 24px 16px 26px; border-radius: 24px; }
+      .brand-name { max-width: 52vw; font-size: 14px; }
+      .top-status { padding: 7px 10px; font-size: 11px; }
+      h1 { font-size: 30px; }
+      .message { font-size: 15px; }
+      .bubble { max-width: 270px; font-size: 13px; }
+      .worker-btn { width: min(236px, 68vw); }
+      .salary-card { max-width: 270px; }
+      .footer-inner { justify-content: center; text-align: center; }
+      .footer-copy { justify-content: center; }
+      .footer-links { width: 100%; justify-content: center; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="maintenance-card">
-    <div class="icon">🔧</div>
-    <h1><%= title || '系统维护中' %></h1>
-    <p class="message"><%= message || '系统正在进行维护升级，请稍后再试。' %></p>
-    <div class="status-badge">
-      <span class="status-dot"></span>
-      维护中
-    </div>
-    <div class="footer">
-      感谢您的耐心等待
-    </div>
+  <div class="bg" aria-hidden="true">
+    <div class="bg-grid"></div>
+    <span class="orb orb-1"></span>
+    <span class="orb orb-2"></span>
+    <span class="orb orb-3"></span>
   </div>
+
+  <header class="topbar">
+    <a class="brand" href="/">
+      <% if (siteLogo) { %>
+        <img class="brand-logo" src="<%= siteLogo %>" alt="<%= siteName %>">
+      <% } else { %>
+        <span class="brand-mark" aria-hidden="true"><%= brandInitial %></span>
+      <% } %>
+      <span class="brand-name"><%= siteName %></span>
+    </a>
+    <span class="top-status"><span class="status-dot"></span>维护进行中</span>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="maintenanceTitle">
+      <div class="info">
+        <span class="pill"><span class="pill-dot"></span>SYSTEM MAINTENANCE</span>
+        <h1 id="maintenanceTitle"><%= pageTitle %></h1>
+        <p class="message"><%= pageMessage %></p>
+
+        <div class="hint-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 11v5"></path>
+            <path d="M12 8h.01"></path>
+          </svg>
+          <span><strong>维护完成后即可正常访问。</strong>给你带来不便，敬请谅解。</span>
+        </div>
+
+        <div class="actions">
+          <button class="btn-primary" id="refreshBtn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 11a8 8 0 1 0-2.3 5.7"></path>
+              <path d="M20 4v7h-7"></path>
+            </svg>
+            刷新试试
+          </button>
+          <span class="fine-print">维护完成后刷新本页即可恢复</span>
+        </div>
+      </div>
+
+      <div class="mascot-zone">
+        <div class="bubble-shell">
+          <div class="bubble" id="bubble" role="status" aria-live="polite">服务器正在抢修中… 别戳我，工头在看着呢。</div>
+        </div>
+
+        <div class="worker-wrap">
+          <button class="worker-btn" id="workerBtn" type="button" aria-label="维修工人小维，点击互动，每次点击扣 50 元工资">
+            <span class="float-layer" id="floatLayer" aria-hidden="true"></span>
+            <svg class="worker-svg" viewBox="0 0 280 320" aria-hidden="true" focusable="false">
+              <defs>
+                <linearGradient id="mSuit" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#818cf8"></stop>
+                  <stop offset=".55" stop-color="#6366f1"></stop>
+                  <stop offset="1" stop-color="#4338ca"></stop>
+                </linearGradient>
+                <linearGradient id="mBib" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#312e81"></stop>
+                  <stop offset="1" stop-color="#1e1b4b"></stop>
+                </linearGradient>
+                <linearGradient id="mHelmet" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#fde047"></stop>
+                  <stop offset="1" stop-color="#f59e0b"></stop>
+                </linearGradient>
+                <radialGradient id="mGlow" cx="50%" cy="48%" r="52%">
+                  <stop offset="0" stop-color="#a78bfa" stop-opacity=".38"></stop>
+                  <stop offset=".62" stop-color="#ec4899" stop-opacity=".12"></stop>
+                  <stop offset="1" stop-color="#ec4899" stop-opacity="0"></stop>
+                </radialGradient>
+                <filter id="mShadow" x="-40%" y="-40%" width="180%" height="180%">
+                  <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#05020c" flood-opacity=".32"></feDropShadow>
+                </filter>
+              </defs>
+
+              <circle cx="140" cy="158" r="126" fill="url(#mGlow)"></circle>
+              <circle class="orbit-ring" cx="140" cy="155" r="112" fill="none" stroke="rgba(255,255,255,.13)" stroke-width="2" stroke-dasharray="3 12" stroke-linecap="round"></circle>
+              <ellipse cx="140" cy="298" rx="86" ry="13" fill="#05020c" opacity=".42"></ellipse>
+
+              <g class="rack" filter="url(#mShadow)">
+                <rect x="204" y="224" width="66" height="60" rx="11" fill="#131a2b" stroke="#334155" stroke-width="2"></rect>
+                <rect x="214" y="236" width="46" height="8" rx="4" fill="#1e293b"></rect>
+                <rect x="214" y="251" width="46" height="8" rx="4" fill="#1e293b"></rect>
+                <rect x="214" y="266" width="46" height="8" rx="4" fill="#1e293b"></rect>
+                <circle class="led led-1" cx="220" cy="240" r="2.6" fill="#34d399"></circle>
+                <circle class="led led-2" cx="220" cy="255" r="2.6" fill="#fbbf24"></circle>
+                <circle class="led led-3" cx="220" cy="270" r="2.6" fill="#60a5fa"></circle>
+              </g>
+
+              <g class="worker" filter="url(#mShadow)">
+                <rect x="104" y="238" width="30" height="48" rx="14" fill="#1e1b4b"></rect>
+                <rect x="146" y="238" width="30" height="48" rx="14" fill="#1e1b4b"></rect>
+                <rect x="90" y="276" width="52" height="19" rx="9.5" fill="#0b1120" stroke="#26324a" stroke-width="2"></rect>
+                <rect x="138" y="276" width="52" height="19" rx="9.5" fill="#0b1120" stroke="#26324a" stroke-width="2"></rect>
+
+                <rect x="126" y="132" width="28" height="30" rx="12" fill="#eeb58e"></rect>
+
+                <path d="M96 184c-14 11-21 26-23 42" fill="none" stroke="#4f46e5" stroke-width="24" stroke-linecap="round"></path>
+                <circle cx="72" cy="234" r="12" fill="#ffd7b5"></circle>
+
+                <path d="M86 190c0-32 24-56 54-56s54 24 54 56v38c0 18-13 30-31 30H117c-18 0-31-12-31-30z" fill="url(#mSuit)"></path>
+
+                <path d="M111 155h58v55c0 11-8 19-19 19h-20c-11 0-19-8-19-19z" fill="url(#mBib)" opacity=".92"></path>
+                <path d="M110 160l-10-24" stroke="#3730a3" stroke-width="12" stroke-linecap="round"></path>
+                <path d="M170 160l10-24" stroke="#3730a3" stroke-width="12" stroke-linecap="round"></path>
+                <path d="M123 150l17 14 17-14" fill="none" stroke="#312e81" stroke-width="6" stroke-linecap="round"></path>
+
+                <rect x="96" y="226" width="88" height="13" rx="6.5" fill="#0f172a" opacity=".5"></rect>
+                <rect x="131" y="224" width="18" height="17" rx="4" fill="#fbbf24"></rect>
+                <rect x="136" y="229" width="8" height="7" rx="2" fill="#78350f"></rect>
+
+                <rect x="149" y="203" width="20" height="16" rx="4" fill="#312e81" opacity=".85"></rect>
+                <path d="M154 203v-5h10v5" fill="none" stroke="#a5b4fc" stroke-width="2.5" stroke-linecap="round"></path>
+                <path d="M126 181l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.6-4.8 2.6.9-5.4-3.9-3.8 5.4-.8z" fill="#fde68a"></path>
+
+                <circle cx="89" cy="104" r="10.5" fill="#f2bd96"></circle>
+                <circle cx="191" cy="104" r="10.5" fill="#f2bd96"></circle>
+                <circle cx="140" cy="98" r="53" fill="#ffd7b5"></circle>
+
+                <ellipse cx="105" cy="118" rx="11" ry="6" fill="#fb7185" opacity=".28"></ellipse>
+                <ellipse cx="175" cy="118" rx="11" ry="6" fill="#fb7185" opacity=".28"></ellipse>
+
+                <path class="brow brow-left" d="M110 93c4-3.5 10-3.5 14 0" fill="none" stroke="#6b3b22" stroke-width="3" stroke-linecap="round"></path>
+                <path class="brow brow-right" d="M156 93c4-3.5 10-3.5 14 0" fill="none" stroke="#6b3b22" stroke-width="3" stroke-linecap="round"></path>
+
+                <g class="eye">
+                  <ellipse cx="119" cy="106" rx="6" ry="7.5" fill="#2a1c14"></ellipse>
+                  <circle cx="117" cy="103.5" r="2" fill="#fff" opacity=".9"></circle>
+                </g>
+                <g class="eye">
+                  <ellipse cx="161" cy="106" rx="6" ry="7.5" fill="#2a1c14"></ellipse>
+                  <circle cx="159" cy="103.5" r="2" fill="#fff" opacity=".9"></circle>
+                </g>
+
+                <path d="M139 109c1.5 3.5 3 6 1 8" fill="none" stroke="#e2a57c" stroke-width="2.6" stroke-linecap="round"></path>
+
+                <path class="mouth-smile" d="M126 124c8 8.5 20 8.5 28 0" fill="none" stroke="#9a3412" stroke-width="4.5" stroke-linecap="round"></path>
+                <ellipse class="mouth-shock" cx="140" cy="128" rx="8" ry="10" fill="#7f1d1d" opacity="0"></ellipse>
+                <path class="mouth-sad" d="M126 131c8-7 20-7 28 0" fill="none" stroke="#9a3412" stroke-width="4.5" stroke-linecap="round" opacity="0"></path>
+
+                <path d="M86 80a54 54 0 0 1 108 0v2H86z" fill="url(#mHelmet)"></path>
+                <rect x="74" y="76" width="132" height="14" rx="7" fill="#f59e0b"></rect>
+                <rect x="74" y="76" width="132" height="5" rx="2.5" fill="#fde68a" opacity=".55"></rect>
+                <path d="M103 50c8-12 21-19 37-20" fill="none" stroke="#fef3c7" stroke-width="6" stroke-linecap="round" opacity=".6"></path>
+
+                <path d="M186 184c14-8 21-20 25-33" fill="none" stroke="#4f46e5" stroke-width="24" stroke-linecap="round"></path>
+                <circle cx="214" cy="144" r="12.5" fill="#ffd7b5"></circle>
+
+                <g class="wrench" transform="rotate(16 214 142)">
+                  <rect x="208" y="88" width="12" height="58" rx="6" fill="#cbd5e1"></rect>
+                  <rect x="210" y="91" width="3" height="50" rx="1.5" fill="#f8fafc" opacity=".65"></rect>
+                  <circle cx="214" cy="82" r="17" fill="#cbd5e1"></circle>
+                  <circle cx="214" cy="82" r="7.5" fill="#171129"></circle>
+                </g>
+              </g>
+            </svg>
+          </button>
+        </div>
+
+        <div class="salary-card" id="salaryCard" aria-live="polite">
+          <div class="salary-head">
+            <span class="salary-label">今日工资</span>
+            <strong class="salary-value" id="salaryValue">¥500</strong>
+          </div>
+          <div class="salary-bar"><span class="salary-bar-fill" id="salaryBar"></span></div>
+          <div class="salary-meta">
+            <span id="deductedValue">已扣 ¥0</span>
+            <span id="hitCount">工头记录 0 次</span>
+          </div>
+          <button class="reset-btn" id="resetBtn" type="button">重新给他发工资</button>
+        </div>
+
+        <p class="tap-tip"><span class="tap-dot" aria-hidden="true"></span>点他一下试试（每次扣 ¥50）</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <div class="footer-inner">
+      <div class="footer-copy">
+        <span>© <%= year %> <%= siteName %></span>
+        <% if (safeSettings.footer_text) { %>
+          <span><%= safeSettings.footer_text %></span>
+        <% } %>
+        <% if (icpNumber) { %>
+          <a href="<%= icpLink %>" target="_blank" rel="noopener"><%= icpNumber %></a>
+        <% } %>
+        <% if (safeSettings.police_beian) { %>
+          <span><%= safeSettings.police_beian %></span>
+        <% } %>
+      </div>
+      <div class="footer-links">
+        <% if (isSuperAdmin) { %>
+          <a href="/admin">进入后台</a>
+        <% } else { %>
+          <a href="/auth/frontend/login">登录</a>
+        <% } %>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var SALARY_TOTAL = 500;
+      var DEDUCTION = 50;
+
+      var salary = SALARY_TOTAL;
+      var hits = 0;
+      var isBroke = false;
+      var brokeIndex = 0;
+
+      var workerBtn = document.getElementById('workerBtn');
+      var bubble = document.getElementById('bubble');
+      var salaryCard = document.getElementById('salaryCard');
+      var salaryValue = document.getElementById('salaryValue');
+      var salaryBar = document.getElementById('salaryBar');
+      var deductedValue = document.getElementById('deductedValue');
+      var hitCount = document.getElementById('hitCount');
+      var floatLayer = document.getElementById('floatLayer');
+      var resetBtn = document.getElementById('resetBtn');
+      var refreshBtn = document.getElementById('refreshBtn');
+
+      var hitMessages = [
+        '喂！点一下扣 50，工头可都记着呢。',
+        '工头往这边看了…今日工资又少了 50。',
+        '别点啦！再点下去今天真白干了。',
+        '维修费可以不急，工资是真的急啊！',
+        '最后一点工资了，你忍心吗？'
+      ];
+
+      var brokeMessages = [
+        '今日工资已扣光…我拿什么养家，服务器还没修完呢。',
+        '工资清零了，现在只能扣我的泡面了。',
+        '你比工头还狠，维修可以等，工资不能等啊！',
+        '别点了，再点我就只能去隔壁修服务器了。'
+      ];
+
+      function formatMoney(value) {
+        return '¥' + Number(value).toLocaleString('zh-CN');
+      }
+
+      function setBubble(text) {
+        bubble.textContent = text;
+        bubble.classList.remove('is-bump');
+        void bubble.offsetWidth;
+        bubble.classList.add('is-bump');
+      }
+
+      function paintSalary() {
+        var percent = Math.max(0, salary / SALARY_TOTAL * 100);
+
+        salaryValue.textContent = formatMoney(salary);
+        deductedValue.textContent = '已扣 ' + formatMoney(SALARY_TOTAL - salary);
+        hitCount.textContent = '工头记录 ' + hits + ' 次';
+        salaryBar.style.width = percent + '%';
+
+        if (percent > 60) {
+          salaryBar.style.background = 'linear-gradient(90deg,#34d399,#a3e635)';
+          salaryValue.style.color = '#fef3c7';
+        } else if (percent > 25) {
+          salaryBar.style.background = 'linear-gradient(90deg,#fbbf24,#fb923c)';
+          salaryValue.style.color = '#fde68a';
+        } else {
+          salaryBar.style.background = 'linear-gradient(90deg,#fb7185,#ef4444)';
+          salaryValue.style.color = '#fda4af';
+        }
+      }
+
+      function playHit() {
+        workerBtn.classList.remove('is-hit');
+        void workerBtn.offsetWidth;
+        workerBtn.classList.add('is-hit');
+        window.clearTimeout(playHit.timer);
+        playHit.timer = window.setTimeout(function () {
+          workerBtn.classList.remove('is-hit');
+        }, 430);
+      }
+
+      function spawnDeduction() {
+        var el = document.createElement('span');
+        el.className = 'deduction-float';
+        el.textContent = '-' + formatMoney(DEDUCTION);
+        el.style.setProperty('--drift', Math.round((Math.random() - 0.5) * 64) + 'px');
+        el.style.marginLeft = Math.round((Math.random() - 0.5) * 26) + 'px';
+        floatLayer.appendChild(el);
+        el.addEventListener('animationend', function () {
+          el.remove();
+        });
+      }
+
+      workerBtn.addEventListener('click', function () {
+        if (isBroke) {
+          setBubble(brokeMessages[brokeIndex % brokeMessages.length]);
+          brokeIndex += 1;
+          playHit();
+          return;
+        }
+
+        salary = Math.max(0, salary - DEDUCTION);
+        hits += 1;
+        playHit();
+        spawnDeduction();
+
+        salaryValue.classList.remove('is-drop');
+        void salaryValue.offsetWidth;
+        salaryValue.classList.add('is-drop');
+
+        if (salary <= 0) {
+          isBroke = true;
+          brokeIndex = 1;
+          workerBtn.classList.add('is-broke');
+          salaryCard.classList.add('is-broke');
+          setBubble(brokeMessages[0]);
+        } else {
+          setBubble(hitMessages[Math.min(hits - 1, hitMessages.length - 1)]);
+        }
+
+        paintSalary();
+      });
+
+      resetBtn.addEventListener('click', function () {
+        salary = SALARY_TOTAL;
+        hits = 0;
+        isBroke = false;
+        brokeIndex = 0;
+        workerBtn.classList.remove('is-broke', 'is-hit');
+        salaryCard.classList.remove('is-broke');
+        setBubble('今日工资已到账。刚才的事…就当没发生过，别点了。');
+        paintSalary();
+        resetBtn.blur();
+      });
+
+      refreshBtn.addEventListener('click', function () {
+        window.location.reload();
+      });
+
+      workerBtn.addEventListener('mousedown', function (event) {
+        event.preventDefault();
+      });
+
+      paintSalary();
+    })();
+  </script>
 </body>
 </html>

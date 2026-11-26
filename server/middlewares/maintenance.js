@@ -95,7 +95,9 @@ function maintenanceMiddleware(req, res, next) {
   }
 
   // Return maintenance page for all other routes
+  // 独立渲染（不套用前台 layout），避免维护页出现站点导航与重复页脚
   res.status(503).render('maintenance', {
+    layout: false,
     title: status.title,
     message: status.message
   });

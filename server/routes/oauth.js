@@ -13,6 +13,7 @@ const router = express.Router();
 const { queryOne, queryAll, saveDatabase, generateUid } = require('../config/database');
 const { logActivity } = require('../config/activity');
 const { grantDefaultPermissions } = require('../config/db-helpers');
+const { getMaintenanceStatus } = require('../middlewares/maintenance');
 const { sanitizeAvatarUrl } = require('../utils/sanitize-avatar');
 const bcrypt = require('bcryptjs');
 
@@ -489,7 +490,7 @@ router.get('/callback/:provider', async (req, res) => {
       // 日志记录失败不影响登录流程
     }
 
-    return establishSession(req, res, user, redirectBase);
+    return establishSession(req, res, user, redirectBase, source);
   }
 
   // 未绑定，检查是否有相同邮箱的用户（仅限邮箱已验证的提供商，防止账号接管）
@@ -524,7 +525,7 @@ router.get('/callback/:provider', async (req, res) => {
         });
       } catch (e) { /* 日志记录失败不影响登录 */ }
 
-      return establishSession(req, res, existingUser, redirectBase);
+      return establishSession(req, res, existingUser, redirectBase, source);
     }
   }
 
@@ -548,8 +549,14 @@ router.get('/callback/:provider', async (req, res) => {
 
 /**
  * 建立登录会话（重建 session 防止会话固定攻击，然后写入用户信息并跳转）
+ * 维护模式下普通账号无法建立登录会话。
  */
-function establishSession(req, res, user, redirectBase) {
+function establishSession(req, res, user, redirectBase, source) {
+  if (getMaintenanceStatus().enabled && user.role !== 'super_admin') {
+    const loginSource = source === 'image-share' ? 'image-share' : 'frontend';
+    return res.redirect('/auth/' + loginSource + '/login?error=' + encodeURIComponent('系统维护中，辛苦等待'));
+  }
+
   req.session.regenerate((err) => {
     if (err) {
       console.error('OAuth 会话重建失败:', err.message);
@@ -610,10 +617,16 @@ router.post('/direct-login', (req, res) => {
     const existingUser = queryOne(db, 'SELECT * FROM users WHERE id = ?', [existingBinding.user_id]);
     if (existingUser && existingUser.status === 'active') {
       delete req.session.oauthPending;
-      return establishSession(req, res, existingUser, redirectBase);
+      return establishSession(req, res, existingUser, redirectBase, source);
     }
     delete req.session.oauthPending;
     return res.redirect('/auth/' + source + '/login?error=' + encodeURIComponent('该账号状态异常，请联系管理员'));
+  }
+
+  // 维护模式：不允许通过第三方登录创建新账号（已有账号登录由 establishSession 按角色判断）
+  if (getMaintenanceStatus().enabled) {
+    delete req.session.oauthPending;
+    return res.redirect('/auth/' + source + '/login?error=' + encodeURIComponent('系统维护中，辛苦等待'));
   }
 
   // 生成唯一用户名
@@ -662,7 +675,7 @@ router.post('/direct-login', (req, res) => {
 
   // 清除暂存并建立会话
   delete req.session.oauthPending;
-  return establishSession(req, res, newUser, redirectBase);
+  return establishSession(req, res, newUser, redirectBase, source);
 });
 
 // 获取OAuth登录URL (AJAX接口)

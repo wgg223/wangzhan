@@ -82,6 +82,7 @@ const { logActivity } = require('../config/activity');
 const { createNotification } = require('./community');
 const logger = require('../utils/logger');
 const { ROLE_HIERARCHY, validatePassword } = require('../middlewares/auth');
+const { getMaintenanceStatus } = require('../middlewares/maintenance');
 const { getSettings, getImageConfigs } = require('../utils/settings');
 const { grantDefaultPermissions } = require('../config/db-helpers');
 
@@ -262,6 +263,9 @@ router.get('/:source/login', (req, res) => {
   }
 
   const returnTo = getSafeReturnTo(req.query.returnTo, source);
+  const maintenanceNotice = getMaintenanceStatus().enabled
+    ? '系统维护中，辛苦等待'
+    : null;
 
   res.render('auth/auth-page', { layout: false,
     source,
@@ -271,7 +275,7 @@ router.get('/:source/login', (req, res) => {
     siteName,
     siteDescription,
     icpNumber,
-    error: req.query.error || null,
+    error: req.query.error || maintenanceNotice,
     success: req.query.success || null,
     user: req.session.user || null,
     username: '',
@@ -694,6 +698,24 @@ router.post('/:source/login', loginLimiter, loginAnomalyDetection, (req, res) =>
       });
     } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
     return renderLogin('用户名或密码错误');
+  }
+
+  // 维护模式：普通账号凭据正确也拒绝登录并给出维护提示（超级管理员仍可进入后台处理维护事务）
+  const maintenance = getMaintenanceStatus();
+  if (maintenance.enabled && user.role !== 'super_admin') {
+    delete req.session.totpChallenge;
+    try {
+      logActivity(db, {
+        user_id: user.id,
+        username: user.username,
+        action: 'login_fail',
+        target_type: 'auth',
+        target_title: source === 'image-share' ? '图片分享' : '主站',
+        detail: `用户 ${user.username} 登录被拒绝 - 系统维护中，登录服务暂停`,
+        ip: req.ip
+      });
+    } catch (logErr) { console.error('[auth] logActivity 错误:', logErr.message); }
+    return renderLogin('系统维护中，辛苦等待');
   }
 
   // 双因素认证（TOTP）：开启两步验证后必须通过
