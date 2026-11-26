@@ -259,55 +259,57 @@
 </head>
 <body>
   <header>
-    <nav>
-      <div class="logo">
-        <a href="/home">
-          <% if (settings.logo) { %>
-            <img src="<%= settings.logo %>" alt="<%= settings.site_name || '我的网站' %>" class="site-logo">
-          <% } else { %>
-            <%= settings.site_name || '我的网站' %>
-          <% } %>
-        </a>
-      </div>
-      <ul class="nav-links">
-        <li><a href="/home">首页</a></li>
-        <li><a href="/articles">文章</a></li>
-        <li><a href="/novels" style="color:var(--primary);font-weight:600;">📚 小说</a></li>
-        <li><a href="/image-share">图片</a></li>
-        <li><a href="/about">关于</a></li>
-        <li><a href="/contact">联系</a></li>
-        <li class="user-dropdown">
-          <a href="#" class="dropdown-toggle">
-            <% if (typeof user !== 'undefined' && user) { %>
-              👤 <%= user.username %> ▾
+    <%# 独立页面没有套用 frontend/layout，这里的导航结构与 layout.ejs 保持一致，沿用全站导航样式 %>
+    <div class="nav-container">
+      <div class="nav-left">
+        <div class="logo">
+          <a href="/home">
+            <% if (settings.logo) { %>
+              <img src="<%= settings.logo %>" alt="<%= settings.site_name || '我的网站' %>" class="site-logo">
             <% } else { %>
-              👤 用户 ▾
+              <%= settings.site_name || '我的网站' %>
             <% } %>
           </a>
-          <ul class="dropdown-menu">
-            <% if (typeof user !== 'undefined' && user) { %>
-              <li><a href="/auth/change-password">🔑 修改密码</a></li>
-              <li>
-                <%# 登出为 POST + CSRF（防跨站 GET 触发会话销毁），按钮样式沿用 .dropdown-menu a %>
-                <form method="POST" action="/auth/logout" style="margin:0;">
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                  <button type="submit" style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;color:var(--text-secondary);font-size:14px;background:none;border:none;border-radius:8px;cursor:pointer;font-family:inherit;text-align:left;">🚪 退出登录</button>
-                </form>
-              </li>
+        </div>
+        <ul class="nav-main" id="navMain">
+          <li><a href="/home">首页</a></li>
+          <li><a href="/articles">文章</a></li>
+          <li><a href="/novels" class="active">📚 小说</a></li>
+          <li><a href="/image-share">图片</a></li>
+          <li><a href="/about">关于</a></li>
+          <li><a href="/contact">联系</a></li>
+        </ul>
+      </div>
+      <div class="nav-right">
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="菜单">☰</button>
+        <% if (typeof user !== 'undefined' && user) { %>
+          <div class="user-menu">
+            <button class="user-menu-btn" type="button">
+              <img src="<%= user.avatar || '/assets/images/default-avatar.png' %>" alt="" class="user-avatar-small">
+              <span class="user-name"><%= user.nickname || user.username %></span>
+              <span class="dropdown-arrow">▾</span>
+            </button>
+            <div class="dropdown-menu">
+              <a href="/account">⚙️ 账号管理</a>
+              <a href="/auth/change-password">🔑 修改密码</a>
               <% if (user.role === 'admin' || user.role === 'super_admin' || user.role === 'editor') { %>
-                <li class="dropdown-divider"></li>
-                <li><a href="/admin">⚙️ 后台管理</a></li>
+                <div class="dropdown-divider"></div>
+                <a href="/admin">🔧 后台管理</a>
               <% } %>
-            <% } else { %>
-              <li><a href="/auth/login">🔐 登录</a></li>
-              <li><a href="/auth/register">📝 注册</a></li>
-              <li class="dropdown-divider"></li>
-              <li><a href="/auth/change-password">🔑 修改密码</a></li>
-            <% } %>
-          </ul>
-        </li>
-      </ul>
-    </nav>
+              <div class="dropdown-divider"></div>
+              <%# 登出为 POST + CSRF（防跨站 GET 触发会话销毁），按钮样式沿用 .dropdown-menu a %>
+              <form method="POST" action="/auth/logout" style="margin:0;">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="danger" style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;font-size:14px;background:none;border:none;border-radius:8px;cursor:pointer;font-family:inherit;text-align:left;">🚪 退出登录</button>
+              </form>
+            </div>
+          </div>
+        <% } else { %>
+          <a href="/auth/login" class="btn btn-primary" style="padding: 8px 20px; font-size: 14px;">登录</a>
+          <a href="/auth/register" class="btn" style="padding: 8px 20px; font-size: 14px;">注册</a>
+        <% } %>
+      </div>
+    </div>
   </header>
 
   <main>
@@ -378,7 +380,7 @@
             <% chapters.forEach(function(ch) { %>
               <a href="/novels/<%= novel.id %>/chapter/<%= ch.id %>"
                  class="<%= currentChapter && currentChapter.id == ch.id ? 'active' : '' %>">
-                第 <%= ch.chapter_number %> 章 · <%= ch.title %>
+                <%= chapterLabel(ch) %>
               </a>
             <% }); %>
           </div>
@@ -386,7 +388,7 @@
 
         <!-- 阅读内容 -->
         <% if (currentChapter) { %>
-          <h2 class="chapter-title">第 <%= currentChapter.chapter_number %> 章 · <%= currentChapter.title %></h2>
+          <h2 class="chapter-title"><%= chapterLabel(currentChapter) %></h2>
           <div class="reader-content" id="readerContent"><%= currentChapter.content %></div>
 
           <!-- 翻页导航 -->
@@ -435,6 +437,18 @@
   </footer>
 
   <script>
+    // 移动端导航菜单
+    document.addEventListener('DOMContentLoaded', function() {
+      const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+      const navMain = document.getElementById('navMain');
+      if (mobileMenuBtn && navMain) {
+        mobileMenuBtn.addEventListener('click', function() {
+          navMain.classList.toggle('open');
+          this.textContent = navMain.classList.contains('open') ? '✕' : '☰';
+        });
+      }
+    });
+
     // 字体大小调整
     function changeFontSize(size) {
       document.getElementById('readerContent').style.setProperty('--reader-font-size', size + 'px');

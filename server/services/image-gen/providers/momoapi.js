@@ -4,6 +4,10 @@
  *   POST /v1/images/generations?async=true（JSON）→ GET /v1/images/generations/{task_id}
  * - GPT Image 图生图：POST /v1/images/edits（multipart，不异步提交）
  *   → 如有 task_id，GET /v1/images/edits/{task_id}
+ * - Gemini / nano-banana 图像模型：POST /v1/chat/completions（JSON）
+ *   图片以 dataURL 放在 choices[].message.content，图生图用 image_url 消息片段。
+ *   （New API 的 /v1/images/generations 转换器只支持 Imagen，Gemini 模型会 500
+ *   “only imagen models are supported”，所以必须走对话生图通道。）
  * - 仅 generations 明确不支持异步时回退同步；任务失败/空结果不重复提交。
  * 模型只从认证 GET /v1/models 获取，公开价格目录不代表当前 Key 的生图能力。
  */
@@ -12,11 +16,13 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const {
-  resolveImageItem, downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE, normalizeApiBase
+  resolveImageItem, downloadImageSafely, sniffImageType, MAX_IMAGE_SIZE, normalizeApiBase,
+  readImageDataUrl
 } = require('../utils');
 
 const DEFAULT_BASE_URL = 'https://api.momoapi.icu';
 const GENERATE_TIMEOUT = 120000;
+const CHAT_TIMEOUT = 180000;
 const MODELS_TIMEOUT = 15000;
 const IMAGEN_MODEL_PATTERN = /imagen/i;
 const MODEL_CHANNEL_PATTERN = /no available channel|no channel available|无可用渠道|没有可用渠道|no available distributor/i;
@@ -184,6 +190,106 @@ async function parseImages(data, cancelRef) {
   throwIfCancelled(cancelRef);
   const items = imageItems(data);
   if (!items.length) throw codedError(`MomoAPI 未返回图片数据（${describeShape(data)}）`, 'EMPTY_RESPONSE');
+  const images = await Promise.all(items.map((item) => resolveAndValidateImage(item, cancelRef)));
+  return { images };
+}
+
+// Gemini 系图像模型（nano-banana / gemini-*-image-preview）必须走 chat/completions：
+// New API 的 /v1/images/generations 转换器只支持 Imagen，发给 Gemini 模型会返回
+// HTTP 500 “not supported model for image generation, only imagen models are supported”。
+const GEMINI_IMAGE_MODEL_PATTERN = /banana|gemini.*(?:image|nano)/i;
+
+function isGeminiImageModel(model) {
+  return GEMINI_IMAGE_MODEL_PATTERN.test(String(model || '').trim());
+}
+
+// chat/completions 没有 size 参数，用提示词表达比例和画质（与 TT AI 的 Momo 比例选择一致）。
+function chatPrompt(req) {
+  const prompt = String((req && req.prompt) || '');
+  const hints = [];
+  const ratio = String((req && req.aspectRatio) || '').trim();
+  if (ratio && ratio !== 'auto') hints.push(`画面比例 ${ratio}`);
+  const quality = String((req && req.quality) || '').trim();
+  if (quality && quality !== 'auto') hints.push(`画质 ${quality.toUpperCase()}`);
+  if (!hints.length) return prompt;
+  return `${prompt}\n\n[输出要求] ${hints.join('，')}。请直接输出图片。`;
+}
+
+async function buildChatBody(model, req, refPaths) {
+  const refs = Array.isArray(refPaths) ? refPaths.filter(Boolean) : [];
+  let content = chatPrompt(req);
+  if (refs.length) {
+    const dataUrls = await Promise.all(refs.map((refPath) => readImageDataUrl(refPath)));
+    content = [
+      { type: 'text', text: content },
+      ...dataUrls.map((url) => ({ type: 'image_url', image_url: { url } }))
+    ];
+  }
+  return { model, messages: [{ role: 'user', content }], stream: false };
+}
+
+// chat 响应把图片以 markdown dataURL 放在 message.content；同时兼容 images 数组/URL 变体。
+const CHAT_DATA_URL_PATTERN = /data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi;
+
+function chatImageItems(data) {
+  const seen = new Set();
+  const items = [];
+  const add = (item) => {
+    const key = item && (item.b64_json || item.url);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    items.push(item);
+  };
+  const addDataUrl = (value) => {
+    const match = /^data:image\/[a-z0-9.+-]+;base64,(.+)$/i.exec(String(value || '').trim());
+    if (match) add({ b64_json: match[1].replace(/\s+/g, '') });
+  };
+  const collect = (value, depth) => {
+    if (depth > 6 || value === undefined || value === null) return;
+    if (typeof value === 'string') {
+      addDataUrl(value);
+      const re = new RegExp(CHAT_DATA_URL_PATTERN.source, 'gi');
+      let match;
+      while ((match = re.exec(value))) addDataUrl(match[0]);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => collect(item, depth + 1));
+      return;
+    }
+    if (typeof value !== 'object') return;
+    if (typeof value.b64_json === 'string' && value.b64_json) { add({ b64_json: value.b64_json }); return; }
+    if (typeof value.b64_image === 'string' && value.b64_image) { add({ b64_json: value.b64_image }); return; }
+    const inline = value.inlineData || value.inline_data;
+    if (inline && typeof inline.data === 'string' && inline.data) { add({ b64_json: inline.data }); return; }
+    const imageUrl = value.image_url;
+    const url = typeof imageUrl === 'string' ? imageUrl : imageUrl && imageUrl.url;
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) { add({ url }); return; }
+    if (typeof value.url === 'string' && /^https?:\/\//i.test(value.url)) { add({ url: value.url }); return; }
+    if (typeof url === 'string') addDataUrl(url);
+    for (const key of ['content', 'images', 'image', 'parts', 'output', 'result', 'data', 'choices', 'message']) {
+      if (value[key] !== undefined) collect(value[key], depth + 1);
+    }
+  };
+  collect(data && data.choices, 0);
+  if (!items.length) collect(data && data.data, 0);
+  return items.slice(0, 16);
+}
+
+function chatTextPreview(data) {
+  const content = data && Array.isArray(data.choices) && data.choices[0]
+    && data.choices[0].message && data.choices[0].message.content;
+  if (typeof content !== 'string') return '';
+  return content.replace(CHAT_DATA_URL_PATTERN, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+async function parseChatImages(data, cancelRef) {
+  throwIfCancelled(cancelRef);
+  const items = chatImageItems(data);
+  if (!items.length) {
+    const preview = chatTextPreview(data);
+    throw codedError(`MomoAPI 未返回图片${preview ? `（模型仅返回文字：${preview}）` : ''}`, 'EMPTY_RESPONSE');
+  }
   const images = await Promise.all(items.map((item) => resolveAndValidateImage(item, cancelRef)));
   return { images };
 }
@@ -474,11 +580,17 @@ function fallbackScore(id) {
   return 5;
 }
 
-function rankFallbackModels(models, excludedModels, baseUrl) {
+function rankFallbackModels(models, excludedModels, baseUrl, preferChat) {
   const excluded = new Set(Array.isArray(excludedModels) ? excludedModels : [excludedModels]);
   return uniqueModelIds(Array.isArray(models) ? models : [])
     .filter((id) => IMAGE_MODEL_PATTERN.test(id) && !excluded.has(id) && !isModelCooling(baseUrl, id))
-    .map((id, index) => ({ id, score: fallbackScore(id), index }))
+    // images/generations 转换器报 Imagen-only 时，优先换到走 chat/completions 的 Gemini
+    // 模型：它们使用完全不同的传输通道，最可能绕开当前故障。
+    .map((id, index) => ({
+      id,
+      score: fallbackScore(id) + (preferChat && isGeminiImageModel(id) ? 100 : 0),
+      index
+    }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map((entry) => entry.id);
 }
@@ -564,7 +676,9 @@ async function requestWithModelRecovery(cfg, sendRequest, cancelRef) {
         throw codedError(`MomoAPI 模型「${requestedModel}」当前不可用，且无法获取当前 Key 的可用模型：${providerError(listErr, '模型列表获取失败').message}`, 'PROVIDER_FAILED');
       }
     }
-    const candidates = rankFallbackModels(models, [firstModel, requestedModel], baseUrl).slice(0, MAX_MODEL_RETRIES);
+    const candidates = rankFallbackModels(
+      models, [firstModel, requestedModel], baseUrl, unsupportedModel
+    ).slice(0, MAX_MODEL_RETRIES);
     if (!candidates.length) {
       const reason = channelDetail ? '当前无可用上游通道' : ipDetail ? '当前模型的图生图通道异常' : '不受生图端点支持';
       throw codedError(`MomoAPI 模型「${requestedModel}」${reason}，当前 Key 的认证模型列表中没有可自动切换的其他图片模型；请稍后重试或更换模型`, 'PROVIDER_FAILED');
@@ -725,9 +839,14 @@ module.exports = {
       return await requestWithModelRecovery(cfg, async (model) => {
         const seedreamConfig = getMomoSeedreamConfig(model);
         const apiModel = seedreamConfig ? seedreamConfig.apiModel : resolveApiModel(model);
-        const body = SEEDREAM_MODEL_PATTERN.test(apiModel)
-          ? await buildSeedreamBody(apiModel, req, [], seedreamConfig && seedreamConfig.quality)
-          : {
+        const chatModel = isGeminiImageModel(apiModel);
+        let body;
+        if (chatModel) {
+          body = await buildChatBody(apiModel, req, []);
+        } else if (SEEDREAM_MODEL_PATTERN.test(apiModel)) {
+          body = await buildSeedreamBody(apiModel, req, [], seedreamConfig && seedreamConfig.quality);
+        } else {
+          body = {
             model: apiModel,
             prompt: req.prompt,
             n: 1,
@@ -735,12 +854,18 @@ module.exports = {
             // 与 TT AI 一致：gpt-image 系列带 quality（low/medium/high/auto）。
             quality: normalizeQuality(req.quality)
           };
-        if (!SEEDREAM_MODEL_PATTERN.test(apiModel)) addGptImageBackground(body, apiModel, req);
+        }
+        if (!chatModel && !SEEDREAM_MODEL_PATTERN.test(apiModel)) addGptImageBackground(body, apiModel, req);
         const send = (path) => axios.post(`${baseUrl}${path}`, body, {
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          timeout: GENERATE_TIMEOUT,
+          timeout: chatModel ? CHAT_TIMEOUT : GENERATE_TIMEOUT,
+          maxBodyLength: Infinity,
           signal: req.cancelRef && req.cancelRef.signal
         });
+        if (chatModel) {
+          const resp = await send('/v1/chat/completions');
+          return parseChatImages(resp.data, req.cancelRef);
+        }
         return submitGenerations(send, baseUrl, apiKey, req.cancelRef);
       }, req.cancelRef);
     } catch (err) {
@@ -757,6 +882,20 @@ module.exports = {
       return await requestWithModelRecovery(cfg, async (model) => {
         const seedreamConfig = getMomoSeedreamConfig(model);
         const apiModel = seedreamConfig ? seedreamConfig.apiModel : resolveApiModel(model);
+        // Gemini / nano-banana：chat/completions + image_url 参考图（dataURL）
+        if (isGeminiImageModel(apiModel)) {
+          const refs = Array.isArray(req.referenceImages) && req.referenceImages.length
+            ? req.referenceImages
+            : [refPath];
+          const body = await buildChatBody(apiModel, req, refs);
+          const resp = await axios.post(`${baseUrl}/v1/chat/completions`, body, {
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            timeout: CHAT_TIMEOUT,
+            maxBodyLength: Infinity,
+            signal: req.cancelRef && req.cancelRef.signal
+          });
+          return parseChatImages(resp.data, req.cancelRef);
+        }
         // Seedream：generations JSON + image dataURL（与 gpt-image 的 edits multipart 不同）
         if (SEEDREAM_MODEL_PATTERN.test(apiModel)) {
           const body = await buildSeedreamBody(apiModel, req, [refPath], seedreamConfig && seedreamConfig.quality);

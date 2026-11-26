@@ -25,7 +25,22 @@ const { logActivity } = require('../../config/activity');
 const { readTextFileContent } = require('../../utils/file-utils');
 const fsSafe = require('../../utils/fs-safe');
 const { novelUpload, imageUpload } = require('./upload');
+const { doubleSubmitCookie } = require('../../middlewares/security');
 const { renderError } = require('../../utils/response');
+
+// multipart 表单的 _csrf 隐藏域只有 multer 解析后才进入 req.body。
+// admin 路由级 CSRF 已对这里的 4 个上传路径放行（见 admin/index.js），
+// 由本函数在上传解析完成后补做校验，避免「保存小说」等原生表单被误判 403。
+function csrfAfterUpload(uploadMiddleware) {
+  return function (req, res, next) {
+    uploadMiddleware(req, res, function (err) {
+      if (err) {
+        return res.status(400).json({ error: '文件上传失败: ' + err.message });
+      }
+      doubleSubmitCookie(req, res, next);
+    });
+  };
+}
 
 // ============ 小说管理 ============
 
@@ -75,7 +90,7 @@ router.get('/novels/edit/:id', isAuthenticated, hasPermission('novels.manage'), 
 });
 
 // 保存小说（有 id 则更新，否则新建；封面可选）
-router.post('/novels/save', isAuthenticated, hasPermission('novels.manage'), imageUpload.single('cover_image'), (req, res) => {
+router.post('/novels/save', isAuthenticated, hasPermission('novels.manage'), imageUpload.single('cover_image'), doubleSubmitCookie, (req, res) => {
   try {
     const db = req.db;
     const { id, title, author, description, status } = req.body;
@@ -107,47 +122,41 @@ router.post('/novels/save', isAuthenticated, hasPermission('novels.manage'), ima
 });
 
 // 单文件上传章节：读取文本内容入库，章节号自动递增
-router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
-  novelUpload.single('chapter_file')(req, res, function(err) {
-    if (err) {
-      return res.status(400).json({ error: '文件上传失败: ' + err.message });
-    }
+router.post('/novels/upload-chapter', isAuthenticated, hasPermission('novels.manage'), csrfAfterUpload(novelUpload.single('chapter_file')), (req, res) => {
+  const db = req.db;
+  const { novel_id, chapter_title } = req.body;
 
-    const db = req.db;
-    const { novel_id, chapter_title } = req.body;
+  if (!req.file) {
+    return res.status(400).json({ error: '请上传TXT文件' });
+  }
 
-    if (!req.file) {
-      return res.status(400).json({ error: '请上传TXT文件' });
-    }
+  if (!novel_id) {
+    return res.status(400).json({ error: '小说ID不能为空' });
+  }
 
-    if (!novel_id) {
-      return res.status(400).json({ error: '小说ID不能为空' });
-    }
+  // 读取上传的文本文件内容（自动探测 UTF-8/GBK 编码）
+  const filePath = path.join(__dirname, '../../../public/uploads/novels', req.file.filename);
+  let content = '';
+  try {
+    content = readTextFileContent(filePath);
+  } catch (err) {
+    return res.status(500).json({ error: '读取文件失败' });
+  }
 
-    // 读取上传的文本文件内容（自动探测 UTF-8/GBK 编码）
-    const filePath = path.join(__dirname, '../../public/uploads/novels', req.file.filename);
-    let content = '';
-    try {
-      content = readTextFileContent(filePath);
-    } catch (err) {
-      return res.status(500).json({ error: '读取文件失败' });
-    }
+  // 章节号 = 现有最大章节号 + 1
+  const maxChapter = queryOne(db, 'SELECT MAX(chapter_number) as max_num FROM novel_chapters WHERE novel_id = ?', [novel_id]);
+  const chapterNumber = (maxChapter?.max_num || 0) + 1;
 
-    // 章节号 = 现有最大章节号 + 1
-    const maxChapter = queryOne(db, 'SELECT MAX(chapter_number) as max_num FROM novel_chapters WHERE novel_id = ?', [novel_id]);
-    const chapterNumber = (maxChapter?.max_num || 0) + 1;
+  const chapterTitle = chapter_title || path.parse(req.file.originalname).name;
+  const relativePath = '/uploads/novels/' + req.file.filename;
 
-    const chapterTitle = chapter_title || path.parse(req.file.originalname).name;
-    const relativePath = '/uploads/novels/' + req.file.filename;
+  db.run('INSERT INTO novel_chapters (novel_id, title, file_path, content, chapter_number, file_size) VALUES (?, ?, ?, ?, ?, ?)',
+    [novel_id, chapterTitle, relativePath, content, chapterNumber, req.file.size]);
 
-    db.run('INSERT INTO novel_chapters (novel_id, title, file_path, content, chapter_number, file_size) VALUES (?, ?, ?, ?, ?, ?)',
-      [novel_id, chapterTitle, relativePath, content, chapterNumber, req.file.size]);
-
-    saveDatabase();
-    const novelInfo = queryOne(db, 'SELECT title FROM novels WHERE id = ?', [novel_id]);
-    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'novel_chapter', target_id: null, target_title: (novelInfo ? novelInfo.title : '') + ' - ' + chapterTitle, detail: '上传小说章节：' + (novelInfo ? novelInfo.title : '') + ' -> ' + chapterTitle, ip: req.ip });
-    res.redirect('/admin/novels/edit/' + novel_id);
-  });
+  saveDatabase();
+  const novelInfo = queryOne(db, 'SELECT title FROM novels WHERE id = ?', [novel_id]);
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'create', target_type: 'novel_chapter', target_id: null, target_title: (novelInfo ? novelInfo.title : '') + ' - ' + chapterTitle, detail: '上传小说章节：' + (novelInfo ? novelInfo.title : '') + ' -> ' + chapterTitle, ip: req.ip });
+  res.redirect('/admin/novels/edit/' + novel_id);
 });
 
 // 批量上传章节（≤100 个文件；自动从正文提取章节标题）
@@ -160,7 +169,8 @@ router.post('/novels/batch-upload-chapters', isAuthenticated, hasPermission('nov
       }
       return res.status(400).json({ error: '文件上传失败: ' + err.message });
     }
-    next();
+    // multer 已解析 multipart body，此时才能读取 _csrf 隐藏域
+    doubleSubmitCookie(req, res, next);
   });
 }, (req, res) => {
   try {
@@ -183,7 +193,7 @@ router.post('/novels/batch-upload-chapters', isAuthenticated, hasPermission('nov
     // 逐个文件处理：读内容 → 提取标题 → 入库
     req.files.forEach((file) => {
       try {
-        const filePath = path.join(__dirname, '../../public/uploads/novels', file.filename);
+        const filePath = path.join(__dirname, '../../../public/uploads/novels', file.filename);
         let content = readTextFileContent(filePath);
 
         // 章节标题自动提取：优先匹配「第N章/节/卷/篇/部分」，其次英文 Chapter N，再退回首行/文件名
@@ -242,7 +252,7 @@ router.post('/novels/delete-chapter/:id', isAuthenticated, hasPermission('novels
     return res.status(404).json({ error: '章节不存在' });
   }
 
-  const filePath = path.join(__dirname, '../../public', chapter.file_path);
+  const filePath = path.join(__dirname, '../../../public', chapter.file_path);
   fsSafe.safeUnlinkSync(filePath);
 
   db.run('DELETE FROM novel_chapters WHERE id = ?', [req.params.id]);
@@ -270,7 +280,7 @@ router.post('/novels/batch-delete-chapters', isAuthenticated, hasPermission('nov
       return;
     }
 
-    const filePath = path.join(__dirname, '../../public', chapter.file_path);
+    const filePath = path.join(__dirname, '../../../public', chapter.file_path);
     fsSafe.safeUnlinkSync(filePath);
 
     db.run('DELETE FROM novel_chapters WHERE id = ?', [id]);
@@ -297,44 +307,38 @@ router.post('/novels/batch-delete-chapters', isAuthenticated, hasPermission('nov
 });
 
 // 重新上传章节内容（替换文件与正文）
-router.post('/novels/reupload-chapter/:id', isAuthenticated, hasPermission('novels.manage'), (req, res) => {
-  novelUpload.single('chapter_file')(req, res, function(err) {
-    if (err) {
-      return res.status(400).json({ error: '文件上传失败: ' + err.message });
-    }
+router.post('/novels/reupload-chapter/:id', isAuthenticated, hasPermission('novels.manage'), csrfAfterUpload(novelUpload.single('chapter_file')), (req, res) => {
+  const db = req.db;
+  const chapterId = req.params.id;
+  const chapter = queryOne(db, 'SELECT * FROM novel_chapters WHERE id = ?', [chapterId]);
 
-    const db = req.db;
-    const chapterId = req.params.id;
-    const chapter = queryOne(db, 'SELECT * FROM novel_chapters WHERE id = ?', [chapterId]);
+  if (!chapter) {
+    return res.status(404).json({ error: '章节不存在' });
+  }
 
-    if (!chapter) {
-      return res.status(404).json({ error: '章节不存在' });
-    }
+  if (!req.file) {
+    return res.status(400).json({ error: '请上传TXT文件' });
+  }
 
-    if (!req.file) {
-      return res.status(400).json({ error: '请上传TXT文件' });
-    }
+  // 删除旧文件后写入新内容
+  const oldFilePath = path.join(__dirname, '../../../public', chapter.file_path);
+  fsSafe.safeUnlinkSync(oldFilePath);
 
-    // 删除旧文件后写入新内容
-    const oldFilePath = path.join(__dirname, '../../public', chapter.file_path);
-    fsSafe.safeUnlinkSync(oldFilePath);
+  const newFilePath = path.join(__dirname, '../../../public/uploads/novels', req.file.filename);
+  let content = '';
+  try {
+    content = readTextFileContent(newFilePath);
+  } catch (err) {
+    return res.status(500).json({ error: '读取文件失败' });
+  }
 
-    const newFilePath = path.join(__dirname, '../../public/uploads/novels', req.file.filename);
-    let content = '';
-    try {
-      content = readTextFileContent(newFilePath);
-    } catch (err) {
-      return res.status(500).json({ error: '读取文件失败' });
-    }
+  const relativePath = '/uploads/novels/' + req.file.filename;
+  db.run('UPDATE novel_chapters SET file_path=?, content=?, file_size=? WHERE id=?',
+    [relativePath, content, req.file.size, chapterId]);
 
-    const relativePath = '/uploads/novels/' + req.file.filename;
-    db.run('UPDATE novel_chapters SET file_path=?, content=?, file_size=? WHERE id=?',
-      [relativePath, content, req.file.size, chapterId]);
-
-    saveDatabase();
-    logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'novel_chapter', target_id: chapter.id, target_title: chapter.title, detail: '重新上传章节内容：' + chapter.title, ip: req.ip });
-    res.redirect('/admin/novels/edit/' + chapter.novel_id);
-  });
+  saveDatabase();
+  logActivity(db, { user_id: req.session.user.id, username: req.session.user.username, action: 'update', target_type: 'novel_chapter', target_id: chapter.id, target_title: chapter.title, detail: '重新上传章节内容：' + chapter.title, ip: req.ip });
+  res.redirect('/admin/novels/edit/' + chapter.novel_id);
 });
 
 // 删除整本小说（先删所有章节文件，再删记录）
@@ -344,7 +348,7 @@ router.post('/novels/delete/:id', isAuthenticated, hasPermission('novels.manage'
 
   const chapters = queryAll(db, 'SELECT file_path FROM novel_chapters WHERE novel_id = ?', [req.params.id]);
   chapters.forEach(ch => {
-    const filePath = path.join(__dirname, '../../public', ch.file_path);
+    const filePath = path.join(__dirname, '../../../public', ch.file_path);
     fsSafe.safeUnlinkSync(filePath);
   });
 

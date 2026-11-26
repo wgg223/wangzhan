@@ -510,6 +510,18 @@ router.get('/page/:slug', (req, res) => {
 });
 
 // ============ 小说（需登录） ============
+// 批量/拆分导入会把「第二章 练气六层」这类章节标记一起存进 title，
+// 展示时若标题已带章节标记就不要再拼「第 N 章」，避免出现「第 2 章 · 第二章 …」。
+const CHAPTER_TITLE_PREFIX = /^\s*(?:第\s*(?:\d+|[零〇一二三四五六七八九十百千万两]+)\s*[章节回卷篇]|chapter\s*\d+)/i;
+
+function chapterLabel(chapter) {
+  const title = String((chapter && chapter.title) || '').trim();
+  const number = chapter && chapter.chapter_number;
+  if (!title) return number ? `第 ${number} 章` : '';
+  if (CHAPTER_TITLE_PREFIX.test(title)) return title;
+  return number ? `第 ${number} 章 · ${title}` : title;
+}
+
 // 小说列表（需登录 + 小说访问权限）
 router.get('/novels', isAuthenticated, hasFrontendPermission('novels.access'), (req, res) => {
   const db = req.db;
@@ -556,7 +568,8 @@ router.get('/novels/:id', hasFrontendPermission('novels.detail.access'), (req, r
     novel: novel,
     chapters: chapters,
     currentChapter: null,
-    chapterIndex: -1
+    chapterIndex: -1,
+    chapterLabel
   });
 });
 
@@ -598,7 +611,8 @@ router.get('/novels/:id/chapter/:chapterId', isAuthenticated, (req, res) => {
     novel: novel,
     chapters: chapters,
     currentChapter: currentChapter,
-    chapterIndex: chapterIndex
+    chapterIndex: chapterIndex,
+    chapterLabel
   });
 });
 

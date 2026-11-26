@@ -48,8 +48,24 @@ const musicRouter = require('./music');
 // ---------- Admin 全局中间件 ----------
 router.use(isAuthenticated);
 router.use(canAccessAdmin);
+
+// multipart/form-data 请求在这里还没被 multer 解析，req.body 是 undefined，
+// 读不到表单里的 _csrf 隐藏域，路由级校验会误判 403（小说保存/章节上传即此情况）。
+// 以下路径改由 novels 路由在 multer 解析完成后自行调用 doubleSubmitCookie 校验。
+const MULTIPART_CSRF_SELF_CHECK = new Set([
+  '/novels/save',
+  '/novels/upload-chapter',
+  '/novels/batch-upload-chapters',
+  '/novels/reupload-chapter'
+]);
+
 // CSRF 双提交 Cookie 防护：所有 admin 写操作需携带 _csrf 或 X-CSRF-Token
-router.use(doubleSubmitCookie);
+router.use((req, res, next) => {
+  if (req.method === 'POST' && MULTIPART_CSRF_SELF_CHECK.has(req.path)) {
+    return next();
+  }
+  doubleSubmitCookie(req, res, next);
+});
 
 // 注入侧边栏当前路径标识
 router.use((req, res, next) => {

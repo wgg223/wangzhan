@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express + EJS 的网站管理系统，集成前台展示、管理后台、AI 能力（生图/聊天/提示词）与客户端 API 接口层，SQLite 单文件数据库，部署简单、开箱即用。
 
-> 当前版本：v8.32.1 ｜ 许可证：[GPL v3](./LICENSE)
+> 当前版本：v8.32.2 ｜ 许可证：[GPL v3](./LICENSE)
 
 ## 功能特性
 
@@ -309,6 +309,16 @@ npm run health              # 健康检查（默认 localhost:3000/health）
 本项目采用 [GPL v3](./LICENSE)。
 
 ## 版本历史
+
+### v8.32.2 (2026-11-26)
+
+**修复：后台保存小说/上传章节 403 ｜ 小说阅读页标题与导航 ｜ MomoAPI Gemini 生图 500**
+
+- **后台 403**：admin 路由级 CSRF 在 multer 之前执行，multipart 原生表单的 `_csrf` 隐藏域读不到，浏览器表单也不会带 `X-CSRF-Token` 头 → 恒 403；4 个小说上传路径改为在 multer 解析完成后补做 `doubleSubmitCookie`，保存/单章上传/批量上传/重新上传全部恢复
+- **章节文件路径**：`server/routes/admin/novels.js` 7 处 `__dirname` 修正为 `../../../public`，章节文件的读取与删除指向真实的 `public/uploads/novels`
+- **小说阅读页**：新增 `chapterLabel()`，标题已含「第 X 章 / Chapter N」时不再重复拼编号；独立阅读页头部改用全站导航结构，修复顶部大片空白与导航竖排
+- **MomoAPI Gemini**：nano-banana / gemini-*-image 生图改走 `/v1/chat/completions`，支持 dataURL 结果解析、图生图 `image_url` 参考图与 Imagen-only 自动切换，修复 500 `not supported model for image generation`
+- **验证**：CSRF 复现/修复矩阵通过，MomoAPI mock 6/6 + 真实请求通过，阅读页桌面/移动截图正常，`node --check` 与 ESLint 0 error
 
 ### v8.32.1 (2026-11-26)
 

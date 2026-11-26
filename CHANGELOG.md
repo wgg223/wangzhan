@@ -2,6 +2,17 @@
 
 > 详细版本历史见 [README.md](./README.md)「版本历史」章节。
 
+## v8.32.2 (2026-11-26)
+
+**修复：后台保存小说/上传章节 403 ｜ 小说阅读页章节标题重复与导航错乱 ｜ MomoAPI Gemini 生图 500**
+
+- **403 根因**：`/admin` 路由级 CSRF（双提交 Cookie）在 multer 之前执行，multipart 原生表单的 `_csrf` 隐藏域此时还不在 `req.body`，浏览器表单也不会携带 `X-CSRF-Token` 头，「保存小说」「上传章节」因此恒返回 403；走 fetch 的上传因后台全局拦截器自动补头而未暴露
+- **CSRF 修复**：`admin/index.js` 对 4 个小说 multipart 路径放行路由级校验；`admin/novels.js` 新增 `csrfAfterUpload()`，在 multer 解析完成后补做 `doubleSubmitCookie`，覆盖保存小说、单章上传、批量上传、重新上传四个入口
+- **章节文件路径**：`admin/novels.js` 中 7 处 `__dirname` 由 `../../public` 修正为 `../../../public`，指向项目真实的 `public/uploads/novels`（原路径指向不存在的 `server/public`），章节文件的读取与删除恢复正常
+- **小说阅读页**：新增 `chapterLabel()`，标题已含「第 X 章 / Chapter N」时不再重复拼接编号（修复「第 2 章 · 第二章 练气六层」）；独立阅读页头部改用全站 `.nav-container/.nav-main/.user-menu` 导航结构，修复顶部大片空白与导航竖排
+- **MomoAPI Gemini**：nano-banana / gemini-*-image 模型改走 `/v1/chat/completions`（New API 的 `/v1/images/generations` 转换器只支持 Imagen，会报 500 "only imagen models are supported"）；支持 dataURL 响应解析、图生图 `image_url` 参考图、比例/画质提示词与 180s 超时；遇到 Imagen-only 错误自动优先切换 Gemini 对话通道
+- **验证**：CSRF 本地复现矩阵（修复前 multipart + `_csrf` 403；修复后 200，无令牌/错误令牌 403，其他写路由行为不变）；MomoAPI mock 6/6 + 真实请求通过；阅读页渲染与桌面/移动截图正常；`node --check` 与 ESLint 0 error
+
 ## v8.32.1 (2026-11-26)
 
 **修复：Node 24 安全下载 DNS 回调签名错误导致生图结果下载失败（`Invalid IP address: undefined`）**
