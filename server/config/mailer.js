@@ -6,6 +6,50 @@ const nodemailer = require('nodemailer');
 const { logActivity } = require('./activity');
 const { decrypt } = require('./crypto-secure');
 
+// TLS 证书类错误码：测试连接失败时给出「纯 IP / 自签证书」的排查提示
+const TLS_CERT_ERROR_CODES = new Set([
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'CERT_HAS_EXPIRED',
+  'CERT_NOT_YET_VALID',
+  'ERR_TLS_CERT_ALTNAME_INVALID'
+]);
+
+/**
+ * 规范化 SMTP 服务器地址：支持域名、IPv4、IPv6（含 [] 包裹），
+ * 容忍误填的协议前缀、路径与首尾空白，例如：
+ *   smtp://192.168.1.10/  → 192.168.1.10
+ *   [2001:db8::1]         → 2001:db8::1
+ * @param {string} raw 原始输入
+ * @returns {string} 可直接交给 nodemailer 的 host
+ */
+function normalizeSmtpHost(raw) {
+  let host = String(raw || '').trim();
+  if (!host) return '';
+  // 去掉误填的协议前缀与多余路径
+  host = host.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  const slashIndex = host.indexOf('/');
+  if (slashIndex !== -1) host = host.slice(0, slashIndex);
+  host = host.trim();
+  // IPv6 允许 [::1] 形式，nodemailer 需要裸地址
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.slice(1, -1);
+  }
+  return host;
+}
+
+/**
+ * 构造 nodemailer 的 TLS 选项：仅在管理员显式允许时跳过证书校验
+ * @param {boolean} tlsInsecure 是否跳过证书校验
+ * @returns {object|undefined}
+ */
+function buildTlsOptions(tlsInsecure) {
+  return tlsInsecure ? { rejectUnauthorized: false } : undefined;
+}
+
 /**
  * 从数据库获取SMTP配置
  * @param {Object} db - 数据库实例
@@ -22,19 +66,22 @@ function getSmtpConfig(db) {
       config[s.setting_key] = s.setting_value;
     });
 
+    const host = normalizeSmtpHost(config.smtp_host);
+
     // 检查SMTP配置是否完整
-    if (!config.smtp_host || !config.smtp_user || !config.smtp_pass) {
+    if (!host || !config.smtp_user || !config.smtp_pass) {
       return null;
     }
 
     return {
-      host: config.smtp_host,
+      host,
       port: parseInt(config.smtp_port) || 465,
       secure: config.smtp_secure === 'true' || config.smtp_port === '465',
       user: config.smtp_user,
       pass: decrypt(config.smtp_pass),
       from_name: config.smtp_from_name || config.site_name || '网站系统',
-      from_email: config.smtp_from_email || config.smtp_user
+      from_email: config.smtp_from_email || config.smtp_user,
+      tlsInsecure: config.smtp_tls_insecure === '1' || config.smtp_tls_insecure === 'true'
     };
   } catch (err) {
     console.error('获取SMTP配置失败:', err.message);
@@ -84,6 +131,8 @@ function sendMail(db, options) {
           user: smtpConfig.user,
           pass: smtpConfig.pass
         },
+        // 纯 IP / 自签证书场景由管理员显式开启；默认严格校验证书
+        tls: buildTlsOptions(smtpConfig.tlsInsecure),
         // 连接/读写超时，防止 SMTP 卡死时请求无限挂起
         connectionTimeout: 10000,
         greetingTimeout: 10000,
@@ -165,19 +214,22 @@ function sendMail(db, options) {
  * @param {boolean} config.secure - 是否使用SSL
  * @param {string} config.user - 用户名
  * @param {string} config.pass - 密码
+ * @param {boolean} [config.tlsInsecure] - 是否跳过证书校验（纯 IP / 自签证书）
  * @returns {Promise} 验证结果
  */
 function testSmtpConfig(config) {
   return new Promise((resolve, reject) => {
     try {
       const transporter = nodemailer.createTransport({
-        host: config.host,
+        host: normalizeSmtpHost(config.host),
         port: config.port,
         secure: config.secure,
         auth: {
           user: config.user,
           pass: config.pass
         },
+        // 纯 IP / 自签证书场景由管理员显式开启；默认严格校验证书
+        tls: buildTlsOptions(Boolean(config.tlsInsecure)),
         // 增加超时和 TLS 选项，提高兼容性
         connectionTimeout: 10000,
         greetingTimeout: 10000,
@@ -187,7 +239,11 @@ function testSmtpConfig(config) {
       // 验证SMTP连接
       transporter.verify((err, success) => {
         if (err) {
-          reject(new Error('SMTP连接验证失败: ' + err.message));
+          let message = 'SMTP连接验证失败: ' + err.message;
+          if (TLS_CERT_ERROR_CODES.has(err.code) || /certificate|self[- ]signed|altnames/i.test(err.message || '')) {
+            message += '；若服务器使用纯 IP、自签证书或证书域名不匹配，请勾选「跳过 TLS 证书校验」后重试';
+          }
+          reject(new Error(message));
         } else {
           resolve({ success: true, message: 'SMTP连接验证成功' });
         }
@@ -284,6 +340,7 @@ module.exports = {
   getSmtpConfig,
   sendMail,
   testSmtpConfig,
+  normalizeSmtpHost,
   buildResetPasswordEmail,
   buildRegisterVerificationEmail,
   buildDeleteAccountEmail,

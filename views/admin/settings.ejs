@@ -86,7 +86,8 @@
       
       <div class="form-group">
         <label for="smtp_host">SMTP 服务器地址</label>
-        <input type="text" id="smtp_host" name="smtp_host" value="<%= settings.smtp_host || '' %>" placeholder="例如：smtp.qq.com">
+        <input type="text" id="smtp_host" name="smtp_host" value="<%= settings.smtp_host || '' %>" placeholder="例如：smtp.qq.com 或 192.168.1.10">
+        <p class="field-hint">支持域名与纯 IP（IPv4 / IPv6，IPv6 可带 [ ] 包裹，无需填写 http://）</p>
       </div>
       
       <div class="form-row">
@@ -124,6 +125,14 @@
         </div>
       </div>
       
+      <div class="form-group">
+        <label for="smtp_tls_insecure" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="smtp_tls_insecure" name="smtp_tls_insecure" value="1" <%= settings.smtp_tls_insecure === '1' ? 'checked' : '' %> style="margin-top:3px;">
+          <span>跳过 TLS 证书校验（纯 IP / 自签证书 / 证书域名不匹配时使用）</span>
+        </label>
+        <p class="field-hint">开启后不再校验 SMTP 证书的主机名与有效期，存在中间人攻击风险；请仅在可信内网或自建邮件服务器上使用，公网邮箱请保持关闭。</p>
+      </div>
+
       <div class="form-actions">
         <button type="button" class="btn" onclick="testSmtpConnection()" id="test-smtp-btn">测试 SMTP 连接</button>
         <span id="test-smtp-result" style="margin-left: 10px;"></span>
@@ -359,6 +368,8 @@ function testSmtpConnection() {
   const secure = document.getElementById('smtp_secure').value;
   const user = document.getElementById('smtp_user').value;
   const pass = document.getElementById('smtp_pass').value;
+  const tlsInsecureEl = document.getElementById('smtp_tls_insecure');
+  const tlsInsecure = tlsInsecureEl && tlsInsecureEl.checked ? '1' : '0';
   
   if (!host || !user || !pass) {
     result.innerHTML = '<span style="color:red;">请填写服务器地址、账号和密码</span>';
@@ -375,7 +386,7 @@ function testSmtpConnection() {
       'Content-Type': 'application/json',
       'X-CSRF-Token': getCsrfToken() 
     },
-    body: JSON.stringify({ smtp_host: host, smtp_port: port, smtp_secure: secure, smtp_user: user, smtp_pass: pass })
+    body: JSON.stringify({ smtp_host: host, smtp_port: port, smtp_secure: secure, smtp_user: user, smtp_pass: pass, smtp_tls_insecure: tlsInsecure })
   })
   .then(response => response.json())
   .then(data => {

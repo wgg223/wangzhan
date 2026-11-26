@@ -10,7 +10,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { testSmtpConfig } = require('../../config/mailer');
+const { testSmtpConfig, normalizeSmtpHost } = require('../../config/mailer');
 const { encrypt } = require('../../config/crypto-secure');
 const { getSettings, upsertSettings } = require('../../utils/settings');
 const { safeLogActivity } = require('../../utils/error-handler');
@@ -34,16 +34,18 @@ router.post('/', (req, res) => {
   const db = req.db;
   const {
     smtp_host, smtp_port, smtp_secure, smtp_user,
-    smtp_pass, smtp_from_name, smtp_from_email
+    smtp_pass, smtp_from_name, smtp_from_email, smtp_tls_insecure
   } = req.body;
 
   const smtpSettings = {
-    smtp_host: smtp_host || '',
+    // 允许纯 IP：去掉误填的协议前缀/路径，IPv6 的 [] 包裹也会被规范化
+    smtp_host: normalizeSmtpHost(smtp_host),
     smtp_port: smtp_port || '465',
     smtp_secure: smtp_secure || 'true',
     smtp_user: smtp_user || '',
     smtp_from_name: smtp_from_name || '',
-    smtp_from_email: smtp_from_email || ''
+    smtp_from_email: smtp_from_email || '',
+    smtp_tls_insecure: smtp_tls_insecure === '1' ? '1' : '0'
   };
   if (smtp_pass) {
     smtpSettings.smtp_pass = encrypt(smtp_pass);   // AES 加密存储
@@ -69,20 +71,22 @@ router.post('/', (req, res) => {
 
 // POST - 测试SMTP连接（用当前表单填写的参数实际发一封测试邮件，不落库）
 router.post('/test', async (req, res) => {
-  const { smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass } = req.body;
+  const { smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_tls_insecure } = req.body;
+  const host = normalizeSmtpHost(smtp_host);
 
   // 必填项校验
-  if (!smtp_host || !smtp_user || !smtp_pass) {
+  if (!host || !smtp_user || !smtp_pass) {
     return res.status(400).json({ success: false, error: '请填写完整的SMTP配置信息（服务器地址、用户名、密码）' });
   }
 
   try {
     const result = await testSmtpConfig({
-      host: smtp_host,
+      host,
       port: parseInt(smtp_port) || 465,
       secure: smtp_secure === 'true' || smtp_port === '465',   // 465 端口默认按 SSL 处理
       user: smtp_user,
-      pass: smtp_pass
+      pass: smtp_pass,
+      tlsInsecure: smtp_tls_insecure === '1' || smtp_tls_insecure === 'true'
     });
     res.json(result);
   } catch (err) {

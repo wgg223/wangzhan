@@ -22,7 +22,7 @@ const router = express.Router();
 const { isAuthenticated, hasPermission, isSuperAdmin } = require('../../middlewares/auth');
 const { saveDatabase, queryAll, queryOne } = require('../../config/database');
 const { logActivity } = require('../../config/activity');
-const { testSmtpConfig } = require('../../config/mailer');
+const { testSmtpConfig, normalizeSmtpHost } = require('../../config/mailer');
 const { encrypt } = require('../../config/crypto-secure');
 const { settingsCache } = require('../../config/cache');
 const { upload } = require('./upload');
@@ -75,12 +75,14 @@ router.post('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
     welcome_popup_enabled: req.body.welcome_popup_enabled === '1' ? '1' : '0',
     welcome_popup_title: welcome_popup_title || '欢迎访问',
     welcome_popup_content: sanitize(welcome_popup_content),
-    smtp_host: req.body.smtp_host || '',
+    // 允许纯 IP：去掉误填的协议前缀/路径，IPv6 的 [] 包裹也会被规范化
+    smtp_host: normalizeSmtpHost(req.body.smtp_host),
     smtp_port: req.body.smtp_port || '465',
     smtp_secure: req.body.smtp_secure || 'true',
     smtp_user: req.body.smtp_user || '',
     smtp_from_name: req.body.smtp_from_name || '',
     smtp_from_email: req.body.smtp_from_email || '',
+    smtp_tls_insecure: req.body.smtp_tls_insecure === '1' ? '1' : '0',
     cdn_enabled: req.body.cdn_enabled === '1' ? '1' : '0',
     cdn_provider: req.body.cdn_provider || 'custom',
     cdn_base_url: req.body.cdn_base_url || 'https://dalaowang233.top',
@@ -104,19 +106,21 @@ router.post('/settings', isAuthenticated, isSuperAdmin, (req, res) => {
 
 // 测试SMTP连接（用表单即时值，不落库）
 router.post('/settings/test-smtp', isAuthenticated, isSuperAdmin, async (req, res) => {
-  const { smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass } = req.body;
+  const { smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_tls_insecure } = req.body;
+  const host = normalizeSmtpHost(smtp_host);
 
-  if (!smtp_host || !smtp_user || !smtp_pass) {
+  if (!host || !smtp_user || !smtp_pass) {
     return res.status(400).json({ success: false, error: '请填写完整的SMTP配置信息（服务器地址、用户名、密码）' });
   }
 
   try {
     const result = await testSmtpConfig({
-      host: smtp_host,
+      host,
       port: parseInt(smtp_port) || 465,
       secure: smtp_secure === 'true' || smtp_port === '465',
       user: smtp_user,
-      pass: smtp_pass
+      pass: smtp_pass,
+      tlsInsecure: smtp_tls_insecure === '1' || smtp_tls_insecure === 'true'
     });
     res.json(result);
   } catch (err) {
